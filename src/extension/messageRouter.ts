@@ -1,7 +1,9 @@
 import type * as vscode from "vscode";
 import { MessageSchema, MessageType } from "../shared/protocol.js";
+import type { ViewMessage } from "../views/shared/types.js";
 import type { EngineTransport } from "./engineTransport.js";
 import type { MessageEnvelope, PendingRequest } from "./types.js";
+import { adaptViewMessage } from "./viewMessageAdapter.js";
 
 export interface MessageRouterCallbacks {
   onEngineReady: (projectId: string, payload: unknown) => void;
@@ -156,6 +158,23 @@ export class MessageRouter implements vscode.Disposable {
     }
   }
 
+  private routeErrorToViews(projectId: string, text: string): void {
+    const set = this.views.get(projectId);
+    if (!set) return;
+    for (const panel of set) {
+      Promise.resolve(
+        panel.webview.postMessage({
+          type: "host/error",
+          message: text,
+        }),
+      ).catch((error) => {
+        this.outputChannel.appendLine(
+          `[router] failed to post error to view ${projectId}: ${String(error)}`,
+        );
+      });
+    }
+  }
+
   async requestEngine(
     projectId: string,
     type: string,
@@ -255,6 +274,11 @@ export class MessageRouter implements vscode.Disposable {
     }
     if (message.type === MessageType.EngineError) {
       this.callbacks.onEngineError(projectId, message.payload);
+      const text =
+        typeof message.payload === "object" && message.payload !== null
+          ? ((message.payload as { message?: string }).message ?? JSON.stringify(message.payload))
+          : String(message.payload);
+      this.routeErrorToViews(projectId, text);
       return;
     }
 
@@ -290,21 +314,41 @@ export class MessageRouter implements vscode.Disposable {
   }
 
   private handleViewMessage(projectId: string, raw: unknown): void {
-    const parse = MessageSchema.safeParse(raw);
-    if (!parse.success) {
+    if (raw === null || typeof raw !== "object" || !("type" in raw)) {
       this.outputChannel.appendLine(`[router] invalid view message: ${JSON.stringify(raw)}`);
+      return;
+    }
+
+    const viewMessage = raw as ViewMessage;
+
+    // Lifecycle/UI-only messages are not forwarded to the engine.
+    if (viewMessage.type === "view/ready") {
+      return;
+    }
+
+    const envelope = adaptViewMessage(projectId, viewMessage);
+    if (!envelope) {
+      const reason = `unsupported view message type: ${viewMessage.type}`;
+      this.outputChannel.appendLine(`[router] ${reason}`);
+      this.routeErrorToViews(projectId, reason);
+      return;
+    }
+
+    const parse = MessageSchema.safeParse(envelope);
+    if (!parse.success) {
+      this.outputChannel.appendLine(`[router] invalid adapted envelope: ${parse.error.message}`);
       return;
     }
     const message = parse.data as MessageEnvelope;
     if (message.projectId !== projectId) {
       this.outputChannel.appendLine(
-        `[router] view message projectId mismatch: ${message.projectId} vs ${projectId}`,
+        `[router] adapted envelope projectId mismatch: ${message.projectId} vs ${projectId}`,
       );
       return;
     }
-    if (message.direction !== "view-to-host") {
+    if (message.direction !== "host-to-engine") {
       this.outputChannel.appendLine(
-        `[router] unexpected view message direction: ${message.direction}`,
+        `[router] unexpected adapted envelope direction: ${message.direction}`,
       );
       return;
     }

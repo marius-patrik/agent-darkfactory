@@ -7,5 +7,11 @@
     "noEmit": false,
     "types": ["node", "jest"]
   },
-  "include": ["src/shared/**/*", "src/engine/messageHandlers.ts", "tests/unit/**/*"]
+  "include": [
+    "src/shared/**/*",
+    "src/engine/messageHandlers.ts",
+    "src/extension/**/*.ts",
+    "tests/unit/**/*",
+    "tests/__mocks__/**/*"
+  ]
 }
