@@ -108,13 +108,14 @@ const TimelineView: React.FC = () => {
             onSetTempo={state.transport.setTempo}
             onSetTimeSignature={state.transport.setTimeSignature}
             onShowView={state.commands.showView}
+            onAddTrack={state.trackActions.createTrack}
             onSettings={() => state.commands.showView("browser")}
             onExport={state.commands.export}
           />
           <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
             <div
               ref={headerScrollRef}
-              role="rowgroup"
+              role="region"
               aria-label="Track headers"
               onScroll={() => syncScroll("header")}
               style={{ overflowY: "auto", flexShrink: 0 }}

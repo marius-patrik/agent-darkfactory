@@ -31,7 +31,12 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
 }) => {
   return (
     <TooltipProvider>
-      <div role="group" aria-label="Transport controls" className="flex items-center gap-1">
+      <div
+        role="group"
+        aria-label="Transport controls"
+        className="flex items-center gap-1.5 px-2 py-1 rounded"
+        style={{ backgroundColor: "var(--vsdaw-bg)", border: "1px solid var(--vsdaw-border)" }}
+      >
         <Tooltip content={isPlaying ? "Pause (Space)" : "Play (Space)"}>
           <TransportButton
             ariaLabel={isPlaying ? "Pause" : "Play"}
@@ -39,13 +44,13 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
             onClick={isPlaying ? onPause : onPlay}
             accent={isPlaying}
           >
-            {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+            {isPlaying ? <Pause size={18} /> : <Play size={18} />}
           </TransportButton>
         </Tooltip>
 
         <Tooltip content="Stop (Cmd/Ctrl+1)">
           <TransportButton ariaLabel="Stop" onClick={onStop}>
-            <Square size={14} />
+            <Square size={16} />
           </TransportButton>
         </Tooltip>
 
@@ -57,11 +62,11 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
             accent={isRecording}
             accentColor="var(--vsdaw-error)"
           >
-            <Circle size={14} fill={isRecording ? "currentColor" : "none"} />
+            <Circle size={16} fill={isRecording ? "currentColor" : "none"} />
           </TransportButton>
         </Tooltip>
 
-        <div className="w-px h-4.5 mx-1" style={{ backgroundColor: "var(--vsdaw-border)" }} />
+        <div className="w-px h-5 mx-1" style={{ backgroundColor: "var(--vsdaw-border)" }} />
 
         <Tooltip content="Toggle loop (Cmd/Ctrl+L)">
           <TransportButton
@@ -70,7 +75,7 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
             onClick={onToggleLoop}
             accent={isLooping}
           >
-            <Repeat size={14} />
+            <Repeat size={16} />
           </TransportButton>
         </Tooltip>
 
@@ -81,7 +86,7 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
             onClick={onToggleMetronome}
             accent={isMetronomeEnabled}
           >
-            <Music2 size={14} />
+            <Music2 size={16} />
           </TransportButton>
         </Tooltip>
       </div>
@@ -106,6 +111,8 @@ const TransportButton: React.FC<{
       onClick={onClick}
       style={{
         ...iconButtonStyle,
+        width: 32,
+        height: 32,
         color: accent ? accentColor || "var(--vsdaw-button-fg)" : "inherit",
         backgroundColor: accent ? accentColor || "var(--vsdaw-button-bg)" : "transparent",
       }}
