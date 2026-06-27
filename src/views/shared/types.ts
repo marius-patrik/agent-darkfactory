@@ -45,6 +45,13 @@ export interface AutomationLane {
   points: AutomationPoint[];
 }
 
+export interface SendState {
+  id: string;
+  targetTrackId: string;
+  targetName?: string;
+  amount: number;
+}
+
 export interface TrackState {
   id: string;
   name: string;
@@ -58,6 +65,9 @@ export interface TrackState {
   inserts: ProtocolInsertState[];
   regions: RegionState[];
   automationLanes: AutomationLane[];
+  outputTrackId?: string | null;
+  type?: "audio" | "midi" | "bus" | "master";
+  sends: SendState[];
 }
 
 export interface RegionState {
@@ -149,6 +159,10 @@ export type ViewMessage =
   | { type: "note/delete"; noteId: string }
   | { type: "note/setVelocity"; noteId: string; velocity: number }
   | { type: "mixer/openDevice"; trackId: string; slotIndex: number }
+  | { type: "track/setOutput"; trackId: string; outputTrackId: string | null }
+  | { type: "track/addSend"; trackId: string; targetTrackId: string; amount?: number }
+  | { type: "track/removeSend"; sendId: string }
+  | { type: "track/setSendAmount"; sendId: string; amount: number }
   | { type: "device/getParameters"; deviceId: string }
   | { type: "device/setParameter"; deviceId: string; parameter: string; value: number | boolean }
   | { type: "browser/preview"; nodeId: string }

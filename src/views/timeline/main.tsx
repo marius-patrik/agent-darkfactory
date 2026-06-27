@@ -138,6 +138,9 @@ const TimelineView: React.FC = () => {
                 <TrackHeader
                   key={track.id}
                   track={track}
+                  outputs={state.tracks
+                    .filter((t) => t.id !== track.id && t.type === "bus")
+                    .map((t) => ({ id: t.id, name: t.name }))}
                   deviceParametersById={state.deviceParametersById}
                   onMute={() => state.trackActions.setMute(track.id, !track.muted)}
                   onSolo={() => state.trackActions.setSolo(track.id, !track.soloed)}
@@ -153,6 +156,7 @@ const TimelineView: React.FC = () => {
                   onAddAutomationLane={state.automationActions.addLane}
                   onRemoveAutomationLane={state.automationActions.removeLane}
                   onGetDeviceParameters={state.deviceActions.getParameters}
+                  onSetOutput={(outputTrackId) => state.mixerActions.setOutput(track.id, outputTrackId)}
                 />
               ))}
             </div>

@@ -63,6 +63,7 @@ function createTrack(overrides: Partial<TrackState> = {}): TrackState {
     solo: false,
     arm: false,
     inserts: [],
+    sends: [],
     ...overrides,
   };
 }

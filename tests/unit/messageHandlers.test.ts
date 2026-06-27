@@ -81,6 +81,11 @@ function createMockController(): MockController {
     moveAutomationPoint: record("moveAutomationPoint"),
     deleteAutomationPoint: record("deleteAutomationPoint"),
 
+    setTrackOutput: record("setTrackOutput"),
+    addTrackSend: record("addTrackSend", "send-new"),
+    removeTrackSend: record("removeTrackSend"),
+    setTrackSendAmount: record("setTrackSendAmount"),
+
     getPeaks: jest.fn().mockResolvedValue({
       sampleId: "sample-1",
       channel: 0,
@@ -386,6 +391,56 @@ describe("messageHandlers - track operations", () => {
     expect(controller.calls).toContainEqual({
       method: "createDevice",
       args: ["instrument", "Tape", "t1", 0],
+    });
+  });
+
+  test("TrackSetOutput forwards trackId and outputTrackId", async () => {
+    const controller = createMockController();
+    await expectOk(
+      handleMessage(
+        controller,
+        makeMessage(MessageType.TrackSetOutput, { trackId: "t1", outputTrackId: "bus-1" }),
+      ),
+    );
+    expect(controller.calls).toContainEqual({
+      method: "setTrackOutput",
+      args: ["t1", "bus-1"],
+    });
+  });
+
+  test("TrackAddSend forwards trackId, targetTrackId and amount", async () => {
+    const controller = createMockController();
+    const result = await handleMessage(
+      controller,
+      makeMessage(MessageType.TrackAddSend, { trackId: "t1", targetTrackId: "bus-1", amount: 0.5 }),
+    );
+    expect(result.type).toBe("ok");
+    expect((result as Extract<typeof result, { type: "ok" }>).payload).toEqual({ sendId: "send-new" });
+    expect(controller.calls).toContainEqual({
+      method: "addTrackSend",
+      args: ["t1", "bus-1", 0.5],
+    });
+  });
+
+  test("TrackRemoveSend forwards sendId", async () => {
+    const controller = createMockController();
+    await expectOk(
+      handleMessage(controller, makeMessage(MessageType.TrackRemoveSend, { sendId: "s1" })),
+    );
+    expect(controller.calls).toContainEqual({ method: "removeTrackSend", args: ["s1"] });
+  });
+
+  test("TrackSetSendAmount forwards sendId and amount", async () => {
+    const controller = createMockController();
+    await expectOk(
+      handleMessage(
+        controller,
+        makeMessage(MessageType.TrackSetSendAmount, { sendId: "s1", amount: 0.75 }),
+      ),
+    );
+    expect(controller.calls).toContainEqual({
+      method: "setTrackSendAmount",
+      args: ["s1", 0.75],
     });
   });
 });

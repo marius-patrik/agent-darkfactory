@@ -47,8 +47,12 @@ import {
   type TrackInsertPayload,
   type TrackInsertRemovePayload,
   type TrackNamePayload,
+  type TrackOutputPayload,
   type TrackPanPayload,
   type TrackReorderPayload,
+  type TrackSendAmountPayload,
+  type TrackSendPayload,
+  type TrackSendRemovePayload,
   type TrackVolumePayload,
   type TransportLoopPayload,
   type TransportSeekPayload,
@@ -269,6 +273,38 @@ function routeMessage(
         return { type: "error", message: "deviceId, parameter and value are required" };
       }
       controller.setDeviceParameter(opts.deviceId, opts.parameter, opts.value);
+      return { type: "ok" };
+    }
+    case MessageType.TrackSetOutput: {
+      const opts = p as TrackOutputPayload;
+      if (!opts?.trackId) {
+        return { type: "error", message: "trackId is required" };
+      }
+      controller.setTrackOutput(opts.trackId, opts.outputTrackId ?? null);
+      return { type: "ok" };
+    }
+    case MessageType.TrackAddSend: {
+      const opts = p as TrackSendPayload;
+      if (!opts?.trackId || !opts.targetTrackId) {
+        return { type: "error", message: "trackId and targetTrackId are required" };
+      }
+      const id = controller.addTrackSend(opts.trackId, opts.targetTrackId, opts.amount ?? 0);
+      return { type: "ok", payload: { sendId: id } };
+    }
+    case MessageType.TrackRemoveSend: {
+      const opts = p as TrackSendRemovePayload;
+      if (!opts?.sendId) {
+        return { type: "error", message: "sendId is required" };
+      }
+      controller.removeTrackSend(opts.sendId);
+      return { type: "ok" };
+    }
+    case MessageType.TrackSetSendAmount: {
+      const opts = p as TrackSendAmountPayload;
+      if (!opts?.sendId || opts.amount == null) {
+        return { type: "error", message: "sendId and amount are required" };
+      }
+      controller.setTrackSendAmount(opts.sendId, opts.amount);
       return { type: "ok" };
     }
 

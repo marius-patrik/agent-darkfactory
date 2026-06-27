@@ -400,6 +400,49 @@ describe("viewMessageAdapter", () => {
     });
   });
 
+  describe("routing messages", () => {
+    test("track/setOutput -> track.setOutput", () => {
+      const result = adaptViewMessage(PROJECT_ID, {
+        type: "track/setOutput",
+        trackId: "track-1",
+        outputTrackId: "bus-1",
+      });
+      expectEnvelope(result);
+      expect(result.type).toBe(MessageType.TrackSetOutput);
+      expect(result.payload).toEqual({ trackId: "track-1", outputTrackId: "bus-1" });
+    });
+
+    test("track/addSend -> track.addSend", () => {
+      const result = adaptViewMessage(PROJECT_ID, {
+        type: "track/addSend",
+        trackId: "track-1",
+        targetTrackId: "bus-1",
+        amount: 0.5,
+      });
+      expectEnvelope(result);
+      expect(result.type).toBe(MessageType.TrackAddSend);
+      expect(result.payload).toEqual({ trackId: "track-1", targetTrackId: "bus-1", amount: 0.5 });
+    });
+
+    test("track/removeSend -> track.removeSend", () => {
+      const result = adaptViewMessage(PROJECT_ID, { type: "track/removeSend", sendId: "send-1" });
+      expectEnvelope(result);
+      expect(result.type).toBe(MessageType.TrackRemoveSend);
+      expect(result.payload).toEqual({ sendId: "send-1" });
+    });
+
+    test("track/setSendAmount -> track.setSendAmount", () => {
+      const result = adaptViewMessage(PROJECT_ID, {
+        type: "track/setSendAmount",
+        sendId: "send-1",
+        amount: 0.75,
+      });
+      expectEnvelope(result);
+      expect(result.type).toBe(MessageType.TrackSetSendAmount);
+      expect(result.payload).toEqual({ sendId: "send-1", amount: 0.75 });
+    });
+  });
+
   describe("unsupported messages", () => {
     const unsupportedCases: ViewMessage[] = [
       { type: "view/ready", view: "timeline" },

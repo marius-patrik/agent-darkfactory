@@ -215,7 +215,7 @@ export class ProjectStateProjector {
     return {
       type: "host/tracks",
       tracks: state.tracks.map((track) =>
-        this.convertTrack(track, state.regions, state.automationLanes, state.automationPoints),
+        this.convertTrack(track, state.tracks, state.regions, state.automationLanes, state.automationPoints),
       ),
     };
   }
@@ -229,15 +229,18 @@ export class ProjectStateProjector {
 
   private convertTrack(
     track: EngineTrackState,
+    tracks: EngineTrackState[],
     regions: EngineRegionState[],
     automationLanes: EngineAutomationLaneState[],
     automationPoints: EngineAutomationPointState[],
   ): ViewTrackState {
     const lanes = automationLanes.filter((lane) => lane.trackId === track.id);
+    const trackNameById = new Map(tracks.map((t) => [t.id, t.name]));
     return {
       id: track.id,
       name: track.name,
       color: track.color ?? defaultTrackColor(track.index),
+      type: track.type,
       muted: track.mute,
       soloed: track.solo,
       armed: track.arm,
@@ -259,6 +262,13 @@ export class ProjectStateProjector {
         trackId: lane.trackId,
         target: lane.target,
         points: automationPoints.filter((point) => point.laneId === lane.id),
+      })),
+      outputTrackId: track.outputTrackId ?? null,
+      sends: track.sends.map((send) => ({
+        id: send.id,
+        targetTrackId: send.targetTrackId,
+        targetName: trackNameById.get(send.targetTrackId) ?? send.targetTrackId,
+        amount: send.amount,
       })),
     };
   }

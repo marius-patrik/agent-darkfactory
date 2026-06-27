@@ -5,6 +5,7 @@ import type { AutomationTarget, DeviceParameter, TrackState } from "../../views/
 
 export interface TrackHeaderProps {
   track: TrackState;
+  outputs?: { id: string; name: string }[];
   deviceParametersById?: Record<string, DeviceParameter[]>;
   onMute: () => void;
   onSolo: () => void;
@@ -18,6 +19,7 @@ export interface TrackHeaderProps {
   onAddAutomationLane?: (trackId: string, target: AutomationTarget) => void;
   onRemoveAutomationLane?: (laneId: string) => void;
   onGetDeviceParameters?: (deviceId: string) => void;
+  onSetOutput?: (outputTrackId: string | null) => void;
 }
 
 const TRACK_COLORS = [
@@ -35,6 +37,7 @@ const INSERT_DEVICES = ["Reverb", "Delay", "Chorus", "Compressor", "EQ"];
 
 export const TrackHeader: React.FC<TrackHeaderProps> = ({
   track,
+  outputs,
   deviceParametersById,
   onMute,
   onSolo,
@@ -48,6 +51,7 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
   onAddAutomationLane,
   onRemoveAutomationLane,
   onGetDeviceParameters,
+  onSetOutput,
 }) => {
   const [draftName, setDraftName] = React.useState(track.name);
 
@@ -131,6 +135,23 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
           onGetDeviceParameters={onGetDeviceParameters}
         />
       </div>
+
+      {onSetOutput && outputs && outputs.length > 0 && (
+        <select
+          value={track.outputTrackId ?? ""}
+          onChange={(e) => onSetOutput(e.target.value || null)}
+          className="text-xs px-1 py-0.5 rounded border"
+          style={{ backgroundColor: "var(--vsdaw-bg)", borderColor: "var(--vsdaw-border)", color: "inherit" }}
+          aria-label="Output"
+        >
+          <option value="">Master</option>
+          {outputs.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <TrackToggleButton

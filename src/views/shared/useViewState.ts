@@ -160,6 +160,13 @@ export function useViewState(view: ViewName) {
   const mixerActions = {
     openDevice: (trackId: string, slotIndex: number) =>
       send({ type: "mixer/openDevice", trackId, slotIndex }),
+    setOutput: (trackId: string, outputTrackId: string | null) =>
+      send({ type: "track/setOutput", trackId, outputTrackId }),
+    addSend: (trackId: string, targetTrackId: string, amount?: number) =>
+      send({ type: "track/addSend", trackId, targetTrackId, amount }),
+    removeSend: (sendId: string) => send({ type: "track/removeSend", sendId }),
+    setSendAmount: (sendId: string, amount: number) =>
+      send({ type: "track/setSendAmount", sendId, amount }),
   };
 
   const deviceActions = {

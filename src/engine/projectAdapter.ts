@@ -58,6 +58,7 @@ import type {
   PeaksResultPayload,
   ProjectState,
   RegionState,
+  SendState,
   TrackState,
 } from "../shared/protocol.js";
 
@@ -89,6 +90,8 @@ export class ProjectController {
   private trackNames = new Map<string, string>();
   private trackColors = new Map<string, string>();
   private trackTypes = new Map<string, ApiTrackType>();
+  private trackOutputs = new Map<string, string | null>();
+  private trackSends = new Map<string, SendState[]>();
   private takeRegions = new Map<string, AnyRegionBoxAdapter[]>();
   private automationLanes = new Map<string, AutomationLaneState>();
   private automationPoints = new Map<string, AutomationPointState>();
@@ -213,6 +216,8 @@ export class ProjectController {
     this.trackNames.clear();
     this.trackColors.clear();
     this.trackTypes.clear();
+    this.trackOutputs.clear();
+    this.trackSends.clear();
     this.takeRegions.clear();
     this.automationLanes.clear();
     this.automationPoints.clear();
@@ -396,6 +401,42 @@ export class ProjectController {
       capture.unwrap().armed.setValue(arm);
     }
     this.broadcastState();
+  }
+
+  setTrackOutput(trackId: string, outputTrackId: string | null) {
+    this.trackOutputs.set(trackId, outputTrackId);
+    this.broadcastState();
+  }
+
+  addTrackSend(trackId: string, targetTrackId: string, amount = 0) {
+    const sends = this.trackSends.get(trackId) ?? [];
+    const id = `${trackId}->${targetTrackId}-${Date.now()}`;
+    sends.push({ id, targetTrackId, amount });
+    this.trackSends.set(trackId, sends);
+    this.broadcastState();
+    return id;
+  }
+
+  removeTrackSend(sendId: string) {
+    for (const [trackId, sends] of this.trackSends.entries()) {
+      const next = sends.filter((s) => s.id !== sendId);
+      if (next.length !== sends.length) {
+        this.trackSends.set(trackId, next);
+        this.broadcastState();
+        return;
+      }
+    }
+  }
+
+  setTrackSendAmount(sendId: string, amount: number) {
+    for (const sends of this.trackSends.values()) {
+      const send = sends.find((s) => s.id === sendId);
+      if (send) {
+        send.amount = amount;
+        this.broadcastState();
+        return;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1170,6 +1211,8 @@ export class ProjectController {
         solo: unit.namedParameter.solo.getValue(),
         arm: capture.mapOr((c) => c.armed.getValue(), false),
         inserts,
+        outputTrackId: this.trackOutputs.get(trackId) ?? null,
+        sends: this.trackSends.get(trackId) ?? [],
       });
 
       for (const track of unit.tracks.values()) {

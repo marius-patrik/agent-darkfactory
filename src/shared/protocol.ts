@@ -115,6 +115,10 @@ export enum MessageType {
   TrackRemoveInsert = "track.removeInsert",
   TrackMoveInsert = "track.moveInsert",
   TrackSetInsertParameter = "track.setInsertParameter",
+  TrackSetOutput = "track.setOutput",
+  TrackAddSend = "track.addSend",
+  TrackRemoveSend = "track.removeSend",
+  TrackSetSendAmount = "track.setSendAmount",
 
   RegionCreateAudio = "region.createAudio",
   RegionCreateMidi = "region.createMidi",
@@ -271,6 +275,26 @@ export interface TrackInsertRemovePayload {
 export interface TrackInsertMovePayload {
   insertId: string;
   newIndex: number;
+}
+
+export interface TrackOutputPayload {
+  trackId: string;
+  outputTrackId: string | null;
+}
+
+export interface TrackSendPayload {
+  trackId: string;
+  targetTrackId: string;
+  amount?: number;
+}
+
+export interface TrackSendRemovePayload {
+  sendId: string;
+}
+
+export interface TrackSendAmountPayload {
+  sendId: string;
+  amount: number;
 }
 
 export interface RegionCreateAudioPayload {
@@ -501,6 +525,12 @@ export interface InsertState {
   index: number;
 }
 
+export interface SendState {
+  id: string;
+  targetTrackId: string;
+  amount: number;
+}
+
 export interface TrackState {
   id: string;
   type: TrackType;
@@ -513,6 +543,8 @@ export interface TrackState {
   solo: boolean;
   arm: boolean;
   inserts: InsertState[];
+  outputTrackId?: string | null;
+  sends: SendState[];
 }
 
 export interface RegionState {

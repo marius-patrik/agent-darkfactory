@@ -29,7 +29,11 @@ import {
   type TrackIdPayload,
   type TrackInsertPayload,
   type TrackNamePayload,
+  type TrackOutputPayload,
   type TrackPanPayload,
+  type TrackSendAmountPayload,
+  type TrackSendPayload,
+  type TrackSendRemovePayload,
   type TrackVolumePayload,
   type TransportSeekPayload,
   type TransportTempoPayload,
@@ -269,6 +273,34 @@ export function adaptViewMessage(
         velocity: message.velocity,
       };
       return { ...base, type: MessageType.NoteSetVelocity, payload };
+    }
+
+    // Routing
+    case "track/setOutput": {
+      const payload: TrackOutputPayload = {
+        trackId: message.trackId,
+        outputTrackId: message.outputTrackId,
+      };
+      return { ...base, type: MessageType.TrackSetOutput, payload };
+    }
+    case "track/addSend": {
+      const payload: TrackSendPayload = {
+        trackId: message.trackId,
+        targetTrackId: message.targetTrackId,
+        amount: message.amount ?? 0,
+      };
+      return { ...base, type: MessageType.TrackAddSend, payload };
+    }
+    case "track/removeSend": {
+      const payload: TrackSendRemovePayload = { sendId: message.sendId };
+      return { ...base, type: MessageType.TrackRemoveSend, payload };
+    }
+    case "track/setSendAmount": {
+      const payload: TrackSendAmountPayload = {
+        sendId: message.sendId,
+        amount: message.amount,
+      };
+      return { ...base, type: MessageType.TrackSetSendAmount, payload };
     }
 
     // Unsupported: lifecycle, UI-only, or state-dependent toggles.
