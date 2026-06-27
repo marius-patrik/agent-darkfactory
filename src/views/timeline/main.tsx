@@ -16,6 +16,8 @@ const TimelineView: React.FC = () => {
   const headerScrollRef = React.useRef<HTMLDivElement>(null);
   const canvasWrapperRef = React.useRef<HTMLDivElement>(null);
   const isSyncing = React.useRef(false);
+  const [zoom, setZoom] = React.useState(1);
+  const [snapDivision, setSnapDivision] = React.useState("beat");
 
   const positionBeats = React.useMemo(() => {
     const numerator = state.timeSignature.numerator || 4;
@@ -113,6 +115,10 @@ const TimelineView: React.FC = () => {
             onRedo={state.commands.redo}
             onImportAudio={state.commands.importAudio}
             onImportMidi={state.commands.importMidi}
+            zoom={zoom}
+            snapDivision={snapDivision}
+            onZoomChange={setZoom}
+            onSnapChange={setSnapDivision}
             onSettings={() => state.commands.showView("browser")}
             onExport={state.commands.export}
           />
@@ -158,12 +164,15 @@ const TimelineView: React.FC = () => {
                   loopStart={0}
                   loopEnd={16}
                   timeSignatureNumerator={state.timeSignature.numerator}
+                  zoom={zoom}
+                  snapDivision={snapDivision}
                   onSeek={state.transport.seek}
                   onSelectRegion={state.timelineActions.selectRegion}
                   onMoveRegion={state.timelineActions.moveRegion}
                   onAddAutomationPoint={state.automationActions.addPoint}
                   onMoveAutomationPoint={state.automationActions.movePoint}
                   onDeleteAutomationPoint={state.automationActions.deletePoint}
+                  onZoomChange={setZoom}
                 />
               ) : (
                 <EmptyState

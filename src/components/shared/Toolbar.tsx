@@ -43,6 +43,10 @@ export interface ToolbarProps {
   onRedo?: () => void;
   onImportAudio?: () => void;
   onImportMidi?: () => void;
+  zoom?: number;
+  snapDivision?: string;
+  onZoomChange?: (zoom: number) => void;
+  onSnapChange?: (snap: string) => void;
   onSettings: () => void;
   onExport: () => void;
 }
@@ -72,6 +76,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onRedo,
   onImportAudio,
   onImportMidi,
+  zoom,
+  snapDivision,
+  onZoomChange,
+  onSnapChange,
   onSettings,
   onExport,
 }) => {
@@ -136,6 +144,42 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           onToggleMetronome={onToggleMetronome}
         />
       </div>
+
+      {/* Zoom / snap controls */}
+      {onZoomChange && zoom != null && (
+        <div className="flex items-center gap-2 px-2 py-1 rounded" style={{ backgroundColor: "var(--vsdaw-bg)", border: "1px solid var(--vsdaw-border)" }}>
+          <span className="text-xs opacity-70">Zoom</span>
+          <input
+            type="range"
+            min={0.25}
+            max={4}
+            step={0.25}
+            value={zoom}
+            onChange={(e) => onZoomChange(Number(e.target.value))}
+            className="w-24"
+            aria-label="Zoom"
+          />
+          <span className="text-xs opacity-70 w-8 text-right">{Math.round(zoom * 100)}%</span>
+        </div>
+      )}
+
+      {onSnapChange && snapDivision && (
+        <select
+          value={snapDivision}
+          onChange={(e) => onSnapChange(e.target.value)}
+          className="text-xs px-2 py-1 rounded border"
+          style={{ backgroundColor: "var(--vsdaw-bg)", borderColor: "var(--vsdaw-border)", color: "inherit" }}
+          aria-label="Snap to grid"
+        >
+          <option value="bar">Bar</option>
+          <option value="beat">Beat</option>
+          <option value="1/2">1/2</option>
+          <option value="1/4">1/4</option>
+          <option value="1/8">1/8</option>
+          <option value="1/16">1/16</option>
+          <option value="none">Off</option>
+        </select>
+      )}
 
       {/* Right: time/tempo, overflow */}
       <div className="flex items-center gap-3 ml-auto">

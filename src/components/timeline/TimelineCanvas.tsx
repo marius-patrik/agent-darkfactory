@@ -13,12 +13,15 @@ export interface TimelineCanvasProps {
   loopStart: number;
   loopEnd: number;
   timeSignatureNumerator?: number;
+  zoom?: number;
+  snapDivision?: string;
   onSeek: (beats: number) => void;
   onSelectRegion: (regionId: string | null) => void;
   onMoveRegion: (regionId: string, start: number) => void;
   onAddAutomationPoint?: (laneId: string, position: number, value: number) => void;
   onMoveAutomationPoint?: (pointId: string, position: number, value: number) => void;
   onDeleteAutomationPoint?: (pointId: string) => void;
+  onZoomChange?: (zoom: number) => void;
 }
 
 interface CanvasSize {
@@ -69,10 +72,12 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
   onAddAutomationPoint,
   onMoveAutomationPoint,
   onDeleteAutomationPoint,
+  onZoomChange,
+  zoom = 1,
+  snapDivision = "beat",
 }) => {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const [scale, setScale] = React.useState(1);
   const [scrollX, setScrollX] = React.useState(0);
   const [drag, setDrag] = React.useState<
     | { type: "seek"; startX: number }
@@ -153,7 +158,7 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
     ctx.font = "11px sans-serif";
     ctx.textBaseline = "middle";
 
-    const beatWidth = BEAT_WIDTH * scale;
+    const beatWidth = BEAT_WIDTH * zoom;
     const visibleStart = scrollX / beatWidth;
     const visibleBeats = drawWidth / beatWidth;
     const startBar = Math.max(0, Math.floor(visibleStart / timeSignatureNumerator));
@@ -295,7 +300,7 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
     positionBeats,
     loopStart,
     loopEnd,
-    scale,
+    zoom,
     scrollX,
     width,
     height,
@@ -303,6 +308,7 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
     totalHeight,
     timeSignatureNumerator,
     dragPoint,
+    regionHeightForTrack,
   ]);
 
   // Flush pending region move on mouse up (throttle bus traffic).
@@ -326,7 +332,7 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
       for (const lane of track.automationLanes ?? []) {
         if (y >= laneY && y < laneY + AUTOMATION_LANE_HEIGHT) {
           for (const point of lane.points) {
-            const px = point.position * BEAT_WIDTH * scale;
+            const px = point.position * BEAT_WIDTH * zoom;
             const py = laneY + AUTOMATION_LANE_HEIGHT - point.value * AUTOMATION_LANE_HEIGHT;
             const dx = x - px;
             const dy = y - py;
@@ -364,9 +370,9 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
   };
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
+    if ((e.ctrlKey || e.metaKey) && onZoomChange) {
       e.preventDefault();
-      setScale((s) => Math.max(0.25, Math.min(4, s - e.deltaY * 0.001)));
+      onZoomChange?.(Math.max(0.25, Math.min(4, zoom - e.deltaY * 0.001)));
     } else {
       setScrollX((x) => Math.max(0, x + e.deltaX));
     }
@@ -377,7 +383,7 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left + scrollX;
-    const beats = x / (BEAT_WIDTH * scale);
+    const beats = x / (BEAT_WIDTH * zoom);
 
     if (e.shiftKey) {
       onSeek(Math.max(0, beats));
@@ -391,8 +397,8 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
       const regionHeight = regionHeightForTrack(track);
       if (e.clientY - rect.top >= y && e.clientY - rect.top < y + regionHeight) {
         for (const region of track.regions) {
-          const rx = region.start * BEAT_WIDTH * scale;
-          const rw = Math.max(4, region.duration * BEAT_WIDTH * scale);
+          const rx = region.start * BEAT_WIDTH * zoom;
+          const rw = Math.max(4, region.duration * BEAT_WIDTH * zoom);
           if (x >= rx && x <= rx + rw) {
             onSelectRegion(region.id);
             setDrag({
@@ -428,7 +434,7 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
     const hitLane = findAutomationLaneAt(e.clientX, e.clientY);
     if (hitLane) {
       const { lane, laneY, x: localX } = hitLane;
-      const position = Math.max(0, localX / (BEAT_WIDTH * scale));
+      const position = Math.max(0, localX / (BEAT_WIDTH * zoom));
       const value = Math.max(
         0,
         Math.min(
@@ -452,11 +458,11 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left + scrollX;
-      const beats = x / (BEAT_WIDTH * scale);
+      const beats = x / (BEAT_WIDTH * zoom);
       onSeek(Math.max(0, beats));
     } else if (drag.type === "region") {
       const deltaPixels = e.clientX - drag.startX;
-      const deltaBeats = deltaPixels / (BEAT_WIDTH * scale);
+      const deltaBeats = deltaPixels / (BEAT_WIDTH * zoom);
       pendingMoveRef.current = {
         regionId: drag.regionId,
         start: Math.max(0, drag.startBeats + deltaBeats),
@@ -467,7 +473,7 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
       const rect = canvas.getBoundingClientRect();
       const deltaPixelsX = e.clientX - drag.startX;
       const deltaPixelsY = e.clientY - rect.top - (drag.startY - rect.top);
-      const deltaBeats = deltaPixelsX / (BEAT_WIDTH * scale);
+      const deltaBeats = deltaPixelsX / (BEAT_WIDTH * zoom);
       const deltaValue = -deltaPixelsY / AUTOMATION_LANE_HEIGHT;
       setDragPoint({
         pointId: drag.pointId,
