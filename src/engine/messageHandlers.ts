@@ -15,6 +15,11 @@ import {
   type MidiNoteIdPayload,
   type MidiNoteVelocityPayload,
   type MidiResizeNotePayload,
+  type NoteCreatePayload,
+  type NoteDeletePayload,
+  type NoteMovePayload,
+  type NoteResizePayload,
+  type NoteSetVelocityPayload,
   type PeaksGetPayload,
   type ProjectLoadPayload,
   type ProjectNewPayload,
@@ -412,6 +417,63 @@ function routeMessage(
         new Uint8Array(opts.data),
         opts.timestamp ?? performance.now(),
       );
+      return { type: "ok" };
+    }
+
+    // Note editing (piano roll)
+    case MessageType.NoteCreate: {
+      const opts = p as NoteCreatePayload;
+      if (
+        !opts?.regionId ||
+        opts.position == null ||
+        opts.duration == null ||
+        opts.pitch == null ||
+        opts.velocity == null
+      ) {
+        return {
+          type: "error",
+          message: "regionId, position, duration, pitch and velocity are required",
+        };
+      }
+      const id = controller.addNote(
+        opts.regionId,
+        opts.position,
+        opts.duration,
+        opts.pitch,
+        opts.velocity,
+      );
+      return { type: "ok", payload: { noteId: id } };
+    }
+    case MessageType.NoteMove: {
+      const opts = p as NoteMovePayload;
+      if (!opts?.noteId) {
+        return { type: "error", message: "noteId is required" };
+      }
+      controller.moveNote(opts.noteId, opts.position, opts.pitch);
+      return { type: "ok" };
+    }
+    case MessageType.NoteResize: {
+      const opts = p as NoteResizePayload;
+      if (!opts?.noteId || opts.duration == null) {
+        return { type: "error", message: "noteId and duration are required" };
+      }
+      controller.resizeNote(opts.noteId, opts.duration);
+      return { type: "ok" };
+    }
+    case MessageType.NoteDelete: {
+      const opts = p as NoteDeletePayload;
+      if (!opts?.noteId) {
+        return { type: "error", message: "noteId is required" };
+      }
+      controller.deleteNote(opts.noteId);
+      return { type: "ok" };
+    }
+    case MessageType.NoteSetVelocity: {
+      const opts = p as NoteSetVelocityPayload;
+      if (!opts?.noteId || opts.velocity == null) {
+        return { type: "error", message: "noteId and velocity are required" };
+      }
+      controller.setNoteVelocity(opts.noteId, opts.velocity);
       return { type: "ok" };
     }
 

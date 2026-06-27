@@ -11,7 +11,7 @@ const VISIBLE_BEATS = 16;
 export interface PianoRollGridProps {
   notes: NoteState[];
   snap: "off" | "1/4" | "1/2" | "beat" | "bar";
-  onAddNote: (note: Omit<NoteState, "id">) => void;
+  onAddNote: (note: { start: number; duration: number; pitch: number; velocity: number }) => void;
   onMoveNote: (noteId: string, start: number, pitch: number) => void;
   onResizeNote: (noteId: string, duration: number) => void;
   onDeleteNote: (noteId: string) => void;
@@ -211,6 +211,7 @@ export const PianoRollGrid: React.FC<PianoRollGridProps> = ({
               stroke={isSelected ? "var(--vsdaw-button-fg)" : "var(--vsdaw-focus)"}
               strokeWidth={isSelected ? 2 : 0.5}
               onMouseDown={(e) => handleNoteMouseDown(e, note, "move")}
+              onDoubleClick={() => onDeleteNote(note.id)}
               onFocus={() => setSelectedId(note.id)}
             />
             <rect

@@ -1,6 +1,7 @@
 import type { MessageRouter } from "../../src/extension/messageRouter.js";
 import { ProjectStateProjector } from "../../src/extension/stateProjector.js";
 import type {
+  NoteState,
   ProjectState,
   RegionState,
   TrackState,
@@ -152,6 +153,42 @@ describe("ProjectStateProjector", () => {
       name: "Loop",
     });
     expect(viewTrack.regions[0].color).toMatch(/^hsl\(/);
+  });
+
+  test("broadcasts host/notes with converted note positions", () => {
+    const router = createRouter();
+    const projector = new ProjectStateProjector({
+      projectId: PROJECT_ID,
+      router,
+      getProjectName: () => "Test",
+      getSaved: () => true,
+    });
+
+    const note: NoteState = {
+      id: "note-1",
+      regionId: "region-1",
+      position: 4,
+      duration: 2,
+      pitch: 60,
+      velocity: 100,
+    };
+    const state = createProjectState({ notes: [note] });
+    projector.handleStateUpdate(state);
+
+    const calls = (router.broadcastToViews as jest.Mock).mock.calls as [string, HostMessage][];
+    const notesCall = calls.find(([id, msg]) => id === PROJECT_ID && msg.type === "host/notes");
+    expect(notesCall).toBeDefined();
+    if (!notesCall) throw new Error("notes message not broadcast");
+    const notes = notesCall[1] as Extract<HostMessage, { type: "host/notes" }>;
+    expect(notes.notes).toHaveLength(1);
+    expect(notes.notes[0]).toEqual({
+      id: "note-1",
+      regionId: "region-1",
+      start: 4,
+      duration: 2,
+      pitch: 60,
+      velocity: 100,
+    });
   });
 
   test("defaults track color when engine track has none", () => {

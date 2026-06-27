@@ -382,6 +382,78 @@ describe("messageHandlers - track operations", () => {
   });
 });
 
+describe("messageHandlers - note editing", () => {
+  test("NoteCreate creates a note and returns id", async () => {
+    const controller = createMockController();
+    const result = await expectOk(
+      handleMessage(
+        controller,
+        makeMessage(MessageType.NoteCreate, {
+          regionId: "region-1",
+          position: 2,
+          duration: 1,
+          pitch: 60,
+          velocity: 100,
+        }),
+      ),
+    );
+    expect(result.payload).toEqual({ noteId: "note-new" });
+    expect(controller.calls).toContainEqual({
+      method: "addNote",
+      args: ["region-1", 2, 1, 60, 100],
+    });
+  });
+
+  test("NoteCreate returns error when regionId is missing", async () => {
+    const controller = createMockController();
+    const result = await handleMessage(
+      controller,
+      makeMessage(MessageType.NoteCreate, { position: 2, duration: 1, pitch: 60, velocity: 100 }),
+    );
+    expect(result.type).toBe("error");
+    expect((result as { message: string }).message).toContain("regionId");
+  });
+
+  test("NoteMove forwards noteId, position and pitch", async () => {
+    const controller = createMockController();
+    await expectOk(
+      handleMessage(
+        controller,
+        makeMessage(MessageType.NoteMove, { noteId: "note-1", position: 4, pitch: 64 }),
+      ),
+    );
+    expect(controller.calls).toContainEqual({
+      method: "moveNote",
+      args: ["note-1", 4, 64],
+    });
+  });
+
+  test("NoteResize forwards noteId and duration", async () => {
+    const controller = createMockController();
+    await expectOk(
+      handleMessage(controller, makeMessage(MessageType.NoteResize, { noteId: "note-1", duration: 2 })),
+    );
+    expect(controller.calls).toContainEqual({ method: "resizeNote", args: ["note-1", 2] });
+  });
+
+  test("NoteDelete forwards noteId", async () => {
+    const controller = createMockController();
+    await expectOk(handleMessage(controller, makeMessage(MessageType.NoteDelete, { noteId: "note-1" })));
+    expect(controller.calls).toContainEqual({ method: "deleteNote", args: ["note-1"] });
+  });
+
+  test("NoteSetVelocity forwards noteId and velocity", async () => {
+    const controller = createMockController();
+    await expectOk(
+      handleMessage(
+        controller,
+        makeMessage(MessageType.NoteSetVelocity, { noteId: "note-1", velocity: 100 }),
+      ),
+    );
+    expect(controller.calls).toContainEqual({ method: "setNoteVelocity", args: ["note-1", 100] });
+  });
+});
+
 describe("messageHandlers - device catalog and parameters", () => {
   test("DeviceList returns controller.listDevices", async () => {
     const controller = createMockController();

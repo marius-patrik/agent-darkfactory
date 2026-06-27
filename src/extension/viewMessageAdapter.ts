@@ -12,8 +12,11 @@ import {
   type DeviceParameterPayload,
   type MessageEnvelope,
   MessageType,
-  type MidiNoteIdPayload,
-  type MidiNoteVelocityPayload,
+  type NoteCreatePayload,
+  type NoteDeletePayload,
+  type NoteMovePayload,
+  type NoteResizePayload,
+  type NoteSetVelocityPayload,
   type RegionMovePayload,
   type TrackBooleanPayload,
   type TrackColorPayload,
@@ -192,17 +195,42 @@ export function adaptViewMessage(
       return { ...base, type: MessageType.RegionMove, payload };
     }
 
-    // Piano roll
-    case "pianoRoll/setNoteVelocity": {
-      const payload: MidiNoteVelocityPayload = {
+    // Note editing (piano roll)
+    case "note/create": {
+      const payload: NoteCreatePayload = {
+        regionId: message.regionId,
+        position: message.position,
+        duration: message.duration,
+        pitch: message.pitch,
+        velocity: message.velocity,
+      };
+      return { ...base, type: MessageType.NoteCreate, payload };
+    }
+    case "note/move": {
+      const payload: NoteMovePayload = {
+        noteId: message.noteId,
+        position: message.position,
+        pitch: message.pitch,
+      };
+      return { ...base, type: MessageType.NoteMove, payload };
+    }
+    case "note/resize": {
+      const payload: NoteResizePayload = {
+        noteId: message.noteId,
+        duration: message.duration,
+      };
+      return { ...base, type: MessageType.NoteResize, payload };
+    }
+    case "note/delete": {
+      const payload: NoteDeletePayload = { noteId: message.noteId };
+      return { ...base, type: MessageType.NoteDelete, payload };
+    }
+    case "note/setVelocity": {
+      const payload: NoteSetVelocityPayload = {
         noteId: message.noteId,
         velocity: message.velocity,
       };
-      return { ...base, type: MessageType.MidiSetNoteVelocity, payload };
-    }
-    case "pianoRoll/deleteNote": {
-      const payload: MidiNoteIdPayload = { noteId: message.noteId };
-      return { ...base, type: MessageType.MidiDeleteNote, payload };
+      return { ...base, type: MessageType.NoteSetVelocity, payload };
     }
 
     // Unsupported: lifecycle, UI-only, or state-dependent toggles.
@@ -210,7 +238,6 @@ export function adaptViewMessage(
     case "transport/toggleLoop":
     case "transport/toggleMetronome":
     case "timeline/selectRegion":
-    case "pianoRoll/addNote":
     case "mixer/openDevice":
     case "browser/preview":
     case "browser/dragStart":

@@ -48,6 +48,7 @@ export interface RegionState {
 
 export interface NoteState {
   id: string;
+  regionId: string;
   start: number; // beats
   duration: number; // beats
   pitch: number; // MIDI note number
@@ -108,9 +109,18 @@ export type ViewMessage =
     }
   | { type: "timeline/selectRegion"; regionId: string | null }
   | { type: "timeline/moveRegion"; regionId: string; start: number }
-  | { type: "pianoRoll/addNote"; note: NoteState }
-  | { type: "pianoRoll/setNoteVelocity"; noteId: string; velocity: number }
-  | { type: "pianoRoll/deleteNote"; noteId: string }
+  | {
+      type: "note/create";
+      regionId: string;
+      position: number;
+      duration: number;
+      pitch: number;
+      velocity: number;
+    }
+  | { type: "note/move"; noteId: string; position?: number; pitch?: number }
+  | { type: "note/resize"; noteId: string; duration: number }
+  | { type: "note/delete"; noteId: string }
+  | { type: "note/setVelocity"; noteId: string; velocity: number }
   | { type: "mixer/openDevice"; trackId: string; slotIndex: number }
   | { type: "device/getParameters"; deviceId: string }
   | { type: "device/setParameter"; deviceId: string; parameter: string; value: number | boolean }
@@ -147,6 +157,7 @@ export type HostMessage =
   | ({ type: "host/selection" } & SelectionState)
   | { type: "host/browser"; root: BrowserNode }
   | { type: "host/deviceParameters"; deviceId: string; parameters: DeviceParameter[] }
+  | { type: "host/notes"; notes: NoteState[] }
   | { type: "host/project"; name: string; saved: boolean }
   | { type: "host/error"; message: string };
 

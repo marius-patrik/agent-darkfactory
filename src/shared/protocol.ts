@@ -132,6 +132,12 @@ export enum MessageType {
   MidiSetNoteVelocity = "midi.setNoteVelocity",
   MidiInput = "midi.input",
 
+  NoteCreate = "note.create",
+  NoteMove = "note.move",
+  NoteResize = "note.resize",
+  NoteDelete = "note.delete",
+  NoteSetVelocity = "note.setVelocity",
+
   RecordingStart = "recording.start",
   RecordingStop = "recording.stop",
   RecordingComp = "recording.comp",
@@ -327,6 +333,34 @@ export interface MidiNoteIdPayload {
 }
 
 export interface MidiNoteVelocityPayload {
+  noteId: string;
+  velocity: number;
+}
+
+export interface NoteCreatePayload {
+  regionId: string;
+  position: number;
+  duration: number;
+  pitch: number;
+  velocity: number;
+}
+
+export interface NoteMovePayload {
+  noteId: string;
+  position?: number;
+  pitch?: number;
+}
+
+export interface NoteResizePayload {
+  noteId: string;
+  duration: number;
+}
+
+export interface NoteDeletePayload {
+  noteId: string;
+}
+
+export interface NoteSetVelocityPayload {
   noteId: string;
   velocity: number;
 }

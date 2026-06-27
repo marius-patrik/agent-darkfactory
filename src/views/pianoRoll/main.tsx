@@ -6,38 +6,37 @@ import { ErrorBoundary } from "../../components/shared/ErrorBoundary.js";
 import { PanelShell } from "../../components/shared/PanelShell.js";
 import { ThemeProvider } from "../../components/shared/ThemeProvider.js";
 import { Toolbar } from "../../components/shared/Toolbar.js";
-import type { NoteState } from "../shared/types.js";
 import { useViewState } from "../shared/useViewState.js";
-
-let noteIdCounter = 0;
 
 const PianoRollView: React.FC = () => {
   const state = useViewState("pianoRoll");
-  const [notes, setNotes] = React.useState<NoteState[]>([]);
   const [snap, setSnap] = React.useState<Parameters<typeof PianoRollGrid>[0]["snap"]>("beat");
 
-  const addNote = (note: Omit<NoteState, "id">) => {
-    const id = `n-${Date.now()}-${++noteIdCounter}`;
-    setNotes((prev) => [...prev, { ...note, id }]);
-    state.send({ type: "pianoRoll/addNote", note: { ...note, id } });
+  const regionId = state.selection.regionId;
+  const notes = React.useMemo(
+    () => (regionId ? state.notes.filter((n) => n.regionId === regionId) : state.notes),
+    [state.notes, regionId],
+  );
+
+  const addNote = (note: { start: number; duration: number; pitch: number; velocity: number }) => {
+    if (!regionId) return;
+    state.pianoRollActions.createNote(regionId, note.start, note.duration, note.pitch, note.velocity);
   };
 
-  const moveNote = (id: string, start: number, pitch: number) => {
-    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, start, pitch } : n)));
+  const moveNote = (noteId: string, start: number, pitch: number) => {
+    state.pianoRollActions.moveNote(noteId, start, pitch);
   };
 
-  const resizeNote = (id: string, duration: number) => {
-    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, duration } : n)));
+  const resizeNote = (noteId: string, duration: number) => {
+    state.pianoRollActions.resizeNote(noteId, duration);
   };
 
-  const setVelocity = (id: string, velocity: number) => {
-    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, velocity } : n)));
-    state.send({ type: "pianoRoll/setNoteVelocity", noteId: id, velocity });
+  const setVelocity = (noteId: string, velocity: number) => {
+    state.pianoRollActions.setNoteVelocity(noteId, velocity);
   };
 
-  const deleteNote = (id: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== id));
-    state.send({ type: "pianoRoll/deleteNote", noteId: id });
+  const deleteNote = (noteId: string) => {
+    state.pianoRollActions.deleteNote(noteId);
   };
 
   return (

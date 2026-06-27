@@ -1,6 +1,6 @@
 import { adaptViewMessage } from "../../src/extension/viewMessageAdapter.js";
 import { type MessageEnvelope, MessageType } from "../../src/shared/protocol.js";
-import type { NoteState, TimeSignature, ViewMessage } from "../../src/views/shared/types.js";
+import type { TimeSignature, ViewMessage } from "../../src/views/shared/types.js";
 
 const PROJECT_ID = "project-test";
 
@@ -274,26 +274,69 @@ describe("viewMessageAdapter", () => {
     });
   });
 
-  describe("piano roll messages", () => {
-    test("pianoRoll/setNoteVelocity -> midi.setNoteVelocity", () => {
+  describe("note editing messages", () => {
+    test("note/create -> note.create", () => {
       const result = adaptViewMessage(PROJECT_ID, {
-        type: "pianoRoll/setNoteVelocity",
+        type: "note/create",
+        regionId: "region-1",
+        position: 2,
+        duration: 1,
+        pitch: 60,
+        velocity: 100,
+      });
+      expectEnvelope(result);
+      expect(result.type).toBe(MessageType.NoteCreate);
+      expect(result.payload).toEqual({
+        regionId: "region-1",
+        position: 2,
+        duration: 1,
+        pitch: 60,
+        velocity: 100,
+      });
+    });
+
+    test("note/move -> note.move", () => {
+      const result = adaptViewMessage(PROJECT_ID, {
+        type: "note/move",
+        noteId: "note-1",
+        position: 4,
+        pitch: 64,
+      });
+      expectEnvelope(result);
+      expect(result.type).toBe(MessageType.NoteMove);
+      expect(result.payload).toEqual({ noteId: "note-1", position: 4, pitch: 64 });
+    });
+
+    test("note/resize -> note.resize", () => {
+      const result = adaptViewMessage(PROJECT_ID, {
+        type: "note/resize",
+        noteId: "note-1",
+        duration: 2,
+      });
+      expectEnvelope(result);
+      expect(result.type).toBe(MessageType.NoteResize);
+      expect(result.payload).toEqual({ noteId: "note-1", duration: 2 });
+    });
+
+    test("note/delete -> note.delete", () => {
+      const result = adaptViewMessage(PROJECT_ID, {
+        type: "note/delete",
+        noteId: "note-1",
+      });
+      expectEnvelope(result);
+      expect(result.type).toBe(MessageType.NoteDelete);
+      expect(result.payload).toEqual({ noteId: "note-1" });
+    });
+
+    test("note/setVelocity -> note.setVelocity", () => {
+      const result = adaptViewMessage(PROJECT_ID, {
+        type: "note/setVelocity",
         noteId: "note-1",
         velocity: 100,
       });
       expectEnvelope(result);
-      expect(result.type).toBe(MessageType.MidiSetNoteVelocity);
+      expect(result.type).toBe(MessageType.NoteSetVelocity);
       expect(result.payload).toEqual({ noteId: "note-1", velocity: 100 });
-    });
-
-    test("pianoRoll/deleteNote -> midi.deleteNote", () => {
-      const result = adaptViewMessage(PROJECT_ID, {
-        type: "pianoRoll/deleteNote",
-        noteId: "note-1",
-      });
-      expectEnvelope(result);
-      expect(result.type).toBe(MessageType.MidiDeleteNote);
-      expect(result.payload).toEqual({ noteId: "note-1" });
     });
   });
 
@@ -303,16 +346,6 @@ describe("viewMessageAdapter", () => {
       { type: "transport/toggleLoop" },
       { type: "transport/toggleMetronome" },
       { type: "timeline/selectRegion", regionId: null },
-      {
-        type: "pianoRoll/addNote",
-        note: {
-          id: "note-1",
-          start: 0,
-          duration: 1,
-          pitch: 60,
-          velocity: 100,
-        } as NoteState,
-      },
       { type: "mixer/openDevice", trackId: "track-1", slotIndex: 0 },
       { type: "browser/preview", nodeId: "node-1" },
       { type: "browser/dragStart", nodeId: "node-1" },
