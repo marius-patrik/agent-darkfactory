@@ -8,4 +8,6 @@ The user clarified that Vibe Bot should enforce `.agents/.global` freshness in a
 
 The user added that `.github` should get similar treatment, then clarified that for `.github`, bootstrap is more important than up-to-date version parity.
 
-This branch adds `.agents/.global` and `.agents/.project` to `vibe-bot`, version-enforces `.agents/.global/VERSION`, and bootstrap-enforces `.github/workflows/ci.yml`.
+This branch adds `.agents/.global` and `.agents/.project` to `vibe-bot`, version-enforces `.agents/.global/VERSION`, and bootstrap-enforces `.github/workflows/vibe-bot-bootstrap.yml`.
+
+The user then asked to install Vibe Bot in all repositories and set up release, auto-update, and auto-install. The current `gh` user token can list repositories but cannot grant GitHub App installation access. The implementation therefore adds the bot capabilities and workflows needed after the GitHub App is installed through GitHub's installation UI: tag-driven releases, GHCR image publication, installation event sync, and manual all-installed-repository sync.

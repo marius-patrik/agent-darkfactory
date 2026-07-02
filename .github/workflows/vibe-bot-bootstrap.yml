@@ -1,0 +1,24 @@
+name: Vibe Bot Bootstrap
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  managed-setup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check managed agent version
+        shell: bash
+        run: |
+          test -f .agents/.global/VERSION
+          echo "Managed agent version: $(cat .agents/.global/VERSION)"

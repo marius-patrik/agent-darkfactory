@@ -3,5 +3,4 @@ dist
 .env
 *.pem
 .git
-.github
 coverage

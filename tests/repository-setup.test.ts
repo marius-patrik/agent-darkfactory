@@ -17,7 +17,7 @@ test("checkRepositorySetup returns no comment when managed setup is current", as
   const report = await checkRepositorySetup(
     createRequester({
       ".agents/.global/VERSION": "vibe-bot@1.2.3\n",
-      ".github/workflows/ci.yml": "name: CI\n"
+      ".github/workflows/vibe-bot-bootstrap.yml": "name: Vibe Bot Bootstrap\n"
     }),
     { owner: "marius-patrik", repo: "example", ref: "abc123" },
     "vibe-bot@1.2.3"
@@ -43,7 +43,7 @@ test("checkRepositorySetup reports stale agents and missing github bootstrap", a
   assert.ok(comment?.includes(REPOSITORY_SETUP_COMMENT_MARKER));
   assert.ok(comment?.includes("vibe-bot@1.2.3"));
   assert.ok(comment?.includes(".agents/.global/VERSION"));
-  assert.ok(comment?.includes(".github/workflows/ci.yml"));
+  assert.ok(comment?.includes(".github/workflows/vibe-bot-bootstrap.yml"));
 });
 
 function createRequester(files: Record<string, string>): GitHubRequester {

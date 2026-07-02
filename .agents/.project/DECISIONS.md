@@ -16,8 +16,20 @@
 
 ### GitHub Bootstrap Enforcement
 
-- Decision: Vibe Bot checks for `.github/workflows/ci.yml` as bootstrap scaffolding, but does not version-enforce `.github` yet.
+- Decision: Vibe Bot checks for `.github/workflows/vibe-bot-bootstrap.yml` as bootstrap scaffolding, but does not version-enforce `.github` yet.
 - Rationale: For `.github`, getting baseline CI installed matters more than exact up-to-date parity.
+- Status: Accepted.
+
+### Managed Setup PRs
+
+- Decision: Vibe Bot opens managed setup PRs instead of committing directly to repository default branches.
+- Rationale: Managed setup should be reviewable and safe across repositories.
+- Status: Accepted.
+
+### Release System
+
+- Decision: Releases are driven by `v*.*.*` tags and publish a Docker image to GitHub Container Registry.
+- Rationale: The bot needs a deployable artifact and predictable upgrade point.
 - Status: Accepted.
 
 ### Runtime Agent Metadata Excluded

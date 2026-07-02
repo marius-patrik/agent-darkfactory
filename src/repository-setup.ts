@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { GITHUB_BOOTSTRAP_WORKFLOW_PATH } from "./managed-files.js";
+
 export const REPOSITORY_SETUP_COMMENT_MARKER = "<!-- vibe-bot:repository-setup -->";
 
 const VERSIONED_FOLDERS = [
@@ -14,8 +16,8 @@ const VERSIONED_FOLDERS = [
 const BOOTSTRAP_PATHS = [
   {
     displayPath: ".github",
-    requiredPath: ".github/workflows/ci.yml",
-    reason: "baseline GitHub Actions CI workflow"
+    requiredPath: GITHUB_BOOTSTRAP_WORKFLOW_PATH,
+    reason: "Vibe Bot bootstrap workflow"
   }
 ] as const;
 
@@ -112,7 +114,7 @@ export function formatRepositorySetupComment(report: RepositorySetupReport): str
   lines.push(
     "",
     "Update `.agents/.global` from the current Vibe Bot template when the agent version is stale or missing.",
-    "Bootstrap `.github/workflows/ci.yml` when the GitHub workflow scaffold is missing."
+    `Bootstrap \`${GITHUB_BOOTSTRAP_WORKFLOW_PATH}\` when the GitHub workflow scaffold is missing.`
   );
 
   return lines.join("\n");

@@ -5,6 +5,7 @@ import {
   formatRepositorySetupComment,
   type GitHubRequester
 } from "./repository-setup.js";
+import { ensureManagedRepositorySetup } from "./managed-sync.js";
 
 export interface BotOptions {
   appId: string;
@@ -31,6 +32,24 @@ interface PullRequestPayload {
       } | null;
     };
   };
+}
+
+interface InstallationRepository {
+  full_name?: string;
+  name?: string;
+  owner?: {
+    login?: string;
+  } | null;
+  default_branch?: string;
+  archived?: boolean;
+}
+
+interface InstallationPayload {
+  repositories?: InstallationRepository[];
+}
+
+interface InstallationRepositoriesPayload {
+  repositories_added?: InstallationRepository[];
 }
 
 export function createBot(options: BotOptions): App {
@@ -78,6 +97,14 @@ export function createBot(options: BotOptions): App {
     await enforceRepositorySetup(octokit, payload);
   });
 
+  app.webhooks.on("installation.created", async ({ octokit, payload }) => {
+    await syncInstalledRepositories(octokit, payload);
+  });
+
+  app.webhooks.on("installation_repositories.added", async ({ octokit, payload }) => {
+    await syncAddedRepositories(octokit, payload);
+  });
+
   return app;
 }
 
@@ -103,4 +130,68 @@ async function enforceRepositorySetup(
     issue_number: payload.pull_request.number,
     body
   });
+}
+
+async function syncInstalledRepositories(
+  octokit: GitHubRequester,
+  payload: InstallationPayload
+): Promise<void> {
+  await syncRepositories(octokit, payload.repositories ?? []);
+}
+
+async function syncAddedRepositories(
+  octokit: GitHubRequester,
+  payload: InstallationRepositoriesPayload
+): Promise<void> {
+  await syncRepositories(octokit, payload.repositories_added ?? []);
+}
+
+async function syncRepositories(
+  octokit: GitHubRequester,
+  repositories: InstallationRepository[]
+): Promise<void> {
+  for (const repository of repositories) {
+    const parsed = parseRepository(repository);
+
+    if (!parsed) {
+      continue;
+    }
+
+    try {
+      const result = await ensureManagedRepositorySetup(octokit, parsed);
+      console.log(
+        `Managed setup ${result.status} for ${result.owner}/${result.repo}${
+          result.pullRequestUrl ? `: ${result.pullRequestUrl}` : ""
+        }`
+      );
+    } catch (error) {
+      console.error(`Failed to sync managed setup for ${parsed.owner}/${parsed.repo}`, error);
+    }
+  }
+}
+
+function parseRepository(repository: InstallationRepository) {
+  if (repository.owner?.login && repository.name) {
+    return {
+      owner: repository.owner.login,
+      repo: repository.name,
+      defaultBranch: repository.default_branch,
+      archived: repository.archived
+    };
+  }
+
+  if (repository.full_name) {
+    const [owner, repo] = repository.full_name.split("/");
+
+    if (owner && repo) {
+      return {
+        owner,
+        repo,
+        defaultBranch: repository.default_branch,
+        archived: repository.archived
+      };
+    }
+  }
+
+  return null;
 }

@@ -5,17 +5,28 @@ export interface Config {
   port: number;
 }
 
+export interface AppCredentials {
+  appId: string;
+  privateKey: string;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const appId = requiredEnv(env, "GITHUB_APP_ID");
-  const privateKey = requiredEnv(env, "GITHUB_PRIVATE_KEY").replace(/\\n/g, "\n");
+  const credentials = loadAppCredentials(env);
   const webhookSecret = requiredEnv(env, "GITHUB_WEBHOOK_SECRET");
   const port = parsePort(env.PORT);
 
   return {
-    appId,
-    privateKey,
+    appId: credentials.appId,
+    privateKey: credentials.privateKey,
     webhookSecret,
     port
+  };
+}
+
+export function loadAppCredentials(env: NodeJS.ProcessEnv = process.env): AppCredentials {
+  return {
+    appId: requiredEnv(env, "GITHUB_APP_ID"),
+    privateKey: requiredEnv(env, "GITHUB_PRIVATE_KEY").replace(/\\n/g, "\n")
   };
 }
 
