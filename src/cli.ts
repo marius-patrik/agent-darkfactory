@@ -1,13 +1,28 @@
 #!/usr/bin/env bun
 import path from "node:path";
 import { cp, mkdir, stat } from "node:fs/promises";
+import { adapter, adapterEnv, adapterIds, doctorAdapter, materializeCredentials, type CliId } from "./adapters";
 import { readGitmodules, writeGitmodules } from "./gitmodules";
-import { ensureSharedState, readInstalls, sharedState, writeInstalls, type InstallKind } from "./state";
+import {
+  ensureSharedState,
+  readInstalls,
+  sharedState,
+  writeInstalls,
+  type InstallKind,
+  type SharedState,
+} from "./state";
+import {
+  readPackageManifest,
+  readPackageRegistrations,
+  upsertPackageRegistration,
+  type AgentsPackageManifest,
+} from "./packages";
 
 const root = process.cwd();
 const gitmodulesPath = path.join(root, ".gitmodules");
 const packageKinds = new Map([
   ["agent", "agents"],
+  ["harness", "harnesses"],
   ["cli", "clis"],
   ["private", "private"],
 ]);
@@ -23,7 +38,16 @@ Usage:
   agents sync
   agents state init
   agents state env
-  agents install <skill|plugin|cli> <name> <source-path-or-url>
+  agents cli list|doctor
+  agents cli env <codex|claude|kimi|agy>
+  agents cli materialize-creds <codex|claude|kimi|agy>
+  agents cli exec <codex|claude|kimi|agy> -- <args...>
+  agents packages register <path>
+  agents packages list [--json]
+  agents harness list [--json]
+  agents harness doctor <name>
+  agents harness run <name> -- <args...>
+  agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-url>
   agents installs [--json]
   agents credits [--json]
   agents doctor
@@ -61,15 +85,14 @@ async function exists(file: string): Promise<boolean> {
 function inferKind(packagePath: string): string {
   const first = packagePath.split(/[\\/]/)[0];
   if (first === "agents") return "agent";
+  if (first === "harnesses") return "harness";
   if (first === "clis") return "cli";
   if (first === "private") return "private";
   return "package";
 }
 
 async function manifest(packagePath: string): Promise<Record<string, unknown> | null> {
-  const file = path.join(root, packagePath, "agent.json");
-  if (!(await exists(file))) return null;
-  return JSON.parse(await Bun.file(file).text()) as Record<string, unknown>;
+  return (await readPackageManifest(path.join(root, packagePath))) as Record<string, unknown> | null;
 }
 
 async function packages() {
@@ -153,14 +176,196 @@ async function stateCommand(action: string | undefined): Promise<void> {
   throw new Error(`unknown state action: ${action}`);
 }
 
+function printEnv(env: Record<string, string>): void {
+  for (const [key, value] of Object.entries(env)) console.log(`${key}=${value}`);
+}
+
+async function cliCommand(args: string[]): Promise<void> {
+  const [action, rawId, ...rest] = args;
+  const state = sharedState(root);
+  await ensureSharedState(state);
+  if (!action || action === "list") {
+    for (const id of adapterIds()) {
+      const spec = adapter(id);
+      console.log(`${id.padEnd(8)} ${spec.displayName}`);
+    }
+    return;
+  }
+  if (action === "doctor") {
+    const ids = rawId ? [rawId as CliId] : adapterIds();
+    let failed = false;
+    for (const id of ids) {
+      const result = await doctorAdapter(state, id);
+      if (!result.ok) failed = true;
+      console.log(`${result.ok ? "ok" : "warn"} ${id} home=${result.home} binary=${result.binary ?? "(missing)"}`);
+      for (const note of result.notes) console.log(`  ${note}`);
+    }
+    if (failed) process.exitCode = 1;
+    return;
+  }
+  if (!rawId) throw new Error(`cli ${action} requires an adapter id`);
+  const id = rawId as CliId;
+  if (action === "env") {
+    printEnv(adapterEnv(state, id));
+    return;
+  }
+  if (action === "materialize-creds") {
+    const copied = await materializeCredentials(state, id);
+    console.log(`materialized ${copied.length} credential file(s) for ${id}`);
+    return;
+  }
+  if (action === "exec") {
+    const separator = rest.indexOf("--");
+    const execArgs = separator === -1 ? rest : rest.slice(separator + 1);
+    await execAdapter(state, id, execArgs);
+    return;
+  }
+  throw new Error(`unknown cli action: ${action}`);
+}
+
+async function execAdapter(state: SharedState, id: CliId, args: string[]): Promise<void> {
+  const result = await doctorAdapter(state, id);
+  if (!result.binary) throw new Error(`cannot execute ${id}: binary not found`);
+  const child = Bun.spawn([result.binary, ...args], {
+    cwd: root,
+    env: { ...process.env, ...adapterEnv(state, id) },
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const code = await child.exited;
+  if (code !== 0) process.exitCode = code;
+}
+
+async function packageCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const [action, packagePath] = args;
+  const state = sharedState(root);
+  await ensureSharedState(state);
+  if (!action || action === "list") {
+    const registrations = await readPackageRegistrations(state);
+    if (flags.json) console.log(JSON.stringify(registrations, null, 2));
+    else for (const item of registrations) console.log(`${item.kind.padEnd(8)} ${item.id.padEnd(24)} ${item.path}`);
+    return;
+  }
+  if (action === "register") {
+    if (!packagePath) throw new Error("packages register requires a path");
+    const fullPath = path.resolve(root, packagePath);
+    const packageManifest = await readPackageManifest(fullPath);
+    if (!packageManifest) throw new Error(`no package manifest found in ${packagePath}`);
+    await upsertPackageRegistration(state, {
+      id: packageManifest.id,
+      kind: packageManifest.kind,
+      path: fullPath,
+      manifestPath: path.join(fullPath, "agent.package.json"),
+    });
+    console.log(`registered ${packageManifest.kind} ${packageManifest.id}`);
+    return;
+  }
+  throw new Error(`unknown packages action: ${action}`);
+}
+
+async function harnessCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const [action = "list", id, ...rest] = args;
+  const state = sharedState(root);
+  await ensureSharedState(state);
+  const harnesses = await harnessesFromState(state);
+  if (action === "list") {
+    if (flags.json) console.log(JSON.stringify(harnesses, null, 2));
+    else for (const item of harnesses) console.log(`${item.id.padEnd(24)} ${item.path}`);
+    return;
+  }
+  if (!id) throw new Error(`harness ${action} requires a harness id`);
+  const harness = harnesses.find((item) => item.id === id);
+  if (!harness) throw new Error(`harness not registered: ${id}`);
+  if (action === "doctor") {
+    await doctorHarness(state, harness);
+    return;
+  }
+  if (action === "run") {
+    const separator = rest.indexOf("--");
+    const execArgs = separator === -1 ? rest : rest.slice(separator + 1);
+    await runHarness(state, harness, execArgs);
+    return;
+  }
+  throw new Error(`unknown harness action: ${action}`);
+}
+
+async function harnessesFromState(state: SharedState): Promise<Array<{ id: string; path: string; manifest: AgentsPackageManifest }>> {
+  const registrations = await readPackageRegistrations(state);
+  const out: Array<{ id: string; path: string; manifest: AgentsPackageManifest }> = [];
+  for (const registration of registrations.filter((item) => item.kind === "harness")) {
+    const packageManifest = await readPackageManifest(registration.path);
+    if (packageManifest) out.push({ id: registration.id, path: registration.path, manifest: packageManifest });
+  }
+  return out;
+}
+
+async function doctorHarness(state: SharedState, harness: { id: string; path: string; manifest: AgentsPackageManifest }): Promise<void> {
+  const missing: string[] = [];
+  if (!(await exists(harness.path))) missing.push(`missing harness path: ${harness.path}`);
+  for (const cli of harness.manifest.requires?.clis ?? []) {
+    const result = await doctorAdapter(state, cli as CliId);
+    if (!result.ok) missing.push(`${cli}: ${result.notes.join("; ") || "adapter not ready"}`);
+  }
+  if (missing.length > 0) {
+    console.error(missing.join("\n"));
+    process.exitCode = 1;
+  } else console.log(`ok ${harness.id}`);
+}
+
+async function runHarness(
+  state: SharedState,
+  harness: { id: string; path: string; manifest: AgentsPackageManifest },
+  args: string[],
+): Promise<void> {
+  const entry = harness.manifest.entry ?? "";
+  if (!entry) throw new Error(`harness ${harness.id} has no entry command`);
+  const command = entry.split(" ").filter(Boolean);
+  const cwd = harness.manifest.workingDirectory ? path.join(harness.path, harness.manifest.workingDirectory) : harness.path;
+  const child = Bun.spawn([...command, ...args], {
+    cwd,
+    env: { ...process.env, ...sharedHarnessEnv(state, harness) },
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const code = await child.exited;
+  if (code !== 0) process.exitCode = code;
+}
+
+function sharedHarnessEnv(state: SharedState, harness: { id: string }): Record<string, string> {
+  return {
+    AGENTS_HOME: state.stateDir,
+    AGENTS_CLIS: state.clisDir,
+    AGENTS_SKILLS: state.skillsDir,
+    AGENTS_PLUGINS: state.pluginsDir,
+    AGENTS_HOOKS: state.hooksDir,
+    AGENTS_CREDITS: state.creditsFile,
+    ROMMIE_HOME: path.join(state.harnessesDir, harness.id, "runtime"),
+  };
+}
+
 async function install(values: string[]): Promise<void> {
   const [kind, name, source] = values as [InstallKind | undefined, string | undefined, string | undefined];
-  if (!kind || !["skill", "plugin", "cli"].includes(kind)) throw new Error("install kind must be skill, plugin, or cli");
+  if (!kind || !["skill", "plugin", "hook", "template", "cli", "harness"].includes(kind)) {
+    throw new Error("install kind must be skill, plugin, hook, template, cli, or harness");
+  }
   if (!name || !source) throw new Error("install requires a name and source");
 
   const state = sharedState(root);
   await ensureSharedState(state);
-  const targetBase = kind === "skill" ? state.skillsDir : kind === "plugin" ? state.pluginsDir : state.clisDir;
+  const targetBase =
+    kind === "skill"
+      ? state.skillsDir
+      : kind === "plugin"
+        ? state.pluginsDir
+        : kind === "hook"
+          ? state.hooksDir
+          : kind === "template"
+            ? state.templatesDir
+            : kind === "harness"
+              ? state.harnessesDir
+              : state.clisDir;
   const target = path.join(targetBase, name);
   if (await exists(target)) throw new Error(`install target already exists: ${target}`);
 
@@ -173,6 +378,16 @@ async function install(values: string[]): Promise<void> {
   const installs = await readInstalls(state);
   installs.push({ name, kind, source, path: target, installedAt: new Date().toISOString() });
   await writeInstalls(state, installs);
+  const packageManifest = await readPackageManifest(target);
+  if (packageManifest) {
+    await upsertPackageRegistration(state, {
+      id: packageManifest.id,
+      kind: packageManifest.kind,
+      source,
+      path: target,
+      manifestPath: path.join(target, "agent.package.json"),
+    });
+  }
   console.log(`installed ${kind} ${name}`);
 }
 
@@ -219,6 +434,9 @@ async function main(): Promise<void> {
   if (command === "remove") return remove(values[0]);
   if (command === "sync") return sync();
   if (command === "state") return stateCommand(values[0]);
+  if (command === "cli") return cliCommand(rest);
+  if (command === "packages") return packageCommand(values, flags);
+  if (command === "harness") return harnessCommand(values, flags);
   if (command === "install") return install(values);
   if (command === "installs") return installs(flags);
   if (command === "credits") return credits(flags);

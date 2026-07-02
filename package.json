@@ -8,7 +8,7 @@
   },
   "scripts": {
     "check": "bunx tsc --noEmit",
-    "test": "bun test test/gitmodules.test.ts",
+    "test": "bun test test/gitmodules.test.ts test/adapters.test.ts test/packages.test.ts",
     "ci": "bun run check && bun run test"
   },
   "devDependencies": {

@@ -9,8 +9,10 @@
 - Manage git-backed agent packages from one workspace.
 - Keep CLI-specific metadata under `.agents/clis`.
 - Keep user-installed skills and plugins under `.agents/skills` and `.agents/plugins`.
+- Keep harness packages under `.agents/harnesses` and launch them with shared state.
 - Expose one shared state root to every CLI through `.agents/env`.
 - Maintain a shared credit store at `.agents/credits.json`.
+- Provide one adapter abstraction for Codex, Claude, Kimi, and Agy.
 - Support CI for typecheck and tests.
 
 ## Non-Goals
@@ -28,6 +30,8 @@
 ## Core Concepts
 
 - Package: a git submodule or local package managed by `agents`.
+- Harness: a managed runtime package, such as Andromeda, launched by `agents`.
+- CLI adapter: the shared rooting and credential contract for a vendor CLI.
 - Shared state: the root `.agents` directory.
 - CLI metadata: per-CLI data under `.agents/clis/<name>`.
 - Skill install: files installed under `.agents/skills/<name>`.
@@ -42,7 +46,10 @@
 - `agents sync` syncs and initializes submodules.
 - `agents state init` creates shared directories and state files.
 - `agents state env` prints environment variables every CLI should consume.
-- `agents install skill|plugin|cli` installs shared capability files into `.agents`.
+- `agents cli list|doctor|env|exec|materialize-creds` manages shared CLI adapters.
+- `agents packages register|list` manages local package registrations.
+- `agents harness list|doctor|run` manages harness packages.
+- `agents install skill|plugin|hook|template|cli|harness` installs shared capability files into `.agents`.
 - `agents installs` lists shared installs.
 - `agents credits` locates or prints the shared credit store.
 - `agents doctor` validates package checkouts and shared state.
@@ -52,14 +59,49 @@
 ```text
 .agents/
   clis/
+  harnesses/
   skills/
   plugins/
+  hooks/
+  templates/
   credits.json
   installs.json
+  packages.json
   env
 ```
 
-Every managed CLI must read `AGENTS_HOME`, `AGENTS_CLIS`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, and `AGENTS_CREDITS` from `.agents/env` or equivalent environment exports.
+Every managed CLI must read `AGENTS_HOME`, `AGENTS_CLIS`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, `AGENTS_HOOKS`, `AGENTS_TEMPLATES`, and `AGENTS_CREDITS` from `.agents/env` or equivalent environment exports.
+
+## Harness Contract
+
+Harnesses declare an `agent.package.json` manifest:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "andromeda",
+  "kind": "harness",
+  "entry": "go run ./cmd/rommie",
+  "workingDirectory": "services/cli",
+  "requires": {
+    "clis": ["codex", "claude", "kimi", "agy"],
+    "state": ["skills", "plugins", "hooks", "credits"]
+  }
+}
+```
+
+`agents harness run <id>` launches the harness with `AGENTS_HOME` and shared state paths. Harness-specific runtime data may remain isolated under `.agents/harnesses/<id>/runtime`.
+
+## CLI Adapter Contract
+
+Built-in adapters:
+
+- Codex: `CODEX_HOME=.agents/clis/codex`, credential source `~/.codex/auth.json`.
+- Claude: `CLAUDE_CONFIG_DIR=.agents/clis/claude`, credential source `~/.claude/.credentials.json`.
+- Kimi: `KIMI_CODE_HOME=.agents/clis/kimi`, credential source `~/.kimi-code/credentials/kimi-code.json`.
+- Agy: `HOME=.agents/clis/agy`, credential source `~/.gemini/oauth_creds.json`.
+
+Credential materialization is explicit, non-destructive, and must not print secret values.
 
 ## CI
 
@@ -77,3 +119,5 @@ CI runs on pushes and pull requests to `main`:
 3. Skill/plugin/CLI install tracking.
 4. Credit store schema and update commands.
 5. Per-CLI adapter contracts for consuming shared state.
+6. Harness package install, doctor, and run commands.
+7. Andromeda harness bridge through `AGENTS_HOME`.
