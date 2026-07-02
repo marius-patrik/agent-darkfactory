@@ -1,5 +1,5 @@
-[submodule "agents/rommie"]
-	path = agents/rommie
+[submodule "agents/andromeda"]
+	path = agents/andromeda
 	url = https://github.com/marius-patrik/andromeda.git
 	branch = main
 [submodule "agents/personal-assistant"]
@@ -13,8 +13,4 @@
 [submodule "agents/vibe-bot"]
 	path = agents/vibe-bot
 	url = https://github.com/marius-patrik/vibe-bot.git
-	branch = main
-[submodule "private"]
-	path = private
-	url = https://github.com/marius-patrik/private.git
 	branch = main
