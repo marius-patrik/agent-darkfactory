@@ -1,0 +1,20 @@
+{
+  "name": "memory-plugin",
+  "interface": {
+    "displayName": "Memory Plugin"
+  },
+  "plugins": [
+    {
+      "name": "memory-plugin",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
