@@ -2,10 +2,6 @@
 	path = agents/rommie
 	url = https://github.com/marius-patrik/andromeda.git
 	branch = main
-[submodule "cli"]
-	path = cli
-	url = https://github.com/marius-patrik/agents-cli.git
-	branch = main
 [submodule "agents/personal-assistant"]
 	path = agents/personal-assistant
 	url = https://github.com/marius-patrik/personal-assistant.git
