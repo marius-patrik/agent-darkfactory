@@ -14,9 +14,9 @@
 	path = avatars/personal-assistant
 	url = https://github.com/marius-patrik/personal-assistant.git
 	branch = main
-[submodule "avatars/leto-skye"]
-	path = avatars/leto-skye
-	url = https://github.com/marius-patrik/leto-skye.git
+[submodule "avatars/skye"]
+	path = avatars/skye
+	url = https://github.com/marius-patrik/skye.git
 	branch = main
 [submodule "avatars/vibe-bot"]
 	path = avatars/vibe-bot

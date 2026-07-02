@@ -13,7 +13,7 @@ Workspace for agent projects.
 
 ## Avatars
 
-- `avatars/leto-skye`
+- `avatars/skye`
 - `avatars/personal-assistant`
 - `avatars/vibe-bot`
 
