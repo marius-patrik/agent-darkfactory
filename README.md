@@ -1,4 +1,4 @@
-# template-bot
+# vibe-bot
 
 TypeScript GitHub App bot template.
 
