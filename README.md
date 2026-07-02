@@ -10,6 +10,7 @@ Workspace for agent projects.
 ## Harnesses
 
 - `harnesses/rommie`
+- `harnesses/README.md`
 
 ## Avatars
 
