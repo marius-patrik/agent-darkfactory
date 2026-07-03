@@ -2,7 +2,7 @@
 
 ## Overview
 
-`agentos` is a workspace for managing agent packages. Its `agents` CLI is a Bun TypeScript package manager that installs and tracks agent repos, app repos, templates, CLI adapters, skills, plugins, and shared runtime state so every managed CLI sees the same installed capabilities and credit store.
+`agentos` is a workspace for managing agent packages. Its `agents` CLI is a Bun TypeScript package manager that installs and tracks agent repos, app repos, templates, private workspace state, CLI adapters, skills, plugins, and shared runtime state so every managed CLI sees the same installed capabilities and credit store.
 
 ## Goals
 
@@ -34,7 +34,7 @@
 - CLI adapter: the shared rooting and credential contract for a vendor CLI.
 - Shared state: the root `.agents` directory.
 - Core package: the CLI implementation and tests under `packages/agentos-manager`.
-- Managed checkout: a git-backed package under `packages/<name>`, agent under `agents/<name>`, app under `apps/<name>`, or template under `templates/<name>`.
+- Managed checkout: a git-backed package under `packages/<name>`, agent under `agents/<name>`, app under `apps/<name>`, template under `templates/<name>`, or private workspace under `workspace`.
 - CLI metadata: per-CLI data under `.agents/clis/<name>`.
 - Skill install: files installed under `.agents/skills/<name>`.
 - Plugin install: files installed under `.agents/plugins/<name>`.
@@ -77,6 +77,7 @@ templates/
   template-mono/
   template-repo/
   template-web/
+workspace/
 ```
 
 ## State Layout

@@ -1,7 +1,8 @@
 # agentos
 
 Agentos workspace with the `agents` CLI for managing agent packages, apps,
-templates, shared skills/plugins, CLI data, and a common credit store.
+templates, private workspace state, shared skills/plugins, CLI data, and a
+common credit store.
 
 ## Usage
 
@@ -25,6 +26,7 @@ agents doctor
   `agents/skyblock-agent` are managed agent submodules.
 - `apps/singularity` contains the managed Singularity app.
 - `templates/*` contains managed repository templates.
+- `workspace` contains the private `agentos-workspace` repository.
 
 ## Commands
 
