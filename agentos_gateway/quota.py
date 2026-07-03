@@ -88,7 +88,7 @@ class QuotaTracker:
             store.setdefault("ledger", []).append(
                 {
                     "provider": provider,
-                    "consumer": "andromeda.gateway",
+                    "consumer": "agentos.gateway",
                     "action": "usage",
                     "tokensIn": tokens_in,
                     "tokensOut": tokens_out,

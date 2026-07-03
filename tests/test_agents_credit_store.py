@@ -21,5 +21,5 @@ def test_quota_records_agents_credit_ledger(monkeypatch, tmp_path):
     assert store["providers"]["claude"]["tokensIn"] == 12
     assert store["providers"]["claude"]["tokensOut"] == 7
     assert store["ledger"][0]["provider"] == "claude"
-    assert store["ledger"][0]["consumer"] == "andromeda.gateway"
+    assert store["ledger"][0]["consumer"] == "agentos.gateway"
     assert store["ledger"][0]["action"] == "usage"
