@@ -23,14 +23,14 @@ describe("gitmodules", () => {
     expect(
       serializeGitmodules([
         {
-          name: "harnesses/andromeda-harness",
-          path: "harnesses/andromeda-harness",
+          name: "packages/andromeda-harness",
+          path: "packages/andromeda-harness",
           url: "https://github.com/marius-patrik/andromeda-harness.git",
           branch: "main",
         },
       ]),
-    ).toBe(`[submodule "harnesses/andromeda-harness"]
-\tpath = harnesses/andromeda-harness
+    ).toBe(`[submodule "packages/andromeda-harness"]
+\tpath = packages/andromeda-harness
 \turl = https://github.com/marius-patrik/andromeda-harness.git
 \tbranch = main
 `);

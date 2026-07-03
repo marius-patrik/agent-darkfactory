@@ -9,7 +9,8 @@
 - Manage git-backed agent packages from one workspace.
 - Keep CLI-specific metadata under `.agents/clis`.
 - Keep user-installed skills and plugins under `.agents/skills` and `.agents/plugins`.
-- Keep harness packages under `.agents/harnesses` and launch them with shared state.
+- Keep harness packages under `packages/` and launch them with shared state.
+- Configure git-backed data repositories such as `agentos-data`; workspace packages such as `darkfactory-workspace` can point at those data repos.
 - Expose one shared state root to every CLI through `.agents/env`.
 - Maintain a shared credit store at `.agents/credits.json`.
 - Provide one adapter abstraction for Codex, Claude, Kimi, and Agy.
@@ -31,13 +32,14 @@
 
 - Package: a git submodule or local package managed by `agents`.
 - Harness: a managed runtime package, such as Andromeda Harness, launched by `agents`.
+- Data repo: a git-backed managed data package with an optional managed root and exported env var.
 - CLI adapter: the shared rooting and credential contract for a vendor CLI.
 - Shared state: the root `.agents` directory.
 - Core package: shared contracts and generated clients under `packages/agentos-core`.
 - Gateway package: OpenAI-format model gateway and registry routing under `packages/agentos-gateway`.
 - Inferer package: agent loop, runtime services, engine work, and deploy assets under `packages/agentos-inferer`.
 - Manager package: the CLI implementation and tests under `packages/agentos-manager`.
-- Managed checkout: a git-backed package under `packages/<name>` or a harness under `harnesses/<name>`. Agents, apps, templates, and workspace repositories all live under `packages/`.
+- Managed checkout: a git-backed package under `packages/<name>`. Agents, apps, harnesses, templates, data repositories, and workspace repositories all live under `packages/`.
 - CLI metadata: per-CLI data under `.agents/clis/<name>`.
 - Skill install: files installed under `.agents/skills/<name>`.
 - Plugin install: files installed under `.agents/plugins/<name>`.
@@ -53,6 +55,7 @@
 - `agents state env` prints environment variables every CLI should consume.
 - `agents cli list|doctor|env|exec|materialize-creds` manages shared CLI adapters.
 - `agents packages register|list` manages local package registrations.
+- `agents data repo list|set|path|env` manages git-backed data repositories.
 - `agents harness list|doctor|run` manages harness packages.
 - `agents install skill|plugin|hook|template|cli|harness` installs shared capability files into `.agents`.
 - `agents installs` lists shared installs.
@@ -69,6 +72,8 @@ packages/
   agentos-manager/
     src/
     test/
+  agentos-data/
+  andromeda-harness/
   darkfactory-agent/
   darkfactory-templates/
   darkfactory-workspace/
@@ -77,8 +82,6 @@ packages/
   rommie-agent/
   singularity/
   skyblock-agent/
-harnesses/
-  andromeda-harness/
 ```
 
 ## State Layout
@@ -91,13 +94,15 @@ harnesses/
   plugins/
   hooks/
   templates/
+  secrets/
   credits.json
+  data-repos.json
   installs.json
   packages.json
   env
 ```
 
-Every managed CLI must read `AGENTS_HOME`, `AGENTS_CLIS`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, `AGENTS_HOOKS`, `AGENTS_TEMPLATES`, and `AGENTS_CREDITS` from `.agents/env` or equivalent environment exports.
+Every managed CLI must read `AGENTS_HOME`, `AGENTS_CLIS`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, `AGENTS_HOOKS`, `AGENTS_TEMPLATES`, `AGENTS_SECRETS`, `AGENTS_CREDITS`, and `AGENTS_DATA_REPOS` from `.agents/env` or equivalent environment exports. Package and harness execution also exports configured data repo env vars such as `AGENTOS_DATA_ROOT` and `DARK_FACTORY_WORKSPACE_ROOT`.
 
 ## Harness Contract
 
@@ -118,6 +123,25 @@ Harnesses declare an `agent.package.json` manifest:
 ```
 
 `agents harness run <id>` launches the harness with `AGENTS_HOME` and shared state paths. Harness-specific runtime data may remain isolated under `.agents/harnesses/<id>/runtime`.
+
+## Data Repo Contract
+
+`agents state init` seeds `agentos-data` as the default managed data repo:
+
+```json
+{
+  "id": "agentos-data",
+  "repo": "marius-patrik/agentos-data",
+  "path": "packages/agentos-data",
+  "branch": "main",
+  "env": "AGENTOS_DATA_ROOT"
+}
+```
+
+Packages may declare an additional `dataRepo` mapping in `agent.package.json`.
+When registered, `agents packages register` stores that mapping in
+`.agents/data-repos.json`, and `agents packages run` / `agents harness run`
+export its configured env var to the process.
 
 ## CLI Adapter Contract
 

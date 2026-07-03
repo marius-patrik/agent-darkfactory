@@ -8,7 +8,7 @@
   },
   "scripts": {
     "check": "bunx tsc --noEmit",
-    "test": "bun test packages/agentos-manager/test/gitmodules.test.ts packages/agentos-manager/test/adapters.test.ts packages/agentos-manager/test/packages.test.ts packages/agentos-manager/test/harness-cli.test.ts packages/agentos-manager/test/secrets.test.ts",
+    "test": "bun test packages/agentos-manager/test/gitmodules.test.ts packages/agentos-manager/test/adapters.test.ts packages/agentos-manager/test/packages.test.ts packages/agentos-manager/test/data-repos.test.ts packages/agentos-manager/test/harness-cli.test.ts packages/agentos-manager/test/secrets.test.ts",
     "ci": "bun run check && bun run test"
   },
   "devDependencies": {

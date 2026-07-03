@@ -1,5 +1,5 @@
-[submodule "harnesses/andromeda-harness"]
-	path = harnesses/andromeda-harness
+[submodule "packages/andromeda-harness"]
+	path = packages/andromeda-harness
 	url = https://github.com/marius-patrik/andromeda-harness.git
 	branch = main
 [submodule "packages/life-support"]
@@ -26,11 +26,15 @@
 	path = packages/rommie-agent
 	url = https://github.com/marius-patrik/rommie-agent.git
 	branch = main
-[submodule "packages/darkfactory-workspace"]
-	path = packages/darkfactory-workspace
-	url = https://github.com/marius-patrik/darkfactory-workspace.git
+[submodule "packages/agentos-data"]
+	path = packages/agentos-data
+	url = https://github.com/marius-patrik/agentos-data.git
 	branch = main
 [submodule "packages/fabrica"]
 	path = packages/fabrica
 	url = https://github.com/marius-patrik/Fabrica.git
 	branch = dev
+[submodule "packages/darkfactory-workspace"]
+	path = packages/darkfactory-workspace
+	url = https://github.com/marius-patrik/darkfactory-workspace.git
+	branch = main

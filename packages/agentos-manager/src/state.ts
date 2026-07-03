@@ -1,7 +1,18 @@
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
 
-export type InstallKind = "agent" | "app" | "package" | "workspace" | "harness" | "cli" | "skill" | "plugin" | "hook" | "template";
+export type InstallKind =
+  | "agent"
+  | "app"
+  | "data"
+  | "package"
+  | "workspace"
+  | "harness"
+  | "cli"
+  | "skill"
+  | "plugin"
+  | "hook"
+  | "template";
 
 export interface InstallRecord {
   name: string;
@@ -52,6 +63,7 @@ export interface SharedState {
   creditsFile: string;
   installsFile: string;
   packagesFile: string;
+  dataReposFile: string;
   envFile: string;
 }
 
@@ -69,6 +81,7 @@ export function sharedStateAt(root: string, stateDir: string): SharedState {
     creditsFile: path.join(stateDir, "credits.json"),
     installsFile: path.join(stateDir, "installs.json"),
     packagesFile: path.join(stateDir, "packages.json"),
+    dataReposFile: path.join(stateDir, "data-repos.json"),
     envFile: path.join(stateDir, "env"),
   };
 }
@@ -92,6 +105,7 @@ export function sharedStateFromEnv(cwd: string): SharedState {
     templatesDir: process.env.AGENTS_TEMPLATES?.trim() || path.join(stateDir, "templates"),
     secretsDir: process.env.AGENTS_SECRETS?.trim() || path.join(stateDir, "secrets"),
     creditsFile: process.env.AGENTS_CREDITS?.trim() || path.join(stateDir, "credits.json"),
+    dataReposFile: process.env.AGENTS_DATA_REPOS?.trim() || path.join(stateDir, "data-repos.json"),
   };
 }
 
@@ -125,6 +139,26 @@ export async function ensureSharedState(state: SharedState): Promise<void> {
     await Bun.write(state.packagesFile, "[]\n");
   }
 
+  if (!(await Bun.file(state.dataReposFile).exists())) {
+    await Bun.write(
+      state.dataReposFile,
+      `${JSON.stringify(
+        [
+          {
+            id: "agentos-data",
+            repo: "marius-patrik/agentos-data",
+            path: path.join(state.root, "packages", "agentos-data"),
+            branch: "main",
+            env: "AGENTOS_DATA_ROOT",
+            configuredAt: new Date().toISOString(),
+          },
+        ],
+        null,
+        2,
+      )}\n`,
+    );
+  }
+
   await Bun.write(
     state.envFile,
     [
@@ -138,6 +172,8 @@ export async function ensureSharedState(state: SharedState): Promise<void> {
       `AGENTS_TEMPLATES=${state.templatesDir}`,
       `AGENTS_SECRETS=${state.secretsDir}`,
       `AGENTS_CREDITS=${state.creditsFile}`,
+      `AGENTS_DATA_REPOS=${state.dataReposFile}`,
+      `AGENTOS_DATA_ROOT=${path.join(state.root, "packages", "agentos-data")}`,
       "",
     ].join("\n"),
   );

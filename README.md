@@ -13,8 +13,9 @@ agents list
 agents state init
 agents state env
 agents cli doctor
-agents packages register harnesses/andromeda-harness
+agents packages register packages/andromeda-harness
 agents harness doctor andromeda-harness
+agents data repo list
 agents doctor
 ```
 
@@ -24,24 +25,26 @@ agents doctor
 - `packages/agentos-gateway` contains the OpenAI-format LLM gateway, model registry routing, fallback, switchers, quota, OAuth seams, and tests.
 - `packages/agentos-inferer` contains the Python agent loop, Go runtime services, engine work, deploy assets, and inference architecture.
 - `packages/agentos-manager` contains the `agents` CLI source and tests.
-- `harnesses/andromeda-harness` contains the managed Rommie runtime harness.
+- `packages/andromeda-harness` contains the managed Rommie runtime harness.
 - `packages/darkfactory-agent`, `packages/life-support`, `packages/rommie-agent`, and
   `packages/skyblock-agent` are managed agent submodules.
 - `packages/singularity` contains the managed Singularity app.
 - `packages/fabrica` contains the managed Fabrica app workspace.
 - `packages/darkfactory-templates` contains the Bun templates monorepo and nested template submodules.
-- `packages/darkfactory-workspace` contains the private DarkFactory workspace repository, including managed `.agents` source files and migrated Andromeda wiki/research material.
+- `packages/agentos-data` contains the private AgentOS managed data repository and migrated non-code material.
+- `packages/darkfactory-workspace` contains the lightweight DarkFactory workspace package that points at `agentos-data`.
 
 ## Commands
 
 - `agents list [--json]` lists registered packages from `.gitmodules`.
 - `agents info <name-or-path> [--json]` shows package metadata.
-- `agents add <name> <git-url> [--kind agent|app|package|template|workspace|harness|cli] [--branch main]` adds a git-backed package.
+- `agents add <name> <git-url> [--kind agent|app|data|package|template|workspace|harness|cli] [--branch main]` adds a git-backed package.
 - `agents remove <name-or-path>` removes a package submodule.
 - `agents sync` syncs and initializes submodules.
 - `agents state init` initializes shared runtime state.
 - `agents cli list|doctor|env|exec|materialize-creds` manages Codex, Claude, Kimi, and Agy through one adapter layer.
 - `agents packages register <path>` registers a local package manifest.
+- `agents data repo list|set|path|env` manages git-backed data repository mappings.
 - `agents harness list|doctor|run` manages runtime harnesses such as Andromeda Harness.
 - `agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-url>` installs shared capabilities.
 - `agents credits` shows the shared credit store.
@@ -58,7 +61,9 @@ runtime state:
 - `.agents/plugins/` stores user-installed shared plugins.
 - `.agents/hooks/` stores user-installed shared hooks.
 - `.agents/templates/` stores templates.
+- `.agents/secrets/` stores local secret values managed by `agents secrets`.
 - `.agents/credits.json` stores the shared credit ledger.
+- `.agents/data-repos.json` stores managed data repository mappings.
 - `.agents/packages.json` stores registered package manifests.
 - `.agents/env` exports the paths every CLI should consume.
 

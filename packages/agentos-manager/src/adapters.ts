@@ -91,6 +91,8 @@ export function adapterEnv(state: SharedState, id: CliId): Record<string, string
     AGENTS_TEMPLATES: state.templatesDir,
     AGENTS_SECRETS: state.secretsDir,
     AGENTS_CREDITS: state.creditsFile,
+    AGENTS_DATA_REPOS: state.dataReposFile,
+    AGENTOS_DATA_ROOT: path.join(state.root, "packages", "agentos-data"),
   };
   for (const [name, dir] of Object.entries(spec.homeEnv)) env[name] = path.join(state.clisDir, dir);
   return env;

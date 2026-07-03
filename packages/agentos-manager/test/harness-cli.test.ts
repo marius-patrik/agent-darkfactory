@@ -50,6 +50,8 @@ describe("harness CLI", () => {
           "  AGENTS_ROOT: process.env.AGENTS_ROOT,",
           "  AGENTS_CLIS: process.env.AGENTS_CLIS,",
           "  AGENTS_CREDITS: process.env.AGENTS_CREDITS,",
+          "  AGENTS_DATA_REPOS: process.env.AGENTS_DATA_REPOS,",
+          "  AGENTOS_DATA_ROOT: process.env.AGENTOS_DATA_ROOT,",
           "  ROMMIE_HOME: process.env.ROMMIE_HOME,",
           "  passthrough,",
           "}));",
@@ -70,6 +72,8 @@ describe("harness CLI", () => {
       expect(env.AGENTS_ROOT).toBe(root);
       expect(env.AGENTS_CLIS).toBe(path.join(root, ".agents", "clis"));
       expect(env.AGENTS_CREDITS).toBe(path.join(root, ".agents", "credits.json"));
+      expect(env.AGENTS_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
+      expect(env.AGENTOS_DATA_ROOT).toBe(path.join(root, "packages", "agentos-data"));
       expect(env.ROMMIE_HOME).toBe(path.join(root, ".agents", "harnesses", "probe", "runtime"));
       expect(JSON.stringify(env.passthrough)).toBe(JSON.stringify(["--probe"]));
     } finally {
@@ -99,6 +103,9 @@ describe("harness CLI", () => {
           "await Bun.write(out, JSON.stringify({",
           "  AGENTS_HOME: process.env.AGENTS_HOME,",
           "  AGENTS_SECRETS: process.env.AGENTS_SECRETS,",
+          "  AGENTS_DATA_REPOS: process.env.AGENTS_DATA_REPOS,",
+          "  AGENTOS_DATA_ROOT: process.env.AGENTOS_DATA_ROOT,",
+          "  DARK_FACTORY_WORKSPACE_ROOT: process.env.DARK_FACTORY_WORKSPACE_ROOT,",
           "  args: Bun.argv.slice(3),",
           "}));",
         ].join("\n"),
@@ -106,6 +113,20 @@ describe("harness CLI", () => {
 
       const register = await runAgents(root, ["packages", "register", pkg]);
       expect(register.code).toBe(0);
+      const dataRepo = await runAgents(root, [
+        "data",
+        "repo",
+        "set",
+        "darkfactory-workspace",
+        "marius-patrik/agentos-data",
+        "--path",
+        "packages/agentos-data",
+        "--managed-path",
+        "managed-repository",
+        "--env",
+        "DARK_FACTORY_WORKSPACE_ROOT",
+      ]);
+      expect(dataRepo.code).toBe(0);
 
       const output = path.join(root, "package-env.json");
       const run = await runAgents(root, ["packages", "run", "probe-package", "--", output, "--probe"]);
@@ -114,6 +135,9 @@ describe("harness CLI", () => {
       const env = JSON.parse(await Bun.file(output).text()) as Record<string, unknown>;
       expect(env.AGENTS_HOME).toBe(path.join(root, ".agents"));
       expect(env.AGENTS_SECRETS).toBe(path.join(root, ".agents", "secrets"));
+      expect(env.AGENTS_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
+      expect(env.AGENTOS_DATA_ROOT).toBe(path.join(root, "packages", "agentos-data"));
+      expect(env.DARK_FACTORY_WORKSPACE_ROOT).toBe(path.join(root, "packages", "agentos-data", "managed-repository"));
       expect(JSON.stringify(env.args)).toBe(JSON.stringify(["--probe"]));
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -16,6 +16,13 @@ describe("package manifests", () => {
           id: "andromeda-harness",
           kind: "harness",
           requires: { clis: ["codex", "claude", "kimi", "agy"], state: ["skills", "plugins", "hooks", "credits"] },
+          dataRepo: {
+            id: "darkfactory-workspace",
+            repo: "marius-patrik/agentos-data",
+            path: "packages/agentos-data",
+            managedPath: "managed-repository",
+            env: "DARK_FACTORY_WORKSPACE_ROOT",
+          },
           entry: "go run ./cmd/rommie",
           workingDirectory: "services/cli",
         }),
@@ -26,6 +33,8 @@ describe("package manifests", () => {
       expect(manifest?.kind).toBe("harness");
       expect(manifest?.workingDirectory).toBe("services/cli");
       expect(manifest?.requires?.clis).toContain("codex");
+      expect(manifest?.dataRepo?.repo).toBe("marius-patrik/agentos-data");
+      expect(manifest?.dataRepo?.managedPath).toBe("managed-repository");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

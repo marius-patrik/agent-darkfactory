@@ -16,6 +16,14 @@ export interface AgentsPackageManifest {
     clis?: string[];
     state?: string[];
   };
+  dataRepo?: {
+    id: string;
+    repo: string;
+    path: string;
+    branch?: string;
+    managedPath?: string;
+    env?: string;
+  };
   provides?: string[];
 }
 
@@ -40,7 +48,7 @@ async function exists(file: string): Promise<boolean> {
 }
 
 function validateKind(kind: string): PackageKind {
-  const allowed = new Set(["agent", "app", "package", "workspace", "harness", "cli", "skill", "plugin", "hook", "template"]);
+  const allowed = new Set(["agent", "app", "data", "package", "workspace", "harness", "cli", "skill", "plugin", "hook", "template"]);
   if (!allowed.has(kind)) throw new Error(`unsupported package kind: ${kind}`);
   return kind as PackageKind;
 }
@@ -69,7 +77,24 @@ export async function readPackageManifest(packageDir: string): Promise<AgentsPac
     entry: raw.entry,
     workingDirectory: raw.workingDirectory,
     requires: raw.requires,
+    dataRepo: parseDataRepo(raw.dataRepo),
     provides: raw.provides ?? [],
+  };
+}
+
+function parseDataRepo(value: unknown): AgentsPackageManifest["dataRepo"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== "string") throw new Error("dataRepo.id is required");
+  if (typeof record.repo !== "string") throw new Error("dataRepo.repo is required");
+  if (typeof record.path !== "string") throw new Error("dataRepo.path is required");
+  return {
+    id: record.id,
+    repo: record.repo,
+    path: record.path,
+    branch: typeof record.branch === "string" ? record.branch : undefined,
+    managedPath: typeof record.managedPath === "string" ? record.managedPath : undefined,
+    env: typeof record.env === "string" ? record.env : undefined,
   };
 }
 

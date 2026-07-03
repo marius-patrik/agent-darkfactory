@@ -2,6 +2,7 @@
 import path from "node:path";
 import { cp, mkdir, stat } from "node:fs/promises";
 import { adapter, adapterEnv, adapterIds, doctorAdapter, materializeCredentials, type CliId } from "./adapters";
+import { dataRepoManagedRoot, readDataRepos, upsertDataRepo } from "./data-repos";
 import { readGitmodules, writeGitmodules } from "./gitmodules";
 import {
   ensureSharedState,
@@ -25,10 +26,11 @@ const gitmodulesPath = path.join(root, ".gitmodules");
 const packageKinds = new Map([
   ["agent", "packages"],
   ["app", "packages"],
+  ["data", "packages"],
   ["package", "packages"],
   ["template", "packages"],
   ["workspace", "packages"],
-  ["harness", "harnesses"],
+  ["harness", "packages"],
   ["cli", "clis"],
 ]);
 
@@ -42,7 +44,7 @@ function help(): void {
 Usage:
   agents list [--json]
   agents info <name-or-path> [--json]
-  agents add <name> <git-url> [--kind agent|app|package|template|workspace|harness|cli] [--branch main] [--path path]
+  agents add <name> <git-url> [--kind agent|app|data|package|template|workspace|harness|cli] [--branch main] [--path path]
   agents remove <name-or-path>
   agents sync
   agents state init
@@ -54,6 +56,10 @@ Usage:
   agents packages register <path>
   agents packages list [--json]
   agents packages run <name-or-path> -- <args...>
+  agents data repo list [--json]
+  agents data repo set <id> <owner/name> [--path packages/name] [--branch main] [--managed-path path] [--env NAME]
+  agents data repo path <id>
+  agents data repo env <id>
   agents harness list [--json]
   agents harness doctor <name>
   agents harness run <name> -- <args...>
@@ -104,6 +110,8 @@ function inferKind(packagePath: string): string {
   const first = packagePath.split(/[\\/]/)[0];
   const base = path.basename(packagePath);
   if (first === "packages") {
+    if (base === "agentos-data" || base.endsWith("-data")) return "data";
+    if (base.includes("harness")) return "harness";
     if (base.includes("workspace")) return "workspace";
     if (base.includes("template")) return "template";
     if (base === "singularity") return "app";
@@ -282,6 +290,9 @@ async function packageCommand(args: string[], flags: Record<string, string | boo
       path: fullPath,
       manifestPath: path.join(fullPath, "agent.package.json"),
     });
+    if (packageManifest.dataRepo) {
+      await upsertDataRepo(state, packageManifest.dataRepo);
+    }
     console.log(`registered ${packageManifest.kind} ${packageManifest.id}`);
     return;
   }
@@ -343,7 +354,7 @@ async function runPackage(
   const cwd = item.manifest.workingDirectory ? path.join(item.path, item.manifest.workingDirectory) : item.path;
   const child = Bun.spawn([...command, ...args], {
     cwd,
-    env: { ...process.env, ...sharedPackageEnv(state) },
+    env: { ...process.env, ...sharedPackageEnv(state), ...(await dataRepoEnv(state)) },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -412,7 +423,7 @@ async function runHarness(
   const cwd = harness.manifest.workingDirectory ? path.join(harness.path, harness.manifest.workingDirectory) : harness.path;
   const child = Bun.spawn([...command, ...args], {
     cwd,
-    env: { ...process.env, ...sharedHarnessEnv(state, harness) },
+    env: { ...process.env, ...sharedHarnessEnv(state, harness), ...(await dataRepoEnv(state)) },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -435,6 +446,8 @@ function sharedHarnessEnv(state: SharedState, harness: { id: string }): Record<s
     AGENTS_TEMPLATES: state.templatesDir,
     AGENTS_SECRETS: state.secretsDir,
     AGENTS_CREDITS: state.creditsFile,
+    AGENTS_DATA_REPOS: state.dataReposFile,
+    AGENTOS_DATA_ROOT: path.join(state.root, "packages", "agentos-data"),
     ROMMIE_HOME: path.join(state.harnessesDir, harness.id, "runtime"),
   };
 }
@@ -453,7 +466,65 @@ function sharedPackageEnv(state: SharedState): Record<string, string> {
     AGENTS_TEMPLATES: state.templatesDir,
     AGENTS_SECRETS: state.secretsDir,
     AGENTS_CREDITS: state.creditsFile,
+    AGENTS_DATA_REPOS: state.dataReposFile,
+    AGENTOS_DATA_ROOT: path.join(state.root, "packages", "agentos-data"),
   };
+}
+
+async function dataRepoEnv(state: SharedState): Promise<Record<string, string>> {
+  const env: Record<string, string> = {};
+  for (const repo of await readDataRepos(state)) {
+    const key = repo.env ?? `${repo.id.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_ROOT`;
+    env[key] = dataRepoManagedRoot(repo);
+  }
+  return env;
+}
+
+async function dataCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const [kind = "repo", action = "list", id, repo] = args;
+  if (kind !== "repo") throw new Error(`unknown data kind: ${kind}`);
+  const state = runtimeState();
+  await ensureSharedState(state);
+
+  if (action === "list") {
+    const repos = await readDataRepos(state);
+    if (flags.json) console.log(JSON.stringify(repos, null, 2));
+    else for (const item of repos) console.log(`${item.id.padEnd(24)} ${item.repo.padEnd(32)} ${item.path}`);
+    return;
+  }
+
+  if (action === "set") {
+    if (!id || !repo) throw new Error("data repo set requires an id and owner/name repo");
+    const registration = await upsertDataRepo(state, {
+      id,
+      repo,
+      path: String(flags.path ?? path.join("packages", id)),
+      branch: typeof flags.branch === "string" ? flags.branch : "main",
+      managedPath: typeof flags["managed-path"] === "string" ? flags["managed-path"] : undefined,
+      env: typeof flags.env === "string" ? flags.env : undefined,
+    });
+    console.log(`configured data repo ${registration.id} -> ${registration.repo}`);
+    return;
+  }
+
+  if (action === "path") {
+    if (!id) throw new Error("data repo path requires an id");
+    const repoInfo = (await readDataRepos(state)).find((item) => item.id === id);
+    if (!repoInfo) throw new Error(`data repo not configured: ${id}`);
+    console.log(dataRepoManagedRoot(repoInfo));
+    return;
+  }
+
+  if (action === "env") {
+    if (!id) throw new Error("data repo env requires an id");
+    const repoInfo = (await readDataRepos(state)).find((item) => item.id === id);
+    if (!repoInfo) throw new Error(`data repo not configured: ${id}`);
+    const key = repoInfo.env ?? `${id.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_ROOT`;
+    console.log(`${key}=${dataRepoManagedRoot(repoInfo)}`);
+    return;
+  }
+
+  throw new Error(`unknown data repo action: ${action}`);
 }
 
 async function install(values: string[]): Promise<void> {
@@ -571,7 +642,7 @@ async function doctor(): Promise<void> {
     if (!item.path) missing.push(`${item.name}: missing path`);
     else if (!(await exists(path.join(root, item.path)))) missing.push(`${item.name}: missing checkout at ${item.path}`);
   }
-  for (const file of [state.envFile, state.creditsFile, state.installsFile]) {
+  for (const file of [state.envFile, state.creditsFile, state.installsFile, state.dataReposFile]) {
     if (!(await exists(file))) missing.push(`missing shared state file: ${file}`);
   }
   if (missing.length > 0) {
@@ -592,6 +663,7 @@ async function main(): Promise<void> {
   if (command === "state") return stateCommand(values[0]);
   if (command === "cli") return cliCommand(rest);
   if (command === "packages") return packageCommand(values, flags);
+  if (command === "data") return dataCommand(values, flags);
   if (command === "harness") return harnessCommand(values, flags);
   if (command === "install") return install(values);
   if (command === "installs") return installs(flags);
