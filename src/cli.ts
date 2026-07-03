@@ -6,9 +6,12 @@ import { dataRepoManagedRoot, readDataRepos, upsertDataRepo } from "./data-repos
 import { readGitmodules, writeGitmodules } from "./gitmodules";
 import {
   ensureSharedState,
+  readCreditStore,
   readInstalls,
   sharedState,
   sharedStateFromEnv,
+  writeCreditStore,
+  type CreditStore,
   writeInstalls,
   type InstallKind,
   type SharedState,
@@ -72,6 +75,10 @@ Usage:
   agents secrets path <NAME>
   agents secrets github sync <NAME> [--as SECRET_NAME] [--owner owner] [--repo owner/name]
   agents credits [--json]
+  agents credits credit <provider> <consumer> <amount> [--note text] [--json]
+  agents credits debit <provider> <consumer> <amount> [--note text] [--json]
+  agents credits usage <provider> <consumer> [--amount n] [--tokens-in n] [--tokens-out n] [--note text] [--json]
+  agents credits provider <provider> [--balance n] [--soft-limit n] [--window-seconds n] [--window-started-at iso] [--json]
   agents doctor
 
 All runtime data is shared through .agents so every managed CLI sees the same
@@ -581,12 +588,105 @@ async function installs(flags: Record<string, string | boolean>): Promise<void> 
   else for (const record of records) console.log(`${record.kind.padEnd(8)} ${record.name.padEnd(24)} ${record.path}`);
 }
 
-async function credits(flags: Record<string, string | boolean>): Promise<void> {
+function requireCreditId(kind: string, value: string | undefined): string {
+  if (!value || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) throw new Error(`invalid ${kind}: ${value ?? "(missing)"}`);
+  return value;
+}
+
+function parsePositiveNumber(name: string, value: string | boolean | undefined): number {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} requires a positive number`);
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} requires a positive number`);
+  return parsed;
+}
+
+function parseNonNegativeInteger(name: string, value: string | boolean | undefined): number {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} requires a non-negative integer`);
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${name} requires a non-negative integer`);
+  return parsed;
+}
+
+function optionalPositiveNumber(name: string, value: string | boolean | undefined): number | undefined {
+  return value === undefined ? undefined : parsePositiveNumber(name, value);
+}
+
+function optionalNonNegativeInteger(name: string, value: string | boolean | undefined): number | undefined {
+  return value === undefined ? undefined : parseNonNegativeInteger(name, value);
+}
+
+function noteFlag(flags: Record<string, string | boolean>): string | undefined {
+  return typeof flags.note === "string" && flags.note.trim() ? flags.note : undefined;
+}
+
+function ensureProvider(store: CreditStore, provider: string): NonNullable<CreditStore["providers"][string]> {
+  store.providers[provider] ??= {};
+  return store.providers[provider];
+}
+
+async function credits(args: string[], flags: Record<string, string | boolean>): Promise<void> {
   const state = runtimeState();
   await ensureSharedState(state);
-  const text = await Bun.file(state.creditsFile).text();
-  if (flags.json) console.log(text.trim());
-  else console.log(`shared credit store: ${path.relative(root, state.creditsFile)}`);
+  const [action, rawProvider, rawConsumer, rawAmount] = args;
+  if (!action) {
+    const text = await Bun.file(state.creditsFile).text();
+    if (flags.json) console.log(text.trim());
+    else console.log(`shared credit store: ${path.relative(root, state.creditsFile)}`);
+    return;
+  }
+
+  const store = await readCreditStore(state);
+  const now = new Date().toISOString();
+  const provider = requireCreditId("provider", rawProvider);
+
+  if (action === "provider") {
+    const record = ensureProvider(store, provider);
+    const balance = optionalPositiveNumber("balance", flags.balance);
+    const softLimit = optionalPositiveNumber("soft-limit", flags["soft-limit"]);
+    const windowSeconds = optionalNonNegativeInteger("window-seconds", flags["window-seconds"]);
+    if (balance !== undefined) record.balance = balance;
+    if (softLimit !== undefined) record.softLimit = softLimit;
+    if (windowSeconds !== undefined) record.windowSeconds = windowSeconds;
+    if (typeof flags["window-started-at"] === "string") record.windowStartedAt = flags["window-started-at"];
+    store.updatedAt = now;
+    await writeCreditStore(state, store);
+    if (flags.json) console.log(JSON.stringify(store, null, 2));
+    else console.log(`updated provider ${provider}`);
+    return;
+  }
+
+  const consumer = requireCreditId("consumer", rawConsumer);
+  const providerRecord = ensureProvider(store, provider);
+
+  if (action === "credit" || action === "debit") {
+    const amount = parsePositiveNumber("amount", rawAmount);
+    const sign = action === "credit" ? 1 : -1;
+    store.balances[consumer] = (store.balances[consumer] ?? 0) + sign * amount;
+    providerRecord.balance = (providerRecord.balance ?? 0) - sign * amount;
+    store.ledger.push({ provider, consumer, action, amount, at: now, note: noteFlag(flags) });
+  } else if (action === "usage") {
+    const amount = optionalPositiveNumber("amount", flags.amount);
+    const tokensIn = optionalNonNegativeInteger("tokens-in", flags["tokens-in"]);
+    const tokensOut = optionalNonNegativeInteger("tokens-out", flags["tokens-out"]);
+    if (amount === undefined && tokensIn === undefined && tokensOut === undefined) {
+      throw new Error("usage requires --amount, --tokens-in, or --tokens-out");
+    }
+    providerRecord.requests = (providerRecord.requests ?? 0) + 1;
+    providerRecord.tokensIn = (providerRecord.tokensIn ?? 0) + (tokensIn ?? 0);
+    providerRecord.tokensOut = (providerRecord.tokensOut ?? 0) + (tokensOut ?? 0);
+    if (amount !== undefined) {
+      store.balances[consumer] = (store.balances[consumer] ?? 0) - amount;
+      providerRecord.balance = (providerRecord.balance ?? 0) - amount;
+    }
+    store.ledger.push({ provider, consumer, action, amount, tokensIn, tokensOut, at: now, note: noteFlag(flags) });
+  } else {
+    throw new Error(`unknown credits action: ${action}`);
+  }
+
+  store.updatedAt = now;
+  await writeCreditStore(state, store);
+  if (flags.json) console.log(JSON.stringify(store, null, 2));
+  else console.log(`recorded ${action} for ${consumer} on ${provider}`);
 }
 
 async function secretsCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
@@ -668,7 +768,7 @@ async function main(): Promise<void> {
   if (command === "install") return install(values);
   if (command === "installs") return installs(flags);
   if (command === "secrets") return secretsCommand(values, flags);
-  if (command === "credits") return credits(flags);
+  if (command === "credits") return credits(values, flags);
   if (command === "doctor") return doctor();
   throw new Error(`unknown command: ${command}`);
 }

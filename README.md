@@ -89,8 +89,28 @@ agents secrets set <NAME> [--from-file path]
 agents secrets path <NAME>
 agents secrets github sync <NAME> [--as SECRET_NAME] [--owner owner] [--repo owner/name]
 agents credits [--json]
+agents credits credit <provider> <consumer> <amount> [--note text] [--json]
+agents credits debit <provider> <consumer> <amount> [--note text] [--json]
+agents credits usage <provider> <consumer> [--amount n] [--tokens-in n] [--tokens-out n] [--note text] [--json]
+agents credits provider <provider> [--balance n] [--soft-limit n] [--window-seconds n] [--window-started-at iso] [--json]
 agents doctor
 ```
+
+## Credits
+
+The shared credit store is `.agents/credits.json`. It keeps provider counters, consumer balances, and an append-only ledger of credit, debit, and usage events.
+
+Examples:
+
+```powershell
+agents credits provider codex --balance 100 --soft-limit 80 --window-seconds 3600
+agents credits credit codex stream-worker 25 --note seed
+agents credits debit codex stream-worker 5
+agents credits usage codex stream-worker --amount 2.5 --tokens-in 100 --tokens-out 40
+agents credits --json
+```
+
+Provider and consumer names must be simple identifiers made from letters, numbers, `.`, `_`, or `-`. Mutation commands never print secrets; `--json` prints only the updated credit store.
 
 ## Provider Notes
 

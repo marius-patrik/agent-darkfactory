@@ -53,6 +53,17 @@ export interface CreditStore {
   updatedAt: string;
 }
 
+export interface CreditLedgerEntry {
+  provider: string;
+  consumer: string;
+  action: "credit" | "debit" | "usage";
+  amount?: number;
+  tokensIn?: number;
+  tokensOut?: number;
+  at: string;
+  note?: string;
+}
+
 export interface SharedState {
   root: string;
   stateDir: string;
@@ -189,5 +200,13 @@ export async function readInstalls(state: SharedState): Promise<InstallRecord[]>
 
 export async function writeInstalls(state: SharedState, installs: InstallRecord[]): Promise<void> {
   await Bun.write(state.installsFile, `${JSON.stringify(installs, null, 2)}\n`);
+}
+
+export async function readCreditStore(state: SharedState): Promise<CreditStore> {
+  return JSON.parse(await Bun.file(state.creditsFile).text()) as CreditStore;
+}
+
+export async function writeCreditStore(state: SharedState, store: CreditStore): Promise<void> {
+  await Bun.write(state.creditsFile, `${JSON.stringify(store, null, 2)}\n`);
 }
 
