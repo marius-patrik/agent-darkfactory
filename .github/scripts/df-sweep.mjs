@@ -58,6 +58,8 @@ async function main() {
         const result = await considerPullRequest(repository, pull);
         ledger.actions.push(result);
       }
+      const closureResults = await closeRecentlyMergedDevIssues(repository);
+      ledger.actions.push(...closureResults);
     } catch (error) {
       ledger.actions.push({ repo: repoName(repository), action: "error", error: error.message || String(error) });
     }
@@ -190,6 +192,9 @@ async function closeIssuesIfDevMerge(repository, pull) {
   const issueNumbers = extractClosingIssueNumbers(pull.body || "");
   const closed = [];
   for (const issue_number of issueNumbers) {
+    if (await hasDevMergeComment(repository, issue_number, pull.url)) {
+      continue;
+    }
     await gh.request("POST", `/repos/${repoName(repository)}/issues/${issue_number}/comments`, {
       body: `merged to dev in ${pull.url}; releases with the next dev→main PR`
     });
@@ -197,6 +202,33 @@ async function closeIssuesIfDevMerge(repository, pull) {
     closed.push(issue_number);
   }
   return { repo: repoName(repository), pr: pull.url, action: "close-dev-merge-issues", issues: closed };
+}
+
+async function closeRecentlyMergedDevIssues(repository) {
+  const pulls = await gh.request(
+    "GET",
+    `/repos/${repoName(repository)}/pulls?state=closed&sort=updated&direction=desc&per_page=50`
+  );
+  if (!Array.isArray(pulls)) return [];
+
+  const results = [];
+  for (const pull of pulls) {
+    const normalized = normalizeRestPullRequest(pull);
+    if (!normalized.mergedAt || normalized.baseRefName !== "dev" || !isWorkerPullRequest(normalized)) continue;
+    const action = await closeIssuesIfDevMerge(repository, normalized);
+    if (action.issues?.length) results.push(action);
+  }
+  return results;
+}
+
+async function hasDevMergeComment(repository, issueNumber, pullUrl) {
+  const comments = await gh.request(
+    "GET",
+    `/repos/${repoName(repository)}/issues/${issueNumber}/comments?per_page=100`
+  );
+  return Array.isArray(comments) && comments.some((comment) => {
+    return typeof comment.body === "string" && comment.body.includes(`merged to dev in ${pullUrl}`);
+  });
 }
 
 async function targetRepositories() {
@@ -281,6 +313,18 @@ function isWorkerPullRequest(pull) {
       /\bDark Factory\b/i.test(provenance)
     )
   );
+}
+
+function normalizeRestPullRequest(pull) {
+  return {
+    number: pull.number,
+    title: pull.title,
+    body: pull.body || "",
+    url: pull.html_url,
+    headRefName: pull.head?.ref || "",
+    baseRefName: pull.base?.ref || "",
+    mergedAt: pull.merged_at || null
+  };
 }
 
 async function branchIsProtected(repository, branch) {
