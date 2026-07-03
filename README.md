@@ -21,10 +21,10 @@ agents doctor
 
 ## Layout
 
-- `agentos-core` contains shared proto contracts, generated clients, schemas, and contract docs.
+- `os/agents-core` contains shared proto contracts, generated clients, schemas, and contract docs.
 - `llm-gateway` contains the OpenAI-format LLM gateway, model registry routing, fallback, switchers, quota, OAuth seams, and tests.
 - `inference-engine` contains the Python agent loop, Go runtime services, engine work, deploy assets, and inference architecture.
-- `agent-manager` contains the `agents` CLI source and tests.
+- `os/agents-manager` contains the `agents` CLI source and tests.
 - `harnesses/andromeda-harness` contains the managed Rommie runtime harness.
 - `agents/darkfactory-agent`, `agents/life-support`, `agents/rommie-agent`, and
   `agents/skyblock-agent` are managed agent submodules.
@@ -69,6 +69,7 @@ runtime state:
 - `.agents/env` exports the paths every CLI should consume.
 
 See [PRD.md](PRD.md).
+
 
 
 

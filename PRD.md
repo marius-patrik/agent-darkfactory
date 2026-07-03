@@ -35,10 +35,10 @@
 - Data repo: a git-backed managed data package with an optional managed root and exported env var.
 - CLI adapter: the shared rooting and credential contract for a vendor CLI.
 - Shared state: the root `.agents` directory.
-- Core package: shared contracts and generated clients under `agentos-core`.
+- Core package: shared contracts and generated clients under `os/agents-core`.
 - Gateway package: OpenAI-format model gateway and registry routing under `llm-gateway`.
 - Inferer package: agent loop, runtime services, engine work, and deploy assets under `inference-engine`.
-- Manager package: the CLI implementation and tests under `agent-manager`.
+- Manager package: the CLI implementation and tests under `os/agents-manager`.
 - Managed checkout: a git-backed package under `<category>/<name>`. Agents, apps, harnesses, templates, data repositories, and workspace repositories are organized under explicit category folders.
 - CLI metadata: per-CLI data under `.agents/clis/<name>`.
 - Skill install: files installed under `.agents/skills/<name>`.
@@ -66,10 +66,10 @@
 
 ```text
 
-  agentos-core/
+  os/agents-core/
   agentos-gateway/
   agentos-inferer/
-  agentos-manager/
+  agents-manager/
     src/
     test/
   data/
@@ -181,5 +181,6 @@ CI runs on pushes and pull requests to `main`:
 5. Per-CLI adapter contracts for consuming shared state.
 6. Harness package install, doctor, and run commands.
 7. Andromeda Harness bridge through `AGENTS_HOME`.
+
 
 

@@ -4,11 +4,11 @@
   "description": "Agentos workspace with a Bun TypeScript agent manager and shared CLI state.",
   "type": "module",
   "bin": {
-    "agents": "./agent-manager/src/cli.ts"
+    "agents": "./os/agents-manager/src/cli.ts"
   },
   "scripts": {
     "check": "bunx tsc --noEmit",
-    "test": "bun test agent-manager/test/gitmodules.test.ts agent-manager/test/adapters.test.ts agent-manager/test/packages.test.ts agent-manager/test/data-repos.test.ts agent-manager/test/harness-cli.test.ts agent-manager/test/secrets.test.ts",
+    "test": "bun test os/agents-manager/test/gitmodules.test.ts os/agents-manager/test/adapters.test.ts os/agents-manager/test/packages.test.ts os/agents-manager/test/data-repos.test.ts os/agents-manager/test/harness-cli.test.ts os/agents-manager/test/secrets.test.ts",
     "ci": "bun run check && bun run test"
   },
   "devDependencies": {
@@ -20,4 +20,5 @@
   },
   "license": "MIT"
 }
+
 

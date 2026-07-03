@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "id": "agentos-core",
-  "name": "Agentos Core",
-  "kind": "cli",
-  "description": "Shared Agentos wire contracts, generated clients, schemas, and protocol documentation.",
-  "provides": ["wire-contracts", "shared-types", "schemas"]
-}

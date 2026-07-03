@@ -39,3 +39,11 @@
 	url = https://github.com/marius-patrik/darkfactory-workspace.git
 	branch = main
 
+[submodule "os/agents-core"]
+	path = os/agents-core
+	url = https://github.com/marius-patrik/agents-core.git
+	branch = main
+[submodule "os/agents-manager"]
+	path = os/agents-manager
+	url = https://github.com/marius-patrik/agents-manager.git
+	branch = main
