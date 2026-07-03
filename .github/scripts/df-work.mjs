@@ -14,6 +14,7 @@ const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const WORKER_IMAGE = process.env.DF_WORKER_IMAGE ?? "darkfactory-codex-worker";
 const CODEX_MODEL = process.env.DF_CODEX_MODEL ?? "gpt-5.5";
 const CODEX_EFFORT = process.env.DF_CODEX_EFFORT ?? "medium";
+const GIT_BASIC_AUTH = Buffer.from(`x-access-token:${TOKEN}`).toString("base64");
 
 const LABELS = [
   { name: "df:ready", color: "0E8A16", description: "DarkFactory work loop may pick up this issue" },
@@ -377,7 +378,7 @@ function runGitWithAuth(args, cwd) {
 }
 
 function authHeader() {
-  return `http.https://github.com/.extraheader=AUTHORIZATION: bearer ${TOKEN}`;
+  return `http.https://github.com/.extraheader=AUTHORIZATION: basic ${GIT_BASIC_AUTH}`;
 }
 
 function runCommand(command, args, cwd) {
@@ -442,7 +443,7 @@ function truncate(value, maxLength) {
 }
 
 function sanitize(value) {
-  return value.split(TOKEN).join("***");
+  return value.split(TOKEN).join("***").split(GIT_BASIC_AUTH).join("***");
 }
 
 function requiredEnv(name) {
