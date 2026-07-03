@@ -74,7 +74,7 @@ async function considerPullRequest(repository, pull) {
   const ref = `${repoName(repository)}#${pull.number}`;
 
   if (pull.isDraft) return { repo: repoName(repository), pr: ref, action: "skip", reason: "draft" };
-  if (!isWorkerPullRequest(pull)) return { repo: repoName(repository), pr: ref, action: "skip", reason: "not-worker-pr" };
+  if (!isWorkerPullRequest(pull, repository)) return { repo: repoName(repository), pr: ref, action: "skip", reason: "not-worker-pr" };
   if (!checksAreGreen(pull.statusCheckRollup)) {
     return {
       repo: repoName(repository),
@@ -214,7 +214,7 @@ async function closeRecentlyMergedDevIssues(repository) {
   const results = [];
   for (const pull of pulls) {
     const normalized = normalizeRestPullRequest(pull);
-    if (!normalized.mergedAt || normalized.baseRefName !== "dev" || !isWorkerPullRequest(normalized)) continue;
+    if (!normalized.mergedAt || normalized.baseRefName !== "dev" || !isWorkerPullRequest(normalized, repository)) continue;
     const action = await closeIssuesIfDevMerge(repository, normalized);
     if (action.issues?.length) results.push(action);
   }
@@ -274,6 +274,10 @@ async function listOpenPullRequests(repository) {
             mergeable
             baseRefName
             headRefName
+            headRepository {
+              name
+              owner { login }
+            }
             author { login }
             statusCheckRollup {
               contexts(first: 50) {
@@ -302,9 +306,11 @@ async function listOpenPullRequests(repository) {
   }));
 }
 
-function isWorkerPullRequest(pull) {
+function isWorkerPullRequest(pull, repository) {
   const provenance = `${pull.title || ""}\n${pull.body || ""}`;
+  const sameRepositoryHead = pull.headRepository?.owner?.login === repository.owner && pull.headRepository?.name === repository.repo;
   return (
+    sameRepositoryHead &&
     pull.headRefName?.startsWith("df/") &&
     (
       /DarkFactory Worker Summary/.test(provenance) ||
@@ -322,6 +328,10 @@ function normalizeRestPullRequest(pull) {
     body: pull.body || "",
     url: pull.html_url,
     headRefName: pull.head?.ref || "",
+    headRepository: {
+      name: pull.head?.repo?.name || "",
+      owner: { login: pull.head?.repo?.owner?.login || "" }
+    },
     baseRefName: pull.base?.ref || "",
     mergedAt: pull.merged_at || null
   };
