@@ -87,6 +87,26 @@ The resolver records `route.resolve` entries in `AGENTS_CREDITS` when that
 ledger path is configured. Chat requests may also send `task_class`; successful
 requests then write per-provider and per-class token usage to the same ledger.
 
+## Service packaging
+
+The supported service package is the root `Dockerfile` plus
+`docker-compose.yml`; legacy Docker assets under `legacy/` are preserved only as
+history.
+
+```bash
+docker build -t agentos/llm-gateway:local .
+docker compose up --build llm-gateway
+```
+
+The container listens on port `4000` and has a `/healthz` healthcheck. It starts
+without live model engines; health may report `unhealthy` or `degraded` until
+local backends are reachable, but the HTTP route remains available. For a
+non-Docker package smoke:
+
+```bash
+uv run python scripts/packaging_smoke.py
+```
+
 ## Deferred cloud OAuth dispatch
 
 The registry includes disabled cloud stubs for `claude`, `codex`, `kimi`, and
