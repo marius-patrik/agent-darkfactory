@@ -9,11 +9,13 @@ export interface GitHubSecretSyncOptions {
   owner?: string;
   repo?: string;
   includeArchived?: boolean;
+  dryRun?: boolean;
 }
 
 export interface GitHubSecretSyncResult {
   repo: string;
-  status: "set";
+  status: "set" | "dry-run";
+  targetName: string;
 }
 
 export function validateSecretName(name: string): string {
@@ -58,14 +60,13 @@ export async function syncGitHubSecret(
   const name = validateSecretName(options.name);
   const targetName = validateSecretName(options.targetName ?? name);
   const value = await readSecret(state, name);
-  const repos = options.repo
-    ? [options.repo]
-    : await listGitHubRepositories(options.owner ?? "marius-patrik", Boolean(options.includeArchived));
+  if (!options.repo && !options.owner) throw new Error("secrets github sync requires --repo or --owner");
+  const repos = options.repo ? [options.repo] : await listGitHubRepositories(options.owner as string, Boolean(options.includeArchived));
   const results: GitHubSecretSyncResult[] = [];
 
   for (const repo of repos) {
-    await runGh(["secret", "set", targetName, "--repo", repo], value);
-    results.push({ repo, status: "set" });
+    if (!options.dryRun) await runGh(["secret", "set", targetName, "--repo", repo], value);
+    results.push({ repo, status: options.dryRun ? "dry-run" : "set", targetName });
   }
 
   return results;

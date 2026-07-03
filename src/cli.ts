@@ -73,7 +73,7 @@ Usage:
   agents secrets list [--json]
   agents secrets set <NAME> [--from-file path]
   agents secrets path <NAME>
-  agents secrets github sync <NAME> [--as SECRET_NAME] [--owner owner] [--repo owner/name]
+  agents secrets github sync <NAME> [--as SECRET_NAME] [--repo owner/name | --owner owner] [--dry-run]
   agents credits [--json]
   agents credits credit <provider> <consumer> <amount> [--note text] [--json]
   agents credits debit <provider> <consumer> <amount> [--note text] [--json]
@@ -726,8 +726,9 @@ async function secretsCommand(args: string[], flags: Record<string, string | boo
       owner: typeof flags.owner === "string" ? flags.owner : undefined,
       repo: typeof flags.repo === "string" ? flags.repo : undefined,
       includeArchived: Boolean(flags["include-archived"]),
+      dryRun: Boolean(flags["dry-run"]),
     });
-    for (const result of results) console.log(`${result.status} ${result.repo}`);
+    for (const result of results) console.log(`${result.status} ${result.repo} ${result.targetName}`);
     return;
   }
 

@@ -87,7 +87,7 @@ agents installs [--json]
 agents secrets list [--json]
 agents secrets set <NAME> [--from-file path]
 agents secrets path <NAME>
-agents secrets github sync <NAME> [--as SECRET_NAME] [--owner owner] [--repo owner/name]
+agents secrets github sync <NAME> [--as SECRET_NAME] [--repo owner/name | --owner owner] [--dry-run]
 agents credits [--json]
 agents credits credit <provider> <consumer> <amount> [--note text] [--json]
 agents credits debit <provider> <consumer> <amount> [--note text] [--json]
@@ -117,3 +117,5 @@ Provider and consumer names must be simple identifiers made from letters, number
 `agents cli doctor` checks whether provider binaries and credential sources are available. Missing Codex, Claude, Kimi, or Agy/Gemini binaries are environment setup issues, not package validation failures. `agents cli exec` launches the provider with shared `AGENTS_*` environment variables and the provider-specific managed home.
 
 `agents secrets github sync` mutates GitHub repository secrets through `gh secret set`. Prefer tests and dry runs around command construction; reserve live sync for explicit operational use.
+
+Secret sync requires an explicit target. Use `--repo owner/name` for a single repository, or `--owner owner` when intentionally syncing to that owner's non-archived repositories. Add `--dry-run` to validate the local secret and target mapping without calling `gh secret set`.
