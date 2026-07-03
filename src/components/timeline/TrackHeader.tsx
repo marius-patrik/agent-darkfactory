@@ -145,7 +145,11 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
           value={track.outputTrackId ?? ""}
           onChange={(e) => onSetOutput(e.target.value || null)}
           className="text-xs px-1 py-0.5 rounded border"
-          style={{ backgroundColor: "var(--vsdaw-bg)", borderColor: "var(--vsdaw-border)", color: "inherit" }}
+          style={{
+            backgroundColor: "var(--vsdaw-bg)",
+            borderColor: "var(--vsdaw-border)",
+            color: "inherit",
+          }}
           aria-label="Output"
         >
           <option value="">Master</option>
@@ -162,7 +166,11 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
           value={track.inputDeviceId ?? ""}
           onChange={(e) => onSetInputDevice(e.target.value)}
           className="text-xs px-1 py-0.5 rounded border"
-          style={{ backgroundColor: "var(--vsdaw-bg)", borderColor: "var(--vsdaw-border)", color: "inherit" }}
+          style={{
+            backgroundColor: "var(--vsdaw-bg)",
+            borderColor: "var(--vsdaw-border)",
+            color: "inherit",
+          }}
           aria-label="Input device"
         >
           <option value="">Default input</option>

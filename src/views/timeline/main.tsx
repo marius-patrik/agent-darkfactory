@@ -168,7 +168,9 @@ const TimelineView: React.FC = () => {
                   onAddAutomationLane={state.automationActions.addLane}
                   onRemoveAutomationLane={state.automationActions.removeLane}
                   onGetDeviceParameters={state.deviceActions.getParameters}
-                  onSetOutput={(outputTrackId) => state.mixerActions.setOutput(track.id, outputTrackId)}
+                  onSetOutput={(outputTrackId) =>
+                    state.mixerActions.setOutput(track.id, outputTrackId)
+                  }
                   onSetInputDevice={(inputDeviceId) =>
                     state.mixerActions.setInputDevice(track.id, inputDeviceId)
                   }

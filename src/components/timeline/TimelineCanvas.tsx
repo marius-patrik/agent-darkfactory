@@ -30,6 +30,8 @@ interface CanvasSize {
   dpr: number;
 }
 
+type SizedTrack = TrackState & { height: number };
+
 function useCanvasSize(containerRef: React.RefObject<HTMLDivElement | null>) {
   const [size, setSize] = React.useState<CanvasSize>({ width: 0, height: 0, dpr: 1 });
 
@@ -117,11 +119,14 @@ export const TimelineCanvas: React.FC<TimelineCanvasProps> = ({
     [sizedTracks],
   );
 
-  const regionHeightForTrack = (track: (typeof sizedTracks)[number]) =>
-    Math.max(
-      MIN_TRACK_HEIGHT - 8,
-      track.height - (track.automationLanes?.length ?? 0) * AUTOMATION_LANE_HEIGHT,
-    );
+  const regionHeightForTrack = React.useCallback(
+    (track: SizedTrack) =>
+      Math.max(
+        MIN_TRACK_HEIGHT - 8,
+        track.height - (track.automationLanes?.length ?? 0) * AUTOMATION_LANE_HEIGHT,
+      ),
+    [],
+  );
 
   const { width, height, dpr } = useCanvasSize(containerRef);
 

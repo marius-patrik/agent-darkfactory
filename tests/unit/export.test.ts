@@ -1,4 +1,5 @@
 import type * as vscode from "vscode";
+import type { PlaywrightEngineManager } from "../../src/extension/playwrightEngine.js";
 import { ProjectManager } from "../../src/extension/projectManager.js";
 import { MessageType } from "../../src/shared/protocol.js";
 
@@ -50,7 +51,7 @@ function createProjectManager(router: ReturnType<typeof createMockRouter>): Proj
     context,
     outputChannel,
     router: router as unknown as import("../../src/extension/messageRouter.js").MessageRouter,
-    engineManager: {} as unknown as import("../../src/extension/playwrightEngine.js").PlaywrightEngineManager,
+    engineManager: {} as unknown as PlaywrightEngineManager,
   });
 
   const sessionUri = { toString: () => "file:///test.vsdaw" } as unknown as vscode.Uri;
@@ -130,7 +131,7 @@ describe("ProjectManager export", () => {
 
     expect(writeFileSpy).toHaveBeenCalled();
     expect(renameSpy).toHaveBeenCalled();
-    const finalPath = renameSpy.mock.calls[0][1].fsPath as string;
+    const finalPath = (renameSpy.mock.calls[0][1].fsPath as string).replace(/\\/g, "/");
     expect(finalPath).toBe("/exports/song.wav");
     const written = writeFileSpy.mock.calls[0][1] as Uint8Array;
     expect(written).toEqual(WAV_BYTES);
@@ -146,7 +147,7 @@ describe("ProjectManager export", () => {
 
     expect(writeFileSpy).toHaveBeenCalled();
     expect(renameSpy).toHaveBeenCalled();
-    const finalPath = renameSpy.mock.calls[0][1].fsPath as string;
+    const finalPath = (renameSpy.mock.calls[0][1].fsPath as string).replace(/\\/g, "/");
     expect(finalPath).toBe("/exports/song.wav");
     const written = writeFileSpy.mock.calls[0][1] as Uint8Array;
     expect(written).toEqual(WAV_BYTES);

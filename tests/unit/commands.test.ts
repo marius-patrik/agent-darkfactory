@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import { registerCommands } from "../../src/extension/commands.js";
+import type { PlaywrightEngineManager } from "../../src/extension/playwrightEngine.js";
+import type { PianoRollWebviewProvider } from "../../src/extension/views/index.js";
 
 const mockedVscode = vscode as unknown as {
   window: {
@@ -51,9 +53,9 @@ describe("commands", () => {
     return registerCommands({
       context: {} as vscode.ExtensionContext,
       projectManager,
-      engineManager: {} as import("../../src/extension/playwrightEngine.js").PlaywrightEngineManager,
+      engineManager: {} as PlaywrightEngineManager,
       mixerProvider: {} as import("../../src/extension/views/index.js").MixerWebviewProvider,
-      pianoRollProvider: {} as import("../../src/extension/views/index.js").PianoRollWebviewProvider,
+      pianoRollProvider: {} as PianoRollWebviewProvider,
       browserProvider: {} as import("../../src/extension/views/index.js").BrowserWebviewProvider,
       graphProvider: {} as import("../../src/extension/views/index.js").GraphWebviewProvider,
     });

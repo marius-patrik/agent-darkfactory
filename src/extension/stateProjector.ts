@@ -1,13 +1,13 @@
 import { AUTOMATION_LANE_HEIGHT } from "../shared/automation.js";
 import {
+  type DeviceListItem,
   type AutomationLaneState as EngineAutomationLaneState,
   type AutomationPointState as EngineAutomationPointState,
-  type DeviceListItem,
   type NoteState as EngineNoteState,
-  type PluginState,
   type RegionState as EngineRegionState,
   type TrackState as EngineTrackState,
   MessageType,
+  type PluginState,
   type ProjectState,
   type TransportState,
 } from "../shared/protocol.js";
@@ -15,9 +15,9 @@ import { DEFAULT_PPQN, ppqnToBarsBeatsTicks, ppqnToSeconds } from "../shared/tim
 import type {
   BrowserNode,
   HostMessage,
-  NoteState as ViewNoteState,
   SelectionState,
   TimePosition,
+  NoteState as ViewNoteState,
   RegionState as ViewRegionState,
   TrackState as ViewTrackState,
 } from "../views/shared/types.js";
@@ -159,18 +159,14 @@ export class ProjectStateProjector {
   async requestDeviceList(): Promise<void> {
     try {
       const [deviceResponse, pluginResponse] = await Promise.all([
-        this.router.requestEngine(
-          this.projectId,
-          MessageType.DeviceList,
-          undefined,
-          { responseType: MessageType.DeviceList, timeoutMs: 10000 },
-        ),
-        this.router.requestEngine(
-          this.projectId,
-          MessageType.PluginScan,
-          undefined,
-          { responseType: MessageType.PluginScan, timeoutMs: 10000 },
-        ),
+        this.router.requestEngine(this.projectId, MessageType.DeviceList, undefined, {
+          responseType: MessageType.DeviceList,
+          timeoutMs: 10000,
+        }),
+        this.router.requestEngine(this.projectId, MessageType.PluginScan, undefined, {
+          responseType: MessageType.PluginScan,
+          timeoutMs: 10000,
+        }),
       ]);
       const devices = (deviceResponse.payload as DeviceListItem[] | undefined) ?? [];
       const plugins = (pluginResponse.payload as PluginState[] | undefined) ?? [];
@@ -225,7 +221,13 @@ export class ProjectStateProjector {
     return {
       type: "host/tracks",
       tracks: state.tracks.map((track) =>
-        this.convertTrack(track, state.tracks, state.regions, state.automationLanes, state.automationPoints),
+        this.convertTrack(
+          track,
+          state.tracks,
+          state.regions,
+          state.automationLanes,
+          state.automationPoints,
+        ),
       ),
     };
   }

@@ -20,7 +20,13 @@ const PianoRollView: React.FC = () => {
 
   const addNote = (note: { start: number; duration: number; pitch: number; velocity: number }) => {
     if (!regionId) return;
-    state.pianoRollActions.createNote(regionId, note.start, note.duration, note.pitch, note.velocity);
+    state.pianoRollActions.createNote(
+      regionId,
+      note.start,
+      note.duration,
+      note.pitch,
+      note.velocity,
+    );
   };
 
   const moveNote = (noteId: string, start: number, pitch: number) => {

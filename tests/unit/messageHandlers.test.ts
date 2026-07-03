@@ -419,7 +419,9 @@ describe("messageHandlers - track operations", () => {
       makeMessage(MessageType.TrackAddSend, { trackId: "t1", targetTrackId: "bus-1", amount: 0.5 }),
     );
     expect(result.type).toBe("ok");
-    expect((result as Extract<typeof result, { type: "ok" }>).payload).toEqual({ sendId: "send-new" });
+    expect((result as Extract<typeof result, { type: "ok" }>).payload).toEqual({
+      sendId: "send-new",
+    });
     expect(controller.calls).toContainEqual({
       method: "addTrackSend",
       args: ["t1", "bus-1", 0.5],
@@ -512,14 +514,19 @@ describe("messageHandlers - note editing", () => {
   test("NoteResize forwards noteId and duration", async () => {
     const controller = createMockController();
     await expectOk(
-      handleMessage(controller, makeMessage(MessageType.NoteResize, { noteId: "note-1", duration: 2 })),
+      handleMessage(
+        controller,
+        makeMessage(MessageType.NoteResize, { noteId: "note-1", duration: 2 }),
+      ),
     );
     expect(controller.calls).toContainEqual({ method: "resizeNote", args: ["note-1", 2] });
   });
 
   test("NoteDelete forwards noteId", async () => {
     const controller = createMockController();
-    await expectOk(handleMessage(controller, makeMessage(MessageType.NoteDelete, { noteId: "note-1" })));
+    await expectOk(
+      handleMessage(controller, makeMessage(MessageType.NoteDelete, { noteId: "note-1" })),
+    );
     expect(controller.calls).toContainEqual({ method: "deleteNote", args: ["note-1"] });
   });
 

@@ -151,7 +151,8 @@ export function useViewState(view: ViewName) {
     ) => send({ type: "note/create", regionId, position, duration, pitch, velocity }),
     moveNote: (noteId: string, position?: number, pitch?: number) =>
       send({ type: "note/move", noteId, position, pitch }),
-    resizeNote: (noteId: string, duration: number) => send({ type: "note/resize", noteId, duration }),
+    resizeNote: (noteId: string, duration: number) =>
+      send({ type: "note/resize", noteId, duration }),
     deleteNote: (noteId: string) => send({ type: "note/delete", noteId }),
     setNoteVelocity: (noteId: string, velocity: number) =>
       send({ type: "note/setVelocity", noteId, velocity }),

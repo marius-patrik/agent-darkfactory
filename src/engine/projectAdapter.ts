@@ -45,10 +45,10 @@ import {
 import { SampleStorage, SoundfontStorage } from "@opendaw/studio-core";
 import { DEFAULT_AUTOMATION_VALUE } from "../shared/automation.js";
 import type {
+  TrackType as ApiTrackType,
   AutomationLaneState,
   AutomationPointState,
   AutomationTarget,
-  TrackType as ApiTrackType,
   DeviceListItem,
   DeviceParameterDescriptor,
   ExportFormat,

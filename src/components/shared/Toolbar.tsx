@@ -147,7 +147,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Zoom / snap controls */}
       {onZoomChange && zoom != null && (
-        <div className="flex items-center gap-2 px-2 py-1 rounded" style={{ backgroundColor: "var(--vsdaw-bg)", border: "1px solid var(--vsdaw-border)" }}>
+        <div
+          className="flex items-center gap-2 px-2 py-1 rounded"
+          style={{ backgroundColor: "var(--vsdaw-bg)", border: "1px solid var(--vsdaw-border)" }}
+        >
           <span className="text-xs opacity-70">Zoom</span>
           <input
             type="range"
@@ -168,7 +171,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           value={snapDivision}
           onChange={(e) => onSnapChange(e.target.value)}
           className="text-xs px-2 py-1 rounded border"
-          style={{ backgroundColor: "var(--vsdaw-bg)", borderColor: "var(--vsdaw-border)", color: "inherit" }}
+          style={{
+            backgroundColor: "var(--vsdaw-bg)",
+            borderColor: "var(--vsdaw-border)",
+            color: "inherit",
+          }}
           aria-label="Snap to grid"
         >
           <option value="bar">Bar</option>
