@@ -79,10 +79,36 @@ The bot listens on `http://localhost:3000/webhook`. Point the GitHub App webhook
 npm run typecheck
 npm test
 npm run build
+df runners status
 darkfactory serve
 darkfactory install-url
 darkfactory sync-managed
 ```
+
+## Self-hosted runner manager
+
+DarkFactory can install and supervise per-repository GitHub Actions runners on the local Windows host. The manager uses per-repo runners because personal GitHub accounts cannot attach one runner to every repository. Each runner is named `df-<repo>`, receives the `df-local` label, and is configured without `--runasservice` so it does not require elevation.
+
+The default root is:
+
+```text
+C:/Users/patrik/.darkfactory/runners
+```
+
+Override it per command with `--root <path>` or by setting `DF_RUNNER_ROOT`. Runtime state is stored in `state.json` under that root. Registration and removal tokens are fetched from GitHub when needed and are not written to state.
+
+```powershell
+df runners setup marius-patrik/darkfactory-agent
+df runners setup marius-patrik/dream
+df runners status
+df runners stop marius-patrik/dream
+df runners start marius-patrik/dream
+df runners remove marius-patrik/dream
+```
+
+`setup` downloads the latest Windows x64 `actions/runner` package into the shared `_cache` directory, extracts it to the per-repo runner directory, runs `config.cmd` unattended with `--labels df-local`, starts `run.cmd` as a detached background process, and records the PID. `status` combines local PID state with `gh api repos/<owner>/<repo>/actions/runners` so online/offline evidence comes from GitHub.
+
+Do not run the manager from an elevated prompt and do not add `--runasservice`; service installation requires UAC and is intentionally out of scope for the local pilot.
 
 ## Deployment
 
