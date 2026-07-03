@@ -214,10 +214,13 @@ export function parsePrdItems(markdown) {
   return items;
 }
 
-export function prdIssueBody(item) {
+export function prdIssueBody(item, blockedBy = []) {
   const acceptance = item.acceptance
     ? `- ${item.acceptance}`
     : "- Keep implementation aligned with the PRD item and update this issue when the PRD changes.";
+  const blockedByLines = blockedBy.length
+    ? ["", "## Sequencing", "", ...blockedBy.map((issueNumber) => `Blocked-by: #${issueNumber}`)]
+    : [];
 
   return [
     `<!-- ${item.marker} -->`,
@@ -232,6 +235,7 @@ export function prdIssueBody(item) {
     "## Acceptance Criteria",
     "",
     acceptance,
+    ...blockedByLines,
     "",
     "## Planning Notes",
     "",

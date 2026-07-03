@@ -10,6 +10,7 @@ const {
   cleanupTempRoot,
   extractClosingIssueNumbers,
   parsePrdItems,
+  prdIssueBody,
   taskClassFromLabels
 } = dfLib;
 
@@ -45,6 +46,14 @@ test("task class labels map to Codex reasoning effort", () => {
     taskClass: "standard",
     effort: "medium"
   });
+});
+
+test("prdIssueBody records deterministic Blocked-by sequencing", () => {
+  const [item] = parsePrdItems("## Milestones\n\n- **M2 — Planning**: Reconcile. Acceptance: update issues.");
+  const body = prdIssueBody(item, [10]);
+
+  assert.match(body, /Blocked-by: #10/);
+  assert.match(body, /df-prd:milestones-m2-planning/);
 });
 
 test("cleanupTempRoot reports cleanup failures without throwing", async () => {

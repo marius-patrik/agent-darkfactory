@@ -22,7 +22,7 @@ import {
 
 const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
 const CONTROL_REPO = parseRepo(requiredEnv("DF_CONTROL_REPO"));
-const TARGET_REPO = parseRepo(process.env.DF_TARGET_REPO?.trim() || repoName(CONTROL_REPO));
+let TARGET_REPO = parseRepo(process.env.DF_TARGET_REPO?.trim() || repoName(CONTROL_REPO));
 const DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const gh = createGithubClient(TOKEN, "darkfactory-plan");
@@ -33,6 +33,14 @@ main().catch((error) => {
 });
 
 async function main() {
+  const targets = process.env.DF_PLAN_ALL === "true" ? await targetRepositories() : [TARGET_REPO];
+  for (const target of targets) {
+    TARGET_REPO = target;
+    await reconcileTargetRepository();
+  }
+}
+
+async function reconcileTargetRepository() {
   assertAllowedRepo(TARGET_REPO);
   await ensureLabels(gh, TARGET_REPO, [...PLANNING_LABELS, ...WORK_LABELS]);
 
@@ -69,10 +77,12 @@ async function main() {
   }
 
   const expectedMarkers = new Set(items.map((item) => item.marker));
+  let previousOpenIssueNumber = null;
 
   for (const item of items) {
     const existing = byMarker.get(item.marker);
-    const body = prdIssueBody(item);
+    const blockedBy = previousOpenIssueNumber ? [previousOpenIssueNumber] : [];
+    const body = prdIssueBody(item, blockedBy);
     const labels = [item.priority, "roadmap", `df:class:${item.taskClass}`];
 
     if (!existing) {
@@ -82,6 +92,7 @@ async function main() {
         labels
       });
       ledger.actions.push({ action: "create-issue", marker: item.marker, issue: issueRef(created) });
+      previousOpenIssueNumber = created.number;
       continue;
     }
 
@@ -99,6 +110,7 @@ async function main() {
     }
     await setIssueLabels(TARGET_REPO, existing.number, labels);
     ledger.actions.push({ action: "sequence-labels", marker: item.marker, issue: issueRef(existing), labels });
+    previousOpenIssueNumber = existing.number;
   }
 
   const staleMarkedIssues = [...byMarker.values()].filter((issue) => {
@@ -130,6 +142,21 @@ async function main() {
 
   await writeLedger(ledger);
   console.log(`DarkFactory planning reconciled ${items.length} PRD items for ${repoName(TARGET_REPO)}.`);
+}
+
+async function targetRepositories() {
+  try {
+    const data = await gh.request("GET", "/installation/repositories?per_page=100");
+    if (Array.isArray(data.repositories)) {
+      return data.repositories
+        .map((repo) => parseRepo(repo.full_name))
+        .filter((repo) => repo.owner === CONTROL_REPO.owner);
+    }
+  } catch {
+    return [CONTROL_REPO];
+  }
+
+  return [CONTROL_REPO];
 }
 
 async function setIssueLabels(repository, issueNumber, labels) {

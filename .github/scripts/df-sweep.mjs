@@ -89,21 +89,31 @@ async function considerPullRequest(repository, pull) {
   const protectedBranch = await branchIsProtected(repository, pull.baseRefName);
   if (protectedBranch) {
     const enabled = await enableAutoMerge(pull.id);
+    if (enabled.enabled) {
+      return {
+        repo: repoName(repository),
+        pr: ref,
+        url: pull.url,
+        action: "enable-automerge",
+        result: enabled,
+        checks: checksSummary(pull.statusCheckRollup)
+      };
+    }
+
+    const merged = await mergePullRequest(repository, pull);
     return {
       repo: repoName(repository),
       pr: ref,
       url: pull.url,
-      action: "enable-automerge",
-      result: enabled,
+      action: "merge",
+      sha: merged.sha,
+      base: pull.baseRefName,
+      fallback_from_automerge: enabled.reason,
       checks: checksSummary(pull.statusCheckRollup)
     };
   }
 
-  const merged = await gh.request("PUT", `/repos/${repoName(repository)}/pulls/${pull.number}/merge`, {
-    commit_title: pull.title,
-    merge_method: "squash"
-  });
-  await closeIssuesIfDevMerge(repository, pull);
+  const merged = await mergePullRequest(repository, pull);
   return {
     repo: repoName(repository),
     pr: ref,
@@ -113,6 +123,15 @@ async function considerPullRequest(repository, pull) {
     base: pull.baseRefName,
     checks: checksSummary(pull.statusCheckRollup)
   };
+}
+
+async function mergePullRequest(repository, pull) {
+  const merged = await gh.request("PUT", `/repos/${repoName(repository)}/pulls/${pull.number}/merge`, {
+    commit_title: pull.title,
+    merge_method: "squash"
+  });
+  await closeIssuesIfDevMerge(repository, pull);
+  return merged;
 }
 
 async function closeDevMergeIssuesFromEnv() {
