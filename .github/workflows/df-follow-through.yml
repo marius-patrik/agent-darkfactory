@@ -14,9 +14,6 @@ on:
         required: false
         type: string
         default: marius-patrik/agents-harness
-  pull_request:
-    types:
-      - closed
 
 permissions:
   contents: read
@@ -84,51 +81,6 @@ jobs:
           DF_SWEEP_REPOS: ${{ github.event_name == 'workflow_dispatch' && inputs.repos || '' }}
           DF_SWEEP_EXCLUDE_REPOS: ${{ github.event_name == 'workflow_dispatch' && inputs.exclude_repos || 'marius-patrik/agents-harness' }}
           DF_ALLOW_NO_CHECK_REPOS: ${{ vars.DF_ALLOW_NO_CHECK_REPOS }}
-          DF_TRIGGER: ${{ github.event_name }}
-          DF_DATA_REPO: marius-patrik/darkfactory-data
-        shell: bash
-        run: |
-          export GITHUB_EVENT_PAYLOAD="$(cat "$GITHUB_EVENT_PATH")"
-          node darkfactory-control/.github/scripts/df-sweep.mjs
-
-  dev-merge:
-    name: Close issues on dev merge
-    runs-on: ubuntu-latest
-    if: >-
-      ${{
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.merged == true &&
-        github.event.pull_request.base.ref == 'dev' &&
-        github.repository == 'marius-patrik/darkfactory-agent' &&
-        github.event.pull_request.head.repo.full_name == github.repository
-      }}
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-
-    steps:
-      - name: Validate dev-merge event
-        shell: bash
-        run: |
-          if [[ "${GITHUB_REPOSITORY_OWNER}" != "marius-patrik" ]]; then
-            echo "::error::DarkFactory dev-merge closure can only run in the marius-patrik owner."
-            exit 1
-          fi
-
-      - name: Checkout DarkFactory from this repository
-        uses: actions/checkout@v4
-        with:
-          # Pin control scripts to the exact trusted event commit.
-          ref: ${{ github.sha }}
-          path: darkfactory-control
-          persist-credentials: false
-
-      - name: Run dev-merge closure
-        env:
-          DARK_FACTORY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DF_CONTROL_REPO: ${{ github.repository }}
-          DF_FOLLOW_THROUGH_MODE: dev-merge
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data
         shell: bash
