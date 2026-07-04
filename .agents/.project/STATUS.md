@@ -8,8 +8,9 @@
 | Branch | `main` |
 | Issue | n/a |
 | Purpose | GitHub App bot for repository automation |
+| Version | `0.2.0` |
 | Managed setup | Workspace-backed `.agents/.global`, optional repo-specific `.agents/.project`, GitHub bootstrap, and Codex Review workflow PRs |
-| Release | Tag-driven GitHub release and GHCR image workflow |
+| Release | `v0.2.0` shipped (M2 planning loop) |
 | CI | GitHub Actions `validate` job |
 
 ## Validation
