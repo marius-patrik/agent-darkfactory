@@ -38,3 +38,6 @@ jobs:
 
       - name: Validate
         run: bun run ci
+
+      - name: Verify obsolete root skills/ directory is not tracked
+        run: test -z "$(git ls-files skills/)"

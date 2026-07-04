@@ -5,12 +5,12 @@
     "required": {
       "validate": true,
       "build": false,
-      "smoke": false
+      "smoke": true
     },
     "scripts": {
       "validate": ["ci", "check", "test"],
       "build": ["build:release", "release:build", "build"],
-      "smoke": ["smoke:release", "release:smoke", "test:release"]
+      "smoke": ["release:smoke", "smoke:release", "test:release"]
     },
     "artifactGlobs": ["dist/release/**", "dist/**"],
     "notes": "Every managed repo must validate before release. Repos that ship binaries or installers should add build and smoke scripts so this managed workflow exercises the actual release path."

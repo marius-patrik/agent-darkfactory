@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "installer": {
-    "required": false,
-    "paths": ["install/install.sh", "install/install.ps1"],
-    "postInstallChecks": ["version", "doctor"],
-    "notes": "CLI repos should provide platform installers and smoke them in their release scripts. Library, app, and documentation repos may leave installers absent."
+    "required": true,
+    "paths": ["install/install.sh"],
+    "postInstallChecks": ["state-init", "list"],
+    "notes": "This root remains developer/source-install only for now. install/install.sh provides a supported source install path (clone dev branch, submodule init, dependencies, bun link, fast CLI smoke). Release-backed binary installers, a Windows PowerShell installer, and an automatic updater are deferred to follow-up issue #24."
   },
   "autoUpdater": {
     "centralized": true,

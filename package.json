@@ -1,7 +1,7 @@
 {
   "name": "@marius-patrik/agents-mono",
   "version": "0.1.0",
-  "description": "agents-mono workspace with a Bun TypeScript agent manager and shared CLI state.",
+  "description": "Root aggregator workspace for the agents-mono topology. Exposes the `agents` CLI and validates the `os/agents-manager` TypeScript test surface.",
   "type": "module",
   "bin": {
     "agents": "./os/agents-manager/src/cli.ts"
@@ -11,7 +11,8 @@
     "test": "bun test os/agents-manager/test/gitmodules.test.ts os/agents-manager/test/adapters.test.ts os/agents-manager/test/packages.test.ts os/agents-manager/test/data-repos.test.ts os/agents-manager/test/harness-cli.test.ts os/agents-manager/test/secrets.test.ts os/agents-manager/test/state.test.ts",
     "image:build": "docker build -f os/agents-os/Dockerfile -t agents-os:dev --build-arg AGENTS_OS_CHANNEL=dev .",
     "image:smoke": "bun os/agents-os/bin/smoke.ts",
-    "ci": "bun run check && bun run test"
+    "ci": "bun run check && bun run test",
+    "smoke:release": "bash install/smoke-release.sh"
   },
   "devDependencies": {
     "@types/bun": "latest",

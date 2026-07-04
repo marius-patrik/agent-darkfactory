@@ -1,15 +1,26 @@
-# Agentos / Agents Manager PRD
+# agents-mono / Agents Manager PRD
 
 ## Overview
 
 `agents-mono` is a workspace for managing agent packages. Its `agents` CLI is a Bun TypeScript package manager that installs and tracks agent repos, app repos, templates, private workspace state, CLI adapters, skills, plugins, and shared runtime state so every managed CLI sees the same installed capabilities and credit store.
+
+## Naming contract
+
+Root docs and metadata use the following names. Legacy names are retained only
+where they identify an existing repo, env var, or historical concept.
+
+- `agents-mono` — the root aggregator repository and workspace.
+- `agents` — the unified management CLI implemented in `os/agents-manager`.
+- `os/agents-*` — OS/platform packages (`agents-core`, `agents-manager`, `agents-harness`).
+- `agentos-data` — retained compatibility name for the default git-backed data repository and its env var (`AGENTOS_DATA_ROOT`).
+- `Agentos`, `Andromeda`, `Rommie`, and similar legacy names are intentionally scoped; new docs and metadata use the current names above.
 
 ## Goals
 
 - Manage git-backed agent packages from one workspace.
 - Keep CLI-specific metadata under `.agents/clis`.
 - Keep user-installed skills and plugins under `.agents/skills` and `.agents/plugins`.
-- Keep harness packages under `` and launch them with shared state.
+- Keep harness packages under `os/agents-harness` and launch them with shared state.
 - Configure git-backed data repositories such as `agentos-data`; workspace packages such as `darkfactory-workspace` can point at those data repos.
 - Expose one shared state root to every CLI through `.agents/env`.
 - Maintain a shared credit store at `.agents/credits.json`.
@@ -41,6 +52,8 @@
 - Manager package: the CLI implementation and tests under `os/agents-manager`.
 - Managed checkout: a git-backed package under `<category>/<name>`. Agents, apps, harnesses, templates, data repositories, and workspace repositories are organized under explicit category folders.
 - Distro image: a releaseable container image (`agents-os`) that packages the agents CLI, Bun/Node/Python/Go runtimes, and the shared-state mount contract.
+- Global workspace: the system-wide writable working set at `os/agents-workspace`, paired with `agentos-data` as its durable data companion.
+- Per-agent workspace pattern: every agent gets a data repo (`data/<agent-name>-data`) and a workspace repo (`workspaces/<agent-name>-workspace`), mirroring the reference pair `darkfactory-data` + `darkfactory-workspace`.
 - CLI metadata: per-CLI data under `.agents/clis/<name>`.
 - Skill install: files installed under `.agents/skills/<name>`.
 - Plugin install: files installed under `.agents/plugins/<name>`.
@@ -72,6 +85,7 @@
     agents-core/
     agents-manager/
     agents-harness/
+    agents-workspace/
     llm-gateway/
     inference-engine/
   data/
@@ -87,10 +101,10 @@
     darkfactory-templates/
   workspaces/
     darkfactory-workspace/
+    # future per-agent workspaces follow workspaces/<agent-name>-workspace
   plugins/
     plugin-rommie/
     dream/
-  skills/
 ```
 
 ## State Layout
@@ -111,19 +125,40 @@
   env
 ```
 
-Every managed CLI must read `AGENTS_HOME`, `AGENTS_CLIS`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, `AGENTS_HOOKS`, `AGENTS_TEMPLATES`, `AGENTS_SECRETS`, `AGENTS_CREDITS`, and `AGENTS_DATA_REPOS` from `.agents/env` or equivalent environment exports. Package and harness execution also exports configured data repo env vars such as `AGENTOS_DATA_ROOT` and `DARK_FACTORY_WORKSPACE_ROOT`.
+Every managed CLI must read `AGENTS_HOME`, `AGENTS_ROOT`, `AGENTS_DATA`, `AGENTS_WORKSPACE`, `AGENTS_CLIS`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, `AGENTS_HOOKS`, `AGENTS_TEMPLATES`, `AGENTS_SECRETS`, `AGENTS_CREDITS`, and `AGENTS_DATA_REPOS` from `.agents/env` or equivalent environment exports. Package and harness execution also exports configured data repo env vars such as `AGENTOS_DATA_ROOT` and `DARK_FACTORY_WORKSPACE_ROOT`.
+
+## Skills contract
+
+The root `skills/` directory is obsolete. It previously appeared in the layout as
+a placeholder and must not be repopulated.
+
+Skills live in exactly one of these places:
+
+- **User-installed shared skills** — `.agents/skills/<name>`, installed by
+  `agents install skill <name> <source>` and shared across every managed CLI.
+- **Installed plugin assets** — `.agents/plugins/<name>/` (a plugin may bundle
+  plugin-specific skills, prompts, or hooks with its install).
+- **Project-level managed skills** — `.agents/.global/skills/<name>/`, part of
+  the DarkFactory baseline and tracked in this repo as managed files.
+- **Package-authored skills** — skills that ship with an agent, app, or template
+  live inside that package's own submodule or registered path.
+
+Do not add a top-level `skills/` source directory; doing so would collide with
+`.agents/skills` and break the shared-state contract.
 
 ## Harness Contract
 
-Harnesses declare an `agent.package.json` manifest:
+Harnesses declare an `agent.package.json` manifest. The exact `entry` and
+`workingDirectory` are package-defined; the example below shows a current
+agents-harness shape rather than the legacy Andromeda command path:
 
 ```json
 {
   "schemaVersion": 1,
   "id": "agents-harness",
   "kind": "harness",
-  "entry": "go run ./cmd/andromeda",
-  "workingDirectory": "services/cli",
+  "entry": "go run ./cmd/agents-harness",
+  "workingDirectory": ".",
   "requires": {
     "clis": ["codex", "claude", "kimi", "agy"],
     "state": ["skills", "plugins", "hooks", "credits"]
@@ -162,6 +197,40 @@ Built-in adapters:
 - Agy: `HOME=.agents/clis/agy`, credential source `~/.gemini/oauth_creds.json`.
 
 Credential materialization is explicit, non-destructive, and must not print secret values.
+
+## Installation and updater
+
+Supported install paths:
+
+- **Local development** — clone the repo, run `bun install` and `bun link`, then
+  verify with `agents doctor`.
+- **Source install** — this root remains developer/source-install only until
+  release-backed binaries are available. `install/install.sh` clones the repo
+  into `~/.agents-mono`, initializes the required `os/agents-manager` submodule,
+  installs dependencies, links the CLI, and smoke-tests with fast commands
+  (`agents state init` and `agents list`).
+
+Update path for source installs:
+
+```sh
+cd ~/.agents-mono
+git pull
+bun install --frozen-lockfile
+bun link
+agents list
+```
+
+Run `agents sync` before `agents doctor` when you want to initialize and
+validate all submodule packages.
+
+Release automation runs `bun run smoke:release` during the DarkFactory release
+workflow. The release smoke test performs an isolated source install into a
+temporary directory and then verifies that the linked `agents` command resolves
+to `os/agents-manager/src/cli.ts` (on symlink platforms) and that fast commands
+(`agents state init` and `agents list`) succeed.
+
+Release-backed binary installers, a Windows PowerShell installer, and an
+automatic updater are out of scope for this slice and tracked in #24.
 
 ## CI
 
