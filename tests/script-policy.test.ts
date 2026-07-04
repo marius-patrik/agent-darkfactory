@@ -118,3 +118,11 @@ test("df-plan reopens PRD-tracked issues when the PRD item still exists", async 
   assert.match(source, /action: "reopen-prd-issue"/);
   assert.match(source, /state: "open"/);
 });
+
+test("df-sweep waits before treating empty check rollups as no-checks-configured", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-sweep.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /EMPTY_CHECK_SETTLE_MS/);
+  assert.match(source, /emptyCheckRollupHasSettled\(pull\)/);
+  assert.match(source, /checks-not-reported-yet/);
+});

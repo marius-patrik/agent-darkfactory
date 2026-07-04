@@ -17,6 +17,7 @@ const DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
 const MODE = process.env.DF_FOLLOW_THROUGH_MODE ?? "sweep";
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const DEFAULT_EXCLUDED_REPOS = "marius-patrik/agents-harness";
+const EMPTY_CHECK_SETTLE_MS = 10 * 60 * 1000;
 const gh = createGithubClient(TOKEN, "darkfactory-sweep");
 
 main().catch((error) => {
@@ -75,6 +76,9 @@ async function considerPullRequest(repository, pull) {
 
   if (pull.isDraft) return { repo: repoName(repository), pr: ref, action: "skip", reason: "draft" };
   if (!isWorkerPullRequest(pull, repository)) return { repo: repoName(repository), pr: ref, action: "skip", reason: "not-worker-pr" };
+  if (!emptyCheckRollupHasSettled(pull)) {
+    return { repo: repoName(repository), pr: ref, action: "skip", reason: "checks-not-reported-yet" };
+  }
   if (!checksAreGreen(pull.statusCheckRollup)) {
     return {
       repo: repoName(repository),
@@ -137,6 +141,13 @@ async function considerPullRequest(repository, pull) {
     base: pull.baseRefName,
     checks: checksSummary(pull.statusCheckRollup)
   };
+}
+
+function emptyCheckRollupHasSettled(pull) {
+  if (Array.isArray(pull.statusCheckRollup) && pull.statusCheckRollup.length > 0) return true;
+
+  const changedAt = Date.parse(pull.updatedAt || pull.createdAt || "");
+  return Number.isFinite(changedAt) && Date.now() - changedAt >= EMPTY_CHECK_SETTLE_MS;
 }
 
 function canDirectMergeAfterAutomergeFailure(reason) {
@@ -284,6 +295,8 @@ async function listOpenPullRequests(repository) {
             title
             body
             url
+            createdAt
+            updatedAt
             isDraft
             mergeable
             baseRefName
