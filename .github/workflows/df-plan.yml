@@ -29,11 +29,6 @@ jobs:
   df-plan:
     name: Reconcile PRD backlog
     runs-on: ubuntu-latest
-    if: >-
-      ${{
-        github.event_name != 'workflow_dispatch' ||
-        github.ref == 'refs/heads/dev'
-      }}
 
     steps:
       - name: Checkout DarkFactory from this repository
