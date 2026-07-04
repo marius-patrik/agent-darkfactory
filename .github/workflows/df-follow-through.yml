@@ -43,8 +43,15 @@ jobs:
             exit 1
           fi
 
-          if [[ "${GITHUB_REF_TYPE:-}" != "branch" || "${GITHUB_REF_NAME}" != "main" ]]; then
-            echo "::error::DarkFactory privileged follow-through can only run from the main branch."
+          # Scheduled and workflow_dispatch events reliably set GITHUB_REF; the
+          # immutable branch ref is the trusted gate before minting the app token.
+          if [[ "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+            echo "::error::DarkFactory privileged follow-through can only run from refs/heads/main."
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE:-}" == "branch" && "${GITHUB_REF_NAME:-}" != "main" ]]; then
+            echo "::error::DarkFactory privileged follow-through branch mismatch."
             exit 1
           fi
 

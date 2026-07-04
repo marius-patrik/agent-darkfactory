@@ -45,8 +45,8 @@ jobs:
             exit 1
           fi
 
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && ("${GITHUB_REF_TYPE:-}" != "branch" || "${GITHUB_REF_NAME}" != "main") ]]; then
-            echo "::error::DarkFactory worker workflow_dispatch can only run from the main branch."
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+            echo "::error::DarkFactory worker workflow_dispatch can only run from refs/heads/main."
             exit 1
           fi
 
