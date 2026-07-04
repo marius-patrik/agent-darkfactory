@@ -67,6 +67,8 @@ export interface CreditLedgerEntry {
 export interface SharedState {
   root: string;
   stateDir: string;
+  dataDir: string;
+  workspaceDir: string;
   clisDir: string;
   harnessesDir: string;
   skillsDir: string;
@@ -86,6 +88,8 @@ export function sharedStateAt(root: string, stateDir: string): SharedState {
   return {
     root,
     stateDir,
+    dataDir: path.join(root, "data"),
+    workspaceDir: path.join(root, "os", "agents-workspace"),
     clisDir: path.join(stateDir, "clis"),
     harnessesDir: path.join(stateDir, "harnesses"),
     skillsDir: path.join(stateDir, "skills"),
@@ -113,6 +117,8 @@ export function sharedStateFromEnv(cwd: string): SharedState {
   const root = path.dirname(stateDir);
   return {
     ...sharedStateAt(root, stateDir),
+    dataDir: process.env.AGENTS_DATA?.trim() || path.join(root, "data"),
+    workspaceDir: process.env.AGENTS_WORKSPACE?.trim() || path.join(root, "os", "agents-workspace"),
     clisDir: process.env.AGENTS_CLIS?.trim() || path.join(stateDir, "clis"),
     harnessesDir: process.env.AGENTS_HARNESSES?.trim() || path.join(stateDir, "harnesses"),
     skillsDir: process.env.AGENTS_SKILLS?.trim() || path.join(stateDir, "skills"),
@@ -197,6 +203,8 @@ export async function ensureSharedState(state: SharedState): Promise<void> {
     [
       `AGENTS_HOME=${state.stateDir}`,
       `AGENTS_ROOT=${state.root}`,
+      `AGENTS_DATA=${state.dataDir}`,
+      `AGENTS_WORKSPACE=${state.workspaceDir}`,
       `AGENTS_CLIS=${state.clisDir}`,
       `AGENTS_HARNESSES=${state.harnessesDir}`,
       `AGENTS_SKILLS=${state.skillsDir}`,

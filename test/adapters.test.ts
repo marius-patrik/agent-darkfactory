@@ -9,6 +9,9 @@ describe("CLI adapters", () => {
 
     expect(Object.keys(adapters).sort()).toEqual(["agy", "claude", "codex", "kimi"]);
     expect(adapterEnv(state, "codex").CODEX_HOME).toBe(path.join(state.clisDir, "codex"));
+    expect(adapterEnv(state, "codex").AGENTS_ROOT).toBe(path.join("repo"));
+    expect(adapterEnv(state, "codex").AGENTS_DATA).toBe(path.join("repo", "data"));
+    expect(adapterEnv(state, "codex").AGENTS_WORKSPACE).toBe(path.join("repo", "os", "agents-workspace"));
     expect(adapterEnv(state, "codex").AGENTS_SECRETS).toBe(path.join(state.stateDir, "secrets"));
     expect(adapterEnv(state, "codex").AGENTS_DATA_REPOS).toBe(path.join(state.stateDir, "data-repos.json"));
     expect(adapterEnv(state, "codex").AGENTOS_DATA_ROOT).toBe(path.join("repo", "data", "data-agentos"));

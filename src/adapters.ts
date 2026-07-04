@@ -83,6 +83,9 @@ export function adapterEnv(state: SharedState, id: CliId): Record<string, string
   const spec = adapter(id);
   const env: Record<string, string> = {
     AGENTS_HOME: state.stateDir,
+    AGENTS_ROOT: state.root,
+    AGENTS_DATA: state.dataDir,
+    AGENTS_WORKSPACE: state.workspaceDir,
     AGENTS_CLIS: state.clisDir,
     AGENTS_HARNESSES: state.harnessesDir,
     AGENTS_SKILLS: state.skillsDir,

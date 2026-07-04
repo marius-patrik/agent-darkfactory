@@ -48,6 +48,8 @@ describe("harness CLI", () => {
           "  AGENTS_BIN_SCRIPT: process.env.AGENTS_BIN_SCRIPT,",
           "  AGENTS_HOME: process.env.AGENTS_HOME,",
           "  AGENTS_ROOT: process.env.AGENTS_ROOT,",
+          "  AGENTS_DATA: process.env.AGENTS_DATA,",
+          "  AGENTS_WORKSPACE: process.env.AGENTS_WORKSPACE,",
           "  AGENTS_CLIS: process.env.AGENTS_CLIS,",
           "  AGENTS_CREDITS: process.env.AGENTS_CREDITS,",
           "  AGENTS_DATA_REPOS: process.env.AGENTS_DATA_REPOS,",
@@ -70,6 +72,8 @@ describe("harness CLI", () => {
       expect(env.AGENTS_BIN_SCRIPT).toBe(cliPath);
       expect(env.AGENTS_HOME).toBe(path.join(root, ".agents"));
       expect(env.AGENTS_ROOT).toBe(root);
+      expect(env.AGENTS_DATA).toBe(path.join(root, "data"));
+      expect(env.AGENTS_WORKSPACE).toBe(path.join(root, "os", "agents-workspace"));
       expect(env.AGENTS_CLIS).toBe(path.join(root, ".agents", "clis"));
       expect(env.AGENTS_CREDITS).toBe(path.join(root, ".agents", "credits.json"));
       expect(env.AGENTS_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
@@ -102,6 +106,9 @@ describe("harness CLI", () => {
           "const out = Bun.argv[2];",
           "await Bun.write(out, JSON.stringify({",
           "  AGENTS_HOME: process.env.AGENTS_HOME,",
+          "  AGENTS_ROOT: process.env.AGENTS_ROOT,",
+          "  AGENTS_DATA: process.env.AGENTS_DATA,",
+          "  AGENTS_WORKSPACE: process.env.AGENTS_WORKSPACE,",
           "  AGENTS_SECRETS: process.env.AGENTS_SECRETS,",
           "  AGENTS_DATA_REPOS: process.env.AGENTS_DATA_REPOS,",
           "  AGENTOS_DATA_ROOT: process.env.AGENTOS_DATA_ROOT,",
@@ -134,6 +141,9 @@ describe("harness CLI", () => {
 
       const env = JSON.parse(await Bun.file(output).text()) as Record<string, unknown>;
       expect(env.AGENTS_HOME).toBe(path.join(root, ".agents"));
+      expect(env.AGENTS_ROOT).toBe(root);
+      expect(env.AGENTS_DATA).toBe(path.join(root, "data"));
+      expect(env.AGENTS_WORKSPACE).toBe(path.join(root, "os", "agents-workspace"));
       expect(env.AGENTS_SECRETS).toBe(path.join(root, ".agents", "secrets"));
       expect(env.AGENTS_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
       expect(env.AGENTOS_DATA_ROOT).toBe(path.join(root, "data", "data-agentos"));
