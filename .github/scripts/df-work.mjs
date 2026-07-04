@@ -71,6 +71,14 @@ async function main() {
 
   const repo = await getRepository(gh, TARGET_REPO);
   const workBaseBranch = await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch);
+
+  // Ensure work labels exist before any preflight failure path tries to apply
+  // `df:blocked` to the issue, so the blocker comment is always left reliably.
+  await ensureLabels(gh, CONTROL_REPO, WORK_LABELS);
+  if (repoName(CONTROL_REPO) !== repoName(TARGET_REPO)) {
+    await ensureLabels(gh, TARGET_REPO, WORK_LABELS);
+  }
+
   let mergePolicy;
 
   try {
@@ -97,11 +105,6 @@ async function main() {
     await writeLedger(ledger);
     console.warn(`DarkFactory worker blocked on prerequisite for ${target}: ${message}`);
     return;
-  }
-
-  await ensureLabels(gh, CONTROL_REPO, WORK_LABELS);
-  if (repoName(CONTROL_REPO) !== repoName(TARGET_REPO)) {
-    await ensureLabels(gh, TARGET_REPO, WORK_LABELS);
   }
 
   try {
