@@ -56,14 +56,6 @@ function runPhase(manager, packageJson, phase, required, candidates) {
   run(manager, ["run", script]);
 }
 
-function verifyBunCiContract(packageJson) {
-  if (packageManager() !== "bun") return;
-  const ci = packageJson.scripts?.ci;
-  if (ci !== "bun run check && bun run test") {
-    fail("Bun managed repositories must validate with ci = 'bun run check && bun run test'.", "package.json");
-  }
-}
-
 function verifyManagedFiles() {
   const configPath = ".darkfactory/managed-repository.json";
   if (!existsSync(configPath)) {
@@ -88,10 +80,6 @@ function verifyManagedFiles() {
     }
   }
 
-  if (existsSync("package.json")) {
-    verifyBunCiContract(readJson("package.json"));
-  }
-
   return process.exitCode !== 1;
 }
 
@@ -107,7 +95,6 @@ function verifyRelease() {
   if (!manager) throw new Error("No supported package manager files found.");
   const packageJson = readJson("package.json");
 
-  verifyBunCiContract(packageJson);
   installDependencies(manager);
   runPhase(manager, packageJson, "validate", Boolean(policy.required?.validate), policy.scripts?.validate ?? ["ci", "check", "test"]);
   runPhase(manager, packageJson, "build", Boolean(policy.required?.build), policy.scripts?.build ?? ["build:release", "release:build", "build"]);

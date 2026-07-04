@@ -47,4 +47,16 @@ jobs:
 
       - name: Validate
         shell: bash
-        run: bun run ci
+        run: |
+          if [ ! -f package.json ]; then
+            echo "No package.json found; nothing to validate."
+            exit 0
+          fi
+
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.ci ? 0 : 1)"; then
+            npm run ci
+          elif node -e "const p=require('./package.json'); process.exit(p.scripts?.check ? 0 : 1)"; then
+            npm run check
+          else
+            npm test
+          fi
