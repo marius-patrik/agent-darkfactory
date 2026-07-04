@@ -26,31 +26,26 @@ jobs:
 
     steps:
       - name: Validate trusted control ref
-        if: ${{ github.repository == 'marius-patrik/darkfactory-agent' }}
         shell: bash
         run: |
-          case "${GITHUB_REF_NAME}" in
-            main|dev) ;;
-            *)
-              echo "::error::DarkFactory privileged planning can only run from main or dev."
-              exit 1
-              ;;
-          esac
+          # Privileged planning mints an installation token, so it only runs
+          # from the canonical control repository's protected default branch.
+          if [[ "${GITHUB_REPOSITORY}" != "marius-patrik/darkfactory-agent" ]]; then
+            echo "::error::DarkFactory privileged planning can only run from marius-patrik/darkfactory-agent."
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE:-}" != "branch" || "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "::error::DarkFactory privileged planning can only run from the main branch."
+            exit 1
+          fi
 
       - name: Checkout DarkFactory from this repository
-        if: ${{ github.repository == 'marius-patrik/darkfactory-agent' }}
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
-          path: darkfactory-control
-          persist-credentials: false
-
-      - name: Checkout released DarkFactory control
-        if: ${{ github.repository != 'marius-patrik/darkfactory-agent' }}
-        uses: actions/checkout@v4
-        with:
-          repository: marius-patrik/darkfactory-agent
-          ref: ${{ vars.DARK_FACTORY_CONTROL_REF || 'main' }}
+          # Pin control scripts to the exact trusted event commit before any
+          # installation token is minted.
+          ref: ${{ github.sha }}
           path: darkfactory-control
           persist-credentials: false
 

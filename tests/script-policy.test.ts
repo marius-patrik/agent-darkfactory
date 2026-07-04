@@ -136,23 +136,39 @@ test("df-plan reopens PRD-tracked issues when the PRD item still exists", async 
 
 test("df-plan workflow avoids push-triggered write-token execution", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-plan.yml", import.meta.url), "utf8");
+  const gate = workflow.indexOf("Validate trusted control ref");
+  const checkout = workflow.indexOf("Checkout DarkFactory from this repository");
+  const token = workflow.indexOf("Mint mp-agents installation token");
 
   assert.doesNotMatch(workflow, /^\s+push:\s*$/m);
   assert.match(workflow, /^\s+workflow_dispatch:\s*$/m);
   assert.match(workflow, /^\s+schedule:\s*$/m);
-  assert.match(workflow, /Validate trusted control ref/);
-  assert.match(workflow, /main\|dev/);
+  assert.notEqual(gate, -1);
+  assert.notEqual(checkout, -1);
+  assert.notEqual(token, -1);
+  assert.ok(gate < token);
+  assert.ok(checkout < token);
+  assert.match(workflow, /GITHUB_REPOSITORY/);
+  assert.match(workflow, /GITHUB_REF_NAME.*main/);
+  assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.doesNotMatch(workflow, /\bdev\b|github\.ref_name|DARK_FACTORY_CONTROL_REF/);
 });
 
 test("df-follow-through workflow validates trusted refs before privileged tokens", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-follow-through.yml", import.meta.url), "utf8");
   const gate = workflow.indexOf("Validate trusted control ref");
+  const checkout = workflow.indexOf("Checkout DarkFactory from this repository");
   const token = workflow.indexOf("Mint mp-agents installation token");
 
   assert.notEqual(gate, -1);
+  assert.notEqual(checkout, -1);
   assert.notEqual(token, -1);
   assert.ok(gate < token);
-  assert.match(workflow, /main\|dev/);
+  assert.ok(checkout < token);
+  assert.match(workflow, /GITHUB_REPOSITORY/);
+  assert.match(workflow, /GITHUB_REF_NAME.*main/);
+  assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.doesNotMatch(workflow, /\bdev\b|github\.ref_name|DARK_FACTORY_CONTROL_REF/);
 });
 
 test("df-work records auto-merge support during merge-policy preflight", async () => {
