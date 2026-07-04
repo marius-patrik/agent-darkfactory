@@ -9,6 +9,10 @@ on:
         description: Target repository in owner/name form. Defaults to this repository.
         required: false
         type: string
+      ref:
+        description: Optional target repository ref. Defaults to the target repository default branch.
+        required: false
+        type: string
   push:
     branches:
       - dev
@@ -60,7 +64,7 @@ jobs:
           DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
           DF_CONTROL_REPO: ${{ github.repository }}
           DF_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || github.repository }}
-          DF_TARGET_REF: ${{ github.ref_name }}
+          DF_TARGET_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event_name == 'push' && github.ref_name || '' }}
           DF_PLAN_ALL: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data

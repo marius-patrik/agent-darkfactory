@@ -26,6 +26,7 @@ let TARGET_REPO = parseRepo(process.env.DF_TARGET_REPO?.trim() || repoName(CONTR
 const DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const TARGET_REF = process.env.DF_TARGET_REF?.trim() || "";
+const PLAN_ALL = process.env.DF_PLAN_ALL === "true";
 const gh = createGithubClient(TOKEN, "darkfactory-plan");
 
 main().catch((error) => {
@@ -34,7 +35,7 @@ main().catch((error) => {
 });
 
 async function main() {
-  const targets = process.env.DF_PLAN_ALL === "true" ? await targetRepositories() : [TARGET_REPO];
+  const targets = PLAN_ALL ? await targetRepositories() : [TARGET_REPO];
   for (const target of targets) {
     TARGET_REPO = target;
     await reconcileTargetRepository();
@@ -46,7 +47,7 @@ async function reconcileTargetRepository() {
   await ensureLabels(gh, TARGET_REPO, [...PLANNING_LABELS, ...WORK_LABELS]);
 
   const repo = await getRepository(gh, TARGET_REPO);
-  const sourceRef = TARGET_REF || repo.default_branch;
+  const sourceRef = PLAN_ALL ? repo.default_branch : TARGET_REF || repo.default_branch;
   const prd = await getOptionalFileContent(gh, TARGET_REPO, "PRD.md", sourceRef);
   const ledger = {
     trigger: TRIGGER,
