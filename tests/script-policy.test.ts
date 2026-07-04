@@ -93,6 +93,10 @@ test("df-sweep dev-merge closure uses worker PR provenance instead of issue labe
 
   assert.match(source, /if \(!isWorkerPullRequest\(pull, repository\)\)/);
   assert.doesNotMatch(source, /issueWasOpenedByDarkFactoryWorker/);
+  assert.match(source, /dark-factory:worker-pr\\s\+issue=/);
+  assert.match(source, /botAuthor/);
+  assert.match(source, /branchMatchesIssue/);
+  assert.match(source, /bodyClosesIssue/);
   assert.match(source, /extractClosingIssueNumbers\(pull\.body \|\| "", repoName\(repository\)\)/);
 });
 

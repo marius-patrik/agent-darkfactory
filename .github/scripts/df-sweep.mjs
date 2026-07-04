@@ -177,6 +177,7 @@ async function closeDevMergeIssuesFromEnv() {
   const action = await closeIssuesIfDevMerge(repository, {
     number: pull.number,
     title: pull.title || "",
+    author: { login: pull.user?.login || "" },
     url: pull.html_url,
     body: pull.body || "",
     baseRefName: pull.base.ref,
@@ -322,15 +323,18 @@ async function listOpenPullRequests(repository) {
 function isWorkerPullRequest(pull, repository) {
   const provenance = `${pull.title || ""}\n${pull.body || ""}`;
   const sameRepositoryHead = pull.headRepository?.owner?.login === repository.owner && pull.headRepository?.name === repository.repo;
+  const marker = provenance.match(/<!--\s*dark-factory:worker-pr\s+issue=(\d+)\s*-->/i);
+  const markerIssue = marker ? Number(marker[1]) : 0;
+  const branchMatchesIssue = Number.isInteger(markerIssue) && markerIssue > 0 && pull.headRefName?.startsWith(`df/${markerIssue}-`);
+  const bodyClosesIssue = extractClosingIssueNumbers(pull.body || "", repoName(repository)).includes(markerIssue);
+  const botAuthor = /\[bot\]$/i.test(pull.author?.login || "");
+
   return (
     sameRepositoryHead &&
-    pull.headRefName?.startsWith("df/") &&
-    (
-      /DarkFactory Worker Summary/.test(provenance) ||
-      /<!--\s*dark-factory:/i.test(provenance) ||
-      /\bDarkFactory\b/i.test(provenance) ||
-      /\bDark Factory\b/i.test(provenance)
-    )
+    botAuthor &&
+    Boolean(marker) &&
+    branchMatchesIssue &&
+    bodyClosesIssue
   );
 }
 
@@ -340,6 +344,7 @@ function normalizeRestPullRequest(pull) {
     title: pull.title,
     body: pull.body || "",
     url: pull.html_url,
+    author: { login: pull.user?.login || "" },
     headRefName: pull.head?.ref || "",
     headRepository: {
       name: pull.head?.repo?.name || "",

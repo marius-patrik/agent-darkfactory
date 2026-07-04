@@ -367,6 +367,7 @@ async function createPullRequest(repository, base, branch, issue, summary) {
     head: branch,
     base,
     body: [
+      `<!-- dark-factory:worker-pr issue=${TARGET_ISSUE_NUMBER} -->`,
       "## DarkFactory Worker Summary",
       "",
       truncate(summary, 10000),
