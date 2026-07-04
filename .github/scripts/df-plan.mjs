@@ -240,10 +240,7 @@ async function getPrdSources(repository, ref) {
 
 async function listPrdPaths(repository, ref) {
   try {
-    const tree = await gh.request(
-      "GET",
-      `/repos/${repoName(repository)}/git/trees/${encodeURIComponent(ref)}?recursive=1`
-    );
+    const tree = await getRecursiveTree(repository, ref);
     const paths = (tree.tree || [])
       .filter((entry) => entry.type === "blob" && (entry.path === "PRD.md" || entry.path.endsWith("/PRD.md")))
       .map((entry) => entry.path)
@@ -257,6 +254,24 @@ async function listPrdPaths(repository, ref) {
     if (error.status !== 404) throw error;
     const root = await getOptionalFileContent(gh, repository, "PRD.md", ref);
     return root ? ["PRD.md"] : [];
+  }
+}
+
+async function getRecursiveTree(repository, ref) {
+  try {
+    return await gh.request(
+      "GET",
+      `/repos/${repoName(repository)}/git/trees/${encodeURIComponent(ref)}?recursive=1`
+    );
+  } catch (error) {
+    if (error.status !== 404 && error.status !== 409 && error.status !== 422) throw error;
+    const commit = await gh.request("GET", `/repos/${repoName(repository)}/git/commits/${encodeURIComponent(ref)}`);
+    const treeSha = commit?.tree?.sha;
+    if (typeof treeSha !== "string" || !/^[0-9a-f]{40}$/i.test(treeSha)) throw error;
+    return await gh.request(
+      "GET",
+      `/repos/${repoName(repository)}/git/trees/${encodeURIComponent(treeSha)}?recursive=1`
+    );
   }
 }
 
