@@ -14,33 +14,33 @@ on:
         required: false
         type: string
         default: marius-patrik/agents-harness
-  pull_request_target:
+  pull_request:
     types:
       - closed
 permissions:
-  actions: read
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  follow-through:
-    name: Green PR sweep and dev issue closure
+  sweep:
+    name: Green PR sweep
     runs-on: ubuntu-latest
     if: >-
       ${{
         github.event_name == 'schedule' ||
-        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev') ||
-        (github.event_name == 'pull_request_target' &&
-          github.event.pull_request.merged == true &&
-          github.event.pull_request.base.ref == 'dev')
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
       }}
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      pull-requests: write
 
     steps:
       - name: Checkout DarkFactory from this repository
         if: ${{ github.repository == 'marius-patrik/darkfactory-agent' }}
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref_name }}
           path: darkfactory-control
           persist-credentials: false
 
@@ -54,7 +54,6 @@ jobs:
           persist-credentials: false
 
       - name: Mint mp-agents installation token
-        if: ${{ github.event_name != 'pull_request_target' }}
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
@@ -64,11 +63,55 @@ jobs:
 
       - name: Run follow-through
         env:
-          DARK_FACTORY_TOKEN: ${{ github.event_name == 'pull_request_target' && github.token || steps.app-token.outputs.token }}
+          DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
           DF_CONTROL_REPO: ${{ github.repository }}
-          DF_FOLLOW_THROUGH_MODE: ${{ github.event_name == 'pull_request_target' && 'dev-merge' || 'sweep' }}
+          DF_FOLLOW_THROUGH_MODE: sweep
           DF_SWEEP_REPOS: ${{ github.event_name == 'workflow_dispatch' && inputs.repos || '' }}
           DF_SWEEP_EXCLUDE_REPOS: ${{ github.event_name == 'workflow_dispatch' && inputs.exclude_repos || 'marius-patrik/agents-harness' }}
+          DF_TRIGGER: ${{ github.event_name }}
+          DF_DATA_REPO: marius-patrik/darkfactory-data
+        shell: bash
+        run: |
+          export GITHUB_EVENT_PAYLOAD="$(cat "$GITHUB_EVENT_PATH")"
+          node darkfactory-control/.github/scripts/df-sweep.mjs
+
+  dev-merge-closure:
+    name: Dev merge issue closure
+    runs-on: ubuntu-latest
+    if: >-
+      ${{
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.merged == true &&
+        github.event.pull_request.base.ref == 'dev'
+      }}
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout DarkFactory from this repository
+        if: ${{ github.repository == 'marius-patrik/darkfactory-agent' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: darkfactory-control
+          persist-credentials: false
+
+      - name: Checkout released DarkFactory control
+        if: ${{ github.repository != 'marius-patrik/darkfactory-agent' }}
+        uses: actions/checkout@v4
+        with:
+          repository: marius-patrik/darkfactory-agent
+          ref: ${{ vars.DARK_FACTORY_CONTROL_REF || 'main' }}
+          path: darkfactory-control
+          persist-credentials: false
+
+      - name: Run dev merge closure
+        env:
+          DARK_FACTORY_TOKEN: ${{ github.token }}
+          DF_CONTROL_REPO: ${{ github.repository }}
+          DF_FOLLOW_THROUGH_MODE: dev-merge
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data
         shell: bash
