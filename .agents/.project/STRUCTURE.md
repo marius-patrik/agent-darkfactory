@@ -13,7 +13,7 @@
 - `tsconfig.json` - TypeScript configuration
 - `.github/workflows/ci.yml` - GitHub Actions validation
 - `.github/workflows/sync-managed-repos.yml` - manual and release-triggered workspace-backed managed sync
-- `Dockerfile` - runtime image that bundles a checked-out `darkfactory-workspace/managed-repository`
+- `Dockerfile` - runtime image that bundles a checked-out `workspace-darkfactory/managed-repository`
 - `README.md` - template setup and usage notes
 
 ## Agent Files

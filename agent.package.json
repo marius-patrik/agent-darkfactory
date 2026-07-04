@@ -16,8 +16,8 @@
     ]
   },
   "dataRepo": {
-    "id": "darkfactory-workspace",
-    "repo": "marius-patrik/agentos-data",
+    "id": "workspace-darkfactory",
+    "repo": "marius-patrik/data-agentos",
     "path": "data/data-agentos",
     "branch": "main",
     "managedPath": "managed-repository",

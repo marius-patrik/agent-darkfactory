@@ -29,7 +29,7 @@ jobs:
       - name: Check out AgentOS data repo
         uses: actions/checkout@v4
         with:
-          repository: marius-patrik/agentos-data
+          repository: marius-patrik/data-agentos
           token: ${{ steps.app-token.outputs.token }}
           path: agentos-data
 

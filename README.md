@@ -51,9 +51,9 @@ To install the app on every repository, use the GitHub App installation UI and c
 ```powershell
 npm ci
 npm run build
-agents packages register workspaces/darkfactory-workspace
+agents packages register workspaces/workspace-darkfactory
 agents packages register agents/agent-darkfactory
-agents data repo path darkfactory-workspace
+agents data repo path workspace-darkfactory
 ```
 
 Store local secrets through Agentos. Secret values are not printed by the manager:
@@ -115,7 +115,7 @@ Do not run the manager from an elevated prompt and do not add `--runasservice`; 
 Build and run with Docker:
 
 ```powershell
-git clone https://github.com/marius-patrik/agentos-data.git agentos-data
+git clone https://github.com/marius-patrik/data-agentos.git agentos-data
 docker build -t agent-darkfactory .
 docker run --rm -p 3000:3000 --env-file .env agent-darkfactory
 ```

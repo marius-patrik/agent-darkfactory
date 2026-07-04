@@ -53,7 +53,7 @@ const PACKAGE_MANAGED_FILES = [
   DARK_FACTORY_WORK_SCRIPT_PATH
 ] as const;
 const DATA_REPO_PATH_SEGMENTS = ["data", "data-agentos"] as const;
-const WORKSPACE_PATH_SEGMENTS = ["workspaces", "darkfactory-workspace"] as const;
+const WORKSPACE_PATH_SEGMENTS = ["workspaces", "workspace-darkfactory"] as const;
 
 export function readManagedFiles(repository?: ManagedRepositoryRef, root = resolveManagedWorkspaceRoot()): ManagedFile[] {
   const files = new Map<string, ManagedFile>();
@@ -202,7 +202,7 @@ function resolveManagedWorkspaceRoot(): string {
     return siblingWorkspace;
   }
 
-  const legacySiblingWorkspace = resolve(projectRoot, "..", "darkfactory-workspace", "managed-repository");
+  const legacySiblingWorkspace = resolve(projectRoot, "..", "workspace-darkfactory", "managed-repository");
   if (existsSync(legacySiblingWorkspace)) {
     return legacySiblingWorkspace;
   }
@@ -222,7 +222,7 @@ function resolveManagedWorkspaceRoot(): string {
     return bundledWorkspace;
   }
 
-  const legacyBundledWorkspace = resolve(projectRoot, "darkfactory-workspace", "managed-repository");
+  const legacyBundledWorkspace = resolve(projectRoot, "workspace-darkfactory", "managed-repository");
   if (existsSync(legacyBundledWorkspace)) {
     return legacyBundledWorkspace;
   }
@@ -248,7 +248,7 @@ function resolveAgentosDataRepoRoot(): string | null {
 
     const agentosRoot = process.env.AGENTS_ROOT?.trim() ?? resolve(dirname(dataReposFile), "..");
     const dataRepo = parsed.find((item) => {
-      return isRecord(item) && (item.id === "darkfactory-workspace" || item.repo === "marius-patrik/agentos-data");
+      return isRecord(item) && (item.id === "workspace-darkfactory" || item.repo === "marius-patrik/data-agentos");
     });
     if (!isRecord(dataRepo) || typeof dataRepo.path !== "string") {
       return null;
