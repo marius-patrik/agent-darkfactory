@@ -207,6 +207,7 @@ test("df-follow-through workflow validates trusted refs before privileged tokens
   assert.notEqual(token, -1);
   assert.ok(gate < token);
   assert.ok(checkout < token);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/darkfactory-agent'/);
   assert.match(workflow, /GITHUB_REPOSITORY/);
   assert.match(workflow, /GITHUB_REF_NAME.*main/);
   assert.match(workflow, /GITHUB_REF.*refs\/heads\/main/);
