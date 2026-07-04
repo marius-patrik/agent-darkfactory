@@ -232,7 +232,8 @@ test("df-plan reopens PRD-tracked issues when the PRD item still exists", async 
   const source = await readFile(new URL("../.github/scripts/df-plan.mjs", import.meta.url), "utf8");
 
   assert.match(source, /action: "keep-closed"/);
-  assert.doesNotMatch(source, /action: "reopen-prd-issue"/);
+  assert.match(source, /action: "reopen-prd-issue"/);
+  assert.match(source, /state: "open"/);
   assert.match(source, /listPrdPaths/);
   assert.match(source, /getRecursiveTree/);
   assert.match(source, /git\/commits\/\$\{encodeURIComponent\(ref\)\}/);

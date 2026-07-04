@@ -155,8 +155,17 @@ async function reconcileTargetRepository() {
     }
 
     if (existing.state === "closed") {
-      ledger.actions.push({ action: "keep-closed", marker: item.marker, issue: issueRef(existing) });
-      previousIssueNumber = existing.number;
+      const reopened = await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${existing.number}`, {
+        title: item.title,
+        body,
+        state: "open"
+      });
+      const labelUpdate = await setIssueLabels(TARGET_REPO, existing.number, labels, { preserveWorkerState: false });
+      const dispatch = await dispatchIfNewlyReady(TARGET_REPO, existing.number, labelUpdate);
+      ledger.actions.push({ action: "reopen-prd-issue", marker: item.marker, issue: issueRef(reopened), labels });
+      if (dispatch) ledger.actions.push(dispatch);
+      previousIssueNumber = reopened.number;
+      previousOpenIssueNumber = reopened.number;
       continue;
     }
 
