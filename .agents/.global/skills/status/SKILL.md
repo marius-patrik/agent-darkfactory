@@ -10,13 +10,13 @@ Treat the repository as the source of truth.
 Print the project status with:
 
 ```powershell
-bun .agents/.global/skills/status/scripts/print_status.mjs
+node .agents/.global/skills/status/scripts/print_status.mjs
 ```
 
-If Bun is unavailable but Node.js is available, run:
+If Node.js is unavailable but Bun is available, run:
 
 ```powershell
-node .agents/.global/skills/status/scripts/print_status.mjs
+bun .agents/.global/skills/status/scripts/print_status.mjs
 ```
 
 Answer from the printed status. If live repo state differs from the status file, say so and update `.agents/.project/STATUS.md` when the task calls for it.
