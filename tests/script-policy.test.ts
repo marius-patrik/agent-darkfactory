@@ -323,20 +323,14 @@ test("df-work records auto-merge support during merge-policy preflight", async (
   assert.match(source, /green-PR sweep will squash-merge directly after checks/);
 });
 
-test("df-work workflow only runs issue triggers from trusted actors", async () => {
+test("df-work workflow does not expose privileged worker triggers in managed repositories", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-work.yml", import.meta.url), "utf8");
 
-  assert.match(workflow, /issue_comment/);
-  assert.match(workflow, /issues:/);
-  assert.match(workflow, /author_association/);
-  assert.match(workflow, /OWNER/);
-  assert.match(workflow, /COLLABORATOR/);
-  assert.doesNotMatch(workflow, /"MEMBER"/);
+  assert.doesNotMatch(workflow, /^  issues:/m);
+  assert.doesNotMatch(workflow, /^  issue_comment:/m);
+  assert.doesNotMatch(workflow, /author_association/);
   assert.match(workflow, /github\.repository == 'marius-patrik\/darkfactory-agent'/);
-  assert.match(workflow, /github\.event\.label\.name == 'df:ready'/);
-  assert.match(workflow, /github-actions\[bot\]/);
-  assert.match(workflow, /mp-agents\[bot\]/);
-  assert.match(workflow, /df-prd:/);
+  assert.match(workflow, /github\.event_name == 'workflow_dispatch'/);
 });
 
 test("df-work workflow restricts privileged workers to the control repository", async () => {
@@ -356,11 +350,14 @@ test("df-work workflow downloads canonical scripts for managed-repo triggers", a
   assert.doesNotMatch(workflow, /actions\/checkout/);
 });
 
-test("df-work workflow uses repository token for managed-repo issue/comment triggers", async () => {
+test("df-work workflow uses the app token for control-dispatched workers", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-work.yml", import.meta.url), "utf8");
 
   assert.match(workflow, /if:\s*github\.event_name == 'workflow_dispatch'/);
-  assert.match(workflow, /steps\.app-token\.outputs\.token \|\| github\.token/);
+  assert.match(workflow, /DARK_FACTORY_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
+  assert.doesNotMatch(workflow, /steps\.app-token\.outputs\.token \|\| github\.token/);
+  assert.match(workflow, /DF_TARGET_REPO: \$\{\{ inputs\.repo \}\}/);
+  assert.match(workflow, /DF_TARGET_ISSUE_NUMBER: \$\{\{ inputs\.issue_number \}\}/);
 });
 
 test("df-sweep waits before treating empty check rollups as no-checks-configured", async () => {

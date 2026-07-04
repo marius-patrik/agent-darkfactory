@@ -11,12 +11,6 @@ on:
         description: Target issue number.
         required: true
         type: string
-  issues:
-    types:
-      - labeled
-  issue_comment:
-    types:
-      - created
 
 permissions:
   contents: read
@@ -28,16 +22,7 @@ jobs:
     if: >-
       ${{
         github.repository == 'marius-patrik/darkfactory-agent' &&
-        ((github.event_name == 'workflow_dispatch') ||
-         (github.event_name == 'issues' &&
-           github.event.label.name == 'df:ready' &&
-           contains(github.event.issue.body || '', 'df-prd:') &&
-           contains(fromJSON('["github-actions[bot]", "mp-agents[bot]"]'), github.event.sender.login)) ||
-         (github.event_name == 'issue_comment' &&
-           !github.event.issue.pull_request &&
-           contains(github.event.issue.body || '', 'df-prd:') &&
-           startsWith(github.event.comment.body, '/df run') &&
-           contains(fromJSON('["OWNER", "COLLABORATOR"]'), github.event.comment.author_association)))
+        github.event_name == 'workflow_dispatch'
       }}
     permissions:
       contents: write
@@ -114,11 +99,11 @@ jobs:
 
       - name: Run worker
         env:
-          DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
           DF_CONTROL_REPO: marius-patrik/darkfactory-agent
-          DF_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || github.repository }}
-          DF_TARGET_ISSUE_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_number || github.event.issue.number }}
+          DF_TARGET_REPO: ${{ inputs.repo }}
+          DF_TARGET_ISSUE_NUMBER: ${{ inputs.issue_number }}
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data
         run: node darkfactory-control/.github/scripts/df-work.mjs
