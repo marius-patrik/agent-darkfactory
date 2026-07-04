@@ -88,10 +88,10 @@ jobs:
             exit 1
           fi
 
-      # Cross-repo planning sweeps run the canonical control scripts from
-      # darkfactory-agent. PRD-edit triggers run inside the target repository and
-      # use the locally checked-in managed scripts so the repository token can
-      # reconcile its own issues without needing cross-repo checkout rights.
+      # Cross-repo planning sweeps check out the canonical control scripts from
+      # darkfactory-agent. PRD-edit triggers download the same pinned scripts via
+      # the public raw API so the repository token can reconcile issues without
+      # needing cross-repo checkout rights and without running repo-local code.
       - name: Checkout DarkFactory control scripts
         if: github.event_name != 'push'
         uses: actions/checkout@v4
@@ -101,37 +101,24 @@ jobs:
           path: darkfactory-control
           persist-credentials: false
 
-      - name: Checkout local DarkFactory scripts
-        if: github.event_name == 'push'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          path: darkfactory-control
-          persist-credentials: false
-
-      - name: Validate local scripts match canonical control SHA
+      - name: Download canonical DarkFactory scripts
         if: github.event_name == 'push'
         shell: node {0}
         run: |
-          // PRD-edit triggers use the locally checked-in scripts, but only if
-          // they match the canonical pinned SHA. This stops a compromised push
-          // from running arbitrary planning code with the repository token.
+          // PRD-edit triggers always run the pinned canonical scripts, never the
+          // target repository's local copy, so a compromised push cannot mutate
+          // issues through arbitrary planning code.
           (async () => {
             const sha = '${{ steps.control-ref.outputs.sha }}';
             const controlRoot = `https://raw.githubusercontent.com/marius-patrik/darkfactory-agent/${sha}`;
-            const localRoot = 'darkfactory-control';
             const files = ['.github/scripts/df-lib.mjs', '.github/scripts/df-plan.mjs'];
-            const crypto = await import('node:crypto');
             const fs = await import('node:fs');
             for (const file of files) {
-              const controlRes = await fetch(`${controlRoot}/${file}`);
-              if (!controlRes.ok) throw new Error(`Could not fetch canonical ${file}`);
-              const controlText = await controlRes.text();
-              const localText = fs.readFileSync(`${localRoot}/${file}`, 'utf8');
-              const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
-              if (hash(controlText) !== hash(localText)) {
-                throw new Error(`Local ${file} does not match canonical control SHA ${sha}`);
-              }
+              const res = await fetch(`${controlRoot}/${file}`);
+              if (!res.ok) throw new Error(`Could not fetch canonical ${file}: ${res.status}`);
+              const dest = `darkfactory-control/${file}`;
+              await fs.promises.mkdir(dest.slice(0, dest.lastIndexOf('/')), { recursive: true });
+              await fs.promises.writeFile(dest, await res.text());
             }
           })();
 
