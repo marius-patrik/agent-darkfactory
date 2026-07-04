@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "bun run --filter '*' build",
+    "ci": "bun run typecheck && bun run build",
     "dev:cli": "bun --filter @template/cli run dev",
     "dev:web": "bun --filter @template/web run dev",
     "start": "bun --filter @template/web run start",
