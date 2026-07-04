@@ -30,12 +30,25 @@ export interface EnvironmentRecord {
   createdAt: string;
 }
 
+export interface OsContainerRecord {
+  id: string;
+  name: string;
+  environment: string;
+  image: string;
+  channel?: string;
+  createdAt: string;
+  status: "created" | "running" | "stopped" | "removed";
+  ports?: Array<{ name: string; container: number; host: number }>;
+  profiles?: string[];
+}
+
 export interface PackagesAndEnvironmentsState {
   schemaVersion: 1;
   activeEnvironmentId?: string;
   distroPackages: DistroPackageRecord[];
   containerPackages: ContainerPackageRecord[];
   environments: EnvironmentRecord[];
+  containers: OsContainerRecord[];
 }
 
 export function emptyPackagesAndEnvironmentsState(): PackagesAndEnvironmentsState {
@@ -44,6 +57,7 @@ export function emptyPackagesAndEnvironmentsState(): PackagesAndEnvironmentsStat
     distroPackages: [],
     containerPackages: [],
     environments: [],
+    containers: [],
   };
 }
 
@@ -56,7 +70,12 @@ export async function readPackagesAndEnvironmentsState(state: SharedState): Prom
     distroPackages: raw.distroPackages ?? [],
     containerPackages: raw.containerPackages ?? [],
     environments: raw.environments ?? [],
+    containers: raw.containers ?? [],
   };
+}
+
+export async function writePackagesAndEnvironmentsState(state: SharedState, value: PackagesAndEnvironmentsState): Promise<void> {
+  await Bun.write(state.environmentsFile, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function notImplementedPackagesAndEnvironments(feature: string): Error {

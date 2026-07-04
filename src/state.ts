@@ -171,6 +171,7 @@ export async function ensureSharedState(state: SharedState): Promise<void> {
           distroPackages: [],
           containerPackages: [],
           environments: [],
+          containers: [],
         },
         null,
         2,

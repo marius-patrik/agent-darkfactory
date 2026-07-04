@@ -6,15 +6,16 @@ Issue #10 expands `agents-manager` from local agent package registration toward 
 
 Implemented now:
 
-- `.agents/environments.json` state file with typed records for future distro packages, container packages, and environments.
+- `.agents/environments.json` state file with typed records for future distro packages, container packages, environments, and OS containers.
 - `AGENTS_ENVIRONMENTS` exported through `.agents/env` and package/harness execution environments.
 - CLI command skeletons for `agents packages distro ...`, `agents packages container ...`, and `agents env ...`.
-- Clear `not yet implemented` errors for operations that would mutate OS packages, images, or active environments.
+- `agents os` lifecycle commands with dry-run plans for Docker-based container management.
+- Clear `not yet implemented` errors for operations that would mutate OS packages or active environments beyond the scaffolded lifecycle surface.
 
 Not implemented now:
 
 - Installing host OS packages.
-- Pulling, pinning, upgrading, or removing container images.
+- Real container image builds or pulls against a published `agents-os` image (the scaffold records metadata and produces dry-run plans).
 - Creating, switching, or syncing named environments.
 - Per-agent workspace environment provisioning.
 
@@ -53,6 +54,19 @@ Path: `.agents/environments.json`
       "secretsScope": "host",
       "createdAt": "2026-07-03T00:00:00.000Z"
     }
+  ],
+  "containers": [
+    {
+      "id": "agents-os-dev",
+      "name": "agents-os-dev",
+      "environment": "dev",
+      "image": "agents-os:dev",
+      "channel": "dev",
+      "createdAt": "2026-07-04T00:00:00.000Z",
+      "status": "running",
+      "ports": [{ "name": "http", "container": 8080, "host": 8080 }],
+      "profiles": ["full-system"]
+    }
   ]
 }
 ```
@@ -68,9 +82,22 @@ agents env list [--json]
 agents env create <id> [--kind host|container|agent-workspace]
 agents env switch <id>
 agents env sync <id>
+agents os doctor [--json]
+agents os image list [--json]
+agents os image build --image <image> [--channel dev] [--file path] [--context path] [--dry-run]
+agents os image pull --image <image> [--channel dev] [--dry-run]
+agents os create --name <name> --image <image> [--env agents-os] [--channel dev] [--dry-run]
+agents os start <name> [--dry-run]
+agents os stop <name> [--dry-run]
+agents os status <name> [--json]
+agents os logs <name> [--follow]
+agents os exec <name> -- <args...>
+agents os terminal <name> [--shell bash]
+agents os remove <name> [--prune-data] [--dry-run]
+agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
 ```
 
-`agents env list` may read local desired-state records. Mutating commands must stay stubbed until agents-mono #8 defines the architecture/data contracts and agents-mono #9 defines the base image and release pipeline.
+`agents env list` may read local desired-state records. Mutating `agents packages` and `agents env` commands stay stubbed until agents-mono #8 defines the architecture/data contracts and agents-mono #9 defines the base image and release pipeline. `agents os` commands are scaffolded with dry-run plans and will invoke Docker when not run with `--dry-run`.
 
 ## Integration Rules
 

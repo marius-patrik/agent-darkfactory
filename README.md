@@ -119,6 +119,19 @@ agents credits debit <provider> <consumer> <amount> [--note text] [--json]
 agents credits usage <provider> <consumer> [--amount n] [--tokens-in n] [--tokens-out n] [--note text] [--json]
 agents credits provider <provider> [--balance n] [--soft-limit n] [--window-seconds n] [--window-started-at iso] [--json]
 agents doctor
+agents os doctor [--json]
+agents os image list [--json]
+agents os image build --image <image> [--channel dev] [--file path] [--context path] [--dry-run]
+agents os image pull --image <image> [--channel dev] [--dry-run]
+agents os create --name <name> --image <image> [--env agents-os] [--channel dev] [--dry-run]
+agents os start <name> [--dry-run]
+agents os stop <name> [--dry-run]
+agents os status <name> [--json]
+agents os logs <name> [--follow]
+agents os exec <name> -- <args...>
+agents os terminal <name> [--shell bash]
+agents os remove <name> [--prune-data] [--dry-run]
+agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
 ```
 
 ## Credits
