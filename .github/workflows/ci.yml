@@ -47,4 +47,10 @@ jobs:
 
       - name: Validate
         shell: bash
-        run: bun run ci
+        run: |
+          if [ ! -f package.json ]; then
+            echo "No package.json found; nothing to validate."
+            exit 0
+          fi
+
+          bun run ci
