@@ -195,7 +195,9 @@ async function main() {
     ledger.status = "success";
     ledger.actions.push({ action: "open-pr", url: pullRequest.html_url, automerge });
   } catch (error) {
-    if (pullRequest && ledger.status === "success") {
+    if (pullRequest) {
+      ledger.status = "success";
+      ledger.pull_request = pullRequest.html_url;
       ledger.error = sanitize(error.stack || error.message || String(error), TOKEN);
       ledger.actions.push({ action: "post-pr-warning", url: pullRequest.html_url, error: ledger.error });
       console.warn(`DarkFactory post-PR warning for ${pullRequest.html_url}: ${ledger.error}`);
@@ -204,9 +206,6 @@ async function main() {
 
     ledger.status = "blocked";
     ledger.error = sanitize(error.stack || error.message || String(error), TOKEN);
-    if (pullRequest) {
-      ledger.pull_request = pullRequest.html_url;
-    }
     try {
       await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
       await createIssueComment(
