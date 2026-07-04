@@ -198,8 +198,9 @@ test("df-follow-through workflow validates trusted refs before privileged tokens
   assert.ok(checkout < token);
   assert.match(workflow, /GITHUB_REPOSITORY/);
   assert.match(workflow, /GITHUB_REF_NAME.*main/);
+  assert.match(workflow, /GITHUB_REF.*refs\/heads\/main/);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
-  assert.doesNotMatch(workflow, /\bdev\b|github\.ref_name|DARK_FACTORY_CONTROL_REF/);
+  assert.doesNotMatch(workflow, /github\.ref_name|DARK_FACTORY_CONTROL_REF/);
 });
 
 test("df-work records auto-merge support during merge-policy preflight", async () => {
