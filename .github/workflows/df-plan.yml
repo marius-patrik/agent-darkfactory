@@ -89,10 +89,15 @@ jobs:
               ;;
           esac
 
-      - name: Checkout installed DarkFactory planner
+      # Always run the pinned control copy of the planner, never the target
+      # repository's mutable workflow payload. Push events in managed repos use
+      # the trusted main ref; scheduled/manual runs in the control repo use the
+      # exact SHA that triggered the workflow.
+      - name: Checkout DarkFactory control scripts
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          repository: marius-patrik/darkfactory-agent
+          ref: ${{ github.event_name == 'push' && 'main' || github.sha }}
           path: darkfactory-control
           persist-credentials: false
 
