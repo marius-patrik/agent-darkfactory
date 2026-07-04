@@ -221,6 +221,8 @@ test("df-sweep dev-merge backstop preserves REST merged_at in normalized PRs", a
   assert.match(source, /const mergedAt = pull\.merged_at \|\| null/);
   assert.match(source, /mergedAt\s*\n\s*\};/);
   assert.match(source, /if \(!normalized\.mergedAt \|\| normalized\.baseRefName !== "dev"/);
+  assert.match(source, /GET.*\/repos\/\$\{repoName\(repository\)\}\/pulls\/\$\{pull\.number\}/);
+  assert.match(source, /pull\.merged !== true/);
 });
 
 test("df-work cleanup remains a warning path after successful PR handoff", async () => {

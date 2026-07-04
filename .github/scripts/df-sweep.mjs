@@ -342,7 +342,11 @@ async function closeRecentlyMergedDevIssues(repository) {
 
   const results = [];
   for (const pull of pulls) {
-    const normalized = normalizeRestPullRequest(pull);
+    // The list endpoint exposes the merged boolean but not merged_at reliably;
+    // fetch the single PR to get the exact merge timestamp and full payload.
+    if (pull.merged !== true || pull.base?.ref !== "dev") continue;
+    const full = await gh.request("GET", `/repos/${repoName(repository)}/pulls/${pull.number}`);
+    const normalized = normalizeRestPullRequest(full);
     if (!normalized.mergedAt || normalized.baseRefName !== "dev" || !isWorkerPullRequest(normalized, repository)) continue;
     const action = await closeIssuesIfDevMerge(repository, normalized);
     if (action.issues?.length) results.push(action);
