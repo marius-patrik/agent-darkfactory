@@ -227,6 +227,7 @@ test("df-work workflow only runs issue_comment triggers from trusted actors", as
   const workflow = await readFile(new URL("../.github/workflows/df-work.yml", import.meta.url), "utf8");
 
   assert.match(workflow, /issue_comment/);
+  assert.doesNotMatch(workflow, /^\s+issues:\s*$/m);
   assert.match(workflow, /author_association/);
   assert.match(workflow, /OWNER/);
   assert.match(workflow, /COLLABORATOR/);
