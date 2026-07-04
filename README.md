@@ -51,3 +51,10 @@ Full CI validation:
 npm run ci
 ```
 
+## Compatibility markers
+
+The generated memory files (`cache.md`, `SHORT.md`, `handoff.md`) use
+`<!-- rommie:dream:* -->` HTML comment blocks as continuity markers. These
+markers are intentionally retained so existing memory blocks continue to be
+updated in place; new blocks use the same markers for continuity.
+
