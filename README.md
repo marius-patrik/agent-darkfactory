@@ -51,9 +51,9 @@ To install the app on every repository, use the GitHub App installation UI and c
 ```powershell
 npm ci
 npm run build
-agents packages register workspaces/darkfactory-workspace
+agents packages register workspaces/workspace-darkfactory
 agents packages register agents/agent-darkfactory
-agents data repo path darkfactory-workspace
+agents data repo path workspace-darkfactory
 ```
 
 Store local secrets through Agentos. Secret values are not printed by the manager:
@@ -115,7 +115,7 @@ Do not run the manager from an elevated prompt and do not add `--runasservice`; 
 Build and run with Docker:
 
 ```powershell
-git clone https://github.com/marius-patrik/agentos-data.git agentos-data
+git clone https://github.com/marius-patrik/data-agentos.git data-agentos
 docker build -t agent-darkfactory .
 docker run --rm -p 3000:3000 --env-file .env agent-darkfactory
 ```
@@ -125,7 +125,7 @@ Production hosts must provide these environment variables:
 - `GITHUB_APP_ID`
 - `GITHUB_PRIVATE_KEY`
 - `GITHUB_WEBHOOK_SECRET`
-- `DARK_FACTORY_WORKSPACE_ROOT`, optional when the image bundles `agentos-data/managed-repository`
+- `DARK_FACTORY_WORKSPACE_ROOT`, optional when the image bundles `data-agentos/managed-repository`
 - `PORT`, optional and defaults to `3000`
 
 Use `GET /healthz` as the health check endpoint.
@@ -137,7 +137,7 @@ Dark Factory manages shared setup through pull requests. It does not write direc
 Managed files:
 
 - `.agents/.global/**`
-- `.agents/.project/**`, only when `agentos-data/managed-repository/repositories/<owner>/<repo>/.agents/.project/**` exists
+- `.agents/.project/**`, only when `data-agentos/managed-repository/repositories/<owner>/<repo>/.agents/.project/**` exists
 - `.darkfactory/managed-repository.json`
 - `.darkfactory/installer-policy.json`
 - `.darkfactory/release-policy.json`
@@ -210,7 +210,7 @@ ghcr.io/marius-patrik/agent-darkfactory
 ## Development notes
 
 - Keep webhook handlers registered in `src/bot.ts`.
-- Keep managed file templates in `agentos-data/managed-repository/`.
+- Keep managed file templates in `data-agentos/managed-repository/`.
 - Keep managed sync logic in `src/managed-sync.ts`.
 - Keep installed-repository setup enforcement in `src/repository-setup.ts`.
 - Keep HTTP routing and signature handoff behavior in `src/server.ts`.

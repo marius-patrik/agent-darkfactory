@@ -8,7 +8,7 @@ This repository builds a TypeScript GitHub App bot that receives GitHub webhooks
 
 ## Managed Repository Setup
 
-- `.agents/.global/` is version-enforced by DarkFactory from `darkfactory-workspace`.
+- `.agents/.global/` is version-enforced by DarkFactory from `workspace-darkfactory`.
 - `.agents/.project/` is version-enforced only when a repo-specific workspace overlay exists.
 - `.github` is bootstrap-enforced by DarkFactory in installed repositories.
 - Open managed setup PRs instead of writing directly to default branches.
