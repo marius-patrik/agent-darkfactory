@@ -27,7 +27,8 @@ export const PLANNING_LABELS = [
   { name: "P0", color: "B60205", description: "Priority 0: urgent or release-blocking" },
   { name: "P1", color: "D93F0B", description: "Priority 1: important planned work" },
   { name: "P2", color: "FBCA04", description: "Priority 2: follow-up or lower urgency" },
-  { name: "df:prd-drift", color: "B60205", description: "DarkFactory PRD drift report" }
+  { name: "df:prd-drift", color: "B60205", description: "DarkFactory PRD drift report" },
+  { name: "df:ask-owner", color: "F9D0C4", description: "Needs owner input before DarkFactory continues" }
 ];
 
 export const WORKER_PULL_REQUEST_AUTHORS = new Set(["github-actions[bot]", "mp-agents[bot]"]);
@@ -178,15 +179,43 @@ export function slug(value) {
 }
 
 export function taskClassFromLabels(labels) {
-  const names = new Set(
-    (Array.isArray(labels) ? labels : [])
-      .map((label) => typeof label === "string" ? label : label?.name)
-      .filter(Boolean)
-  );
+  const names = new Set(labelNames(labels));
 
   if (names.has("df:class:mechanical")) return { taskClass: "mechanical", effort: "low" };
   if (names.has("df:class:hard")) return { taskClass: "hard", effort: "high" };
   return { taskClass: "standard", effort: "medium" };
+}
+
+export function labelNames(labels) {
+  return (Array.isArray(labels) ? labels : [])
+    .map((label) => typeof label === "string" ? label : label?.name)
+    .filter(Boolean);
+}
+
+export function extractBlockedByIssueNumbers(body) {
+  const numbers = [];
+  for (const line of String(body || "").split(/\r?\n/)) {
+    const match = line.match(/^Blocked-by:\s*#(\d+)\s*$/i);
+    if (match) numbers.push(Number(match[1]));
+  }
+  return [...new Set(numbers)].filter((number) => Number.isInteger(number) && number > 0);
+}
+
+export function priorityLabels(labels) {
+  return labelNames(labels).filter((label) => /^P[0-2]$/.test(label));
+}
+
+export function priorityRank(labels) {
+  const priorities = priorityLabels(labels);
+  if (priorities.includes("P0")) return 0;
+  if (priorities.includes("P1")) return 1;
+  if (priorities.includes("P2")) return 2;
+  return 99;
+}
+
+export function streamLabel(labels) {
+  const stream = labelNames(labels).find((label) => /^stream:[A-Za-z0-9_.-]+$/.test(label));
+  return stream || "stream:default";
 }
 
 export function reconcileLabelDiff(currentLabels, desiredLabels, reconciledLabels) {

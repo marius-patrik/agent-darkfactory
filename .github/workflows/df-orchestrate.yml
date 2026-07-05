@@ -3,6 +3,12 @@ name: DarkFactory Orchestrate
 on:
   schedule:
     - cron: "*/10 * * * *"
+  workflow_run:
+    workflows:
+      - DarkFactory Plan
+      - DarkFactory Follow Through
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -12,10 +18,19 @@ jobs:
   orchestrate:
     name: Dispatch ready work
     runs-on: ubuntu-latest
-    if: github.repository == 'marius-patrik/agent-darkfactory'
+    if: >-
+      ${{
+        github.repository == 'marius-patrik/agent-darkfactory' &&
+        (
+          github.event_name == 'schedule' ||
+          github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'workflow_run'
+        )
+      }}
     permissions:
       actions: write
       contents: read
+      pull-requests: read
 
     steps:
       - name: Validate trusted control ref
@@ -48,6 +63,7 @@ jobs:
           permission-actions: write
           permission-contents: write
           permission-issues: write
+          permission-pull-requests: read
 
       - name: Run orchestrator
         env:
@@ -55,4 +71,7 @@ jobs:
           DF_CONTROL_REPO: marius-patrik/agent-darkfactory
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data
+          DF_MAX_GLOBAL_WORKERS: ${{ vars.DF_MAX_GLOBAL_WORKERS || '4' }}
+          DF_MAX_REPO_WORKERS: ${{ vars.DF_MAX_REPO_WORKERS || '1' }}
+          DF_MAX_STREAM_WORKERS: ${{ vars.DF_MAX_STREAM_WORKERS || '1' }}
         run: node darkfactory-control/.github/scripts/df-orchestrate.mjs

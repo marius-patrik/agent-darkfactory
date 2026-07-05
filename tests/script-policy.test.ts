@@ -9,18 +9,23 @@ const {
   assertAllowedRepo,
   checksAreGreen,
   cleanupTempRoot,
+  extractBlockedByIssueNumbers,
   extractClosingIssueNumbers,
   getBranchProtection,
   getRequiredStatusCheckContexts,
   darkFactoryWorkerIssueNumber,
   isDarkFactoryWorkerPullRequest,
   isParkedRepo,
+  labelNames,
   listActiveManagedRepos,
   parsePrdItems,
   plannedIssueLabelDiff,
+  priorityLabels,
+  priorityRank,
   preflightMergePolicy,
   prdIssueBody,
   reconcileLabelDiff,
+  streamLabel,
   taskClassFromLabels
 } = dfLib;
 
@@ -82,6 +87,21 @@ test("prdIssueBody records deterministic Blocked-by sequencing", () => {
 
   assert.match(body, /Blocked-by: #10/);
   assert.match(body, /df-prd:milestones-m2/);
+});
+
+test("shared issue helpers parse labels, priorities, streams, and Blocked-by lines", () => {
+  const labels = [{ name: "P1" }, { name: "stream:hygiene" }, "df:ready"];
+
+  assert.deepEqual(labelNames(labels), ["P1", "stream:hygiene", "df:ready"]);
+  assert.deepEqual(priorityLabels(["P2", "P0", "roadmap"]), ["P2", "P0"]);
+  assert.equal(priorityRank(["roadmap", "P0"]), 0);
+  assert.equal(priorityRank(["roadmap"]), 99);
+  assert.equal(streamLabel(labels), "stream:hygiene");
+  assert.equal(streamLabel(["df:ready"]), "stream:default");
+  assert.deepEqual(
+    extractBlockedByIssueNumbers("Blocked-by: #10\nBlocked-by: #10\nBlocked-by: #22\nnot blocked"),
+    [10, 22]
+  );
 });
 
 test("label reconciliation removes stale df:ready when PRD sequencing blocks an issue", () => {
@@ -598,10 +618,17 @@ test("df-orchestrate workflow validates trusted refs before privileged tokens", 
   assert.match(workflow, /GITHUB_REPOSITORY/);
   assert.match(workflow, /GITHUB_REF.*refs\/heads\/main/);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /workflow_run:/);
+  assert.match(workflow, /DarkFactory Plan/);
+  assert.match(workflow, /DarkFactory Follow Through/);
   assert.match(workflow, /permission-actions:\s+write/);
   assert.doesNotMatch(workflow, /permission-workflows:\s+write/);
   assert.match(workflow, /permission-contents:\s+write/);
   assert.match(workflow, /permission-issues:\s+write/);
+  assert.match(workflow, /permission-pull-requests:\s+read/);
+  assert.match(workflow, /DF_MAX_GLOBAL_WORKERS/);
+  assert.match(workflow, /DF_MAX_REPO_WORKERS/);
+  assert.match(workflow, /DF_MAX_STREAM_WORKERS/);
 });
 
 test("df-orchestrate script uses the active managed registry and dispatches via workflow_dispatch", async () => {
@@ -610,10 +637,50 @@ test("df-orchestrate script uses the active managed registry and dispatches via 
   assert.match(source, /const CONTROL_ROOT = path\.resolve/);
   assert.match(source, /listActiveManagedRepos\(gh, CONTROL_REPO, \{ root: CONTROL_ROOT \}\)/);
   assert.match(source, /\/repos\/\$\{repoName\(CONTROL_REPO\)\}\/actions\/workflows\/df-work\.yml\/dispatches/);
-  assert.match(source, /\/df-prd:/);
+  assert.match(source, /findPrdMarker/);
   assert.match(source, /df:running/);
   assert.match(source, /df:blocked/);
   assert.match(source, /df:done/);
+});
+
+test("df-orchestrate reconstructs L0 state, updates dashboard, and escalates owner questions", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /reconstructRepositoryState/);
+  assert.match(source, /listIssues\(gh, repository, "all"\)/);
+  assert.match(source, /getOptionalFileContent\(gh, repository, "PRD\.md"/);
+  assert.match(source, /listRecentWorkflowRuns/);
+  assert.match(source, /listOpenPullRequests/);
+  assert.match(source, /DASHBOARD_MARKER/);
+  assert.match(source, /dark-factory:l0-dashboard/);
+  assert.match(source, /updateDashboard/);
+  assert.match(source, /upsertOwnerQuestion/);
+  assert.match(source, /df:ask-owner/);
+  assert.match(source, /missing PRD/);
+  assert.match(source, /ready issue #\$\{issue\.number\} lacks a PRD marker/);
+  assert.match(source, /conflicting priorities/);
+  assert.match(source, /missing Blocked-by reference/);
+  assert.match(source, /global_state_brief/);
+  assert.match(source, /AI tokens are reserved for future explicit judgment runs/);
+});
+
+test("df-orchestrate plans dispatches with priority, Blocked-by, stream, and concurrency gates", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /MAX_GLOBAL_WORKERS/);
+  assert.match(source, /MAX_REPO_WORKERS/);
+  assert.match(source, /MAX_STREAM_WORKERS/);
+  assert.match(source, /planDispatches/);
+  assert.match(source, /shouldDispatch/);
+  assert.match(source, /issue\.unresolvedBlockers\.length > 0/);
+  assert.match(source, /priorityRank/);
+  assert.match(source, /streamLabel/);
+  assert.match(source, /global-concurrency-cap/);
+  assert.match(source, /repo-concurrency-cap/);
+  assert.match(source, /stream-concurrency-cap/);
+  assert.match(source, /ready-sequenced-issue/);
+  assert.match(source, /hold-sequenced-issue/);
+  assert.match(source, /all Blocked-by references are resolved/);
 });
 
 test("df-orchestrate claims ready issues before dispatching workers", async () => {
