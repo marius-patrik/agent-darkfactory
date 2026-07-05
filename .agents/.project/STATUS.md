@@ -26,4 +26,5 @@ Run before committing:
 
 - Configure `DARK_FACTORY_APP_ID` and `DARK_FACTORY_PRIVATE_KEY` secrets before using managed sync or release workflows.
 - Configure `CODEX_AUTH_JSON` in every managed repository where Codex Review should approve pull requests.
+- Enable GitHub repository auto-merge on dogfood target repositories before expecting protected-branch `df:ready` issues to go label-to-merged.
 - Install the GitHub App on all repositories through GitHub's installation UI.

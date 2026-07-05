@@ -87,6 +87,17 @@ async function main() {
 
   const mergePolicy = await preflightMergePolicy(gh, TARGET_REPO, workBaseBranch, repo);
   ledger.actions.push({ action: "preflight-merge-policy", result: mergePolicy });
+  if (mergePolicy.blocked) {
+    ledger.status = "blocked";
+    ledger.error = mergePolicy.reason;
+    await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
+    await createIssueComment(
+      TARGET_REPO,
+      TARGET_ISSUE_NUMBER,
+      preflightBlockedComment(target, workBaseBranch, mergePolicy)
+    );
+    return;
+  }
 
   try {
     await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:running"], ["df:ready", "df:blocked", "df:done"]);
@@ -200,6 +211,23 @@ async function main() {
     ledger.cleanup = cleanup;
     await writeLedger(ledger);
   }
+}
+
+function preflightBlockedComment(target, baseBranch, mergePolicy) {
+  return [
+    `DarkFactory blocked \`${target}\` before cloning or running Codex.`,
+    "",
+    "Blocker:",
+    "",
+    "```text",
+    mergePolicy.reason,
+    "```",
+    "",
+    `Target branch: \`${baseBranch}\``,
+    `Repository auto-merge enabled: \`${mergePolicy.autoMergeSupported ? "yes" : "no"}\``,
+    "",
+    "This is target repository setup work, not a code implementation failure."
+  ].join("\n");
 }
 
 async function getIssue(repository, issueNumber) {

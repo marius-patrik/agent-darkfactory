@@ -22,6 +22,7 @@ TypeScript GitHub App bot that receives GitHub webhooks, verifies signatures, an
 - Node.js 22 or newer.
 - Agentos shared state for managed secrets and workspace paths.
 - A GitHub App installed on the target repositories.
+- For label-to-merged dogfood runs, target repositories with protected worker branches must have GitHub repository auto-merge enabled before `df:ready` dispatch.
 - A public HTTPS URL for local webhook testing, such as an ngrok or Cloudflare Tunnel URL.
 
 ## GitHub App setup
@@ -216,4 +217,3 @@ ghcr.io/marius-patrik/agent-darkfactory
 - Keep HTTP routing and signature handoff behavior in `src/server.ts`.
 - Keep environment parsing in `src/config.ts`.
 - Add tests under `tests/` for any new route, config branch, or webhook behavior.
-
