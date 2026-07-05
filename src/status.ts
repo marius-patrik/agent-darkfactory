@@ -1,6 +1,6 @@
 export const CONTROL_OWNER = "marius-patrik";
 export const CONTROL_REPO = "agent-darkfactory";
-export const DATA_REPO = "darkfactory-data";
+export const DATA_REPO = "data-agentos";
 
 export interface GitHubRequester {
   request(route: string, parameters: Record<string, unknown>): Promise<{ data: unknown }>;

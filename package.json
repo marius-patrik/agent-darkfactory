@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "df": "./dist/cli.js",
-    "darkfactory": "./dist/cli.js"
+    "darkfactory": "./dist/cli.js",
+    "df": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
