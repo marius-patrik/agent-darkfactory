@@ -931,6 +931,16 @@ test("df-sweep filters explicit sweep repositories through lifecycle and GitHub 
   assert.match(source, /repo\.archived === true \|\| repo\.disabled === true/);
 });
 
+test("df-sweep considers default-branch worker PRs when no explicit work branch is configured", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-sweep.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /const WORK_BRANCH = process\.env\.DF_WORK_BRANCH \|\| ""/);
+  assert.match(source, /const baseBranches = await sweepBaseBranches\(repository\)/);
+  assert.match(source, /getRepository\(gh, repository\)/);
+  assert.match(source, /new Set\(\["dev", repo\.default_branch\]\.filter\(Boolean\)\)/);
+  assert.match(source, /baseBranches\.has\(pull\.baseRefName\)/);
+});
+
 test("df-work no-ops instead of blocking when an open worker PR already exists", async () => {
   const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
 

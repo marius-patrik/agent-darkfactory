@@ -25,7 +25,7 @@ import { pathToFileURL } from "node:url";
 const MODE = process.env.DF_FOLLOW_THROUGH_MODE ?? "sweep";
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const DEFAULT_EXCLUDED_REPOS = "";
-const WORK_BRANCH = process.env.DF_WORK_BRANCH || "dev";
+const WORK_BRANCH = process.env.DF_WORK_BRANCH || "";
 const NO_CHECK_ALLOWLIST = new Set(
   repoList(process.env.DF_ALLOW_NO_CHECK_REPOS || "").map((repo) => repoName(repo).toLowerCase())
 );
@@ -89,8 +89,8 @@ async function main() {
 
     try {
       assertAllowedRepo(repository);
-      const pulls = await listOpenPullRequests(repository);
-      console.log(`DarkFactory sweep listed ${pulls.length} open ${WORK_BRANCH} worker candidate PRs for ${repoName(repository)}.`);
+      const { pulls, baseBranches } = await listOpenPullRequests(repository);
+      console.log(`DarkFactory sweep listed ${pulls.length} open ${[...baseBranches].join(",")} worker candidate PRs for ${repoName(repository)}.`);
       for (const pull of pulls) {
         try {
           const result = await considerPullRequest(repository, pull);
@@ -493,6 +493,7 @@ function repoList(value) {
 }
 
 async function listOpenPullRequests(repository) {
+  const baseBranches = await sweepBaseBranches(repository);
   const query = `
     query Pulls($owner: String!, $repo: String!, $cursor: String) {
       repository(owner: $owner, name: $repo) {
@@ -553,9 +554,19 @@ async function listOpenPullRequests(repository) {
     cursor = connection.pageInfo.endCursor;
   }
 
-  return pulls.filter((pull) => {
-    return pull.baseRefName === WORK_BRANCH && String(pull.headRefName || "").startsWith("df/");
-  });
+  return {
+    pulls: pulls.filter((pull) => {
+      return baseBranches.has(pull.baseRefName) && String(pull.headRefName || "").startsWith("df/");
+    }),
+    baseBranches
+  };
+}
+
+async function sweepBaseBranches(repository) {
+  if (WORK_BRANCH) return new Set([WORK_BRANCH]);
+
+  const repo = await getRepository(gh, repository);
+  return new Set(["dev", repo.default_branch].filter(Boolean));
 }
 
 async function getPullRequestMergeGate(repository, pullNumber) {
