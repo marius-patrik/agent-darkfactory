@@ -494,6 +494,7 @@ test("df-fix script uses active managed repos and fresh merge gates", async () =
   assert.match(source, /const mergeGate = await getPullRequestMergeGate/);
   assert.match(source, /checksAreGreen\(mergeGate\.statusCheckRollup, requiredContexts\)/);
   assert.match(source, /merge_method: "squash"/);
+  assert.match(source, /targetSnapshot.*\/target:ro/);
   assert.doesNotMatch(source, /--admin/);
   assert.doesNotMatch(source, /danger-full-access/);
   assert.doesNotMatch(source, /path\.join\(worktree, "\.darkfactory"/);
