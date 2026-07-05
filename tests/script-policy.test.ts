@@ -736,6 +736,16 @@ test("df-fix posts a trusted revision request, closes the red PR, deletes the br
   const pull = workerPull({ number: 10, checkConclusion: "FAILURE" });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
   const gh = {
+    graphql: async () => ({
+      repository: {
+        pullRequest: {
+          ...pull,
+          mergeable: "MERGEABLE",
+          url: "https://github.com/marius-patrik/active/pull/10",
+          statusCheckRollup: { contexts: { nodes: pull.statusCheckRollup } }
+        }
+      }
+    }),
     request: async (method: string, pathName: string, body?: any) => {
       calls.push({ method, pathName, body });
       if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/10") {
@@ -782,6 +792,51 @@ test("df-fix posts a trusted revision request, closes the red PR, deletes the br
   assert.ok(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/10" && call.body.state === "closed"));
   assert.ok(calls.some((call) => call.method === "DELETE" && call.pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker"));
   assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches" && call.body.inputs.repo === "marius-patrik/active" && call.body.inputs.issue_number === "10"));
+});
+
+test("df-fix does not close, delete, or redispatch when the fresh PR head trust check fails", async () => {
+  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const pull = workerPull({ number: 15, checkConclusion: "FAILURE" });
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+  const gh = {
+    graphql: async () => ({
+      repository: {
+        pullRequest: {
+          ...pull,
+          headRepository: { owner: { login: "other-owner" }, name: "active" },
+          mergeable: "MERGEABLE",
+          url: "https://github.com/marius-patrik/active/pull/15",
+          statusCheckRollup: { contexts: { nodes: pull.statusCheckRollup } }
+        }
+      }
+    }),
+    request: async (method: string, pathName: string, body?: any) => {
+      calls.push({ method, pathName, body });
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/15") {
+        return { data: { number: 15, body: "", labels: [] } };
+      }
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/15/comments?per_page=100") return { data: [] };
+      throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+    }
+  };
+
+  const result = await fixPullRequestByRedispatch(
+    gh,
+    controlRepo,
+    repository,
+    pull,
+    { action: "fix", reason: "checks-failing", round: 1, maxRounds: 3 },
+    ["ci"],
+    { maxRounds: 3, token: "token" }
+  );
+
+  assert.equal(result.action, "skip");
+  assert.equal(result.reason, "fix-trust-failed");
+  assert.equal(result.trust_failure, "head-repository-changed");
+  assert.equal(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/15"), false);
+  assert.equal(calls.some((call) => call.method === "DELETE" && call.pathName.includes("/git/refs/heads/")), false);
+  assert.equal(calls.some((call) => call.pathName.includes("df-work.yml/dispatches")), false);
 });
 
 test("df-fix round cap escalates instead of looping forever", () => {

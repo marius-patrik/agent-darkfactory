@@ -333,19 +333,42 @@ export async function fixPullRequestByRedispatch(gh, controlRepo, repository, pu
     );
   }
 
+  const freshPull = await getPullRequestMergeGate(gh, repository, pull.number);
+  const trustFailure = mergeGateTrustFailure(pull, freshPull, repository);
+  if (trustFailure) {
+    return {
+      repo: repoName(repository),
+      pr: ref,
+      url: freshPull.url || pull.url,
+      action: "skip",
+      reason: "fix-trust-failed",
+      trust_failure: trustFailure
+    };
+  }
+  if (checksAreGreen(freshPull.statusCheckRollup, requiredContexts)) {
+    return {
+      repo: repoName(repository),
+      pr: ref,
+      url: freshPull.url || pull.url,
+      action: "skip",
+      reason: "fix-checks-now-green",
+      checks: checksSummary(freshPull.statusCheckRollup)
+    };
+  }
+
   const round = currentRound + 1;
-  const findings = await residualFindings(gh, repository, pull, requiredContexts, token);
-  const revision = await postRevisionRequest(gh, repository, issue, pull, round, maxRounds, findings);
+  const findings = await residualFindings(gh, repository, freshPull, requiredContexts, token);
+  const revision = await postRevisionRequest(gh, repository, issue, freshPull, round, maxRounds, findings);
   await updateIssueFixRound(gh, repository, issue, round);
   await resetIssueForWorker(gh, repository, issueNumber);
-  await closeSupersededPullRequest(gh, repository, pull, round);
-  await deleteHeadBranch(gh, repository, pull.headRefName);
+  await closeSupersededPullRequest(gh, repository, freshPull, round);
+  await deleteHeadBranch(gh, repository, freshPull.headRefName);
   await dispatchWorker(gh, controlRepo, repository, issueNumber);
 
   return {
     repo: repoName(repository),
     pr: ref,
-    url: pull.url,
+    url: freshPull.url || pull.url,
     action: "redispatch",
     issue: `#${issueNumber}`,
     round,
@@ -353,7 +376,7 @@ export async function fixPullRequestByRedispatch(gh, controlRepo, repository, pu
     reason: classification.reason,
     revision,
     stale_pr_closed: true,
-    head_branch_deleted: pull.headRefName,
+    head_branch_deleted: freshPull.headRefName,
     dispatched_workflow: "df-work.yml"
   };
 }
