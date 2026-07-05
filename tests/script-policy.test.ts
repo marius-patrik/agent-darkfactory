@@ -480,6 +480,12 @@ test("df-follow-through workflow validates trusted refs before privileged tokens
   assert.match(workflow, /permission-issues:\s+write/);
   assert.match(workflow, /permission-pull-requests:\s+write/);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /^\s+workflow_run:\s*$/m);
+  assert.match(workflow, /workflows:\s*\n\s+-\s+DarkFactory Work/);
+  assert.match(workflow, /types:\s*\n\s+-\s+completed/);
+  assert.match(workflow, /github\.event_name == 'workflow_run'/);
+  assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
   assert.doesNotMatch(workflow, /github\.ref_name|DARK_FACTORY_CONTROL_REF/);
 });
 
@@ -1067,6 +1073,12 @@ test("df-orchestrate workflow validates trusted refs before privileged tokens", 
   assert.match(workflow, /permission-workflows:\s+write/);
   assert.match(workflow, /permission-contents:\s+write/);
   assert.match(workflow, /permission-issues:\s+write/);
+  assert.match(workflow, /^\s+workflow_run:\s*$/m);
+  assert.match(workflow, /workflows:\s*\n\s+-\s+DarkFactory Plan\s*\n\s+-\s+DarkFactory Work\s*\n\s+-\s+DarkFactory Follow Through/);
+  assert.match(workflow, /types:\s*\n\s+-\s+completed/);
+  assert.match(workflow, /github\.event_name == 'workflow_run'/);
+  assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
 });
 
 test("df-orchestrate script uses the active managed registry and dispatches via workflow_dispatch", async () => {
