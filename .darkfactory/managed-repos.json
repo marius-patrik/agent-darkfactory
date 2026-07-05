@@ -18,6 +18,38 @@
       "state": "active",
       "note": "Long-term orchestration engine; follow-through may still exclude it by workflow input."
     },
+    "marius-patrik/agents-core": {
+      "state": "active",
+      "note": "Agentos core package repository."
+    },
+    "marius-patrik/agents-manager": {
+      "state": "active",
+      "note": "Agentos manager package repository."
+    },
+    "marius-patrik/llm-gateway": {
+      "state": "active",
+      "note": "Agentos LLM gateway package repository."
+    },
+    "marius-patrik/inference-engine": {
+      "state": "active",
+      "note": "Agentos inference engine package repository."
+    },
+    "marius-patrik/darkfactory-templates": {
+      "state": "active",
+      "note": "DarkFactory templates package repository."
+    },
+    "marius-patrik/workspace-darkfactory": {
+      "state": "active",
+      "note": "DarkFactory workspace package repository."
+    },
+    "marius-patrik/workspace-agents": {
+      "state": "active",
+      "note": "Agents workspace package repository."
+    },
+    "marius-patrik/data-agentos": {
+      "state": "active",
+      "note": "Agentos data package repository."
+    },
     "marius-patrik/skyblock-agent": {
       "state": "parked",
       "note": "Owner-directed product repository exclusion."
