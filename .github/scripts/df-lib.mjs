@@ -244,10 +244,18 @@ export async function cleanupTempRoot(tempRoot, warn = console.warn) {
     await rm(tempRoot, { recursive: true, force: true });
     return { ok: true, warning: "" };
   } catch (error) {
+    if (isIgnorableCleanupError(error)) {
+      return { ok: true, warning: "" };
+    }
+
     const warning = `DarkFactory cleanup warning: ${error.message || String(error)}`;
     warn(warning);
     return { ok: false, warning };
   }
+}
+
+export function isIgnorableCleanupError(error) {
+  return error?.code === "EACCES" || error?.code === "ENOENT";
 }
 
 export function createGithubClient(token, userAgent = "darkfactory") {

@@ -13,6 +13,7 @@ const {
   getBranchProtection,
   getRequiredStatusCheckContexts,
   darkFactoryWorkerIssueNumber,
+  isIgnorableCleanupError,
   isDarkFactoryWorkerPullRequest,
   isParkedRepo,
   listActiveManagedRepos,
@@ -140,6 +141,12 @@ test("cleanupTempRoot reports cleanup failures without throwing", async () => {
   assert.equal(result.ok, false);
   assert.equal(warnings.length, 1);
   assert.match(result.warning, /cleanup warning/i);
+});
+
+test("cleanupTempRoot ignores expected temp cleanup races", () => {
+  assert.equal(isIgnorableCleanupError({ code: "EACCES" }), true);
+  assert.equal(isIgnorableCleanupError({ code: "ENOENT" }), true);
+  assert.equal(isIgnorableCleanupError({ code: "EPERM" }), false);
 });
 
 test("checksAreGreen respects required checks and rejects pending or failing checks", () => {
@@ -510,6 +517,7 @@ test("df-work workflow uses the installed control worker payload", async () => {
 
 test("df-work workflow uses the app token for control-dispatched workers", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-work.yml", import.meta.url), "utf8");
+  const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
 
   assert.match(workflow, /if:\s*github\.event_name == 'workflow_dispatch'/);
   assert.match(workflow, /DARK_FACTORY_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
@@ -520,6 +528,10 @@ test("df-work workflow uses the app token for control-dispatched workers", async
   assert.doesNotMatch(workflow, /steps\.app-token\.outputs\.token \|\| github\.token/);
   assert.match(workflow, /DF_TARGET_REPO: \$\{\{ inputs\.repo \}\}/);
   assert.match(workflow, /DF_TARGET_ISSUE_NUMBER: \$\{\{ inputs\.issue_number \}\}/);
+  assert.match(source, /const TOKEN = requiredEnv\("DARK_FACTORY_TOKEN"\)/);
+  assert.match(source, /runGit\(\["push", "origin", `HEAD:refs\/heads\/\$\{branch\}`\], worktree\)/);
+  assert.match(source, /function runGit\(args, cwd\) \{\s+return runGitWithAuth\(args, cwd\);/);
+  assert.match(source, /function runGitWithAuth\(args, cwd\) \{\s+return runCommand\("git", \["-c", authHeader\(\), \.\.\.args\], cwd\);/);
 });
 
 test("df-sweep waits before treating empty check rollups as no-checks-configured", async () => {
