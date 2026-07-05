@@ -592,22 +592,27 @@ test("df-fix merge gate fails closed when branch protection is unreadable", asyn
 test("df-fix protected branch direct-merges after automerge failure when checks are green", async () => {
   const repository = { owner: "marius-patrik", repo: "active" };
   const originalPull = workerPull({ number: 42, checkConclusion: "SUCCESS" });
-  const freshPull = {
+  const initialFreshPull = {
     ...originalPull,
+    headRefOid: "old-head",
     mergeable: "MERGEABLE",
     url: "https://github.com/marius-patrik/active/pull/42",
     statusCheckRollup: { contexts: { nodes: originalPull.statusCheckRollup } }
   };
+  const directFreshPull = { ...initialFreshPull, headRefOid: "fresh-head" };
+  let mergeGateReads = 0;
   const gh = {
     graphql: async (query: string) => {
       if (query.includes("EnableAutoMerge")) {
         throw new Error("Pull request is in clean status");
       }
-      return { repository: { pullRequest: freshPull } };
+      mergeGateReads += 1;
+      return { repository: { pullRequest: mergeGateReads === 1 ? initialFreshPull : directFreshPull } };
     },
-    request: async (method: string, pathName: string) => {
+    request: async (method: string, pathName: string, body?: any) => {
       if (method === "GET" && pathName.endsWith("/branches/dev/protection")) return {};
       if (method === "PUT" && pathName === "/repos/marius-patrik/active/pulls/42/merge") {
+        assert.equal(body.sha, "fresh-head");
         return { sha: "defabc" };
       }
       if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/42/comments") return {};
@@ -619,6 +624,7 @@ test("df-fix protected branch direct-merges after automerge failure when checks 
   const result = await mergeGreenPullRequest(gh, repository, originalPull, ["ci"], new Set(), "token");
   assert.equal(result.action, "merge");
   assert.equal(result.sha, "defabc");
+  assert.equal(mergeGateReads, 2);
   assert.notEqual(result.reason, "protected-branch-automerge-failed");
 });
 

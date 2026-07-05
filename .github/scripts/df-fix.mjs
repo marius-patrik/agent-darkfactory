@@ -604,24 +604,26 @@ export async function mergeGreenPullRequest(gh, repository, pull, requiredContex
       };
     }
 
-    const stillTrusted = !mergeGateTrustFailure(pull, mergeGate, repository);
-    const stillGreen = checksAreGreen(mergeGate.statusCheckRollup, requiredContexts);
-    if (stillTrusted && stillGreen && mergeGate.mergeable === "MERGEABLE") {
+    const directMergeGate = await getPullRequestMergeGate(gh, repository, pull.number);
+    const directTrustFailure = mergeGateTrustFailure(pull, directMergeGate, repository);
+    const directHasChecks = Array.isArray(directMergeGate.statusCheckRollup) && directMergeGate.statusCheckRollup.length > 0;
+    const directGreen = checksAreGreen(directMergeGate.statusCheckRollup, requiredContexts);
+    if (!directTrustFailure && directHasChecks && directGreen && directMergeGate.mergeable === "MERGEABLE") {
       try {
         const merged = responseData(await gh.request("PUT", `/repos/${repoName(repository)}/pulls/${pull.number}/merge`, {
-          commit_title: mergeGate.title,
+          commit_title: directMergeGate.title,
           merge_method: "squash",
-          sha: mergeGate.headRefOid
+          sha: directMergeGate.headRefOid
         }));
-        await closeIssuesIfDevMerge(gh, repository, mergeGate);
+        await closeIssuesIfDevMerge(gh, repository, directMergeGate);
         return {
           repo: repoName(repository),
           pr: ref,
           url: pull.url,
           action: "merge",
           sha: merged.sha,
-          base: pull.baseRefName,
-          checks: checksSummary(mergeGate.statusCheckRollup)
+          base: directMergeGate.baseRefName,
+          checks: checksSummary(directMergeGate.statusCheckRollup)
         };
       } catch {
         // fall through to skip with preserved auto-merge error
