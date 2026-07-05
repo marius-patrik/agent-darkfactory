@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+  issues:
+    types:
+      - labeled
+      - reopened
+      - edited
   workflow_run:
     workflows:
       - DarkFactory Plan
@@ -25,6 +30,13 @@ jobs:
         (
           github.event_name == 'schedule' ||
           github.event_name == 'workflow_dispatch' ||
+          (
+            github.event_name == 'issues' &&
+            (
+              github.event.action != 'labeled' ||
+              github.event.label.name == 'df:ready'
+            )
+          ) ||
           (
             github.event_name == 'workflow_run' &&
             github.event.workflow_run.head_branch == 'main' &&
@@ -76,6 +88,7 @@ jobs:
           permission-actions: write
           permission-contents: write
           permission-issues: write
+          permission-pull-requests: read
           permission-workflows: write
 
       - name: Run orchestrator
@@ -84,4 +97,7 @@ jobs:
           DF_CONTROL_REPO: marius-patrik/agent-darkfactory
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data
+          DF_MAX_GLOBAL_WORKERS: ${{ vars.DF_MAX_GLOBAL_WORKERS }}
+          DF_MAX_REPO_WORKERS: ${{ vars.DF_MAX_REPO_WORKERS }}
+          DF_MAX_STREAM_WORKERS: ${{ vars.DF_MAX_STREAM_WORKERS }}
         run: node ${{ steps.script-path.outputs.path }}
