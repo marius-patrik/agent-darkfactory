@@ -96,6 +96,7 @@ async function main() {
       TARGET_ISSUE_NUMBER,
       preflightBlockedComment(target, workBaseBranch, mergePolicy)
     );
+    await writeLedger(ledger);
     return;
   }
 
