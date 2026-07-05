@@ -12,6 +12,7 @@ import {
   createGithubClient,
   ensureLabels,
   getRepository,
+  preflightMergePolicy,
   parseRepo,
   repoName,
   requiredEnv,
@@ -84,33 +85,8 @@ async function main() {
   }
   await ensureLabels(gh, TARGET_REPO, WORK_LABELS);
 
-  let mergePolicy;
-
-  try {
-    mergePolicy = await preflightMergePolicy(TARGET_REPO, workBaseBranch, repo);
-    ledger.actions.push({ action: "preflight-merge-policy", result: mergePolicy });
-  } catch (error) {
-    const message = sanitize(error.stack || error.message || String(error), TOKEN);
-    ledger.status = "blocked";
-    ledger.error = message;
-    await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
-    await createIssueComment(
-      TARGET_REPO,
-      TARGET_ISSUE_NUMBER,
-      [
-        "DarkFactory worker blocked — repository prerequisite missing.",
-        "",
-        "Enable the required setting before re-labeling this issue `df:ready`:",
-        "",
-        "```text",
-        truncate(message, 6000),
-        "```"
-      ].join("\n")
-    );
-    await writeLedger(ledger);
-    console.warn(`DarkFactory worker blocked on prerequisite for ${target}: ${message}`);
-    return;
-  }
+  const mergePolicy = await preflightMergePolicy(gh, TARGET_REPO, workBaseBranch, repo);
+  ledger.actions.push({ action: "preflight-merge-policy", result: mergePolicy });
 
   try {
     await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:running"], ["df:ready", "df:blocked", "df:done"]);
@@ -237,55 +213,12 @@ async function getIssue(repository, issueNumber) {
   return issue;
 }
 
-async function preflightMergePolicy(repository, baseBranch, repo) {
-  const protection = await getBranchProtection(repository, baseBranch);
-  const autoMergeSupported = repo.allow_auto_merge === true;
-
-  // M1/M2 policy requires issue -> PR -> gate -> automerge. The follow-through
-  // sweep can fall back to a direct green-PR merge when auto-merge cannot be
-  // armed (e.g. unprotected branches), but the repository must support
-  // auto-merge as a prerequisite for worker dispatch.
-  if (!autoMergeSupported) {
-    throw new Error(
-      `${repoName(repository)} does not allow auto-merge. Enable it in repository settings before dispatching DarkFactory workers.`
-    );
-  }
-
-  if (protection.protected) {
-    return {
-      useAutomerge: true,
-      autoMergeSupported,
-      summary: `branch protection exists on \`${baseBranch}\`; GitHub automerge will be armed`
-    };
-  }
-
-  return {
-    useAutomerge: false,
-    autoMergeSupported,
-    summary: `no branch protection on \`${baseBranch}\`; green-PR sweep will squash-merge directly after checks`
-  };
-}
-
 async function resolveWorkBaseBranch(repository, defaultBranch) {
   try {
     await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeURIComponent("dev")}`);
     return "dev";
   } catch (error) {
     if (error.status === 404) return defaultBranch;
-    throw error;
-  }
-}
-
-async function getBranchProtection(repository, branch) {
-  try {
-    const data = await gh.request(
-      "GET",
-      `/repos/${repoName(repository)}/branches/${encodeURIComponent(branch)}/protection`
-    );
-    return { protected: true, data };
-  } catch (error) {
-    if (error.status === 404) return { protected: false, data: null };
-    if (error.status === 403 && /enable this feature/i.test(error.message || "")) return { protected: false, data: null };
     throw error;
   }
 }

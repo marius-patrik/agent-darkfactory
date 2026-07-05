@@ -10,12 +10,15 @@ const {
   checksAreGreen,
   cleanupTempRoot,
   extractClosingIssueNumbers,
+  getBranchProtection,
   getRequiredStatusCheckContexts,
   darkFactoryWorkerIssueNumber,
   isDarkFactoryWorkerPullRequest,
   isParkedRepo,
+  listActiveManagedRepos,
   parsePrdItems,
   plannedIssueLabelDiff,
+  preflightMergePolicy,
   prdIssueBody,
   reconcileLabelDiff,
   taskClassFromLabels
@@ -143,6 +146,8 @@ test("checksAreGreen respects required checks and rejects pending or failing che
   assert.equal(checksAreGreen([]), true);
   assert.equal(checksAreGreen([], ["ci"]), false);
   assert.equal(checksAreGreen([{ __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" }]), true);
+  assert.equal(checksAreGreen([{ __typename: "CheckRun", status: "COMPLETED", conclusion: "NEUTRAL" }]), false);
+  assert.equal(checksAreGreen([{ __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED" }]), false);
   assert.equal(
     checksAreGreen(
       [{ __typename: "CheckRun", name: "ci", status: "COMPLETED", conclusion: "SUCCESS" }],
@@ -161,6 +166,57 @@ test("checksAreGreen respects required checks and rejects pending or failing che
   assert.equal(checksAreGreen([{ __typename: "StatusContext", state: "FAILURE" }]), false);
 });
 
+test("getRequiredStatusCheckContexts treats inaccessible branch protection as no native requirements", async () => {
+  const error: Error & { status?: number } = new Error("Resource not accessible by integration");
+  error.status = 403;
+
+  const contexts = await getRequiredStatusCheckContexts(
+    {
+      request: async () => {
+        throw error;
+      }
+    },
+    { owner: "marius-patrik", repo: "example" },
+    "main"
+  );
+
+  assert.deepEqual(contexts, []);
+});
+
+test("getBranchProtection treats 403 and 404 as not configured without swallowing other errors", async () => {
+  for (const status of [403, 404]) {
+    const result = await getBranchProtection(
+      {
+        request: async () => {
+          const error: Error & { status?: number } = new Error(`${status} branch protection unavailable`);
+          error.status = status;
+          throw error;
+        }
+      },
+      { owner: "marius-patrik", repo: "example" },
+      "dev"
+    );
+
+    assert.equal(result.configured, false);
+    assert.equal(result.status, status);
+  }
+
+  const serverError: Error & { status?: number } = new Error("server error");
+  serverError.status = 500;
+  await assert.rejects(
+    () => getBranchProtection(
+      {
+        request: async () => {
+          throw serverError;
+        }
+      },
+      { owner: "marius-patrik", repo: "example" },
+      "dev"
+    ),
+    /server error/
+  );
+});
+
 test("extractClosingIssueNumbers deduplicates close references", () => {
   assert.deepEqual(
     extractClosingIssueNumbers(
@@ -176,6 +232,45 @@ test("parked repositories include the current owner exclusions", () => {
   assert.equal(isParkedRepo({ owner: "marius-patrik", repo: "fabrica" }), true);
   assert.throws(() => assertAllowedRepo({ owner: "marius-patrik", repo: "singularity" }), /parked/);
   assert.throws(() => assertAllowedRepo({ owner: "marius-patrik", repo: "life-support" }), /parked/);
+});
+
+test("listActiveManagedRepos excludes archived, disabled, and non-active lifecycle repos", async () => {
+  const warnings: string[] = [];
+  const registry = {
+    repositories: {
+      "marius-patrik/active": { state: "active" },
+      "marius-patrik/parked": { state: "parked" },
+      "marius-patrik/completed": { state: "completed" },
+      "marius-patrik/removed": { state: "removed" },
+      "marius-patrik/archived-by-registry": { state: "archived" },
+      "marius-patrik/archived-by-github": { state: "active" },
+      "marius-patrik/disabled-by-github": { state: "active" },
+      "other-owner/active": { state: "active" }
+    }
+  };
+  const repositories = [
+    { full_name: "marius-patrik/active", archived: false, disabled: false },
+    { full_name: "marius-patrik/parked", archived: false, disabled: false },
+    { full_name: "marius-patrik/completed", archived: false, disabled: false },
+    { full_name: "marius-patrik/removed", archived: false, disabled: false },
+    { full_name: "marius-patrik/archived-by-registry", archived: false, disabled: false },
+    { full_name: "marius-patrik/archived-by-github", archived: true, disabled: false },
+    { full_name: "marius-patrik/disabled-by-github", archived: false, disabled: true },
+    { full_name: "marius-patrik/unlisted", archived: false, disabled: false },
+    { full_name: "other-owner/active", archived: false, disabled: false }
+  ];
+
+  const active = await listActiveManagedRepos(
+    { request: async () => ({ repositories: [] }) },
+    { owner: "marius-patrik", repo: "agent-darkfactory" },
+    { repositories, registry, warn: (warning: string) => warnings.push(warning) }
+  );
+
+  assert.deepEqual(active, [{ owner: "marius-patrik", repo: "active" }]);
+  assert.ok(warnings.some((warning) => warning.includes("archived=true")));
+  assert.ok(warnings.some((warning) => warning.includes("disabled=true")));
+  assert.ok(warnings.some((warning) => warning.includes("managed lifecycle state is 'parked'")));
+  assert.ok(warnings.some((warning) => warning.includes("managed lifecycle state is 'removed'")));
 });
 
 test("df-sweep dev-merge closure uses worker PR provenance instead of issue labels or comments", async () => {
@@ -348,13 +443,38 @@ test("df-follow-through workflow validates trusted refs before privileged tokens
   assert.doesNotMatch(workflow, /github\.ref_name|DARK_FACTORY_CONTROL_REF/);
 });
 
-test("df-work records auto-merge support during merge-policy preflight", async () => {
-  const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
+test("df-work merge-policy preflight uses direct sweep when branch protection is absent or unreadable", async () => {
+  const repository = { owner: "marius-patrik", repo: "example" };
+  const unreadablePolicy = await preflightMergePolicy(
+    {
+      request: async () => {
+        const error: Error & { status?: number } = new Error("Resource not accessible by integration");
+        error.status = 403;
+        throw error;
+      }
+    },
+    repository,
+    "dev",
+    { allow_auto_merge: true }
+  );
 
-  assert.match(source, /const autoMergeSupported = repo\.allow_auto_merge === true/);
-  assert.match(source, /autoMergeSupported/);
-  assert.match(source, /does not allow auto-merge/);
-  assert.match(source, /green-PR sweep will squash-merge directly after checks/);
+  assert.equal(unreadablePolicy.useAutomerge, false);
+  assert.equal(unreadablePolicy.autoMergeSupported, true);
+  assert.equal(unreadablePolicy.branchProtection.configured, false);
+  assert.match(unreadablePolicy.summary, /no branch protection on `dev`/);
+  assert.match(unreadablePolicy.summary, /green-PR sweep will squash-merge directly after checks/);
+
+  const protectedPolicy = await preflightMergePolicy(
+    {
+      request: async () => ({ required_status_checks: { contexts: ["validate"] } })
+    },
+    repository,
+    "dev",
+    { allow_auto_merge: true }
+  );
+
+  assert.equal(protectedPolicy.useAutomerge, true);
+  assert.equal(protectedPolicy.branchProtection.configured, true);
 });
 
 test("df-work workflow does not expose privileged worker triggers in managed repositories", async () => {
@@ -418,12 +538,41 @@ test("df-sweep verifies branch protection before merging empty check rollups", a
   assert.match(source, /checksAreGreen\(pull\.statusCheckRollup, requiredContexts\)/);
 });
 
+test("df-sweep re-fetches checks immediately before direct merge and blocks red or pending checks", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-sweep.mjs", import.meta.url), "utf8");
+  const gateIndex = source.indexOf("const mergeGate = await getPullRequestMergeGate");
+  const mergeIndex = source.indexOf("await mergePullRequest(repository, mergeGate)");
+
+  assert.notEqual(gateIndex, -1);
+  assert.notEqual(mergeIndex, -1);
+  assert.ok(gateIndex < mergeIndex);
+  assert.match(source, /getPullRequestMergeGate/);
+  assert.match(source, /statusCheckRollup/);
+  assert.match(source, /merge-checks-not-green/);
+  assert.match(source, /hasMergeGateChecks/);
+  assert.match(source, /NO_CHECK_ALLOWLIST/);
+  assert.match(source, /Fresh merge gate check failed immediately before merge/);
+  assert.match(source, /checksAreGreen\(mergeGate\.statusCheckRollup\)/);
+  assert.doesNotMatch(source, /--admin/);
+});
+
 test("df-sweep requires explicit allowlist before merging PRs with no checks", async () => {
   const source = await readFile(new URL("../.github/scripts/df-sweep.mjs", import.meta.url), "utf8");
 
   assert.match(source, /DF_ALLOW_NO_CHECK_REPOS/);
   assert.match(source, /NO_CHECK_ALLOWLIST/);
   assert.match(source, /no-checks-not-allowed/);
+});
+
+test("df-sweep filters explicit sweep repositories through lifecycle and GitHub writability", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-sweep.mjs", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /if \(configured\.length\) return configured/);
+  assert.match(source, /filterConfiguredActiveManagedRepos\(configured\)/);
+  assert.match(source, /readManagedRepoRegistry/);
+  assert.match(source, /managedRepoLifecycleState/);
+  assert.match(source, /getRepository\(gh, repository\)/);
+  assert.match(source, /repo\.archived === true \|\| repo\.disabled === true/);
 });
 
 test("df-sweep skips open worker PRs whose linked issue is already blocked", async () => {
@@ -454,10 +603,10 @@ test("df-orchestrate workflow validates trusted refs before privileged tokens", 
   assert.match(workflow, /permission-issues:\s+write/);
 });
 
-test("df-orchestrate script skips parked repositories and dispatches via workflow_dispatch", async () => {
+test("df-orchestrate script uses the active managed registry and dispatches via workflow_dispatch", async () => {
   const source = await readFile(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url), "utf8");
 
-  assert.match(source, /if \(isParkedRepo\(target\)\) continue/);
+  assert.match(source, /listActiveManagedRepos\(gh, CONTROL_REPO\)/);
   assert.match(source, /\/repos\/\$\{repoName\(CONTROL_REPO\)\}\/actions\/workflows\/df-work\.yml\/dispatches/);
   assert.match(source, /\/df-prd:/);
   assert.match(source, /df:running/);

@@ -2,10 +2,11 @@ import {
   DEFAULT_DATA_REPO,
   assertAllowedRepo,
   createGithubClient,
-  isParkedRepo,
+  listActiveManagedRepos,
   parseRepo,
   repoName,
   requiredEnv,
+  warnReadOnlyRepository,
   writeRunLedger
 } from "./df-lib.mjs";
 
@@ -26,15 +27,20 @@ async function main() {
   const dispatched = [];
 
   for (const target of targets) {
-    if (isParkedRepo(target)) continue;
-    const ready = await listReadyIssues(target);
-    for (const issue of ready) {
-      try {
-        await dispatchWorker(target, issue.number);
-        dispatched.push({ repo: repoName(target), issue: issue.number });
-      } catch (error) {
-        console.warn(`Failed to dispatch worker for ${repoName(target)}#${issue.number}: ${error.message || String(error)}`);
+    try {
+      const ready = await listReadyIssues(target);
+      for (const issue of ready) {
+        try {
+          await dispatchWorker(target, issue.number);
+          dispatched.push({ repo: repoName(target), issue: issue.number });
+        } catch (error) {
+          if (warnReadOnlyRepository(target, error, "worker dispatch")) continue;
+          console.warn(`Failed to dispatch worker for ${repoName(target)}#${issue.number}: ${error.message || String(error)}`);
+        }
       }
+    } catch (error) {
+      if (warnReadOnlyRepository(target, error, "orchestration")) continue;
+      console.warn(`Failed to orchestrate ${repoName(target)}: ${error.message || String(error)}`);
     }
   }
 
@@ -55,16 +61,7 @@ async function main() {
 }
 
 async function targetRepositories() {
-  const repositories = [];
-  for (let page = 1; page <= 20; page += 1) {
-    const data = await gh.request("GET", `/installation/repositories?per_page=100&page=${page}`);
-    if (!Array.isArray(data.repositories) || data.repositories.length === 0) break;
-    repositories.push(...data.repositories);
-    if (data.repositories.length < 100) break;
-  }
-  return repositories
-    .map((repo) => parseRepo(repo.full_name))
-    .filter((repo) => repo.owner === CONTROL_REPO.owner);
+  return await listActiveManagedRepos(gh, CONTROL_REPO);
 }
 
 async function listReadyIssues(repository) {

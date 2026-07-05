@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "description": "DarkFactory managed repository lifecycle registry. Only active repositories are eligible for plan, orchestrate, and follow-through sweeps.",
+  "repositories": {
+    "marius-patrik/agent-darkfactory": {
+      "state": "active",
+      "note": "DarkFactory control repository."
+    },
+    "marius-patrik/dream": {
+      "state": "active",
+      "note": "Dogfood target from the DarkFactory PRD."
+    },
+    "marius-patrik/agents-plugin": {
+      "state": "active",
+      "note": "Dogfood target from the DarkFactory PRD."
+    },
+    "marius-patrik/agents-harness": {
+      "state": "active",
+      "note": "Long-term orchestration engine; follow-through may still exclude it by workflow input."
+    },
+    "marius-patrik/skyblock-agent": {
+      "state": "parked",
+      "note": "Owner-directed product repository exclusion."
+    },
+    "marius-patrik/fabrica": {
+      "state": "parked",
+      "note": "Owner-directed product repository exclusion."
+    },
+    "marius-patrik/singularity": {
+      "state": "parked",
+      "note": "Owner-directed exclusion."
+    },
+    "marius-patrik/life-support": {
+      "state": "parked",
+      "note": "Owner-directed exclusion."
+    },
+    "marius-patrik/citizen": {
+      "state": "archived",
+      "note": "GitHub archived/read-only."
+    },
+    "marius-patrik/experience": {
+      "state": "archived",
+      "note": "GitHub archived/read-only."
+    },
+    "marius-patrik/mmo": {
+      "state": "archived",
+      "note": "GitHub archived/read-only."
+    },
+    "marius-patrik/rscode": {
+      "state": "archived",
+      "note": "GitHub archived/read-only."
+    },
+    "marius-patrik/wrkspace": {
+      "state": "archived",
+      "note": "GitHub archived/read-only."
+    }
+  }
+}

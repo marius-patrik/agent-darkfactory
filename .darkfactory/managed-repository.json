@@ -9,6 +9,7 @@
     ".agents/.global/VERSION",
     ".darkfactory/branching-policy.md",
     ".darkfactory/labels.json",
+    ".darkfactory/managed-repos.json",
     ".darkfactory/managed-repository.json",
     ".darkfactory/installer-policy.json",
     ".darkfactory/release-conventions.md",

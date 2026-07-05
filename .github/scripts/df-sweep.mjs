@@ -6,12 +6,18 @@ import {
   createGithubClient,
   darkFactoryWorkerIssueNumber,
   extractClosingIssueNumbers,
+  getRepository,
   getRequiredStatusCheckContexts,
   isDarkFactoryWorkerPullRequest as isWorkerPullRequest,
   isParkedRepo,
+  listActiveManagedRepos,
+  managedRepoLifecycleState,
+  normalizedRepoName,
   parseRepo,
+  readManagedRepoRegistry,
   repoName,
   requiredEnv,
+  warnReadOnlyRepository,
   writeRunLedger
 } from "./df-lib.mjs";
 
@@ -74,6 +80,10 @@ async function main() {
       const closureResults = await closeRecentlyMergedDevIssues(repository);
       ledger.actions.push(...closureResults);
     } catch (error) {
+      if (warnReadOnlyRepository(repository, error, "follow-through")) {
+        ledger.actions.push({ repo: repoName(repository), action: "skip", reason: "read-only" });
+        continue;
+      }
       ledger.actions.push({ repo: repoName(repository), action: "error", error: error.message || String(error) });
     }
   }
@@ -140,6 +150,30 @@ async function considerPullRequest(repository, pull) {
     return { repo: repoName(repository), pr: ref, action: "skip", reason, issue_update: issueUpdate };
   }
 
+  const mergeGate = await getPullRequestMergeGate(repository, pull.number);
+  const hasMergeGateChecks = Array.isArray(mergeGate.statusCheckRollup) && mergeGate.statusCheckRollup.length > 0;
+  if ((!hasMergeGateChecks && !NO_CHECK_ALLOWLIST.has(repoName(repository).toLowerCase())) || !checksAreGreen(mergeGate.statusCheckRollup)) {
+    const issueUpdate = await markWorkerIssueBlocked(repository, pull, "merge-checks-not-green", [
+      "Fresh merge gate check failed immediately before merge.",
+      `Reported checks: ${checksSummary(mergeGate.statusCheckRollup) || "(none)"}`
+    ]);
+    return {
+      repo: repoName(repository),
+      pr: ref,
+      action: "skip",
+      reason: "merge-checks-not-green",
+      issue_update: issueUpdate,
+      checks: checksSummary(mergeGate.statusCheckRollup)
+    };
+  }
+  if (mergeGate.mergeable !== "MERGEABLE") {
+    const reason = `mergeable-${mergeGate.mergeable}`;
+    const issueUpdate = await markWorkerIssueBlocked(repository, pull, reason, [
+      `Fresh GitHub mergeability is \`${mergeGate.mergeable || "unknown"}\`.`
+    ]);
+    return { repo: repoName(repository), pr: ref, action: "skip", reason, issue_update: issueUpdate };
+  }
+
   const protectedBranch = await branchIsProtected(repository, pull.baseRefName);
   if (protectedBranch) {
     const enabled = await enableAutoMerge(pull.id);
@@ -170,7 +204,7 @@ async function considerPullRequest(repository, pull) {
       };
     }
 
-    const merged = await mergePullRequest(repository, pull);
+    const merged = await mergePullRequest(repository, mergeGate);
     return {
       repo: repoName(repository),
       pr: ref,
@@ -179,11 +213,11 @@ async function considerPullRequest(repository, pull) {
       sha: merged.sha,
       base: pull.baseRefName,
       fallback_from_automerge: enabled.reason,
-      checks: checksSummary(pull.statusCheckRollup)
+      checks: checksSummary(mergeGate.statusCheckRollup)
     };
   }
 
-  const merged = await mergePullRequest(repository, pull);
+  const merged = await mergePullRequest(repository, mergeGate);
   return {
     repo: repoName(repository),
     pr: ref,
@@ -191,7 +225,7 @@ async function considerPullRequest(repository, pull) {
     action: "merge",
     sha: merged.sha,
     base: pull.baseRefName,
-    checks: checksSummary(pull.statusCheckRollup)
+    checks: checksSummary(mergeGate.statusCheckRollup)
   };
 }
 
@@ -366,16 +400,43 @@ async function hasDevMergeComment(repository, issueNumber, pullUrl) {
 
 async function targetRepositories() {
   const configured = repoList(process.env.DF_SWEEP_REPOS || "");
-  if (configured.length) return configured;
+  if (configured.length) return await filterConfiguredActiveManagedRepos(configured);
 
-  const repositories = [];
-  for (let page = 1; page <= 20; page += 1) {
-    const data = await gh.request("GET", `/installation/repositories?per_page=100&page=${page}`);
-    if (!Array.isArray(data.repositories) || data.repositories.length === 0) break;
-    repositories.push(...data.repositories);
-    if (data.repositories.length < 100) break;
+  return await listActiveManagedRepos(gh, CONTROL_REPO);
+}
+
+async function filterConfiguredActiveManagedRepos(configured) {
+  const registry = await readManagedRepoRegistry();
+  const active = [];
+
+  for (const repository of configured) {
+    if (repository.owner !== CONTROL_REPO.owner) {
+      console.warn(`DarkFactory skipped configured sweep repository ${repoName(repository)} because it is outside ${CONTROL_REPO.owner}.`);
+      continue;
+    }
+
+    const state = managedRepoLifecycleState(repository, registry);
+    if (state !== "active") {
+      console.warn(`DarkFactory skipped configured sweep repository ${repoName(repository)} because managed lifecycle state is '${state}'.`);
+      continue;
+    }
+
+    try {
+      const repo = await getRepository(gh, repository);
+      if (repo.archived === true || repo.disabled === true) {
+        console.warn(`DarkFactory skipped configured sweep repository ${repoName(repository)} because GitHub reports archived=${repo.archived === true} disabled=${repo.disabled === true}.`);
+        continue;
+      }
+    } catch (error) {
+      if (warnReadOnlyRepository(repository, error, "configured follow-through")) continue;
+      throw error;
+    }
+
+    active.push(repository);
   }
-  return repositories.map((repo) => parseRepo(repo.full_name)).filter((repo) => repo.owner === CONTROL_REPO.owner);
+
+  active.sort((a, b) => normalizedRepoName(a).localeCompare(normalizedRepoName(b)));
+  return active;
 }
 
 function repoList(value) {
@@ -435,6 +496,52 @@ async function listOpenPullRequests(repository) {
   }));
 }
 
+async function getPullRequestMergeGate(repository, pullNumber) {
+  const query = `
+    query PullForMergeGate($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          id
+          number
+          title
+          body
+          url
+          isDraft
+          mergeable
+          baseRefName
+          headRefName
+          headRepository {
+            name
+            owner { login }
+          }
+          author { login }
+          statusCheckRollup {
+            contexts(first: 100) {
+              nodes {
+                __typename
+                ... on CheckRun {
+                  name
+                  status
+                  conclusion
+                }
+                ... on StatusContext {
+                  context
+                  state
+                }
+              }
+            }
+          }
+        }
+      }
+    }`;
+  const data = await gh.graphql(query, { owner: repository.owner, repo: repository.repo, number: pullNumber });
+  const pull = data.repository.pullRequest;
+  return {
+    ...pull,
+    statusCheckRollup: pull.statusCheckRollup?.contexts?.nodes || []
+  };
+}
+
 function normalizeRestPullRequest(pull) {
   // Preserve the REST merged_at field so the dev-merge closure backstop can
   // distinguish merged PRs from merely closed ones.
@@ -461,7 +568,7 @@ async function branchIsProtected(repository, branch) {
     return true;
   } catch (error) {
     if (error.status === 404) return false;
-    if (error.status === 403 && /enable this feature/i.test(error.message || "")) return false;
+    if (error.status === 403) return false;
     throw error;
   }
 }
