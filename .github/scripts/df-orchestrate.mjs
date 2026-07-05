@@ -2,10 +2,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DATA_REPO,
+  WORK_LABELS,
   assertAllowedRepo,
   createGithubClient,
+  ensureLabels,
+  getRepository,
   listActiveManagedRepos,
   parseRepo,
+  preflightMergePolicy,
   repoName,
   requiredEnv,
   warnReadOnlyRepository,
@@ -34,8 +38,8 @@ async function main() {
       const ready = await listReadyIssues(target);
       for (const issue of ready) {
         try {
-          await dispatchWorker(target, issue.number);
-          dispatched.push({ repo: repoName(target), issue: issue.number });
+          const wasDispatched = await dispatchWorker(target, issue.number);
+          if (wasDispatched) dispatched.push({ repo: repoName(target), issue: issue.number });
         } catch (error) {
           if (warnReadOnlyRepository(target, error, "worker dispatch")) continue;
           console.warn(`Failed to dispatch worker for ${repoName(target)}#${issue.number}: ${error.message || String(error)}`);
@@ -91,6 +95,14 @@ async function listReadyIssues(repository) {
 }
 
 async function dispatchWorker(repository, issueNumber) {
+  const repo = await getRepository(gh, repository);
+  const workBaseBranch = await resolveWorkBaseBranch(repository, repo.default_branch);
+  const mergePolicy = await preflightMergePolicy(gh, repository, workBaseBranch, repo);
+  if (mergePolicy.blocked) {
+    await blockIssueBeforeDispatch(repository, issueNumber, workBaseBranch, mergePolicy);
+    return false;
+  }
+
   // Claim the issue before dispatch so a subsequent orchestrator tick cannot
   // re-dispatch the same ready issue while the worker workflow is starting.
   await replaceIssueLabels(repository, issueNumber, ["df:running"], ["df:ready"]);
@@ -108,6 +120,40 @@ async function dispatchWorker(repository, issueNumber) {
     await replaceIssueLabels(repository, issueNumber, ["df:ready"], ["df:running"]);
     throw error;
   }
+  return true;
+}
+
+async function resolveWorkBaseBranch(repository, defaultBranch) {
+  try {
+    await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeURIComponent("dev")}`);
+    return "dev";
+  } catch (error) {
+    if (error.status === 404) return defaultBranch;
+    throw error;
+  }
+}
+
+async function blockIssueBeforeDispatch(repository, issueNumber, baseBranch, mergePolicy) {
+  await ensureLabels(gh, repository, WORK_LABELS);
+  await replaceIssueLabels(repository, issueNumber, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
+  await createIssueComment(
+    repository,
+    issueNumber,
+    [
+      "DarkFactory blocked this issue before worker dispatch.",
+      "",
+      "Blocker:",
+      "",
+      "```text",
+      mergePolicy.reason,
+      "```",
+      "",
+      `Target branch: \`${baseBranch}\``,
+      `Repository auto-merge enabled: \`${mergePolicy.autoMergeSupported ? "yes" : "no"}\``,
+      "",
+      "This is target repository setup work, not a code implementation failure."
+    ].join("\n")
+  );
 }
 
 async function replaceIssueLabels(repository, issueNumber, add, remove) {
@@ -121,6 +167,10 @@ async function replaceIssueLabels(repository, issueNumber, add, remove) {
       if (error.status !== 404) throw error;
     }
   }
+}
+
+async function createIssueComment(repository, issueNumber, body) {
+  await gh.request("POST", `/repos/${repoName(repository)}/issues/${issueNumber}/comments`, { body });
 }
 
 async function writeLedger(ledger) {

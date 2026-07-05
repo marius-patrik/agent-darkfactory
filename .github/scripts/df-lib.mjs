@@ -347,6 +347,7 @@ export async function preflightMergePolicy(gh, repository, baseBranch, repo) {
 
   if (!branchProtection.configured) {
     return {
+      blocked: false,
       useAutomerge: false,
       autoMergeSupported,
       branchProtection,
@@ -356,6 +357,7 @@ export async function preflightMergePolicy(gh, repository, baseBranch, repo) {
 
   if (autoMergeSupported) {
     return {
+      blocked: false,
       useAutomerge: true,
       autoMergeSupported,
       branchProtection,
@@ -364,10 +366,16 @@ export async function preflightMergePolicy(gh, repository, baseBranch, repo) {
   }
 
   return {
+    blocked: true,
+    reason: [
+      `Target repository ${repoName(repository)} has branch protection configured on \`${baseBranch}\`,`,
+      "so DarkFactory policy requires GitHub auto-merge before dispatching a worker.",
+      "Enable repository auto-merge or open managed setup work to enable it, then re-apply `df:ready`."
+    ].join(" "),
     useAutomerge: false,
     autoMergeSupported,
     branchProtection,
-    summary: `branch protection is configured on \`${baseBranch}\`; green-PR sweep will squash-merge after checks`
+    summary: `branch protection is configured on \`${baseBranch}\`, but target repository auto-merge is disabled; worker dispatch is blocked`
   };
 }
 
