@@ -46,7 +46,6 @@ jobs:
           private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
           owner: marius-patrik
           permission-actions: write
-          permission-workflows: write
           permission-contents: write
           permission-issues: write
 
