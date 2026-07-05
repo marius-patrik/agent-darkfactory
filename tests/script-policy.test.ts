@@ -4,6 +4,8 @@ import test from "node:test";
 
 // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
 const dfLib: any = await import("../.github/scripts/df-lib.mjs");
+// @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+const dfFix: any = await import("../.github/scripts/df-fix.mjs");
 
 const {
   assertAllowedRepo,
@@ -22,8 +24,16 @@ const {
   preflightMergePolicy,
   prdIssueBody,
   reconcileLabelDiff,
+  repoName,
   taskClassFromLabels
 } = dfLib;
+
+const {
+  classifyFixCandidate,
+  fixTrustFailure,
+  fixPullRequestByRedispatch,
+  parseFixRound
+} = dfFix;
 
 test("parsePrdItems creates stable df-prd markers from PRD milestones and loops", () => {
   const items = parsePrdItems([
@@ -465,6 +475,63 @@ test("df-follow-through workflow validates trusted refs before privileged tokens
   assert.doesNotMatch(workflow, /github\.ref_name|DARK_FACTORY_CONTROL_REF/);
 });
 
+test("df-fix workflow validates trusted refs before privileged tokens", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/df-fix.yml", import.meta.url), "utf8");
+  const gate = workflow.indexOf("Validate trusted control ref");
+  const checkout = workflow.indexOf("Checkout installed DarkFactory fix cycle");
+  const token = workflow.indexOf("Mint mp-agents installation token");
+
+  assert.notEqual(gate, -1);
+  assert.notEqual(checkout, -1);
+  assert.notEqual(token, -1);
+  assert.ok(gate < token);
+  assert.ok(checkout < token);
+  assert.match(workflow, /^\s+schedule:\s*$/m);
+  assert.match(workflow, /^\s+workflow_dispatch:\s*$/m);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'/);
+  assert.match(workflow, /GITHUB_REPOSITORY/);
+  assert.match(workflow, /GITHUB_REF.*refs\/heads\/main/);
+  assert.match(workflow, /Manual runs must use --ref main/);
+  assert.match(workflow, /actions:\s+write/);
+  assert.match(workflow, /permission-contents:\s+write/);
+  assert.match(workflow, /permission-issues:\s+write/);
+  assert.match(workflow, /permission-pull-requests:\s+write/);
+  assert.doesNotMatch(workflow, /^\s+workflows:\s+write\s*$/m);
+  assert.match(workflow, /permission-actions:\s+write/);
+  assert.match(workflow, /permission-workflows:\s+write/);
+  assert.doesNotMatch(workflow, /CODEX_AUTH_JSON/);
+  assert.doesNotMatch(workflow, /docker|DF_WORKER_IMAGE/);
+  assert.match(workflow, /path:\s+darkfactory-control/);
+  assert.match(workflow, /ref:\s+main/);
+  assert.match(workflow, /darkfactory-control\/\.github\/scripts\/df-fix\.mjs/);
+});
+
+test("df-fix script is deterministic and only redispatches red worker PRs", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-fix.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /listActiveManagedRepos\(gh, controlRepo, \{ root: CONTROL_ROOT \}\)/);
+  assert.match(source, /isDarkFactoryWorkerPullRequest/);
+  assert.match(source, /df:fix-round:/);
+  assert.match(source, /df:ask-owner/);
+  assert.match(source, /df-fix-revision/);
+  assert.match(source, /\/actions\/workflows\/df-work\.yml\/dispatches/);
+  assert.match(source, /base_ref: baseRefName \|\| ""/);
+  assert.match(source, /pageInfo/);
+  assert.match(source, /hasNextPage/);
+  assert.match(source, /while \(cursor\)/);
+  assert.match(source, /deleteHeadBranch/);
+  assert.match(source, /error\.status === 404 \|\| error\.status === 422/);
+  assert.match(source, /closeSupersededPullRequest/);
+  assert.match(source, /const freshPull = await getPullRequestForFix/);
+  assert.match(source, /checksAreGreen\(freshPull\.statusCheckRollup, requiredContexts\)/);
+  assert.match(source, /reason: "checks-green"/);
+  assert.doesNotMatch(source, /--admin/);
+  assert.doesNotMatch(source, /danger-full-access/);
+  assert.doesNotMatch(source, /mergeGreenPullRequest|getMergeBranchProtectionState|enableAutoMerge|enablePullRequestAutoMerge/i);
+  assert.doesNotMatch(source, /merge_method|\/pulls\/\$\{[^}]+\}\/merge|action: "merge"|enable-automerge/i);
+  assert.doesNotMatch(source, /\bcodex\s+exec\b|CODEX_AUTH_JSON|DF_WORKER_IMAGE|codex-home|runCodex|writeCodexAuth|docker\s+run/);
+});
+
 test("df-work merge-policy preflight uses direct sweep when branch protection is absent or unreadable", async () => {
   const repository = { owner: "marius-patrik", repo: "example" };
   const unreadablePolicy = await preflightMergePolicy(
@@ -543,10 +610,222 @@ test("df-work workflow uses the app token for control-dispatched workers", async
   assert.doesNotMatch(workflow, /steps\.app-token\.outputs\.token \|\| github\.token/);
   assert.match(workflow, /DF_TARGET_REPO: \$\{\{ inputs\.repo \}\}/);
   assert.match(workflow, /DF_TARGET_ISSUE_NUMBER: \$\{\{ inputs\.issue_number \}\}/);
+  assert.match(workflow, /base_ref:/);
+  assert.match(workflow, /DF_TARGET_BASE_REF: \$\{\{ inputs\.base_ref \}\}/);
   assert.match(source, /const TOKEN = requiredEnv\("DARK_FACTORY_TOKEN"\)/);
+  assert.match(source, /const TARGET_BASE_REF = process\.env\.DF_TARGET_BASE_REF/);
+  assert.match(source, /resolveWorkBaseBranch\(TARGET_REPO, repo\.default_branch, TARGET_BASE_REF\)/);
+  assert.match(source, /\/git\/ref\/heads\/\$\{encodeRefPath\(branch\)\}/);
+  assert.match(source, /split\("\/"\)\.map\(encodeURIComponent\)\.join\("\/"\)/);
   assert.match(source, /runGit\(\["push", "origin", `HEAD:refs\/heads\/\$\{branch\}`\], worktree\)/);
   assert.match(source, /function runGit\(args, cwd\) \{\s+return runGitWithAuth\(args, cwd\);/);
   assert.match(source, /function runGitWithAuth\(args, cwd\) \{\s+return runCommand\("git", \["-c", authHeader\(\), \.\.\.args\], cwd\);/);
+});
+
+test("df-fix selects only red worker PRs from active repositories", async () => {
+  const activeRepository = { owner: "marius-patrik", repo: "active" };
+  const parkedRepository = { owner: "marius-patrik", repo: "skyblock-agent" };
+  const candidates = [
+    { repository: activeRepository, pull: workerPull({ number: 10, checkConclusion: "FAILURE" }) },
+    { repository: activeRepository, pull: workerPull({ number: 11, checkConclusion: "SUCCESS" }) },
+    { repository: activeRepository, pull: { ...workerPull({ number: 12, checkConclusion: "FAILURE" }), author: { login: "marius-patrik" } } },
+    { repository: parkedRepository, pull: workerPull({ number: 13, checkConclusion: "FAILURE" }) }
+  ];
+
+  const fixable = candidates
+    .map(({ repository, pull }) => ({ repository, result: classifyFixCandidate(pull, repository, ["ci"], { maxRounds: 3 }) }))
+    .filter(({ result }) => result.action === "fix")
+    .map(({ repository, result }) => `${repoName(repository)}:${result.pr}`);
+
+  assert.deepEqual(fixable, ["marius-patrik/active:marius-patrik/active#10"]);
+});
+
+test("df-fix posts a trusted revision request, closes the red PR, deletes the branch, and redispatches df-work", async () => {
+  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const pull = workerPull({ number: 10, checkConclusion: "FAILURE" });
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+  const gh = {
+    graphql: async () => ({
+      repository: {
+        pullRequest: {
+          ...pull,
+          mergeable: "MERGEABLE",
+          url: "https://github.com/marius-patrik/active/pull/10",
+          statusCheckRollup: { contexts: { nodes: pull.statusCheckRollup } }
+        }
+      }
+    }),
+    request: async (method: string, pathName: string, body?: any) => {
+      calls.push({ method, pathName, body });
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/10") {
+        return { data: { number: 10, body: "Issue body", labels: [] } };
+      }
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/10/comments?per_page=100") {
+        return {
+          data: [
+            {
+              body: [
+                "<!-- darkfactory-codex-review -->",
+                "### Blocking Findings",
+                "- fix the trust boundary"
+              ].join("\n"),
+              updated_at: "2026-07-05T00:00:00Z"
+            }
+          ]
+        };
+      }
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/labels") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/10/labels") return {};
+      if (method === "DELETE" && pathName.startsWith("/repos/marius-patrik/active/issues/10/labels/")) return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/10/comments") return {};
+      if (method === "PATCH" && pathName === "/repos/marius-patrik/active/pulls/10") return {};
+      if (method === "DELETE" && pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+    }
+  };
+
+  assert.equal(
+    fixTrustFailure(pull, { ...pull, headRepository: { owner: { login: "other-owner" }, name: "active" } }, repository),
+    "head-repository-changed"
+  );
+
+  const result = await fixPullRequestByRedispatch(
+    gh,
+    controlRepo,
+    repository,
+    pull,
+    { action: "fix", reason: "checks-failing", round: 1, maxRounds: 3 },
+    ["ci"],
+    { maxRounds: 3, token: "token" }
+  );
+
+  assert.equal(result.action, "redispatch");
+  assert.equal(result.round, 1);
+  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/10/comments" && call.body.body.includes("<!-- df-fix-revision -->")));
+  assert.ok(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/10" && call.body.state === "closed"));
+  assert.ok(calls.some((call) => call.method === "DELETE" && call.pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker"));
+  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches" && call.body.inputs.repo === "marius-patrik/active" && call.body.inputs.issue_number === "10" && call.body.inputs.base_ref === "dev"));
+});
+
+test("df-fix does not close, delete, or redispatch when the fresh PR head trust check fails", async () => {
+  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const pull = workerPull({ number: 15, checkConclusion: "FAILURE" });
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+  const gh = {
+    graphql: async () => ({
+      repository: {
+        pullRequest: {
+          ...pull,
+          headRepository: { owner: { login: "other-owner" }, name: "active" },
+          mergeable: "MERGEABLE",
+          url: "https://github.com/marius-patrik/active/pull/15",
+          statusCheckRollup: { contexts: { nodes: pull.statusCheckRollup } }
+        }
+      }
+    }),
+    request: async (method: string, pathName: string, body?: any) => {
+      calls.push({ method, pathName, body });
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/15") {
+        return { data: { number: 15, body: "", labels: [] } };
+      }
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/15/comments?per_page=100") return { data: [] };
+      throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+    }
+  };
+
+  const result = await fixPullRequestByRedispatch(
+    gh,
+    controlRepo,
+    repository,
+    pull,
+    { action: "fix", reason: "checks-failing", round: 1, maxRounds: 3 },
+    ["ci"],
+    { maxRounds: 3, token: "token" }
+  );
+
+  assert.equal(result.action, "skip");
+  assert.equal(result.reason, "fix-trust-failed");
+  assert.equal(result.trust_failure, "head-repository-changed");
+  assert.equal(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/15"), false);
+  assert.equal(calls.some((call) => call.method === "DELETE" && call.pathName.includes("/git/refs/heads/")), false);
+  assert.equal(calls.some((call) => call.pathName.includes("df-work.yml/dispatches")), false);
+});
+
+test("df-fix round cap escalates instead of looping forever", () => {
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const roundTwo = classifyFixCandidate(
+    workerPull({ number: 20, checkConclusion: "FAILURE", labels: [{ name: "df:fix-round:2" }] }),
+    repository,
+    ["ci"],
+    { maxRounds: 3 }
+  );
+  const roundThree = classifyFixCandidate(
+    workerPull({ number: 21, checkConclusion: "FAILURE", labels: [{ name: "df:fix-round:3" }] }),
+    repository,
+    ["ci"],
+    { maxRounds: 3 }
+  );
+
+  assert.equal(parseFixRound([{ name: "df:fix-round:2" }], "<!-- df:fix-round:1 -->"), 2);
+  assert.equal(roundTwo.action, "fix");
+  assert.equal(roundTwo.round, 3);
+  assert.equal(roundThree.action, "escalate");
+  assert.equal(roundThree.reason, "max-rounds");
+});
+
+test("df-fix round cap adds df:ask-owner and does not redispatch", async () => {
+  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const pull = workerPull({ number: 20, checkConclusion: "FAILURE" });
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+  const gh = {
+    request: async (method: string, pathName: string, body?: any) => {
+      calls.push({ method, pathName, body });
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/20") {
+        return { data: { number: 20, body: "", labels: [{ name: "df:fix-round:3" }] } };
+      }
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/20/comments?per_page=100") return { data: [] };
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/labels") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/20/labels") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/20/comments") return {};
+      throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+    }
+  };
+
+  const result = await fixPullRequestByRedispatch(
+    gh,
+    controlRepo,
+    repository,
+    pull,
+    { action: "fix", reason: "checks-failing", round: 1, maxRounds: 3 },
+    ["ci"],
+    { maxRounds: 3, token: "token" }
+  );
+
+  assert.equal(result.action, "escalate");
+  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/20/labels" && call.body.labels.includes("df:ask-owner")));
+  assert.equal(calls.some((call) => call.pathName.includes("df-work.yml/dispatches")), false);
+  assert.equal(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/20"), false);
+});
+
+test("df-fix skips all-green PRs and fixes red PRs", () => {
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const green = classifyFixCandidate(workerPull({ number: 30, checkConclusion: "SUCCESS" }), repository, ["ci"]);
+  const red = classifyFixCandidate(workerPull({ number: 31, checkConclusion: "FAILURE" }), repository, ["ci"]);
+  const pending = classifyFixCandidate(
+    workerPull({ number: 32, checkStatus: "IN_PROGRESS", checkConclusion: null }),
+    repository,
+    ["ci"]
+  );
+
+  assert.equal(green.action, "skip");
+  assert.equal(green.reason, "checks-green");
+  assert.equal(red.action, "fix");
+  assert.equal(pending.action, "skip");
+  assert.equal(pending.reason, "checks-pending");
 });
 
 test("df-sweep waits before treating empty check rollups as no-checks-configured", async () => {
@@ -662,3 +941,33 @@ test("df-orchestrate restores df:ready when workflow dispatch fails", async () =
   assert.notEqual(restoreIndex, -1);
   assert.ok(dispatchIndex < restoreIndex);
 });
+
+function workerPull(options: {
+  number: number;
+  checkConclusion: string | null;
+  checkStatus?: string;
+  labels?: Array<{ name: string }>;
+}) {
+  return {
+    id: `PR_${options.number}`,
+    number: options.number,
+    title: `Worker PR ${options.number}`,
+    body: `<!-- dark-factory:worker-pr issue=${options.number} -->\n\nCloses #${options.number}`,
+    author: { login: "mp-agents[bot]" },
+    headRefName: `df/${options.number}-worker`,
+    headRepository: { owner: { login: "marius-patrik" }, name: "active" },
+    baseRefName: "dev",
+    isDraft: false,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
+    labels: options.labels || [],
+    statusCheckRollup: [
+      {
+        __typename: "CheckRun",
+        name: "ci",
+        status: options.checkStatus || "COMPLETED",
+        conclusion: options.checkConclusion
+      }
+    ]
+  };
+}

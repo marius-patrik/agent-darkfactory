@@ -28,6 +28,7 @@ const CODEX_AUTH_JSON = process.env.CODEX_AUTH_JSON ?? "";
 const CONTROL_REPO = parseRepo(requiredEnv("DF_CONTROL_REPO"));
 const TARGET_REPO = parseRepo(requiredEnv("DF_TARGET_REPO"));
 const TARGET_ISSUE_NUMBER = Number(requiredEnv("DF_TARGET_ISSUE_NUMBER"));
+const TARGET_BASE_REF = process.env.DF_TARGET_BASE_REF?.trim() || "";
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const WORKER_IMAGE = process.env.DF_WORKER_IMAGE ?? "darkfactory-codex-worker";
 const CODEX_MODEL = process.env.DF_CODEX_MODEL ?? "gpt-5.5";
@@ -71,7 +72,7 @@ async function main() {
   let pullRequest = null;
 
   const repo = await getRepository(gh, TARGET_REPO);
-  const workBaseBranch = await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch);
+  const workBaseBranch = await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch, TARGET_BASE_REF);
 
   // Ensure work labels exist before any preflight failure path tries to apply
   // `df:blocked` to the issue, so the blocker comment is always left reliably.
@@ -213,14 +214,23 @@ async function getIssue(repository, issueNumber) {
   return issue;
 }
 
-async function resolveWorkBaseBranch(repository, defaultBranch) {
+async function resolveWorkBaseBranch(repository, defaultBranch, requestedBranch = "") {
+  if (requestedBranch) {
+    await ensureBranchExists(repository, requestedBranch);
+    return requestedBranch;
+  }
+
   try {
-    await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeURIComponent("dev")}`);
+    await ensureBranchExists(repository, "dev");
     return "dev";
   } catch (error) {
     if (error.status === 404) return defaultBranch;
     throw error;
   }
+}
+
+async function ensureBranchExists(repository, branch) {
+  await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeRefPath(branch)}`);
 }
 
 async function replaceIssueLabels(repository, issueNumber, add, remove) {
@@ -405,6 +415,10 @@ function runGitWithAuth(args, cwd) {
 
 function authHeader() {
   return `http.https://github.com/.extraheader=AUTHORIZATION: basic ${GIT_BASIC_AUTH}`;
+}
+
+function encodeRefPath(ref) {
+  return String(ref || "").split("/").map(encodeURIComponent).join("/");
 }
 
 function runCommand(command, args, cwd) {

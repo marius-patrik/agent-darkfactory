@@ -17,6 +17,7 @@ export const WORK_LABELS = [
   { name: "df:running", color: "1D76DB", description: "DarkFactory worker is running for this issue" },
   { name: "df:blocked", color: "B60205", description: "DarkFactory worker is blocked on this issue" },
   { name: "df:done", color: "5319E7", description: "DarkFactory worker completed this issue" },
+  { name: "df:ask-owner", color: "B60205", description: "DarkFactory needs owner input before continuing" },
   { name: "df:class:mechanical", color: "C5DEF5", description: "DarkFactory mechanical task; use low reasoning effort" },
   { name: "df:class:standard", color: "BFDADC", description: "DarkFactory standard task; use medium reasoning effort" },
   { name: "df:class:hard", color: "D4C5F9", description: "DarkFactory hard task; use high reasoning effort" }
