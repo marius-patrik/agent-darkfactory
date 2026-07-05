@@ -36,6 +36,15 @@ const CODEX_EFFORT = process.env.DF_CODEX_EFFORT ?? "high";
 const EMPTY_CHECK_SETTLE_MS = 10 * 60 * 1000;
 let workerImageBuilt = false;
 
+export class FixPatchPolicyError extends Error {
+  constructor(deniedPaths, touchedPaths) {
+    super(`df-fix patch rejected because it touches privileged paths: ${deniedPaths.map((item) => item.path).join(", ")}`);
+    this.name = "FixPatchPolicyError";
+    this.deniedPaths = deniedPaths;
+    this.touchedPaths = touchedPaths;
+  }
+}
+
 export function parseFixRound(labels = [], body = "") {
   const rounds = [];
   for (const label of labels) {
@@ -298,12 +307,59 @@ async function fixPullRequest(gh, repository, pull, classification, codeAuthJson
 
     const summary = await readOptional(path.join(promptWorkspace, ".darkfactory", "df-worker-summary.md"));
     const patch = await readOptional(path.join(promptWorkspace, ".darkfactory", "df-fix.patch"));
-    const appliedPatch = await applyFixPatch(worktree, path.join(tempRoot, "df-fix.patch"), patch, token);
+    let appliedPatch;
+    try {
+      appliedPatch = await applyFixPatch(worktree, path.join(tempRoot, "df-fix.patch"), patch, token);
+    } catch (error) {
+      if (error instanceof FixPatchPolicyError) {
+        const rejection = await rejectFixPatchForPrivilegedPaths(gh, repository, pull, error);
+        cleanup = await cleanupTempRoot(tempRoot, (warning) => console.warn(sanitize(warning, token)));
+        return {
+          repo: repoName(repository),
+          pr: `${repoName(repository)}#${pull.number}`,
+          url: pull.url,
+          action: "reject-patch",
+          reason: "privileged-patch-paths",
+          codex_calls: 1,
+          changed: false,
+          applied_patch: false,
+          denied_paths: error.deniedPaths,
+          touched_paths: error.touchedPaths,
+          summary: truncate(summary?.trim() || "Fix worker completed without a written summary.", 2000),
+          rejection,
+          cleanup
+        };
+      }
+      throw error;
+    }
 
     const changed = gitOutput(["status", "--porcelain"], worktree, token);
     const round = classification.round;
     let commit = null;
     if (changed.trim()) {
+      try {
+        assertFixPatchPathPolicy(gitOutput(["diff", "--name-only", "HEAD"], worktree, token).split("\n"));
+      } catch (error) {
+        if (error instanceof FixPatchPolicyError) {
+          const rejection = await rejectFixPatchForPrivilegedPaths(gh, repository, pull, error);
+          cleanup = await cleanupTempRoot(tempRoot, (warning) => console.warn(sanitize(warning, token)));
+          return {
+            repo: repoName(repository),
+            pr: `${repoName(repository)}#${pull.number}`,
+            url: pull.url,
+            action: "reject-patch",
+            reason: "privileged-patch-paths",
+            codex_calls: 1,
+            changed: false,
+            applied_patch: appliedPatch,
+            denied_paths: error.deniedPaths,
+            touched_paths: error.touchedPaths,
+            rejection,
+            cleanup
+          };
+        }
+        throw error;
+      }
       runGit(["config", "user.name", "DarkFactory"], worktree, token);
       runGit(["config", "user.email", "darkfactory@users.noreply.github.com"], worktree, token);
       runGit(["add", "--all"], worktree, token);
@@ -472,11 +528,125 @@ async function applyFixPatch(worktree, patchPath, patch, token) {
 
   await writeFile(patchPath, `${trimmed}\n`);
   try {
+    const paths = parseGitApplyNumstatPaths(gitOutput(["apply", "--numstat", patchPath], worktree, token));
+    assertFixPatchPathPolicy(paths);
     runGit(["apply", "--3way", "--whitespace=fix", patchPath], worktree, token);
     return true;
   } finally {
     await rm(patchPath, { force: true });
   }
+}
+
+export function parseGitApplyNumstatPaths(output) {
+  const paths = [];
+  for (const line of String(output || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split("\t");
+    const rawPath = parts.slice(2).join("\t").trim();
+    for (const filePath of expandNumstatPath(rawPath)) {
+      const normalized = normalizePatchPath(filePath);
+      if (normalized) paths.push(normalized);
+    }
+  }
+  return [...new Set(paths)];
+}
+
+function expandNumstatPath(rawPath) {
+  const value = String(rawPath || "").trim();
+  if (!value) return [];
+
+  const braceRename = value.match(/^(?<prefix>.*)\{(?<from>.+?) => (?<to>.+?)\}(?<suffix>.*)$/);
+  if (braceRename?.groups) {
+    const { prefix, from, to, suffix } = braceRename.groups;
+    return [`${prefix}${from}${suffix}`, `${prefix}${to}${suffix}`];
+  }
+
+  const simpleRename = value.match(/^(?<from>.+?) => (?<to>.+)$/);
+  if (simpleRename?.groups) return [simpleRename.groups.from, simpleRename.groups.to];
+
+  return [value];
+}
+
+function normalizePatchPath(filePath) {
+  let normalized = String(filePath || "").trim().replace(/\\/g, "/");
+  if (!normalized || normalized === "/dev/null") return "";
+  normalized = normalized.replace(/^"(.*)"$/, "$1");
+  normalized = normalized.replace(/^(?:a|b)\//, "");
+  while (normalized.startsWith("./")) normalized = normalized.slice(2);
+  return normalized;
+}
+
+export function deniedFixPatchPaths(paths = []) {
+  const denied = [];
+  for (const rawPath of paths) {
+    const filePath = normalizePatchPath(rawPath);
+    if (!filePath) continue;
+    const lower = filePath.toLowerCase();
+    const segments = lower.split("/");
+    const basename = segments.at(-1) || "";
+    let reason = "";
+
+    if (lower === ".git" || lower.startsWith(".git/") || basename.startsWith(".git")) {
+      reason = ".git control/config path";
+    } else if (lower.startsWith(".github/")) {
+      reason = "GitHub privileged automation path";
+    } else if (lower.startsWith(".darkfactory/")) {
+      reason = "DarkFactory control path";
+    } else if (lower.startsWith(".agents/") || basename === "agents.md" || basename === "agent.package.json") {
+      reason = "agent control path";
+    } else if (basename === "codeowners") {
+      reason = "CODEOWNERS path";
+    } else if (isSecretOrCredentialPath(lower, basename)) {
+      reason = "secret or credential path";
+    }
+
+    if (reason) denied.push({ path: filePath, reason });
+  }
+  return denied;
+}
+
+function isSecretOrCredentialPath(lowerPath, basename) {
+  if (basename === ".env" || basename.startsWith(".env.")) return true;
+  if ([".npmrc", ".pypirc", ".netrc", "_netrc"].includes(basename)) return true;
+  if (/^(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.pub)?$/.test(basename)) return true;
+  if (/\.(pem|key|p12|pfx|kdbx|age)$/i.test(basename)) return true;
+  return /(^|[/_.-])(secret|secrets|credential|credentials|token|tokens|private-key|private_key)([/_.-]|$)/i.test(lowerPath);
+}
+
+export function assertFixPatchPathPolicy(paths = []) {
+  const touchedPaths = [...new Set(paths.map(normalizePatchPath).filter(Boolean))];
+  if (!touchedPaths.length) {
+    throw new FixPatchPolicyError([{ path: "(none)", reason: "could not determine patch paths" }], []);
+  }
+
+  const deniedPaths = deniedFixPatchPaths(touchedPaths);
+  if (deniedPaths.length) throw new FixPatchPolicyError(deniedPaths, touchedPaths);
+  return touchedPaths;
+}
+
+async function rejectFixPatchForPrivilegedPaths(gh, repository, pull, error) {
+  const issueNumber = darkFactoryWorkerIssueNumber(pull);
+  if (issueNumber) {
+    await gh.request("POST", `/repos/${repoName(repository)}/issues/${issueNumber}/labels`, { labels: ["df:ask-owner"] });
+  }
+
+  const marker = `<!-- dark-factory:fix-patch-rejected pr=${pull.number} -->`;
+  if (!(await hasIssueComment(gh, repository, pull.number, marker))) {
+    await gh.request("POST", `/repos/${repoName(repository)}/issues/${pull.number}/comments`, {
+      body: [
+        marker,
+        "DarkFactory fix-forward rejected the generated patch because it touched privileged control paths.",
+        "",
+        "Denied paths:",
+        "",
+        ...error.deniedPaths.map((item) => `- \`${item.path}\` (${item.reason})`),
+        "",
+        "No patch was applied or pushed. Owner input is required before the fix cycle can continue."
+      ].join("\n")
+    });
+  }
+
+  return { issue: issueNumber ? `#${issueNumber}` : null, comment: "patch-rejected" };
 }
 
 async function fetchActionsJobLog(repository, detailsUrl, token) {
@@ -590,9 +760,21 @@ async function hasIssueComment(gh, repository, issueNumber, marker) {
   return Array.isArray(comments) && comments.some((comment) => String(comment.body || "").includes(marker));
 }
 
-async function mergeGreenPullRequest(gh, repository, pull, requiredContexts, noCheckAllowlist, token) {
+export async function mergeGreenPullRequest(gh, repository, pull, requiredContexts, noCheckAllowlist, token) {
   const ref = `${repoName(repository)}#${pull.number}`;
   const mergeGate = await getPullRequestMergeGate(gh, repository, pull.number);
+  const trustFailure = mergeGateTrustFailure(pull, mergeGate, repository);
+  if (trustFailure) {
+    return {
+      repo: repoName(repository),
+      pr: ref,
+      url: mergeGate.url || pull.url,
+      action: "skip",
+      reason: "merge-trust-failed",
+      trust_failure: trustFailure
+    };
+  }
+
   const hasChecks = Array.isArray(mergeGate.statusCheckRollup) && mergeGate.statusCheckRollup.length > 0;
   if ((!hasChecks && !noCheckAllowlist.has(repoName(repository).toLowerCase())) || !checksAreGreen(mergeGate.statusCheckRollup, requiredContexts)) {
     return {
@@ -607,9 +789,22 @@ async function mergeGreenPullRequest(gh, repository, pull, requiredContexts, noC
     return { repo: repoName(repository), pr: ref, action: "skip", reason: `mergeable-${mergeGate.mergeable}` };
   }
 
-  const protectedBranch = await branchIsProtected(gh, repository, pull.baseRefName);
-  if (protectedBranch) {
-    const enabled = await enableAutoMerge(gh, pull.id, token);
+  const branchProtection = await getMergeBranchProtectionState(gh, repository, mergeGate.baseRefName);
+  if (branchProtection.unreadable) {
+    return {
+      repo: repoName(repository),
+      pr: ref,
+      url: pull.url,
+      action: "skip",
+      reason: "branch-protection-unreadable",
+      branch: mergeGate.baseRefName,
+      protection_status: branchProtection.status,
+      protection_error: sanitize(branchProtection.reason || "", token)
+    };
+  }
+
+  if (branchProtection.protected) {
+    const enabled = await enableAutoMerge(gh, mergeGate.id, token);
     if (enabled.enabled) {
       return {
         repo: repoName(repository),
@@ -633,7 +828,7 @@ async function mergeGreenPullRequest(gh, repository, pull, requiredContexts, noC
   }
 
   const merged = await gh.request("PUT", `/repos/${repoName(repository)}/pulls/${pull.number}/merge`, {
-    commit_title: pull.title,
+    commit_title: mergeGate.title,
     merge_method: "squash"
   });
   await closeIssuesIfDevMerge(gh, repository, mergeGate);
@@ -646,6 +841,20 @@ async function mergeGreenPullRequest(gh, repository, pull, requiredContexts, noC
     base: pull.baseRefName,
     checks: checksSummary(mergeGate.statusCheckRollup)
   };
+}
+
+export function mergeGateTrustFailure(originalPull, mergeGate, repository) {
+  const expectedHeadOwner = originalPull.headRepository?.owner?.login || repository.owner;
+  const expectedHeadRepo = originalPull.headRepository?.name || repository.repo;
+  const actualHeadOwner = mergeGate.headRepository?.owner?.login || "";
+  const actualHeadRepo = mergeGate.headRepository?.name || "";
+
+  if (mergeGate.isDraft) return "draft";
+  if (mergeGate.headRefName !== originalPull.headRefName) return "head-branch-changed";
+  if (actualHeadOwner !== expectedHeadOwner || actualHeadRepo !== expectedHeadRepo) return "head-repository-changed";
+  if (actualHeadOwner !== repository.owner || actualHeadRepo !== repository.repo) return "fork-head-repository";
+  if (!isDarkFactoryWorkerPullRequest(mergeGate, repository)) return "not-worker-pr";
+  return "";
 }
 
 async function getPullRequestMergeGate(gh, repository, pullNumber) {
@@ -694,12 +903,13 @@ async function getPullRequestMergeGate(gh, repository, pullNumber) {
   };
 }
 
-async function branchIsProtected(gh, repository, branch) {
+export async function getMergeBranchProtectionState(gh, repository, branch) {
   try {
     await gh.request("GET", `/repos/${repoName(repository)}/branches/${encodeURIComponent(branch)}/protection`);
-    return true;
+    return { protected: true, unreadable: false, status: 200 };
   } catch (error) {
-    if (error.status === 404 || error.status === 403) return false;
+    if (error.status === 404) return { protected: false, unreadable: false, status: 404, reason: error.message || String(error) };
+    if (error.status === 403) return { protected: null, unreadable: true, status: 403, reason: error.message || String(error) };
     throw error;
   }
 }

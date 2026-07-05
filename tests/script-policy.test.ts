@@ -29,7 +29,13 @@ const {
 } = dfLib;
 
 const {
+  assertFixPatchPathPolicy,
   classifyFixCandidate,
+  deniedFixPatchPaths,
+  getMergeBranchProtectionState,
+  mergeGateTrustFailure,
+  mergeGreenPullRequest,
+  parseGitApplyNumstatPaths,
   parseFixRound
 } = dfFix;
 
@@ -498,6 +504,86 @@ test("df-fix script uses active managed repos and fresh merge gates", async () =
   assert.doesNotMatch(source, /--admin/);
   assert.doesNotMatch(source, /danger-full-access/);
   assert.doesNotMatch(source, /path\.join\(worktree, "\.darkfactory"/);
+});
+
+test("df-fix rejects generated patches that touch privileged paths before push", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-fix.mjs", import.meta.url), "utf8");
+  const paths = parseGitApplyNumstatPaths("1\t1\t.github/workflows/ci.yml\n2\t2\tsrc/app.ts\n");
+  const denied = deniedFixPatchPaths(paths);
+
+  assert.deepEqual(paths, [".github/workflows/ci.yml", "src/app.ts"]);
+  assert.deepEqual(denied, [{ path: ".github/workflows/ci.yml", reason: "GitHub privileged automation path" }]);
+  assert.throws(() => assertFixPatchPathPolicy(paths), /privileged paths/);
+  assert.match(source, /rejectFixPatchForPrivilegedPaths/);
+  assert.match(source, /df:ask-owner/);
+  assert.match(source, /No patch was applied or pushed/);
+
+  const rejectIndex = source.indexOf("action: \"reject-patch\"");
+  const pushIndex = source.indexOf("runGit([\"push\"");
+  assert.notEqual(rejectIndex, -1);
+  assert.notEqual(pushIndex, -1);
+  assert.ok(rejectIndex < pushIndex);
+});
+
+test("df-fix merge gate skips when fresh trust predicates fail", async () => {
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const originalPull = workerPull({ number: 40, checkConclusion: "SUCCESS" });
+  const freshPull = {
+    ...originalPull,
+    isDraft: true,
+    mergeable: "MERGEABLE",
+    url: "https://github.com/marius-patrik/active/pull/40",
+    statusCheckRollup: { contexts: { nodes: originalPull.statusCheckRollup } }
+  };
+  const gh = {
+    graphql: async () => ({ repository: { pullRequest: freshPull } }),
+    request: async (method: string, pathName: string) => {
+      throw new Error(`unexpected merge-gate request: ${method} ${pathName}`);
+    }
+  };
+
+  assert.equal(mergeGateTrustFailure(originalPull, { ...originalPull, isDraft: true }, repository), "draft");
+
+  const result = await mergeGreenPullRequest(gh, repository, originalPull, ["ci"], new Set(), "token");
+  assert.equal(result.action, "skip");
+  assert.equal(result.reason, "merge-trust-failed");
+  assert.equal(result.trust_failure, "draft");
+});
+
+test("df-fix merge gate fails closed when branch protection is unreadable", async () => {
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const originalPull = workerPull({ number: 41, checkConclusion: "SUCCESS" });
+  const freshPull = {
+    ...originalPull,
+    mergeable: "MERGEABLE",
+    url: "https://github.com/marius-patrik/active/pull/41",
+    statusCheckRollup: { contexts: { nodes: originalPull.statusCheckRollup } }
+  };
+  const gh = {
+    graphql: async () => ({ repository: { pullRequest: freshPull } }),
+    request: async (method: string, pathName: string) => {
+      if (method === "GET" && pathName.endsWith("/branches/dev/protection")) {
+        const error: Error & { status?: number } = new Error("Resource not accessible by integration");
+        error.status = 403;
+        throw error;
+      }
+      throw new Error(`unexpected merge request: ${method} ${pathName}`);
+    }
+  };
+
+  assert.deepEqual(
+    await getMergeBranchProtectionState(gh, repository, "dev"),
+    {
+      protected: null,
+      unreadable: true,
+      status: 403,
+      reason: "Resource not accessible by integration"
+    }
+  );
+
+  const result = await mergeGreenPullRequest(gh, repository, originalPull, ["ci"], new Set(), "token");
+  assert.equal(result.action, "skip");
+  assert.equal(result.reason, "branch-protection-unreadable");
 });
 
 test("df-work merge-policy preflight uses direct sweep when branch protection is absent or unreadable", async () => {
