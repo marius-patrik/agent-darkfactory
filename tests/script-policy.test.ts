@@ -333,6 +333,7 @@ test("df-sweep recognizes worker PRs from managed and app-token paths", () => {
   assert.equal(isDarkFactoryWorkerPullRequest(workerPull, repository), true);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, author: { login: "mp-agents[bot]" } }, repository), true);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, author: { login: "app/darkfactory-agent" } }, repository), true);
+  assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, author: { login: "darkfactory-agent" } }, repository), true);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, author: { login: "marius-patrik" } }, repository), false);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, headRefName: "feature/23-add-worker" }, repository), false);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, body: "<!-- dark-factory:worker-pr issue=23 -->" }, repository), false);

@@ -31,7 +31,12 @@ export const PLANNING_LABELS = [
   { name: "df:prd-drift", color: "B60205", description: "DarkFactory PRD drift report" }
 ];
 
-export const WORKER_PULL_REQUEST_AUTHORS = new Set(["github-actions[bot]", "mp-agents[bot]", "app/darkfactory-agent"]);
+export const WORKER_PULL_REQUEST_AUTHORS = new Set([
+  "github-actions[bot]",
+  "mp-agents[bot]",
+  "app/darkfactory-agent",
+  "darkfactory-agent"
+]);
 export const WORKER_STATE_LABELS = ["df:running", "df:blocked", "df:done"];
 export const PLANNER_RECONCILED_LABELS = [
   "df:ready",
