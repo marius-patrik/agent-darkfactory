@@ -8,6 +8,7 @@
     "AGENTS.md",
     ".agents/.global/VERSION",
     ".darkfactory/branching-policy.md",
+    ".darkfactory/enforcement-rules.json",
     ".darkfactory/labels.json",
     ".darkfactory/managed-repos.json",
     ".darkfactory/managed-repository.json",

@@ -10,8 +10,11 @@ import {
   assertAllowedRepo,
   cleanupTempRoot,
   createGithubClient,
+  evaluateEnforcementGate,
   ensureLabels,
   getRepository,
+  managedRepoLifecycleStateForRoot,
+  mergePolicyEnforcementFacts,
   preflightMergePolicy,
   parseRepo,
   repoName,
@@ -72,7 +75,8 @@ async function main() {
   let pullRequest = null;
 
   const repo = await getRepository(gh, TARGET_REPO);
-  const workBaseBranch = await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch, TARGET_BASE_REF);
+  const workBase = await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch, TARGET_BASE_REF);
+  const workBaseBranch = workBase.branch;
 
   // Ensure work labels exist before any preflight failure path tries to apply
   // `df:blocked` to the issue, so the blocker comment is always left reliably.
@@ -88,6 +92,32 @@ async function main() {
 
   const mergePolicy = await preflightMergePolicy(gh, TARGET_REPO, workBaseBranch, repo);
   ledger.actions.push({ action: "preflight-merge-policy", result: mergePolicy });
+  const gate = await evaluateEnforcementGate(CONTROL_ROOT, "dispatch", {
+    ...mergePolicyEnforcementFacts(TARGET_REPO, workBaseBranch, repo, {
+      operation: "dispatch",
+      hasDevBranch: workBase.hasDevBranch,
+      branchProtectionConfigured: mergePolicy.branchProtection?.configured === true,
+      repositoryState: await repositoryStateForGate(TARGET_REPO)
+    }),
+    requiredChecksGreen: true
+  });
+  ledger.actions.push({ action: "preflight-enforcement-rules", result: gate });
+  if (!gate.allowed) {
+    ledger.status = "blocked";
+    ledger.error = gate.summary;
+    await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
+    await createIssueComment(
+      TARGET_REPO,
+      TARGET_ISSUE_NUMBER,
+      preflightBlockedComment(target, workBaseBranch, {
+        ...mergePolicy,
+        blocked: true,
+        reason: gate.summary,
+        summary: `enforcement rules blocked worker dispatch: ${gate.summary}`
+      })
+    );
+    return;
+  }
   if (mergePolicy.blocked) {
     ledger.status = "blocked";
     ledger.error = mergePolicy.reason;
@@ -243,17 +273,27 @@ async function getIssue(repository, issueNumber) {
 }
 
 async function resolveWorkBaseBranch(repository, defaultBranch, requestedBranch = "") {
-  if (requestedBranch) {
-    await ensureBranchExists(repository, requestedBranch);
-    return requestedBranch;
-  }
-
+  let hasDevBranch = false;
   try {
     await ensureBranchExists(repository, "dev");
-    return "dev";
+    hasDevBranch = true;
   } catch (error) {
-    if (error.status === 404) return defaultBranch;
-    throw error;
+    if (error.status !== 404) throw error;
+  }
+
+  if (requestedBranch) {
+    await ensureBranchExists(repository, requestedBranch);
+    return { branch: requestedBranch, hasDevBranch };
+  }
+
+  return { branch: hasDevBranch ? "dev" : defaultBranch, hasDevBranch };
+}
+
+async function repositoryStateForGate(repository) {
+  try {
+    return await managedRepoLifecycleStateForRoot(repository, CONTROL_ROOT);
+  } catch {
+    return "active";
   }
 }
 

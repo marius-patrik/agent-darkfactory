@@ -10,6 +10,7 @@ export const PARKED_REPOS = new Set([
   "marius-patrik/life-support"
 ]);
 export const MANAGED_REPOS_PATH = ".darkfactory/managed-repos.json";
+export const ENFORCEMENT_RULES_PATH = ".darkfactory/enforcement-rules.json";
 export const MANAGED_REPO_STATES = new Set(["active", "parked", "archived", "completed", "removed"]);
 
 export const WORK_LABELS = [
@@ -80,12 +81,159 @@ export function assertAllowedRepo(repository) {
   }
 }
 
+export async function loadEnforcementRules(root = process.cwd()) {
+  const config = await readLocalJson(path.join(root, ENFORCEMENT_RULES_PATH), defaultEnforcementRules());
+  const rules = Array.isArray(config?.rules) ? config.rules : [];
+  return {
+    schemaVersion: config?.schemaVersion ?? 1,
+    rules: rules.map(normalizeEnforcementRule).filter(Boolean)
+  };
+}
+
+export function evaluateEnforcementRules(config, event, facts = {}) {
+  const rules = Array.isArray(config?.rules) ? config.rules : [];
+  const violations = [];
+
+  for (const rule of rules) {
+    if (!rule?.enabled) continue;
+    if (Array.isArray(rule.events) && rule.events.length > 0 && !rule.events.includes(event)) continue;
+    if (rule.effect !== "block") continue;
+    if (conditionMatches(rule.when, facts)) {
+      violations.push({
+        id: rule.id,
+        message: interpolateRuleMessage(rule.message || rule.description || "Enforcement rule blocked this action.", facts)
+      });
+    }
+  }
+
+  return {
+    allowed: violations.length === 0,
+    violations,
+    summary: violations.map((violation) => `${violation.id}: ${violation.message}`).join("; ")
+  };
+}
+
+export async function evaluateEnforcementGate(root, event, facts = {}) {
+  return evaluateEnforcementRules(await loadEnforcementRules(root), event, facts);
+}
+
+function normalizeEnforcementRule(rule) {
+  if (!rule || typeof rule !== "object") return null;
+  const id = String(rule.id || "").trim();
+  if (!id) return null;
+  return {
+    id,
+    description: String(rule.description || ""),
+    enabled: rule.enabled !== false,
+    events: Array.isArray(rule.events) ? rule.events.map(String) : [],
+    effect: rule.effect === "block" ? "block" : "block",
+    when: rule.when || {},
+    message: String(rule.message || "")
+  };
+}
+
+function conditionMatches(condition, facts) {
+  if (!condition || typeof condition !== "object") return true;
+  if (Array.isArray(condition.all)) return condition.all.every((item) => conditionMatches(item, facts));
+  if (Array.isArray(condition.any)) return condition.any.some((item) => conditionMatches(item, facts));
+  if (condition.not) return !conditionMatches(condition.not, facts);
+
+  const factName = condition.fact;
+  if (typeof factName !== "string" || !factName) return false;
+  const actual = facts[factName];
+
+  if (Object.hasOwn(condition, "equals")) return actual === condition.equals;
+  if (Object.hasOwn(condition, "notEquals")) return actual !== condition.notEquals;
+  if (Object.hasOwn(condition, "equalsFact")) return actual === facts[condition.equalsFact];
+  if (Object.hasOwn(condition, "notEqualsFact")) return actual !== facts[condition.notEqualsFact];
+  if (Array.isArray(condition.in)) return condition.in.includes(actual);
+  if (Array.isArray(condition.notIn)) return !condition.notIn.includes(actual);
+  if (Object.hasOwn(condition, "truthy")) return Boolean(actual) === Boolean(condition.truthy);
+  if (Object.hasOwn(condition, "falsy")) return Boolean(actual) !== Boolean(condition.falsy);
+  if (Object.hasOwn(condition, "matches")) return new RegExp(String(condition.matches)).test(String(actual ?? ""));
+
+  return Boolean(actual);
+}
+
+function interpolateRuleMessage(message, facts) {
+  return message.replace(/\$\{([A-Za-z0-9_.-]+)\}/g, (_match, name) => {
+    const value = facts[name];
+    if (value === undefined || value === null) return "";
+    return String(value);
+  });
+}
+
+function defaultEnforcementRules() {
+  return {
+    schemaVersion: 1,
+    rules: [
+      {
+        id: "never-merge-red",
+        enabled: true,
+        events: ["merge", "automerge"],
+        effect: "block",
+        when: { fact: "requiredChecksGreen", equals: false },
+        message: "Required checks are missing, pending, or failing."
+      },
+      {
+        id: "no-force-push",
+        enabled: true,
+        events: ["dispatch", "push", "merge", "automerge"],
+        effect: "block",
+        when: { fact: "forcePush", equals: true },
+        message: "Force-push is prohibited."
+      },
+      {
+        id: "no-admin-bypass",
+        enabled: true,
+        events: ["dispatch", "merge", "automerge"],
+        effect: "block",
+        when: { fact: "adminBypass", equals: true },
+        message: "Administrative bypass is prohibited."
+      },
+      {
+        id: "secrets-never-logged",
+        enabled: true,
+        events: ["dispatch", "push", "merge", "automerge"],
+        effect: "block",
+        when: { fact: "secretsLogged", equals: true },
+        message: "Secret material was detected in an output path."
+      },
+      {
+        id: "parked-repos-untouched",
+        enabled: true,
+        events: ["dispatch", "push", "merge", "automerge"],
+        effect: "block",
+        when: { fact: "repositoryState", equals: "parked" },
+        message: "Parked repositories are not eligible for DarkFactory actions."
+      },
+      {
+        id: "work-PRs-target-dev",
+        enabled: true,
+        events: ["dispatch", "merge", "automerge"],
+        effect: "block",
+        when: {
+          all: [
+            { fact: "hasDevBranch", equals: true },
+            { fact: "baseBranch", notEquals: "dev" }
+          ]
+        },
+        message: "Worker actions must target dev when the target repository has a dev branch."
+      }
+    ]
+  };
+}
+
 export async function readManagedRepoRegistry(root = process.cwd()) {
   const registry = await readLocalJson(path.join(root, MANAGED_REPOS_PATH), { schemaVersion: 1, repositories: {} });
   const repositories = registry?.repositories && typeof registry.repositories === "object"
     ? registry.repositories
     : {};
   return { ...registry, repositories };
+}
+
+export async function managedRepoLifecycleStateForRoot(repository, root = process.cwd()) {
+  return managedRepoLifecycleState(repository, await readManagedRepoRegistry(root));
 }
 
 export function managedRepoLifecycleState(repository, registry) {
@@ -385,6 +533,22 @@ export async function preflightMergePolicy(gh, repository, baseBranch, repo) {
   };
 }
 
+export function mergePolicyEnforcementFacts(repository, baseBranch, repo, options = {}) {
+  return {
+    operation: options.operation || "dispatch",
+    repository: repoName(repository),
+    repositoryState: options.repositoryState || (isParkedRepo(repository) ? "parked" : "active"),
+    baseBranch,
+    defaultBranch: repo?.default_branch || "",
+    hasDevBranch: baseBranch === "dev" || options.hasDevBranch === true,
+    branchProtectionConfigured: options.branchProtectionConfigured === true,
+    autoMergeSupported: repo?.allow_auto_merge === true,
+    forcePush: false,
+    adminBypass: false,
+    secretsLogged: false
+  };
+}
+
 export async function getRequiredStatusCheckContexts(gh, repository, branch) {
   try {
     const data = await gh.request(
@@ -547,7 +711,17 @@ export function checksAreGreen(statusCheckRollup, requiredContexts = []) {
     return requiredContexts.length === 0;
   }
 
-  return statusCheckRollup.every((check) => {
+  const allReportedGreen = statusCheckRollup.every((check) => {
+    return checkIsGreen(check);
+  });
+  if (!allReportedGreen) return false;
+
+  return requiredContexts.every((context) => {
+    return statusCheckRollup.some((check) => checkName(check) === context && checkIsGreen(check));
+  });
+}
+
+function checkIsGreen(check) {
     if (check.__typename === "CheckRun") {
       return check.status === "COMPLETED" && check.conclusion === "SUCCESS";
     }
@@ -555,7 +729,16 @@ export function checksAreGreen(statusCheckRollup, requiredContexts = []) {
       return check.state === "SUCCESS";
     }
     return false;
-  });
+}
+
+function checkName(check) {
+  if (check.__typename === "CheckRun") return check.name || "";
+  if (check.__typename === "StatusContext") return check.context || "";
+  return "";
+}
+
+export function requiredChecksAreGreen(statusCheckRollup, requiredContexts = []) {
+  return checksAreGreen(statusCheckRollup, requiredContexts);
 }
 
 export function checksSummary(statusCheckRollup) {

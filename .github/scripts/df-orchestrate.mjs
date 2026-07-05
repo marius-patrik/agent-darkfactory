@@ -5,9 +5,12 @@ import {
   WORK_LABELS,
   assertAllowedRepo,
   createGithubClient,
+  evaluateEnforcementGate,
   ensureLabels,
   getRepository,
   listActiveManagedRepos,
+  managedRepoLifecycleStateForRoot,
+  mergePolicyEnforcementFacts,
   parseRepo,
   preflightMergePolicy,
   repoName,
@@ -119,8 +122,27 @@ export async function listReadyIssues(gh, repository) {
 
 export async function dispatchWorker(gh, controlRepo, repository, issueNumber) {
   const repo = await getRepository(gh, repository);
-  const workBaseBranch = await resolveWorkBaseBranch(gh, repository, repo.default_branch);
+  const workBase = await resolveWorkBaseBranch(gh, repository, repo.default_branch);
+  const workBaseBranch = workBase.branch;
   const mergePolicy = await preflightMergePolicy(gh, repository, workBaseBranch, repo);
+  const gate = await evaluateEnforcementGate(CONTROL_ROOT, "dispatch", {
+    ...mergePolicyEnforcementFacts(repository, workBaseBranch, repo, {
+      operation: "dispatch",
+      hasDevBranch: workBase.hasDevBranch,
+      branchProtectionConfigured: mergePolicy.branchProtection?.configured === true,
+      repositoryState: await repositoryStateForGate(repository)
+    }),
+    requiredChecksGreen: true
+  });
+  if (!gate.allowed) {
+    await blockIssueBeforeDispatch(gh, repository, issueNumber, workBaseBranch, {
+      ...mergePolicy,
+      blocked: true,
+      reason: gate.summary,
+      summary: `enforcement rules blocked worker dispatch: ${gate.summary}`
+    });
+    return false;
+  }
   if (mergePolicy.blocked) {
     await blockIssueBeforeDispatch(gh, repository, issueNumber, workBaseBranch, mergePolicy);
     return false;
@@ -149,10 +171,18 @@ export async function dispatchWorker(gh, controlRepo, repository, issueNumber) {
 async function resolveWorkBaseBranch(gh, repository, defaultBranch) {
   try {
     await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeURIComponent("dev")}`);
-    return "dev";
+    return { branch: "dev", hasDevBranch: true };
   } catch (error) {
-    if (error.status === 404) return defaultBranch;
+    if (error.status === 404) return { branch: defaultBranch, hasDevBranch: false };
     throw error;
+  }
+}
+
+async function repositoryStateForGate(repository) {
+  try {
+    return await managedRepoLifecycleStateForRoot(repository, CONTROL_ROOT);
+  } catch {
+    return "active";
   }
 }
 

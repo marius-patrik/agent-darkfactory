@@ -21,13 +21,15 @@ const {
   isDarkFactoryWorkerPullRequest,
   isParkedRepo,
   listActiveManagedRepos,
+  loadEnforcementRules,
   parsePrdItems,
   plannedIssueLabelDiff,
   preflightMergePolicy,
   prdIssueBody,
   reconcileLabelDiff,
   repoName,
-  taskClassFromLabels
+  taskClassFromLabels,
+  evaluateEnforcementRules
 } = dfLib;
 
 const {
@@ -198,7 +200,7 @@ test("checksAreGreen rejects pending or failing checks without requiring fixed c
       [{ __typename: "CheckRun", name: "lint", status: "COMPLETED", conclusion: "SUCCESS" }],
       ["ci"]
     ),
-    true
+    false
   );
   assert.equal(checksAreGreen([{ __typename: "CheckRun", status: "IN_PROGRESS", conclusion: null }]), false);
   assert.equal(checksAreGreen([{ __typename: "StatusContext", state: "FAILURE" }]), false);
@@ -253,6 +255,42 @@ test("getBranchProtection treats 403 and 404 as not configured without swallowin
     ),
     /server error/
   );
+});
+
+test("enforcement rules load built-in gates from declarative config", async () => {
+  const config = await loadEnforcementRules(new URL("..", import.meta.url).pathname);
+  const ids = config.rules.map((rule: { id: string }) => rule.id);
+
+  assert.ok(ids.includes("never-merge-red"));
+  assert.ok(ids.includes("no-force-push"));
+  assert.ok(ids.includes("no-admin-bypass"));
+  assert.ok(ids.includes("secrets-never-logged"));
+  assert.ok(ids.includes("parked-repos-untouched"));
+  assert.ok(ids.includes("work-PRs-target-dev"));
+
+  const redMerge = evaluateEnforcementRules(config, "merge", {
+    requiredChecksGreen: false,
+    repositoryState: "active",
+    baseBranch: "dev",
+    hasDevBranch: true,
+    forcePush: false,
+    adminBypass: false,
+    secretsLogged: false
+  });
+  assert.equal(redMerge.allowed, false);
+  assert.equal(redMerge.violations[0].id, "never-merge-red");
+
+  const mainDispatch = evaluateEnforcementRules(config, "dispatch", {
+    requiredChecksGreen: true,
+    repositoryState: "active",
+    baseBranch: "main",
+    hasDevBranch: true,
+    forcePush: false,
+    adminBypass: false,
+    secretsLogged: false
+  });
+  assert.equal(mainDispatch.allowed, false);
+  assert.equal(mainDispatch.violations[0].id, "work-PRs-target-dev");
 });
 
 test("extractClosingIssueNumbers deduplicates close references", () => {

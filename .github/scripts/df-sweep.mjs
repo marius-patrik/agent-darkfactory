@@ -5,6 +5,7 @@ import {
   checksSummary,
   createGithubClient,
   darkFactoryWorkerIssueNumber,
+  evaluateEnforcementGate,
   extractClosingIssueNumbers,
   getRepository,
   getRequiredStatusCheckContexts,
@@ -20,8 +21,10 @@ import {
   warnReadOnlyRepository,
   writeRunLedger
 } from "./df-lib.mjs";
-import { pathToFileURL } from "node:url";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
+const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const MODE = process.env.DF_FOLLOW_THROUGH_MODE ?? "sweep";
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const DEFAULT_EXCLUDED_REPOS = "";
@@ -224,6 +227,30 @@ export async function considerPullRequest(repository, pull) {
   }
 
   const protectedBranch = await branchIsProtected(repository, pull.baseRefName);
+  const actionEvent = protectedBranch ? "automerge" : "merge";
+  const hasDevBranch = pull.baseRefName === "dev" ? true : await branchExists(repository, "dev");
+  const enforcement = await evaluateEnforcementGate(CONTROL_ROOT, actionEvent, enforcementFactsForPull(repository, mergeGate, {
+    requiredContexts,
+    hasDevBranch,
+    protectedBranch,
+    requiredChecksGreen: checksAreGreen(mergeGate.statusCheckRollup, requiredContexts)
+  }));
+  if (!enforcement.allowed) {
+    const issueUpdate = await markWorkerIssueBlocked(repository, pull, "enforcement-rules-blocked", [
+      enforcement.summary
+    ]);
+    return {
+      repo: repoName(repository),
+      pr: ref,
+      url: pull.url,
+      action: "skip",
+      reason: "enforcement-rules-blocked",
+      violations: enforcement.violations,
+      issue_update: issueUpdate,
+      checks: checksSummary(mergeGate.statusCheckRollup)
+    };
+  }
+
   if (protectedBranch) {
     const enabled = await enableAutoMerge(pull.id);
     if (enabled.enabled) {
@@ -275,6 +302,24 @@ export async function considerPullRequest(repository, pull) {
     sha: merged.sha,
     base: pull.baseRefName,
     checks: checksSummary(mergeGate.statusCheckRollup)
+  };
+}
+
+function enforcementFactsForPull(repository, pull, options = {}) {
+  return {
+    operation: options.protectedBranch ? "automerge" : "merge",
+    repository: repoName(repository),
+    repositoryState: isParkedRepo(repository) ? "parked" : "active",
+    baseBranch: pull.baseRefName || "",
+    hasDevBranch: options.hasDevBranch === true,
+    requiredChecksGreen: options.requiredChecksGreen === true,
+    requiredChecks: options.requiredContexts || [],
+    reportedChecks: checksSummary(pull.statusCheckRollup),
+    mergeable: pull.mergeable || "unknown",
+    protectedBranch: options.protectedBranch === true,
+    forcePush: false,
+    adminBypass: false,
+    secretsLogged: false
   };
 }
 
@@ -643,6 +688,17 @@ function normalizeRestPullRequest(pull) {
 async function branchIsProtected(repository, branch) {
   try {
     await gh.request("GET", `/repos/${repoName(repository)}/branches/${encodeURIComponent(branch)}/protection`);
+    return true;
+  } catch (error) {
+    if (error.status === 404) return false;
+    if (error.status === 403) return false;
+    throw error;
+  }
+}
+
+async function branchExists(repository, branch) {
+  try {
+    await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeURIComponent(branch)}`);
     return true;
   } catch (error) {
     if (error.status === 404) return false;

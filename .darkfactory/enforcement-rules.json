@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "id": "never-merge-red",
+      "description": "Merge and auto-merge actions require all reported and required checks to be successful.",
+      "enabled": true,
+      "events": ["merge", "automerge"],
+      "effect": "block",
+      "when": { "fact": "requiredChecksGreen", "equals": false },
+      "message": "Required checks are missing, pending, or failing."
+    },
+    {
+      "id": "no-force-push",
+      "description": "DarkFactory must not force-push worker branches.",
+      "enabled": true,
+      "events": ["dispatch", "push", "merge", "automerge"],
+      "effect": "block",
+      "when": { "fact": "forcePush", "equals": true },
+      "message": "Force-push is prohibited."
+    },
+    {
+      "id": "no-admin-bypass",
+      "description": "DarkFactory must not bypass branch protection or use administrative merge overrides.",
+      "enabled": true,
+      "events": ["dispatch", "merge", "automerge"],
+      "effect": "block",
+      "when": { "fact": "adminBypass", "equals": true },
+      "message": "Administrative bypass is prohibited."
+    },
+    {
+      "id": "secrets-never-logged",
+      "description": "DarkFactory must not emit known secret material to logs or comments.",
+      "enabled": true,
+      "events": ["dispatch", "push", "merge", "automerge"],
+      "effect": "block",
+      "when": { "fact": "secretsLogged", "equals": true },
+      "message": "Secret material was detected in an output path."
+    },
+    {
+      "id": "parked-repos-untouched",
+      "description": "DarkFactory must not dispatch, push, merge, or auto-merge in parked repositories.",
+      "enabled": true,
+      "events": ["dispatch", "push", "merge", "automerge"],
+      "effect": "block",
+      "when": { "fact": "repositoryState", "equals": "parked" },
+      "message": "Parked repositories are not eligible for DarkFactory actions."
+    },
+    {
+      "id": "work-PRs-target-dev",
+      "description": "When a repository has a dev branch, DarkFactory work actions must target dev.",
+      "enabled": true,
+      "events": ["dispatch", "merge", "automerge"],
+      "effect": "block",
+      "when": {
+        "all": [
+          { "fact": "hasDevBranch", "equals": true },
+          { "fact": "baseBranch", "notEquals": "dev" }
+        ]
+      },
+      "message": "Worker actions must target dev when the target repository has a dev branch."
+    }
+  ]
+}
