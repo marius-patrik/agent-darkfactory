@@ -516,6 +516,7 @@ test("df-work workflow uses the app token for control-dispatched workers", async
   assert.match(workflow, /permission-contents:\s+write/);
   assert.match(workflow, /permission-issues:\s+write/);
   assert.match(workflow, /permission-pull-requests:\s+write/);
+  assert.match(workflow, /permission-workflows:\s+write/);
   assert.doesNotMatch(workflow, /steps\.app-token\.outputs\.token \|\| github\.token/);
   assert.match(workflow, /DF_TARGET_REPO: \$\{\{ inputs\.repo \}\}/);
   assert.match(workflow, /DF_TARGET_ISSUE_NUMBER: \$\{\{ inputs\.issue_number \}\}/);
