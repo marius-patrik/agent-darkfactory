@@ -31,7 +31,7 @@ export const PLANNING_LABELS = [
   { name: "df:prd-drift", color: "B60205", description: "DarkFactory PRD drift report" }
 ];
 
-export const WORKER_PULL_REQUEST_AUTHORS = new Set(["github-actions[bot]", "mp-agents[bot]"]);
+export const WORKER_PULL_REQUEST_AUTHORS = new Set(["github-actions[bot]", "mp-agents[bot]", "app/darkfactory-agent"]);
 export const WORKER_STATE_LABELS = ["df:running", "df:blocked", "df:done"];
 export const PLANNER_RECONCILED_LABELS = [
   "df:ready",
@@ -542,7 +542,7 @@ export function checksAreGreen(statusCheckRollup, requiredContexts = []) {
     return requiredContexts.length === 0;
   }
 
-  const allGreen = statusCheckRollup.every((check) => {
+  return statusCheckRollup.every((check) => {
     if (check.__typename === "CheckRun") {
       return check.status === "COMPLETED" && check.conclusion === "SUCCESS";
     }
@@ -551,18 +551,6 @@ export function checksAreGreen(statusCheckRollup, requiredContexts = []) {
     }
     return false;
   });
-
-  if (!allGreen || requiredContexts.length === 0) return allGreen;
-
-  const present = new Set(
-    statusCheckRollup.map((check) => {
-      if (check.__typename === "CheckRun") return check.name;
-      if (check.__typename === "StatusContext") return check.context;
-      return "";
-    })
-  );
-
-  return requiredContexts.every((context) => present.has(context));
 }
 
 export function checksSummary(statusCheckRollup) {

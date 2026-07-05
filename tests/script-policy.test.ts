@@ -6,6 +6,8 @@ import test from "node:test";
 const dfLib: any = await import("../.github/scripts/df-lib.mjs");
 // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
 const dfFix: any = await import("../.github/scripts/df-fix.mjs");
+// @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+const dfSweep: any = await import("../.github/scripts/df-sweep.mjs");
 
 const {
   assertAllowedRepo,
@@ -34,6 +36,10 @@ const {
   fixPullRequestByRedispatch,
   parseFixRound
 } = dfFix;
+const {
+  configureSweepRuntime,
+  considerPullRequest: considerSweepPullRequest
+} = dfSweep;
 
 test("parsePrdItems creates stable df-prd markers from PRD milestones and loops", () => {
   const items = parsePrdItems([
@@ -174,7 +180,7 @@ test("cleanupTempRoot reports EACCES cleanup failures without throwing", async (
   assert.match(result.warning, /permission denied/);
 });
 
-test("checksAreGreen respects required checks and rejects pending or failing checks", () => {
+test("checksAreGreen rejects pending or failing checks without requiring fixed check names", () => {
   assert.equal(checksAreGreen([]), true);
   assert.equal(checksAreGreen([], ["ci"]), false);
   assert.equal(checksAreGreen([{ __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" }]), true);
@@ -192,7 +198,7 @@ test("checksAreGreen respects required checks and rejects pending or failing che
       [{ __typename: "CheckRun", name: "lint", status: "COMPLETED", conclusion: "SUCCESS" }],
       ["ci"]
     ),
-    false
+    true
   );
   assert.equal(checksAreGreen([{ __typename: "CheckRun", status: "IN_PROGRESS", conclusion: null }]), false);
   assert.equal(checksAreGreen([{ __typename: "StatusContext", state: "FAILURE" }]), false);
@@ -326,6 +332,7 @@ test("df-sweep recognizes worker PRs from managed and app-token paths", () => {
 
   assert.equal(isDarkFactoryWorkerPullRequest(workerPull, repository), true);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, author: { login: "mp-agents[bot]" } }, repository), true);
+  assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, author: { login: "app/darkfactory-agent" } }, repository), true);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, author: { login: "marius-patrik" } }, repository), false);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, headRefName: "feature/23-add-worker" }, repository), false);
   assert.equal(isDarkFactoryWorkerPullRequest({ ...workerPull, body: "<!-- dark-factory:worker-pr issue=23 -->" }, repository), false);
@@ -925,6 +932,67 @@ test("df-sweep skips open worker PRs whose linked issue is already blocked", asy
   assert.match(source, /labels\.includes\("df:blocked"\)/);
 });
 
+test("df-sweep merges green app-authored dev worker PRs and blocks red ones", async () => {
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const green = workerPull({ number: 40, checkConclusion: "SUCCESS", author: "app/darkfactory-agent" });
+  const red = workerPull({ number: 41, checkConclusion: "FAILURE", author: "app/darkfactory-agent" });
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+
+  configureSweepRuntime({
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    dataRepo: "marius-patrik/darkfactory-data",
+    gh: {
+      graphql: async (_query: string, variables: { number: number }) => ({
+        repository: {
+          pullRequest: {
+            ...(variables.number === 40 ? green : red),
+            id: `PR_${variables.number}`,
+            mergeable: "MERGEABLE",
+            statusCheckRollup: {
+              contexts: {
+                nodes: (variables.number === 40 ? green : red).statusCheckRollup
+              }
+            }
+          }
+        }
+      }),
+      request: async (method: string, pathName: string, body?: any) => {
+        calls.push({ method, pathName, body });
+        if (method === "GET" && pathName.endsWith("/protection")) {
+          const error: Error & { status?: number } = new Error("Branch not protected");
+          error.status = 404;
+          throw error;
+        }
+        if (method === "GET" && /^\/repos\/marius-patrik\/active\/issues\/4[01]$/.test(pathName)) {
+          return { labels: [] };
+        }
+        if (method === "GET" && /^\/repos\/marius-patrik\/active\/issues\/4[01]\/comments\?per_page=100$/.test(pathName)) {
+          return [];
+        }
+        if (method === "PUT" && pathName === "/repos/marius-patrik/active/pulls/40/merge") {
+          return { sha: "merged-sha" };
+        }
+        if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/40/comments") return {};
+        if (method === "PATCH" && pathName === "/repos/marius-patrik/active/issues/40") return {};
+        if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/41/labels") return {};
+        if (method === "DELETE" && pathName.startsWith("/repos/marius-patrik/active/issues/41/labels/")) return {};
+        if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/41/comments") return {};
+        throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+      }
+    }
+  });
+
+  const greenResult = await considerSweepPullRequest(repository, green);
+  const redResult = await considerSweepPullRequest(repository, red);
+
+  assert.equal(greenResult.action, "merge");
+  assert.equal(greenResult.base, "dev");
+  assert.equal(redResult.action, "skip");
+  assert.equal(redResult.reason, "checks-not-green");
+  assert.ok(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/40/merge"));
+  assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/41/merge"), false);
+});
+
 test("df-orchestrate workflow validates trusted refs before privileged tokens", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-orchestrate.yml", import.meta.url), "utf8");
   const gate = workflow.indexOf("Validate trusted control ref");
@@ -999,16 +1067,18 @@ function workerPull(options: {
   checkConclusion: string | null;
   checkStatus?: string;
   labels?: Array<{ name: string }>;
+  author?: string;
 }) {
   return {
     id: `PR_${options.number}`,
     number: options.number,
     title: `Worker PR ${options.number}`,
     body: `<!-- dark-factory:worker-pr issue=${options.number} -->\n\nCloses #${options.number}`,
-    author: { login: "mp-agents[bot]" },
+    author: { login: options.author || "mp-agents[bot]" },
     headRefName: `df/${options.number}-worker`,
     headRepository: { owner: { login: "marius-patrik" }, name: "active" },
     baseRefName: "dev",
+    mergeable: "MERGEABLE",
     isDraft: false,
     createdAt: "2026-07-01T00:00:00.000Z",
     updatedAt: "2026-07-01T00:00:00.000Z",

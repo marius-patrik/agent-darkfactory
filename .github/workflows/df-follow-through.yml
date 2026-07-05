@@ -13,7 +13,7 @@ on:
         description: Optional comma-separated repositories to skip.
         required: false
         type: string
-        default: marius-patrik/agents-harness
+        default: ""
 
 permissions:
   contents: read
@@ -86,7 +86,7 @@ jobs:
           DF_CONTROL_REPO: ${{ github.repository }}
           DF_FOLLOW_THROUGH_MODE: sweep
           DF_SWEEP_REPOS: ${{ github.event_name == 'workflow_dispatch' && inputs.repos || '' }}
-          DF_SWEEP_EXCLUDE_REPOS: ${{ github.event_name == 'workflow_dispatch' && inputs.exclude_repos || 'marius-patrik/agents-harness' }}
+          DF_SWEEP_EXCLUDE_REPOS: ${{ github.event_name == 'workflow_dispatch' && inputs.exclude_repos || '' }}
           DF_ALLOW_NO_CHECK_REPOS: ${{ vars.DF_ALLOW_NO_CHECK_REPOS }}
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data

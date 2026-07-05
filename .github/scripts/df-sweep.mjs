@@ -20,25 +20,41 @@ import {
   warnReadOnlyRepository,
   writeRunLedger
 } from "./df-lib.mjs";
+import { pathToFileURL } from "node:url";
 
-const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
-const CONTROL_REPO = parseRepo(requiredEnv("DF_CONTROL_REPO"));
-const DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
 const MODE = process.env.DF_FOLLOW_THROUGH_MODE ?? "sweep";
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
-const DEFAULT_EXCLUDED_REPOS = "marius-patrik/agents-harness";
+const DEFAULT_EXCLUDED_REPOS = "";
 const NO_CHECK_ALLOWLIST = new Set(
   repoList(process.env.DF_ALLOW_NO_CHECK_REPOS || "").map((repo) => repoName(repo).toLowerCase())
 );
 const EMPTY_CHECK_SETTLE_MS = 10 * 60 * 1000;
-const gh = createGithubClient(TOKEN, "darkfactory-sweep");
+let gh;
+let CONTROL_REPO;
+let DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
 
-main().catch((error) => {
-  console.error(error.stack || error.message || String(error));
-  process.exitCode = 1;
-});
+export function configureSweepRuntime(options) {
+  gh = options.gh;
+  CONTROL_REPO = options.controlRepo;
+  DATA_REPO = options.dataRepo ?? DEFAULT_DATA_REPO;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    const token = process.env.DARK_FACTORY_TOKEN || "";
+    console.error(String(error.stack || error.message || error).split(token).join("***"));
+    process.exitCode = 1;
+  });
+}
 
 async function main() {
+  const token = requiredEnv("DARK_FACTORY_TOKEN");
+  configureSweepRuntime({
+    gh: createGithubClient(token, "darkfactory-sweep"),
+    controlRepo: parseRepo(requiredEnv("DF_CONTROL_REPO")),
+    dataRepo: process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO
+  });
+
   if (MODE === "dev-merge") {
     await closeDevMergeIssuesFromEnv();
     return;
@@ -93,7 +109,7 @@ async function main() {
   console.log(`DarkFactory sweep processed ${repos.length} repos; merge actions: ${merged.length}.`);
 }
 
-async function considerPullRequest(repository, pull) {
+export async function considerPullRequest(repository, pull) {
   const ref = `${repoName(repository)}#${pull.number}`;
 
   if (pull.isDraft) return { repo: repoName(repository), pr: ref, action: "skip", reason: "draft" };
