@@ -7,4 +7,4 @@ Managed repositories use `dev` as the integration branch and `main` as the relea
 - Merging to `main` should correspond to tag and GitHub release automation where the repository ships releases.
 - Data repositories, the umbrella repository, and workspace repositories may commit continuously on `main` when they are used as canonical state rather than product code.
 
-This is the owner-mandated model tracked by `marius-patrik/darkfactory-agent#17`.
+This is the owner-mandated model tracked by `marius-patrik/agent-darkfactory#17`.

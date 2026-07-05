@@ -73,7 +73,7 @@ function verifyManagedFiles() {
     fail("Missing managed agent version.", ".agents/.global/VERSION");
   } else {
     const version = readFileSync(".agents/.global/VERSION", "utf8").trim();
-    if (!version.startsWith("darkfactory-agent@")) {
+    if (!version.startsWith("agent-darkfactory@")) {
       fail(`Unexpected managed agent version '${version}'.`, ".agents/.global/VERSION");
     } else {
       console.log(`Managed agent version: ${version}`);
