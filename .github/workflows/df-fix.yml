@@ -25,6 +25,7 @@ jobs:
         )
       }}
     permissions:
+      actions: write
       contents: write
       issues: write
       pull-requests: write
@@ -62,15 +63,15 @@ jobs:
           app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
           private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
           owner: marius-patrik
-          permission-actions: read
+          permission-actions: write
           permission-contents: write
           permission-issues: write
           permission-pull-requests: write
+          permission-workflows: write
 
       - name: Run fix cycle
         env:
           DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
-          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
           DF_CONTROL_REPO: marius-patrik/agent-darkfactory
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data

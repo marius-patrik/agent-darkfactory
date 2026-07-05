@@ -29,14 +29,11 @@ const {
 } = dfLib;
 
 const {
-  assertFixPatchPathPolicy,
   classifyFixCandidate,
-  codexWorkerHostEnv,
-  deniedFixPatchPaths,
+  fixPullRequestByRedispatch,
   getMergeBranchProtectionState,
   mergeGateTrustFailure,
   mergeGreenPullRequest,
-  parseGitApplyNumstatPaths,
   parseFixRound
 } = dfFix;
 
@@ -470,88 +467,49 @@ test("df-fix workflow validates trusted refs before privileged tokens", async ()
   const gate = workflow.indexOf("Validate trusted control ref");
   const checkout = workflow.indexOf("Checkout installed DarkFactory fix cycle");
   const token = workflow.indexOf("Mint mp-agents installation token");
-  const codexAuth = workflow.indexOf("CODEX_AUTH_JSON");
 
   assert.notEqual(gate, -1);
   assert.notEqual(checkout, -1);
   assert.notEqual(token, -1);
-  assert.notEqual(codexAuth, -1);
   assert.ok(gate < token);
   assert.ok(checkout < token);
-  assert.ok(token < codexAuth);
   assert.match(workflow, /^\s+schedule:\s*$/m);
   assert.match(workflow, /^\s+workflow_dispatch:\s*$/m);
   assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'/);
   assert.match(workflow, /GITHUB_REPOSITORY/);
   assert.match(workflow, /GITHUB_REF_NAME.*main/);
   assert.match(workflow, /GITHUB_REF.*refs\/heads\/main/);
+  assert.match(workflow, /actions:\s+write/);
   assert.match(workflow, /permission-contents:\s+write/);
   assert.match(workflow, /permission-issues:\s+write/);
   assert.match(workflow, /permission-pull-requests:\s+write/);
-  assert.doesNotMatch(workflow, /permission-workflows:\s+write/);
-  assert.match(workflow, /CODEX_AUTH_JSON: \$\{\{ secrets\.CODEX_AUTH_JSON \}\}/);
+  assert.match(workflow, /permission-actions:\s+write/);
+  assert.match(workflow, /permission-workflows:\s+write/);
+  assert.doesNotMatch(workflow, /CODEX_AUTH_JSON/);
+  assert.doesNotMatch(workflow, /docker|DF_WORKER_IMAGE/);
   assert.match(workflow, /path:\s+darkfactory-control/);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /darkfactory-control\/\.github\/scripts\/df-fix\.mjs/);
 });
 
-test("df-fix script uses active managed repos and fresh merge gates", async () => {
+test("df-fix script is deterministic and uses active managed repos, df-work redispatch, and fresh merge gates", async () => {
   const source = await readFile(new URL("../.github/scripts/df-fix.mjs", import.meta.url), "utf8");
 
   assert.match(source, /listActiveManagedRepos\(gh, controlRepo, \{ root: CONTROL_ROOT \}\)/);
   assert.match(source, /isDarkFactoryWorkerPullRequest/);
   assert.match(source, /df:fix-round:/);
   assert.match(source, /df:ask-owner/);
+  assert.match(source, /df-fix-revision/);
+  assert.match(source, /\/actions\/workflows\/df-work\.yml\/dispatches/);
+  assert.match(source, /deleteHeadBranch/);
+  assert.match(source, /closeSupersededPullRequest/);
   assert.match(source, /const mergeGate = await getPullRequestMergeGate/);
   assert.match(source, /checksAreGreen\(mergeGate\.statusCheckRollup, requiredContexts\)/);
   assert.match(source, /sha: mergeGate\.headRefOid/);
   assert.match(source, /merge_method: "squash"/);
-  assert.match(source, /targetSnapshot.*\/target:ro/);
   assert.doesNotMatch(source, /--admin/);
   assert.doesNotMatch(source, /danger-full-access/);
-  assert.doesNotMatch(source, /path\.join\(worktree, "\.darkfactory"/);
-});
-
-test("df-fix codex worker is network-allowlisted and drops privileged token env", async () => {
-  const source = await readFile(new URL("../.github/scripts/df-fix.mjs", import.meta.url), "utf8");
-  const scopedEnv = codexWorkerHostEnv({
-    PATH: "/usr/bin",
-    CODEX_AUTH_JSON: "codex-secret",
-    DARK_FACTORY_TOKEN: "app-token",
-    GH_TOKEN: "gh-token",
-    GITHUB_TOKEN: "github-token",
-    ACTIONS_ID_TOKEN_REQUEST_TOKEN: "oidc-token",
-    NORMAL_SETTING: "kept"
-  });
-
-  assert.deepEqual(scopedEnv, { PATH: "/usr/bin", NORMAL_SETTING: "kept" });
-  assert.match(source, /createCodexNetworkBoundary/);
-  assert.match(source, /DF_CODEX_EGRESS_HOSTS \?\? "api\.openai\.com"/);
-  assert.match(source, /DOCKER-USER/);
-  assert.match(source, /"--network"/);
-  assert.match(source, /"--add-host"/);
-  assert.match(source, /"--dport", "443"/);
-  assert.match(source, /"DROP"/);
-  assert.match(source, /codexWorkerHostEnv\(\)/);
-});
-
-test("df-fix rejects generated patches that touch privileged paths before push", async () => {
-  const source = await readFile(new URL("../.github/scripts/df-fix.mjs", import.meta.url), "utf8");
-  const paths = parseGitApplyNumstatPaths("1\t1\t.github/workflows/ci.yml\n2\t2\tsrc/app.ts\n");
-  const denied = deniedFixPatchPaths(paths);
-
-  assert.deepEqual(paths, [".github/workflows/ci.yml", "src/app.ts"]);
-  assert.deepEqual(denied, [{ path: ".github/workflows/ci.yml", reason: "GitHub privileged automation path" }]);
-  assert.throws(() => assertFixPatchPathPolicy(paths), /privileged paths/);
-  assert.match(source, /rejectFixPatchForPrivilegedPaths/);
-  assert.match(source, /df:ask-owner/);
-  assert.match(source, /No patch was applied or pushed/);
-
-  const rejectIndex = source.indexOf("action: \"reject-patch\"");
-  const pushIndex = source.indexOf("runGit([\"push\"");
-  assert.notEqual(rejectIndex, -1);
-  assert.notEqual(pushIndex, -1);
-  assert.ok(rejectIndex < pushIndex);
+  assert.doesNotMatch(source, /\bcodex\s+exec\b|CODEX_AUTH_JSON|DF_WORKER_IMAGE|codex-home|runCodex|writeCodexAuth|docker\s+run/);
 });
 
 test("df-fix merge gate skips when fresh trust predicates fail", async () => {
@@ -750,6 +708,58 @@ test("df-fix selects only red worker PRs from active repositories", async () => 
   assert.deepEqual(fixable, ["marius-patrik/active:marius-patrik/active#10"]);
 });
 
+test("df-fix posts a trusted revision request, closes the red PR, deletes the branch, and redispatches df-work", async () => {
+  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const pull = workerPull({ number: 10, checkConclusion: "FAILURE" });
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+  const gh = {
+    request: async (method: string, pathName: string, body?: any) => {
+      calls.push({ method, pathName, body });
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/10") {
+        return { number: 10, body: "Issue body", labels: [] };
+      }
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/10/comments?per_page=100") {
+        return [
+          {
+            body: [
+              "<!-- darkfactory-codex-review -->",
+              "### Blocking Findings",
+              "- fix the trust boundary"
+            ].join("\n"),
+            updated_at: "2026-07-05T00:00:00Z"
+          }
+        ];
+      }
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/labels") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/10/labels") return {};
+      if (method === "DELETE" && pathName.startsWith("/repos/marius-patrik/active/issues/10/labels/")) return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/10/comments") return {};
+      if (method === "PATCH" && pathName === "/repos/marius-patrik/active/pulls/10") return {};
+      if (method === "DELETE" && pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+    }
+  };
+
+  const result = await fixPullRequestByRedispatch(
+    gh,
+    controlRepo,
+    repository,
+    pull,
+    { action: "fix", reason: "checks-failing", round: 1, maxRounds: 3 },
+    ["ci"],
+    { maxRounds: 3, token: "token" }
+  );
+
+  assert.equal(result.action, "redispatch");
+  assert.equal(result.round, 1);
+  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/10/comments" && call.body.body.includes("<!-- df-fix-revision -->")));
+  assert.ok(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/10" && call.body.state === "closed"));
+  assert.ok(calls.some((call) => call.method === "DELETE" && call.pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker"));
+  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches" && call.body.inputs.repo === "marius-patrik/active" && call.body.inputs.issue_number === "10"));
+});
+
 test("df-fix round cap escalates instead of looping forever", () => {
   const repository = { owner: "marius-patrik", repo: "active" };
   const roundTwo = classifyFixCandidate(
@@ -770,6 +780,41 @@ test("df-fix round cap escalates instead of looping forever", () => {
   assert.equal(roundTwo.round, 3);
   assert.equal(roundThree.action, "escalate");
   assert.equal(roundThree.reason, "max-rounds");
+});
+
+test("df-fix round cap adds df:ask-owner and does not redispatch", async () => {
+  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const pull = workerPull({ number: 20, checkConclusion: "FAILURE" });
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+  const gh = {
+    request: async (method: string, pathName: string, body?: any) => {
+      calls.push({ method, pathName, body });
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/20") {
+        return { number: 20, body: "", labels: [{ name: "df:fix-round:3" }] };
+      }
+      if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/20/comments?per_page=100") return [];
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/labels") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/20/labels") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/20/comments") return {};
+      throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+    }
+  };
+
+  const result = await fixPullRequestByRedispatch(
+    gh,
+    controlRepo,
+    repository,
+    pull,
+    { action: "fix", reason: "checks-failing", round: 1, maxRounds: 3 },
+    ["ci"],
+    { maxRounds: 3, token: "token" }
+  );
+
+  assert.equal(result.action, "escalate");
+  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/20/labels" && call.body.labels.includes("df:ask-owner")));
+  assert.equal(calls.some((call) => call.pathName.includes("df-work.yml/dispatches")), false);
+  assert.equal(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/20"), false);
 });
 
 test("df-fix classifies all-green PRs for merge and red PRs for fixing", () => {
