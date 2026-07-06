@@ -216,20 +216,7 @@ async function main() {
       ledger.pull_request = pullRequest.html_url;
     }
     try {
-      await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
-      await createIssueComment(
-        TARGET_REPO,
-        TARGET_ISSUE_NUMBER,
-        [
-          "DarkFactory worker blocked.",
-          "",
-          "Blocker:",
-          "",
-          "```text",
-          truncate(ledger.error, 6000),
-          "```"
-        ].join("\n")
-      );
+      await markWorkerBlocked(TARGET_REPO, TARGET_ISSUE_NUMBER, ledger.error);
     } catch (updateError) {
       console.warn(`DarkFactory failed to mark issue blocked: ${sanitize(updateError.stack || updateError.message || String(updateError), TOKEN)}`);
     }
@@ -303,6 +290,24 @@ async function replaceIssueLabels(repository, issueNumber, add, remove) {
 
 async function createIssueComment(repository, issueNumber, body) {
   await gh.request("POST", `/repos/${repoName(repository)}/issues/${issueNumber}/comments`, { body });
+}
+
+async function markWorkerBlocked(repository, issueNumber, blocker) {
+  // Removing df:running releases the stream lane for the next orchestrator tick.
+  await replaceIssueLabels(repository, issueNumber, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
+  await createIssueComment(
+    repository,
+    issueNumber,
+    [
+      "DarkFactory worker blocked.",
+      "",
+      "Blocker:",
+      "",
+      "```text",
+      truncate(blocker, 6000),
+      "```"
+    ].join("\n")
+  );
 }
 
 async function cloneRepository(repository, worktree, branch) {

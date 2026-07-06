@@ -678,6 +678,19 @@ test("df-work blocks target auto-merge setup failures before clone or Codex", as
   assert.match(source, /not a code implementation failure/);
 });
 
+test("df-work failure path comments blocker, marks blocked, and releases the lane", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /ledger\.status = "blocked"/);
+  assert.match(source, /markWorkerBlocked\(TARGET_REPO, TARGET_ISSUE_NUMBER, ledger\.error\)/);
+  assert.match(source, /function markWorkerBlocked\(repository, issueNumber, blocker\)/);
+  assert.match(source, /Removing df:running releases the stream lane/);
+  assert.match(source, /replaceIssueLabels\(repository, issueNumber, \["df:blocked"\], \["df:ready", "df:running", "df:done"\]\)/);
+  assert.match(source, /DarkFactory worker blocked\./);
+  assert.match(source, /Blocker:/);
+  assert.match(source, /truncate\(blocker, 6000\)/);
+});
+
 test("df-work workflow does not expose privileged worker triggers in managed repositories", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-work.yml", import.meta.url), "utf8");
 
