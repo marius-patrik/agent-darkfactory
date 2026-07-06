@@ -305,7 +305,8 @@ test("sequencing pass auto-readies scoped issues only when blockers are resolved
         { number: 22, title: "Still blocked", body: "Blocked-by: #23", labels: [{ name: "P0" }] },
         { number: 23, title: "Open predecessor", body: "", labels: [{ name: "df:running" }] },
         { number: 24, title: "Malformed", body: "Blocked-by: #19 or ask owner", labels: [{ name: "P0" }] },
-        { number: 25, title: "Unknown cross repo", body: "Blocked-by: someone-else/unknown#1", labels: [{ name: "P0" }] }
+        { number: 25, title: "Unknown cross repo", body: "Blocked-by: someone-else/unknown#1", labels: [{ name: "P0" }] },
+        { number: 26, title: "Planned without blockers", body: "<!-- df-prd:some-item -->\nNo dependencies.", labels: [{ name: "df:planned" }, { name: "P1" }] }
       ]
     }
   ];
@@ -330,6 +331,9 @@ test("sequencing pass auto-readies scoped issues only when blockers are resolved
   assert.equal(calls.some((call) => call.path === "/repos/marius-patrik/example/issues/22/labels"), false);
   assert.equal(calls.some((call) => call.path === "/repos/marius-patrik/example/issues/24/labels"), false);
   assert.equal(calls.some((call) => call.path === "/repos/marius-patrik/example/issues/25/labels"), false);
+  // Planned/PRD issues with no Blocked-by references are queued by planning,
+  // not by the sequencing pass.
+  assert.equal(calls.some((call) => call.path === "/repos/marius-patrik/example/issues/26/labels"), false);
 });
 
 test("sequencing pass does not create an owner-reset ready label over repeated failures", async () => {

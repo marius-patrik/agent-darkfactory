@@ -375,6 +375,10 @@ export function shouldAutoReadySequencedIssue(issue, options = {}) {
   if (names.has("df:ready") || names.has("df:running") || names.has("df:blocked") || names.has("df:done") || names.has("df:ask-owner")) {
     return false;
   }
+  // The sequencing pass targets Blocked-by successors only. Planned/PRD
+  // issues without dependency references are queued by planning, never by
+  // this pass, so plain backlog stays protected from broad auto-ready.
+  if (blockedByIssueRefs(issue.body || "", options.repository).length === 0) return false;
   if (!hasPlanningSignal(issue)) return false;
   return blockedByRefsResolved(issue, options);
 }
