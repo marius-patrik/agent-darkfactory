@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+  issues:
+    types:
+      - labeled
+  issue_comment:
+    types:
+      - created
   workflow_run:
     workflows:
       - DarkFactory Plan
@@ -21,14 +27,37 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       ${{
-        github.repository == 'marius-patrik/agent-darkfactory' &&
         (
-          github.event_name == 'schedule' ||
-          github.event_name == 'workflow_dispatch' ||
+          github.repository == 'marius-patrik/agent-darkfactory' &&
           (
-            github.event_name == 'workflow_run' &&
-            github.event.workflow_run.head_branch == 'main' &&
-            github.event.workflow_run.conclusion == 'success'
+            github.event_name == 'schedule' ||
+            github.event_name == 'workflow_dispatch' ||
+            (
+              github.event_name == 'workflow_run' &&
+              github.event.workflow_run.head_branch == 'main' &&
+              github.event.workflow_run.conclusion == 'success'
+            )
+          )
+        ) ||
+        (
+          github.repository_owner == 'marius-patrik' &&
+          (
+            (
+              github.event_name == 'issues' &&
+              github.event.action == 'labeled' &&
+              github.event.label.name == 'df:ready'
+            ) ||
+            (
+              github.event_name == 'issue_comment' &&
+              github.event.action == 'created' &&
+              !github.event.issue.pull_request &&
+              contains(github.event.comment.body, '/df run') &&
+              (
+                github.event.comment.author_association == 'OWNER' ||
+                github.event.comment.author_association == 'MEMBER' ||
+                github.event.comment.author_association == 'COLLABORATOR'
+              )
+            )
           )
         )
       }}
@@ -84,4 +113,7 @@ jobs:
           DF_CONTROL_REPO: marius-patrik/agent-darkfactory
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data
-        run: node ${{ steps.script-path.outputs.path }}
+        shell: bash
+        run: |
+          export GITHUB_EVENT_PAYLOAD="$(cat "$GITHUB_EVENT_PATH")"
+          node ${{ steps.script-path.outputs.path }}

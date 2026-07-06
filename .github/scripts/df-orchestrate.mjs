@@ -83,8 +83,24 @@ export async function orchestrate(options) {
   } = options;
 
   assertAllowedRepo(controlRepo);
+  const isEventTrigger = trigger === "issue_comment" || trigger === "issues";
+  const eventRequest = parseEventRequest(process.env.GITHUB_EVENT_PAYLOAD || "", trigger, warn);
   const policy = normalizeOrchestrationPolicy(policyInput ?? await readOrchestrationPolicy(root, warn));
-  const targets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
+  let targets = [];
+  if (eventRequest) {
+    const activeTargets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
+    const activeEventTarget = activeTargets.find((target) => repoName(target) === repoName(eventRequest.repository));
+    if (activeEventTarget) {
+      targets = [activeEventTarget];
+      if (eventRequest.slashRun) {
+        await readySlashRunIssue(gh, activeEventTarget, eventRequest.issueNumber);
+      }
+    } else {
+      warn(`DarkFactory ignored event for unmanaged repository ${repoName(eventRequest.repository)}.`);
+    }
+  } else if (!isEventTrigger) {
+    targets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
+  }
   const snapshots = [];
 
   for (const target of targets) {
@@ -96,7 +112,7 @@ export async function orchestrate(options) {
     }
   }
 
-  const plan = buildOrchestrationPlan(snapshots, policy);
+  const plan = buildOrchestrationPlan(snapshots, policy, { targetIssue: eventRequest });
   const dispatched = [];
 
   for (const candidate of plan.candidates) {
@@ -143,6 +159,52 @@ export async function orchestrate(options) {
 
 export async function targetRepositories(gh, controlRepo, options = {}) {
   return await listActiveManagedRepos(gh, controlRepo, options);
+}
+
+export function parseEventRequest(payloadText, trigger = "unknown", warn = console.warn) {
+  if (!payloadText || (trigger !== "issue_comment" && trigger !== "issues")) return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(payloadText);
+  } catch (error) {
+    warn(`DarkFactory event payload warning: ${error.message || String(error)}`);
+    return null;
+  }
+
+  const repository = payload.repository?.full_name ? parseRepo(payload.repository.full_name) : null;
+  const issueNumber = Number(payload.issue?.number);
+  if (!repository || !Number.isInteger(issueNumber) || issueNumber <= 0 || payload.issue?.pull_request) return null;
+
+  if (trigger === "issue_comment") {
+    const commentBody = String(payload.comment?.body || "");
+    const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+    if (!/^\/df\s+run\b/im.test(commentBody) || !trustedAssociations.has(payload.comment?.author_association)) {
+      return null;
+    }
+    return {
+      repository,
+      issueNumber,
+      slashRun: true
+    };
+  }
+
+  if (payload.label?.name !== "df:ready") return null;
+  return {
+    repository,
+    issueNumber,
+    slashRun: false,
+    readyLabel: true
+  };
+}
+
+async function readySlashRunIssue(gh, repository, issueNumber) {
+  assertAllowedRepo(repository);
+  await ensureLabels(gh, repository, WORK_LABELS);
+  await gh.request("POST", `/repos/${repoName(repository)}/issues/${issueNumber}/labels`, { labels: ["df:ready"] });
+  await gh.request("POST", `/repos/${repoName(repository)}/issues/${issueNumber}/comments`, {
+    body: "DarkFactory received `/df run` and queued this issue with `df:ready`."
+  });
 }
 
 export async function listReadyIssues(gh, repository) {
@@ -234,10 +296,11 @@ export function normalizeOrchestrationPolicy(policy = DEFAULT_ORCHESTRATION_POLI
   };
 }
 
-export function buildOrchestrationPlan(snapshots, policyInput = DEFAULT_ORCHESTRATION_POLICY) {
+export function buildOrchestrationPlan(snapshots, policyInput = DEFAULT_ORCHESTRATION_POLICY, options = {}) {
   const policy = normalizeOrchestrationPolicy(policyInput);
   const counts = activeConcurrencyCounts(snapshots);
   const gateWave = globalGateWave(snapshots, policy);
+  const targetIssue = options.targetIssue || null;
   const candidates = [];
   const repositories = [];
 
@@ -255,6 +318,10 @@ export function buildOrchestrationPlan(snapshots, policyInput = DEFAULT_ORCHESTR
         streams: issueStreamKeys(issue),
         priority: priorityRank(issue)
       }))
+      .filter((candidate) => !targetIssue || (
+        repoName(candidate.repository) === repoName(targetIssue.repository)
+        && candidate.issue.number === targetIssue.issueNumber
+      ))
       .filter((candidate) => !gateWave || candidate.wave === gateWave);
 
     candidates.push(...selected);
