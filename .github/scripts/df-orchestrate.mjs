@@ -296,14 +296,6 @@ export async function listOpenIssues(gh, repository) {
 export function selectDispatchableIssues(openIssues, options = {}) {
   const openIssueNumbers = new Set(openIssues.map((issue) => issue.number).filter(Number.isInteger));
   const currentRepoName = options.repository ? normalizedRepoName(options.repository) : null;
-  const occupiedLanes = new Set();
-  const selectedLanes = new Set();
-
-  for (const issue of openIssues) {
-    const names = issueLabelNames(issue);
-    if (!names.has("df:running")) continue;
-    for (const lane of issueStreamLanes(issue)) occupiedLanes.add(lane);
-  }
 
   return openIssues
     .filter((issue) => {
@@ -318,13 +310,7 @@ export function selectDispatchableIssues(openIssues, options = {}) {
         currentRepoName
       });
     })
-    .sort(compareReadyIssues)
-    .filter((issue) => {
-      const lanes = issueStreamLanes(issue);
-      if (lanes.some((lane) => occupiedLanes.has(lane) || selectedLanes.has(lane))) return false;
-      for (const lane of lanes) selectedLanes.add(lane);
-      return true;
-    });
+    .sort(compareReadyIssues);
 }
 
 export async function autoReadySequencedIssues(gh, snapshots, warn = console.warn, options = {}) {

@@ -158,7 +158,7 @@ test("orchestrator does not dispatch issues that already have an open worker PR"
   assert.ok(calls.some((call) => call.method === "DELETE" && call.path === "/repos/marius-patrik/example/issues/8/labels/df%3Aready"));
 });
 
-test("orchestrator selects next ready issues by priority, blocked-by, and stream lane", async () => {
+test("orchestrator selects ready issues by priority and blocked-by state", async () => {
   // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
   const { blockedByIssueNumbers, selectDispatchableIssues } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-scheduler-test");
 
@@ -224,7 +224,7 @@ test("orchestrator selects next ready issues by priority, blocked-by, and stream
   // df:ask-owner escalation label is cleared.
   assert.deepEqual(
     selected.map((issue: { number: number }) => issue.number),
-    [13, 14, 12]
+    [13, 14, 12, 10]
   );
 });
 
@@ -477,6 +477,107 @@ test("orchestration plan applies wave gates and cross-repo concurrency caps", as
       ["marius-patrik/pkg-a", "hygiene", "features"],
       ["marius-patrik/pkg-b", "hygiene", "hygiene"],
       ["marius-patrik/pkg-c", "hygiene", "features"]
+    ]
+  );
+});
+
+test("orchestration plan enforces stream caps without single-lane prefiltering", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { buildOrchestrationPlan } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-stream-cap-test");
+
+  const policy = {
+    concurrency: { global: 5, perRepository: 5, perStream: 3 },
+    waves: [{ name: "features", streams: ["features", "default"] }],
+    dashboard: { enabled: true }
+  };
+
+  const plan = buildOrchestrationPlan([
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-a" },
+      openIssues: [
+        { number: 1, title: "Feature A", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] },
+        { number: 2, title: "Feature B", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] },
+        { number: 3, title: "Feature C", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    }
+  ], policy);
+
+  assert.deepEqual(
+    plan.candidates.map((candidate: { issue: { number: number } }) => candidate.issue.number),
+    [1, 2, 3]
+  );
+  assert.equal(plan.repositories[0].dispatchable, 3);
+});
+
+test("orchestration plan counts running stream occupancy against stream caps", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { buildOrchestrationPlan } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-running-stream-cap-test");
+
+  const policy = {
+    concurrency: { global: 5, perRepository: 5, perStream: 2 },
+    waves: [{ name: "features", streams: ["features", "default"] }],
+    dashboard: { enabled: true }
+  };
+
+  const plan = buildOrchestrationPlan([
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-a" },
+      openIssues: [
+        { number: 1, title: "Running", body: "", labels: [{ name: "df:running" }, { name: "stream:features" }] },
+        { number: 2, title: "Feature A", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] },
+        { number: 3, title: "Feature B", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    }
+  ], policy);
+
+  assert.deepEqual(
+    plan.candidates.map((candidate: { issue: { number: number } }) => candidate.issue.number),
+    [2]
+  );
+  assert.deepEqual(plan.active.byStream, { features: 1 });
+});
+
+test("orchestration plan still lets repository and global caps bind", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { buildOrchestrationPlan } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-global-repo-cap-test");
+
+  const policy = {
+    concurrency: { global: 2, perRepository: 1, perStream: 3 },
+    waves: [{ name: "features", streams: ["features", "default"] }],
+    dashboard: { enabled: true }
+  };
+
+  const plan = buildOrchestrationPlan([
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-a" },
+      openIssues: [
+        { number: 1, title: "Feature A", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] },
+        { number: 2, title: "Feature B", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    },
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-b" },
+      openIssues: [
+        { number: 3, title: "Feature C", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] },
+        { number: 4, title: "Feature D", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    },
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-c" },
+      openIssues: [
+        { number: 5, title: "Feature E", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    }
+  ], policy);
+
+  assert.deepEqual(
+    plan.candidates.map((candidate: { repository: { repo: string }; issue: { number: number } }) => [
+      candidate.repository.repo,
+      candidate.issue.number
+    ]),
+    [
+      ["pkg-a", 1],
+      ["pkg-b", 3]
     ]
   );
 });
