@@ -6,6 +6,10 @@ import {
 
 export const MANAGED_SETUP_BRANCH = "dark-factory/managed-repository-setup";
 export const MANAGED_SETUP_COMMENT_MARKER = "<!-- dark-factory:managed-setup-pr -->";
+export const DARK_FACTORY_CONTROL_REPOSITORY = {
+  owner: "marius-patrik",
+  repo: "agent-darkfactory"
+} as const;
 
 export interface GitHubRequester {
   request(route: string, parameters: Record<string, unknown>): Promise<{ data: unknown }>;
@@ -25,6 +29,31 @@ export interface ManagedSetupSyncResult {
   changedPaths: string[];
   pullRequestUrl?: string;
   reason?: string;
+}
+
+export function orderManagedRepositoriesForSync<T>(
+  items: readonly T[],
+  getRepository: (item: T) => Pick<ManagedRepository, "owner" | "repo">,
+  controlRepository: Pick<ManagedRepository, "owner" | "repo"> = DARK_FACTORY_CONTROL_REPOSITORY
+): T[] {
+  const controlKey = repositoryKey(controlRepository);
+  const seen = new Set<string>();
+  const uniqueItems: T[] = [];
+
+  for (const item of items) {
+    const key = repositoryKey(getRepository(item));
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueItems.push(item);
+  }
+
+  return uniqueItems.sort((left, right) => {
+    const leftIsControl = repositoryKey(getRepository(left)) === controlKey;
+    const rightIsControl = repositoryKey(getRepository(right)) === controlKey;
+
+    if (leftIsControl === rightIsControl) return 0;
+    return leftIsControl ? -1 : 1;
+  });
 }
 
 export async function ensureManagedRepositorySetup(
@@ -108,6 +137,10 @@ function baseResult(
     changedPaths,
     reason
   };
+}
+
+function repositoryKey(repository: Pick<ManagedRepository, "owner" | "repo">): string {
+  return `${repository.owner.toLowerCase()}/${repository.repo.toLowerCase()}`;
 }
 
 async function getRepositoryInfo(
