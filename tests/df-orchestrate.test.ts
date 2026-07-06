@@ -142,7 +142,7 @@ test("orchestrator does not dispatch issues that already have an open worker PR"
               title: "Worker PR",
               body: "<!-- dark-factory:worker-pr issue=8 -->\n\nCloses #8",
               url: "https://github.com/marius-patrik/example/pull/21",
-              headRefName: "df/8-worker",
+              headRefName: "feature/worker-8",
               baseRefName: "main",
               headRepository: { owner: { login: "marius-patrik" }, name: "example" },
               author: { login: "mp-agents[bot]" }

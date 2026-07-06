@@ -5,6 +5,7 @@ import {
   WORK_LABELS,
   assertAllowedRepo,
   createGithubClient,
+  darkFactoryWorkerIssueNumber,
   ensureLabels,
   findOpenWorkerPullRequestForIssue,
   getOptionalFileContent,
@@ -520,6 +521,7 @@ async function listOpenWorkerPullRequestsByIssue(gh, repository) {
           nodes {
             number
             title
+            body
             url
             headRefName
             headRepository {
@@ -539,7 +541,9 @@ async function listOpenWorkerPullRequestsByIssue(gh, repository) {
     const connection = data.repository.pullRequests;
     for (const pull of connection.nodes) {
       const sameRepositoryHead = pull.headRepository?.owner?.login === repository.owner && pull.headRepository?.name === repository.repo;
-      const issue = Number(pull.headRefName?.match(/^df\/(\d+)-/)?.[1]);
+      const markerIssue = darkFactoryWorkerIssueNumber(pull);
+      const branchIssue = Number(pull.headRefName?.match(/^df\/(\d+)-/)?.[1]);
+      const issue = markerIssue > 0 ? markerIssue : branchIssue;
       if (!sameRepositoryHead || !Number.isInteger(issue) || issue <= 0) continue;
       if (!pullsByIssue.has(issue)) pullsByIssue.set(issue, pull);
     }
