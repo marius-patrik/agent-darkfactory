@@ -365,7 +365,10 @@ test("orchestrator turns trusted /df run comments into df:ready before dispatch"
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/12/labels") return {};
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/12/comments") return {};
       if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=1") {
-        return [{ number: 12, title: "Run me", body: "", labels: [{ name: "df:ready" }] }];
+        return [
+          { number: 12, title: "Run me", body: "", labels: [{ name: "df:ready" }] },
+          { number: 99, title: "Do not run me", body: "", labels: [{ name: "df:ready" }] }
+        ];
       }
       if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=2") return [];
       if (method === "GET" && path === "/repos/marius-patrik/example") return { default_branch: "main", allow_auto_merge: true };
@@ -382,8 +385,11 @@ test("orchestrator turns trusted /df run comments into df:ready before dispatch"
     const result = await orchestrate({
       gh,
       controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
-      registry: { repositories: { "marius-patrik/example": { state: "active" } } },
-      repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+      registry: { repositories: { "marius-patrik/example": { state: "active" }, "marius-patrik/other": { state: "active" } } },
+      repositories: [
+        { full_name: "marius-patrik/example", archived: false, disabled: false },
+        { full_name: "marius-patrik/other", archived: false, disabled: false }
+      ],
       trigger: "issue_comment",
       writeLedger: false,
       updateDashboard: false,
@@ -392,6 +398,8 @@ test("orchestrator turns trusted /df run comments into df:ready before dispatch"
     });
 
     assert.deepEqual(result.dispatched, [{ repo: "marius-patrik/example", issue: 12, wave: "features", streams: ["default"] }]);
+    assert.equal(calls.some((call) => call.path.includes("/issues/99/")), false);
+    assert.equal(calls.some((call) => call.path.startsWith("/repos/marius-patrik/other/")), false);
     assert.ok(calls.some((call) => call.method === "POST" && call.path === "/repos/marius-patrik/example/issues/12/comments"));
   } finally {
     if (previousPayload === undefined) delete process.env.GITHUB_EVENT_PAYLOAD;
@@ -409,9 +417,40 @@ test("parseEventRequest ignores untrusted /df run comments", async () => {
     comment: { body: "/df run", author_association: "NONE" }
   }), "issue_comment", () => {});
 
-  assert.deepEqual(request, {
-    repository: { owner: "marius-patrik", repo: "example" },
-    issueNumber: 12,
-    slashRun: false
+  assert.equal(request, null);
+});
+
+test("orchestrator treats untrusted /df run comments as no-op events", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-untrusted-slash-run-test");
+  const previousPayload = process.env.GITHUB_EVENT_PAYLOAD;
+
+  process.env.GITHUB_EVENT_PAYLOAD = JSON.stringify({
+    repository: { full_name: "marius-patrik/example" },
+    issue: { number: 12 },
+    comment: { body: "/df run", author_association: "NONE" }
   });
+
+  try {
+    const result = await orchestrate({
+      gh: {
+        request: async () => {
+          throw new Error("untrusted event must not inspect or dispatch global work");
+        }
+      },
+      controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+      registry: { repositories: { "marius-patrik/example": { state: "active" } } },
+      repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+      trigger: "issue_comment",
+      writeLedger: false,
+      updateDashboard: false,
+      warn: () => {},
+      log: () => {}
+    });
+
+    assert.deepEqual(result.dispatched, []);
+  } finally {
+    if (previousPayload === undefined) delete process.env.GITHUB_EVENT_PAYLOAD;
+    else process.env.GITHUB_EVENT_PAYLOAD = previousPayload;
+  }
 });

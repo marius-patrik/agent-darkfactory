@@ -83,13 +83,18 @@ export async function orchestrate(options) {
   } = options;
 
   assertAllowedRepo(controlRepo);
+  const isEventTrigger = trigger === "issue_comment" || trigger === "issues";
   const eventRequest = parseEventRequest(process.env.GITHUB_EVENT_PAYLOAD || "", trigger, warn);
   if (eventRequest?.slashRun) {
     await readySlashRunIssue(gh, eventRequest.repository, eventRequest.issueNumber);
   }
 
   const policy = normalizeOrchestrationPolicy(policyInput ?? await readOrchestrationPolicy(root, warn));
-  const targets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
+  const targets = eventRequest
+    ? [eventRequest.repository]
+    : isEventTrigger
+      ? []
+      : await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
   const snapshots = [];
 
   for (const target of targets) {
@@ -101,7 +106,7 @@ export async function orchestrate(options) {
     }
   }
 
-  const plan = buildOrchestrationPlan(snapshots, policy);
+  const plan = buildOrchestrationPlan(snapshots, policy, { targetIssue: eventRequest });
   const dispatched = [];
 
   for (const candidate of plan.candidates) {
@@ -168,18 +173,22 @@ export function parseEventRequest(payloadText, trigger = "unknown", warn = conso
   if (trigger === "issue_comment") {
     const commentBody = String(payload.comment?.body || "");
     const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+    if (!/^\/df\s+run\b/im.test(commentBody) || !trustedAssociations.has(payload.comment?.author_association)) {
+      return null;
+    }
     return {
       repository,
       issueNumber,
-      slashRun: /^\/df\s+run\b/im.test(commentBody) && trustedAssociations.has(payload.comment?.author_association)
+      slashRun: true
     };
   }
 
+  if (payload.label?.name !== "df:ready") return null;
   return {
     repository,
     issueNumber,
     slashRun: false,
-    readyLabel: payload.label?.name === "df:ready"
+    readyLabel: true
   };
 }
 
@@ -281,10 +290,11 @@ export function normalizeOrchestrationPolicy(policy = DEFAULT_ORCHESTRATION_POLI
   };
 }
 
-export function buildOrchestrationPlan(snapshots, policyInput = DEFAULT_ORCHESTRATION_POLICY) {
+export function buildOrchestrationPlan(snapshots, policyInput = DEFAULT_ORCHESTRATION_POLICY, options = {}) {
   const policy = normalizeOrchestrationPolicy(policyInput);
   const counts = activeConcurrencyCounts(snapshots);
   const gateWave = globalGateWave(snapshots, policy);
+  const targetIssue = options.targetIssue || null;
   const candidates = [];
   const repositories = [];
 
@@ -302,6 +312,10 @@ export function buildOrchestrationPlan(snapshots, policyInput = DEFAULT_ORCHESTR
         streams: issueStreamKeys(issue),
         priority: priorityRank(issue)
       }))
+      .filter((candidate) => !targetIssue || (
+        repoName(candidate.repository) === repoName(targetIssue.repository)
+        && candidate.issue.number === targetIssue.issueNumber
+      ))
       .filter((candidate) => !gateWave || candidate.wave === gateWave);
 
     candidates.push(...selected);
