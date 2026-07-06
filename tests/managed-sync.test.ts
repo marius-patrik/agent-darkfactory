@@ -8,6 +8,7 @@ import {
   ensureManagedRepositorySetup,
   managedSetupPullRequestBody,
   MANAGED_SETUP_BRANCH,
+  orderManagedRepositoriesForSync,
   type GitHubRequester
 } from "../src/managed-sync.js";
 import {
@@ -119,6 +120,36 @@ test("ensureManagedRepositorySetup creates a managed PR when files are missing",
         call.route === "POST /repos/{owner}/{repo}/git/refs" &&
         call.parameters.ref === `refs/heads/${MANAGED_SETUP_BRANCH}`
     )
+  );
+});
+
+test("orderManagedRepositoriesForSync processes DarkFactory control repository first", () => {
+  const repositories = [
+    { owner: "marius-patrik", repo: "dream" },
+    { owner: "marius-patrik", repo: "agent-darkfactory" },
+    { owner: "marius-patrik", repo: "agents-plugin" }
+  ];
+
+  const ordered = orderManagedRepositoriesForSync(repositories, (repository) => repository);
+
+  assert.deepEqual(
+    ordered.map((repository) => repository.repo),
+    ["agent-darkfactory", "dream", "agents-plugin"]
+  );
+});
+
+test("orderManagedRepositoriesForSync deduplicates repository entries case-insensitively", () => {
+  const repositories = [
+    { owner: "marius-patrik", repo: "agent-darkfactory", id: 1 },
+    { owner: "MARIUS-PATRIK", repo: "Agent-DarkFactory", id: 2 },
+    { owner: "marius-patrik", repo: "dream", id: 3 }
+  ];
+
+  const ordered = orderManagedRepositoriesForSync(repositories, (repository) => repository);
+
+  assert.deepEqual(
+    ordered.map((repository) => repository.id),
+    [1, 3]
   );
 });
 
