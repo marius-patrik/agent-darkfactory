@@ -472,3 +472,40 @@ test("orchestrator treats untrusted /df run comments as no-op events", async () 
     else process.env.GITHUB_EVENT_PAYLOAD = previousPayload;
   }
 });
+
+test("orchestrator ignores event runs for inactive managed repositories", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-inactive-event-test");
+  const previousPayload = process.env.GITHUB_EVENT_PAYLOAD;
+  const warnings: string[] = [];
+
+  process.env.GITHUB_EVENT_PAYLOAD = JSON.stringify({
+    repository: { full_name: "marius-patrik/example" },
+    issue: { number: 12 },
+    comment: { body: "/df run", author_association: "OWNER" }
+  });
+
+  try {
+    const result = await orchestrate({
+      gh: {
+        request: async () => {
+          throw new Error("inactive event must not mutate labels or dispatch work");
+        }
+      },
+      controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+      registry: { repositories: { "marius-patrik/example": { state: "parked" } } },
+      repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+      trigger: "issue_comment",
+      writeLedger: false,
+      updateDashboard: false,
+      warn: (warning: string) => warnings.push(warning),
+      log: () => {}
+    });
+
+    assert.deepEqual(result.dispatched, []);
+    assert.ok(warnings.some((warning) => warning.includes("unmanaged repository marius-patrik/example")));
+  } finally {
+    if (previousPayload === undefined) delete process.env.GITHUB_EVENT_PAYLOAD;
+    else process.env.GITHUB_EVENT_PAYLOAD = previousPayload;
+  }
+});

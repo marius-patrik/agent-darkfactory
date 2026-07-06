@@ -85,16 +85,22 @@ export async function orchestrate(options) {
   assertAllowedRepo(controlRepo);
   const isEventTrigger = trigger === "issue_comment" || trigger === "issues";
   const eventRequest = parseEventRequest(process.env.GITHUB_EVENT_PAYLOAD || "", trigger, warn);
-  if (eventRequest?.slashRun) {
-    await readySlashRunIssue(gh, eventRequest.repository, eventRequest.issueNumber);
-  }
-
   const policy = normalizeOrchestrationPolicy(policyInput ?? await readOrchestrationPolicy(root, warn));
-  const targets = eventRequest
-    ? [eventRequest.repository]
-    : isEventTrigger
-      ? []
-      : await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
+  let targets = [];
+  if (eventRequest) {
+    const activeTargets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
+    const activeEventTarget = activeTargets.find((target) => repoName(target) === repoName(eventRequest.repository));
+    if (activeEventTarget) {
+      targets = [activeEventTarget];
+      if (eventRequest.slashRun) {
+        await readySlashRunIssue(gh, activeEventTarget, eventRequest.issueNumber);
+      }
+    } else {
+      warn(`DarkFactory ignored event for unmanaged repository ${repoName(eventRequest.repository)}.`);
+    }
+  } else if (!isEventTrigger) {
+    targets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
+  }
   const snapshots = [];
 
   for (const target of targets) {
