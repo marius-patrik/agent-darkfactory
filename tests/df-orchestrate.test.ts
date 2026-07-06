@@ -62,11 +62,12 @@ test("orchestrator dispatches open df:ready issues in active managed repos", asy
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     writeLedger: false,
+    updateDashboard: false,
     warn: () => {},
     log: () => {}
   });
 
-  assert.deepEqual(result.dispatched, [{ repo: "marius-patrik/example", issue: 42 }]);
+  assert.deepEqual(result.dispatched, [{ repo: "marius-patrik/example", issue: 42, wave: "features", streams: ["default"] }]);
   assert.deepEqual(
     calls.find((call) => call.method === "POST" && call.path === "/repos/marius-patrik/example/issues/42/labels")?.body,
     { labels: ["df:running"] }
@@ -128,6 +129,7 @@ test("orchestrator does not dispatch issues that already have an open worker PR"
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     writeLedger: false,
+    updateDashboard: false,
     warn: () => {},
     log: () => {}
   });
@@ -200,4 +202,123 @@ test("orchestrator selects next ready issues by priority, blocked-by, and stream
     selected.map((issue: { number: number }) => issue.number),
     [13, 14, 16, 12]
   );
+});
+
+test("orchestration plan applies wave gates and cross-repo concurrency caps", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { buildOrchestrationPlan } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-l6-plan-test");
+
+  const policy = {
+    concurrency: { global: 2, perRepository: 1, perStream: 1 },
+    waves: [
+      { name: "hygiene", streams: ["hygiene"] },
+      { name: "enforcement", streams: ["enforcement"] },
+      { name: "features", streams: ["features", "default"] }
+    ],
+    dashboard: { enabled: true }
+  };
+  const plan = buildOrchestrationPlan([
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-a" },
+      openIssues: [
+        { number: 1, title: "Hygiene", body: "", labels: [{ name: "roadmap" }, { name: "df:blocked" }, { name: "stream:hygiene" }] },
+        { number: 2, title: "Feature", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    },
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-b" },
+      openIssues: [
+        { number: 3, title: "Enforcement", body: "", labels: [{ name: "df:ready" }, { name: "P1" }, { name: "stream:enforcement" }] },
+        { number: 4, title: "Feature", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    },
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-c" },
+      openIssues: [
+        { number: 5, title: "Feature", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    }
+  ], policy);
+
+  assert.deepEqual(
+    plan.candidates.map((candidate: { repository: { repo: string }; issue: { number: number }; wave: string }) => [
+      candidate.repository.repo,
+      candidate.issue.number,
+      candidate.wave
+    ]),
+    [["pkg-b", 3, "enforcement"], ["pkg-c", 5, "features"]]
+  );
+  assert.deepEqual(
+    plan.repositories.map((repository: { repo: string; gate_wave: string }) => [repository.repo, repository.gate_wave]),
+    [
+      ["marius-patrik/pkg-a", "hygiene"],
+      ["marius-patrik/pkg-b", "enforcement"],
+      ["marius-patrik/pkg-c", "features"]
+    ]
+  );
+});
+
+test("orchestrator updates the L6 dashboard issue after dispatch", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { DASHBOARD_MARKER, orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-dashboard-test");
+  const calls: Array<{ method: string; path: string; body?: any }> = [];
+  const notFound = Object.assign(new Error("not found"), { status: 404 });
+
+  const gh = {
+    async graphql() {
+      return {
+        repository: {
+          pullRequests: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: []
+          }
+        }
+      };
+    },
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path, body });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=1") {
+        return [{ number: 7, title: "Feature", body: "", labels: [{ name: "df:ready" }, { name: "stream:features" }] }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example") return { default_branch: "main", allow_auto_merge: true };
+      if (method === "GET" && path === "/repos/marius-patrik/example/git/ref/heads/dev") throw notFound;
+      if (method === "GET" && path === "/repos/marius-patrik/example/branches/main/protection") throw notFound;
+      if (method === "POST" && path === "/repos/marius-patrik/example/issues/7/labels") return {};
+      if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/7/labels/df%3Aready") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/labels") return {};
+      if (method === "GET" && path === "/repos/marius-patrik/agent-darkfactory/issues?state=open&per_page=100&page=1") {
+        return [{ number: 99, body: `<!-- ${DASHBOARD_MARKER} -->`, labels: [] }];
+      }
+      if (method === "PATCH" && path === "/repos/marius-patrik/agent-darkfactory/issues/99") return {};
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const result = await orchestrate({
+    gh,
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    registry: { repositories: { "marius-patrik/example": { state: "active" } } },
+    repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+    policy: {
+      concurrency: { global: 2, perRepository: 1, perStream: 1 },
+      waves: [{ name: "features", streams: ["features", "default"] }],
+      dashboard: { enabled: true, issueTitle: "Dashboard" }
+    },
+    writeLedger: false,
+    warn: () => {},
+    log: () => {}
+  });
+
+  assert.deepEqual(result.dispatched.map((dispatch: { repo: string; issue: number }) => [dispatch.repo, dispatch.issue]), [
+    ["marius-patrik/example", 7]
+  ]);
+  const dashboardUpdate = calls.find((call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/agent-darkfactory/issues/99");
+  assert.equal(dashboardUpdate?.body.title, "Dashboard");
+  assert.match(dashboardUpdate?.body.body, new RegExp(DASHBOARD_MARKER));
+  assert.match(dashboardUpdate?.body.body, /marius-patrik\/example#7/);
+  assert.match(dashboardUpdate?.body.body, /AI tokens: 0/);
 });

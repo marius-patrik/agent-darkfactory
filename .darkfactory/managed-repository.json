@@ -11,6 +11,7 @@
     ".darkfactory/labels.json",
     ".darkfactory/managed-repos.json",
     ".darkfactory/managed-repository.json",
+    ".darkfactory/orchestration.json",
     ".darkfactory/installer-policy.json",
     ".darkfactory/release-conventions.md",
     ".darkfactory/release-policy.json",
