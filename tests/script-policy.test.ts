@@ -990,7 +990,10 @@ test("Codex Review workflow validates verdicts before comments and enforcement",
   assert.notEqual(enforce, -1);
   assert.ok(validate < comment);
   assert.ok(validate < enforce);
-  assert.match(workflow, /node \.github\/scripts\/validate-codex-review\.mjs codex-review\.json \.github\/codex-review\.schema\.json/);
+  assert.match(workflow, /inline trusted schema/);
+  assert.match(workflow, /approved: \{ type: "boolean" \}/);
+  assert.match(workflow, /blocking_findings: \{ type: "array", items: \{ type: "string" \} \}/);
+  assert.doesNotMatch(workflow, /node \.github\/scripts\/validate-codex-review\.mjs/);
 });
 
 test("df-sweep requires explicit allowlist before merging PRs with no checks", async () => {
