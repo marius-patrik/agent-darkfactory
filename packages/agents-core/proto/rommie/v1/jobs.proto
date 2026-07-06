@@ -1,0 +1,86 @@
+// Jobs + domains control plane (design §07). A domain = a long-lived
+// orchestrator session with a north-star goal + backlog (§07 D1/D2); a job/run =
+// a server-side (sub-)session producing artifacts (§07 D5b). For VS0 the
+// control plane is list + status (lifecycle create/start/stop is detailed at
+// the domains slice); the simplest reading per the S3.0 brief.
+syntax = "proto3";
+
+package rommie.v1;
+
+import "rommie/v1/common.proto";
+
+// JobService — list + status of jobs/runs (design §07 D5b/D6).
+service JobService {
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc GetJobStatus(GetJobStatusRequest) returns (GetJobStatusResponse);
+}
+
+// DomainService — list + status of domains (design §07 D1/D6). autolearn is the
+// first real domain in 4.0; the four application domains are post-4.0.
+service DomainService {
+  rpc ListDomains(ListDomainsRequest) returns (ListDomainsResponse);
+  rpc GetDomainStatus(GetDomainStatusRequest) returns (GetDomainStatusResponse);
+}
+
+// A job/run record (§07 D5b: a run = a server-side (sub-)session).
+message Job {
+  string id = 1;
+  // The session backing this run.
+  string session_id = 2;
+  // Owning domain id, if this run belongs to a domain (else empty).
+  string domain_id = 3;
+  Task task = 4;
+  // Anti-false-green status (§15 OR2).
+  RunStatus status = 5;
+  string owner_node = 6;
+  Timestamps timestamps = 7;
+}
+
+// A domain record (§07 D1 domain.yaml shape, projected to the wire).
+message Domain {
+  string id = 1;
+  string goal = 2;
+  // The active orchestrator session for the domain (§07 D1).
+  string orchestrator_session_id = 3;
+  // Whether the domain's orchestrator is currently running.
+  bool running = 4;
+  // Count of pending backlog items (§07 D2).
+  int32 backlog_size = 5;
+  RunStatus status = 6;
+  Timestamps timestamps = 7;
+}
+
+message ListJobsRequest {
+  // Optional domain filter; empty = all jobs/runs.
+  string domain_id = 1;
+  // When true, only non-terminal (running/paused) jobs.
+  bool active_only = 2;
+}
+
+message ListJobsResponse {
+  repeated Job jobs = 1;
+}
+
+message GetJobStatusRequest {
+  string job_id = 1;
+}
+
+message GetJobStatusResponse {
+  Job job = 1;
+}
+
+message ListDomainsRequest {}
+
+message ListDomainsResponse {
+  repeated Domain domains = 1;
+}
+
+message GetDomainStatusRequest {
+  string domain_id = 1;
+}
+
+message GetDomainStatusResponse {
+  Domain domain = 1;
+  // The domain's current/recent runs (§07 D6 observability).
+  repeated Job runs = 2;
+}

@@ -1,0 +1,48 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@agentos/agents-core",
+      "dependencies": {
+        "@bufbuild/protobuf": "^2.12.0",
+        "@connectrpc/connect": "^2.1.1",
+      },
+      "devDependencies": {
+        "typescript": "^6.0.3",
+      },
+    },
+    "clients/shared-ts": {
+      "name": "@agentos/shared-ts",
+      "version": "0.0.0",
+      "dependencies": {
+        "@bufbuild/protobuf": "^2.12.0",
+        "@connectrpc/connect": "^2.1.1",
+      },
+      "devDependencies": {
+        "typescript": "^6.0.3",
+      },
+    },
+    "clients/tui": {
+      "name": "@agentos/tui",
+      "version": "0.0.0",
+    },
+    "clients/web": {
+      "name": "@agentos/web",
+      "version": "0.0.0",
+    },
+  },
+  "packages": {
+    "@agentos/shared-ts": ["@agentos/shared-ts@workspace:clients/shared-ts"],
+
+    "@agentos/tui": ["@agentos/tui@workspace:clients/tui"],
+
+    "@agentos/web": ["@agentos/web@workspace:clients/web"],
+
+    "@bufbuild/protobuf": ["@bufbuild/protobuf@2.12.1", "", {}, "sha512-BvAMfS6LrgZiryOAZ4pBYucu4wG/Ei/9o9DZ9akbREnMLbPJiom2i8b9C8IsKErQoiKqVhrerzt3kOT/RrzLHg=="],
+
+    "@connectrpc/connect": ["@connectrpc/connect@2.1.2", "", { "peerDependencies": { "@bufbuild/protobuf": "^2.7.0" } }, "sha512-MXkBijtcX09R10Eb6sFeIetc6w6746eio6xtfuyVOH7oQAacT1X0GzMIQFux6Qy8cq3W/T5qX5Bei8YbFtmRGA=="],
+
+    "typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+  }
+}

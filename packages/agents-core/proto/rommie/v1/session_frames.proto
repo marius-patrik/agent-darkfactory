@@ -1,0 +1,309 @@
+// The WebSocket session frame contract (design §00 S3, §01 G2, D4 §1.1) — the
+// live duplex channel. These are the SAME protobuf message types the control
+// plane is generated from, carried over WebSocket (binary protobuf) rather than
+// Connect, because browser bidi needs HTTP/2 end-to-end and WS is the
+// bulletproof duplex (§00 S3).
+//
+// Two envelopes, one per direction. Each is a oneof so a single WS message type
+// carries any frame. The vocabulary is normalized + provider-agnostic (§01 G2):
+// the gateway/agent emit one stable event model regardless of the provider
+// behind it.
+//
+// D-029 RULE (TUI bullet): worker/brain state on the wire EXTENDS the
+// `session_event` payload (worker_id/role/parent/status/claim/model/phase) —
+// there are NO new frame types for the brain view. The brain/worker frames are
+// present from S2 even though early clients render only the idle feed, so the
+// expanded brain view (S4) plugs onto an existing stream (D4 §12).
+syntax = "proto3";
+
+package rommie.v1;
+
+import "google/protobuf/struct.proto";
+import "rommie/v1/common.proto";
+
+// ===========================================================================
+// Server -> client frames (design §01 G2).
+// ===========================================================================
+
+// A streamed chunk of assistant output text.
+message TextDelta {
+  string text = 1;
+  // The worker emitting this text; empty = the user-facing `conversation`
+  // voice. Lets the brain view attribute streams (§05 L5).
+  string worker_id = 2;
+}
+
+// A streamed chunk of model "thinking"/reasoning (rendered distinctly, D4 §2.4).
+message Thinking {
+  string text = 1;
+  string worker_id = 2;
+}
+
+// The model is invoking a tool (design §05 L2). Emitted when the loop dispatches
+// a tool to the chosen host.
+message ToolCall {
+  // Correlation id matching the eventual ToolResult.
+  string call_id = 1;
+  // Tool name (read | edit | shell | browser | ...).
+  string name = 2;
+  // Tool arguments (structured; provider-agnostic shape, §01 G2).
+  google.protobuf.Struct args = 3;
+  // The host the tool runs on (§06 axis 1).
+  string host = 4;
+  // Emitting worker (§05 L5).
+  string worker_id = 5;
+}
+
+// The observation returned from a tool call (design §05 L2).
+message ToolResult {
+  string call_id = 1;
+  // Normalized output text/preview (large outputs are content-addressed, §05 L2).
+  string output = 2;
+  // True if the tool failed.
+  bool is_error = 3;
+  // The completion-gate status for this tool's effect (anti-false-green, §15 OR2).
+  RunStatus status = 4;
+  // Content-addressed ref to a large/attached artifact, if any (§05 L2).
+  string artifact_ref = 5;
+}
+
+// A request for the user to approve a gated tool (design §05 L3). The loop pauses
+// until an ApprovalResponse arrives.
+message ApprovalRequest {
+  // Correlation id matching the ApprovalResponse.
+  string approval_id = 1;
+  // The tool awaiting approval.
+  string tool_name = 2;
+  string host = 3;
+  // Human-readable preview (a diff for edits, a command for shell, a URL for
+  // network — D4 §7.3).
+  string preview = 4;
+  // The active permission mode that triggered the prompt (§05 L3).
+  PermissionMode mode = 5;
+  // Which worker/role is asking (so the user knows which part of the brain
+  // wants approval, D4 §7.3).
+  string worker_id = 6;
+  string role = 7;
+}
+
+// A turn/loop status update (design §01 G2; the transient status line, D4 §6).
+message Status {
+  // Free-form status word for the status line (e.g. running, idle, awaiting
+  // approval, paused).
+  string state = 1;
+  // Optional detail (e.g. current tool, elapsed).
+  string detail = 2;
+  // The run/turn status in the OR2 vocabulary where applicable (§15 OR2).
+  RunStatus run_status = 3;
+}
+
+// A usage/budget update frame (design §01 G6) — the cost/quota rollup the status
+// line + indicators render.
+message UsageFrame {
+  Usage usage = 1;
+}
+
+// A typed error frame (design §01 G2 / §06 SW3). Same Error shape as Connect
+// error details so clients render one way.
+message ErrorFrame {
+  Error error = 1;
+}
+
+// ---------------------------------------------------------------------------
+// session_event — the EXTENSIBLE control/state frame (design §01 G2 + D-029).
+//
+// Carries todo/plan/role/switcher changes AND (per D-029) the worker/brain
+// state. NO new frame types are added for the brain view — they are fields on
+// this payload. The `kind` discriminator says which payload is populated.
+// ---------------------------------------------------------------------------
+
+// What a SessionEvent is about.
+enum SessionEventKind {
+  SESSION_EVENT_KIND_UNSPECIFIED = 0;
+  // The resolved switcher state changed (host/fabric/provider/model/agent).
+  SESSION_EVENT_KIND_SWITCH = 1;
+  // The permission mode changed (§05 L3).
+  SESSION_EVENT_KIND_MODE = 2;
+  // The todo/plan working state changed (D4 §7.4).
+  SESSION_EVENT_KIND_PLAN = 3;
+  // A worker/brain state update (D-029 brain extension).
+  SESSION_EVENT_KIND_WORKER = 4;
+  // A compaction event marker (§05 L4 / D4 §9).
+  SESSION_EVENT_KIND_COMPACTION = 5;
+  // A client attached/detached (multi-client convergence, D4 §1.1).
+  SESSION_EVENT_KIND_ATTACH = 6;
+  // The session entered/left the require-all-nodes pause (D-029 PAUSE render).
+  SESSION_EVENT_KIND_PAUSE = 7;
+}
+
+// The worker/brain payload (D-029: worker_id/role/parent/status/claim/model/
+// phase). This is the ONLY carrier of brain state on the wire — extended here,
+// not as a new frame type. Realizes the §05 L5 brain + D4 §3 brain view.
+message WorkerState {
+  // Stable worker id within the session brain.
+  string worker_id = 1;
+  // The role the worker binds (conversation | thought | orchestration |
+  // reasoning | planning | review | execution | reflection | day-dream |
+  // deep-sleep — §05 L5 / §19 RS3).
+  string role = 2;
+  // Parent worker id (empty for the root brain workers); for a subagent's
+  // workers this points at the spawning node (recursion, D-025).
+  string parent = 3;
+  // The worker's status in the anti-false-green vocabulary (§15 OR2).
+  RunStatus status = 4;
+  // The model the worker is running on (short id; for the brain view rows).
+  string model = 5;
+  // The decompose/assign/integrate (or role-specific) phase the worker is in
+  // (thought's ledger, D4 §3.3).
+  string phase = 6;
+  // The worker's current write-claim (path-glob / logical resource, §15 OR1),
+  // empty if none. Overlapping claims are rejected server-side.
+  string claim = 7;
+  // Claim TTL in seconds remaining (pause-aware TTL, D-029); 0 if no claim.
+  int32 claim_ttl_seconds = 8;
+  // One-line current activity/claim summary for the compact feed (D4 §3.1).
+  string activity = 9;
+}
+
+// The switcher payload (mirrors a `/switch` taking effect, §06 SW3).
+message SwitchState {
+  SwitcherState state = 1;
+}
+
+// The permission-mode payload.
+message ModeState {
+  PermissionMode mode = 1;
+}
+
+// A single plan/todo step (D4 §7.4). Status uses the OR2 vocab (a step is only
+// `✓` on useful_result/released).
+message PlanStep {
+  string text = 1;
+  RunStatus status = 2;
+  // The worker/role responsible for the step (D4 §7.4).
+  string worker_id = 3;
+}
+
+// The plan/todo payload (the working-state tier made visible, §05 L4.1).
+message PlanState {
+  string title = 1;
+  repeated PlanStep steps = 2;
+}
+
+// The compaction-marker payload (§05 L4 / D4 §9).
+message CompactionState {
+  // How many turns were folded into the summary.
+  int32 turns_compacted = 1;
+  // A short label for the collapsed marker (e.g. "142 turns -> summary").
+  string summary_label = 2;
+}
+
+// The attach/detach payload (D4 §1.1 multi-client).
+message AttachState {
+  string client_id = 1;
+  // attached | detached.
+  string action = 2;
+  // Total clients now attached.
+  int32 attached_clients = 3;
+}
+
+// The pause payload (require-all-nodes, §00 S4 / D-020 / D-029).
+message PauseState {
+  bool paused = 1;
+  // Why (e.g. node-down: s001).
+  string reason = 2;
+}
+
+// session_event — todo/plan/role/switcher changes + the D-029 brain extension.
+// Exactly one payload is populated per the `kind` discriminator. Adding a new
+// state dimension = a new oneof arm here (extends this payload), NEVER a new
+// top-level frame type.
+message SessionEvent {
+  SessionEventKind kind = 1;
+  oneof payload {
+    SwitchState switch = 2;
+    ModeState mode = 3;
+    PlanState plan = 4;
+    WorkerState worker = 5;
+    CompactionState compaction = 6;
+    AttachState attach = 7;
+    PauseState pause = 8;
+  }
+}
+
+// ServerFrame — the single WS message type sent server -> client. One frame per
+// message; the oneof selects which.
+message ServerFrame {
+  // Monotonic sequence for ordering/resume over the CRDT log (§04).
+  uint64 seq = 1;
+  oneof frame {
+    TextDelta text_delta = 2;
+    Thinking thinking = 3;
+    ToolCall tool_call = 4;
+    ToolResult tool_result = 5;
+    ApprovalRequest approval_request = 6;
+    Status status = 7;
+    UsageFrame usage = 8;
+    ErrorFrame error = 9;
+    SessionEvent session_event = 10;
+  }
+}
+
+// ===========================================================================
+// Client -> server frames (design §01 G2).
+// ===========================================================================
+
+// User input / a prompt for the loop (design §01 G2).
+message UserInput {
+  string text = 1;
+  // Optional @-mentioned file/resource refs (D4 §5.1).
+  repeated string mentions = 2;
+}
+
+// The answer to an ApprovalRequest (design §05 L3).
+message ApprovalResponse {
+  string approval_id = 1;
+  Decision decision = 2;
+
+  // The four Claude-Code-style answers (D4 §7.3).
+  enum Decision {
+    DECISION_UNSPECIFIED = 0;
+    // Allow once.
+    DECISION_ALLOW_ONCE = 1;
+    // Allow for the rest of the session.
+    DECISION_ALLOW_SESSION = 2;
+    // Always allow (captures an allowlist rule).
+    DECISION_ALLOW_ALWAYS = 3;
+    // Deny.
+    DECISION_DENY = 4;
+  }
+}
+
+// Interrupt the current turn (design §01 G2; Esc, D4 §5.1).
+message Interrupt {}
+
+// A mid-turn switcher change at session scope (design §06 SW3 WS form). The
+// server applies it and replies with a SessionEvent(kind=SWITCH).
+message Switch {
+  SwitcherAxis axis = 1;
+  string value = 2;
+}
+
+// Attach or detach this client to/from the session (design §01 G2 / D4 §1.1).
+message Attach {
+  // attach | detach.
+  string action = 1;
+  // The client's id (for the attached-clients indicator).
+  string client_id = 2;
+}
+
+// ClientFrame — the single WS message type sent client -> server.
+message ClientFrame {
+  oneof frame {
+    UserInput user_input = 1;
+    ApprovalResponse approval_response = 2;
+    Interrupt interrupt = 3;
+    Switch switch = 4;
+    Attach attach = 5;
+  }
+}

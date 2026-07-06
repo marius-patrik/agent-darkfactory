@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@agentos/shared-ts": ["clients/shared-ts/src/index.ts"],
+      "@agentos/shared-ts/gen": ["clients/shared-ts/src/gen/index.ts"],
+      "@agentos/tui": ["clients/tui/src/index.ts"],
+      "@agentos/web": ["clients/web/src/index.ts"]
+    }
+  },
+  "include": [
+    "clients/**/*.ts",
+    "tests/**/*.ts"
+  ]
+}

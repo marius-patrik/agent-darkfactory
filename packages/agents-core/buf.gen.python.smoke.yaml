@@ -1,0 +1,15 @@
+# Smoke-test template: generates plain Python protobuf stubs to a temp directory
+# so `scripts/python-smoke.mjs` can prove the generated code is importable.
+#
+# Do NOT commit the output of this template. For sibling-repo Python generation,
+# use buf.gen.python.yaml instead.
+version: v2
+
+managed:
+  enabled: true
+
+plugins:
+  - remote: buf.build/protocolbuffers/python:v35.0
+    out: .
+  - remote: buf.build/protocolbuffers/pyi:v35.0
+    out: .

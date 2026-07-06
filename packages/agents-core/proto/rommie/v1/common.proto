@@ -1,0 +1,172 @@
+// Package rommie.v1 — the canonical Rommie/Agentos wire contract [S3.0].
+//
+// Single source of truth for the client<->gateway protocol (design §00 S3):
+//   * Control plane  = Connect (protobuf) unary/server-stream RPCs.
+//   * Live session   = WebSocket carrying the SAME protobuf-typed frames.
+//
+// This file holds the shared scalar/enum vocabulary referenced across the
+// control-plane services and the session frames. Derived strictly from the
+// design docs (§00/§01/§05/§06/§07/§15); nothing is invented beyond them.
+// Ambiguities are resolved to the simplest reading and noted in
+// docs/contracts/wire.md.
+syntax = "proto3";
+
+package rommie.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// The two switcher axes (design §06 SW1). Axis 1 = tool host; axis 2 =
+// inference, expressed across three levels (fabric -> provider -> model).
+enum SwitcherAxis {
+  SWITCHER_AXIS_UNSPECIFIED = 0;
+  SWITCHER_AXIS_HOST = 1;
+  SWITCHER_AXIS_FABRIC = 2;
+  SWITCHER_AXIS_PROVIDER = 3;
+  SWITCHER_AXIS_MODEL = 4;
+  // Agent is orthogonal to provider (D-011/RS2) but is selected via the same
+  // switcher surface in the TUI/web (§06 / D4 §4.1).
+  SWITCHER_AXIS_AGENT = 5;
+}
+
+// The scope a switcher write targets (design §06 SW2). Resolution order at read
+// time is session > project > global.
+enum SwitcherScope {
+  SWITCHER_SCOPE_UNSPECIFIED = 0;
+  SWITCHER_SCOPE_SESSION = 1;
+  SWITCHER_SCOPE_PROJECT = 2;
+  SWITCHER_SCOPE_GLOBAL = 3;
+}
+
+// The inference fabric (design §06 SW1, axis 2 level 1).
+enum Fabric {
+  FABRIC_UNSPECIFIED = 0;
+  FABRIC_CLUSTER = 1;
+  FABRIC_LOCAL = 2;
+  FABRIC_CLOUD = 3;
+}
+
+// Permission / approval mode (design §05 L3). Default interactive = full-auto.
+enum PermissionMode {
+  PERMISSION_MODE_UNSPECIFIED = 0;
+  PERMISSION_MODE_PLAN = 1;
+  PERMISSION_MODE_ASK = 2;
+  PERMISSION_MODE_AUTO_ACCEPT_EDITS = 3;
+  PERMISSION_MODE_FULL_AUTO = 4;
+}
+
+// The no-false-green status vocabulary (design §15 OR2). A green/useful state is
+// ONLY useful_result or released; everything else is explicitly not-green.
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_USEFUL_RESULT = 1;
+  RUN_STATUS_NO_ARTIFACT = 2;
+  RUN_STATUS_MISSING_EVIDENCE = 3;
+  RUN_STATUS_UNRESOLVED = 4;
+  RUN_STATUS_BLOCKED = 5;
+  RUN_STATUS_FAILED = 6;
+  RUN_STATUS_RELEASED = 7;
+  RUN_STATUS_EXPIRED = 8;
+  // Liveness states for sessions/runs that have not reached a terminal status.
+  RUN_STATUS_RUNNING = 9;
+  RUN_STATUS_PAUSED = 10;
+}
+
+// A tool-execution host (design §06 SW1, axis 1: where tools run).
+message Host {
+  // Stable id: client | gateway | s001 | s002 | desktop | mac.
+  string id = 1;
+  // Whether the host is currently reachable (drives switcher liveness, §06 SW3).
+  bool online = 2;
+  // Optional human label.
+  string label = 3;
+}
+
+// An inference provider under a fabric (design §06 SW1, axis 2 level 2).
+// cluster->cluster engine; local->local engine; cloud->claude|kimi|codex|agy.
+message Provider {
+  string id = 1;
+  Fabric fabric = 2;
+  // Whether this provider is enabled/usable (cloud entries stay disabled until
+  // their OAuth path verifies, §01 G3).
+  bool enabled = 3;
+  string label = 4;
+}
+
+// A concrete model under a provider (design §01 G4 registry shape, projected
+// to the wire). Fields mirror the cluster-synced registry record.
+message Model {
+  string id = 1;
+  string provider_id = 2;
+  Fabric fabric = 3;
+  // Role alias this model serves: general | coding | judge | embedding (§01 G2).
+  string role = 4;
+  int32 context_length = 5;
+  // Quantization tag (e.g. q4_k_m, fp16); empty for cloud models.
+  string quant = 6;
+  bool enabled = 7;
+  // True for cloud-fabric (metered/subscription) providers.
+  bool cloud = 8;
+}
+
+// The fully-resolved switcher selection (design §06 SW3 GetSwitcherState).
+message SwitcherState {
+  string host = 1;
+  Fabric fabric = 2;
+  string provider = 3;
+  string model = 4;
+  string agent = 5;
+  // Which scope layer supplied the resolved value (§06 SW2).
+  SwitcherScope scope_source = 6;
+}
+
+// A cluster node (design §00 S4; ListNodes / health).
+message Node {
+  string id = 1;
+  // server | client-edge (§00 S4 two-stack model).
+  string role = 2;
+  bool online = 3;
+}
+
+// A token-usage / budget rollup (design §01 G6). Emitted as a usage frame and
+// readable via health/usage surfaces.
+message Usage {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  // Cost in micro-USD; 0 on subscription/local (no metered spend, §01 G6).
+  int64 cost_micros = 3;
+  // True when the active role has degraded to a LOCAL model on quota (§01 G6).
+  bool degraded_to_local = 4;
+  string provider = 5;
+  string model = 6;
+}
+
+// A structured, typed error (design §06 SW3 "rejected with a typed error";
+// also the session error frame). Carried both in Connect error details and as a
+// session ErrorFrame.
+message Error {
+  // Stable machine code, e.g. invalid_switcher, host_offline, cloud_disabled,
+  // session_not_found, paused.
+  string code = 1;
+  string message = 2;
+  // Optional structured context (no secrets — redacted per §05 L6).
+  google.protobuf.Struct details = 3;
+}
+
+// A lightweight task object shared across steering, domains and the manager
+// pipeline (design §07 D5b): one schema from a one-liner to a full project.
+message Task {
+  string goal = 1;
+  repeated string inputs = 2;
+  // Acceptance criteria the completion gate checks (anti-false-green, §15 OR2).
+  string acceptance = 3;
+  int32 priority = 4;
+  // Where the task came from: tui | web | dispatch | issue | schedule.
+  string source = 5;
+}
+
+// Common timestamps embedded in several records.
+message Timestamps {
+  google.protobuf.Timestamp created_at = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}

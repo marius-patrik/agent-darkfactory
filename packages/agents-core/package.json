@@ -1,0 +1,28 @@
+{
+  "name": "@agentos/agents-core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "clients/shared-ts",
+    "clients/tui",
+    "clients/web"
+  ],
+  "scripts": {
+    "buf:lint": "bunx --bun @bufbuild/buf lint proto",
+    "buf:generate": "bunx --bun @bufbuild/buf generate proto",
+    "codegen:check": "bun run buf:generate && git diff --exit-code -- contracts-go/gen clients/shared-ts/src/gen",
+    "go:test": "go -C contracts-go test ./...",
+    "go:build": "go -C contracts-go build ./...",
+    "ts:typecheck": "tsc -p tsconfig.json --noEmit",
+    "py:smoke": "node scripts/python-smoke.mjs",
+    "check": "bun run buf:lint && bun run codegen:check && bun run go:test && bun run go:build && bun run ts:typecheck && bun run py:smoke"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.12.0",
+    "@connectrpc/connect": "^2.1.1"
+  }
+}

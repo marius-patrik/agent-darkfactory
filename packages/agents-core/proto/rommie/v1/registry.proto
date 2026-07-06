@@ -1,0 +1,54 @@
+// Control-plane registry RPCs (design §01 G2 / §06 SW3): list the models,
+// providers, hosts and nodes the switcher surface and clients select against.
+// All entries come from the cluster-synced registry (§01 G4) + live node
+// reachability (§00 S4).
+syntax = "proto3";
+
+package rommie.v1;
+
+import "rommie/v1/common.proto";
+
+// RegistryService — read-only discovery of the inference + host inventory.
+service RegistryService {
+  // List the concrete models in the registry (optionally filtered).
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+  // List the inference providers (cluster engine, local engine, cloud vendors).
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
+  // List the tool-execution hosts (§06 axis 1) with liveness.
+  rpc ListHosts(ListHostsRequest) returns (ListHostsResponse);
+  // List the cluster nodes (§00 S4).
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+}
+
+message ListModelsRequest {
+  // Optional filters; empty means "all".
+  Fabric fabric = 1;
+  string provider_id = 2;
+  // Optional role alias filter: general | coding | judge | embedding.
+  string role = 3;
+}
+
+message ListModelsResponse {
+  repeated Model models = 1;
+}
+
+message ListProvidersRequest {
+  // Optional fabric filter; FABRIC_UNSPECIFIED means "all".
+  Fabric fabric = 1;
+}
+
+message ListProvidersResponse {
+  repeated Provider providers = 1;
+}
+
+message ListHostsRequest {}
+
+message ListHostsResponse {
+  repeated Host hosts = 1;
+}
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+  repeated Node nodes = 1;
+}
