@@ -474,11 +474,65 @@ test("orchestration plan applies wave gates and cross-repo concurrency caps", as
       repository.repository_gate_wave
     ]),
     [
-      ["marius-patrik/pkg-a", "hygiene", "hygiene"],
+      ["marius-patrik/pkg-a", "hygiene", "features"],
       ["marius-patrik/pkg-b", "hygiene", "hygiene"],
       ["marius-patrik/pkg-c", "hygiene", "features"]
     ]
   );
+});
+
+test("orchestration wave gate ignores parked owner and blocked issues", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { buildOrchestrationPlan } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-parked-wave-gate-test");
+
+  const policy = {
+    concurrency: { global: 3, perRepository: 2, perStream: 2 },
+    waves: [
+      { name: "hygiene", streams: ["hygiene"] },
+      { name: "enforcement", streams: ["enforcement"] },
+      { name: "features", streams: ["features", "default"] }
+    ],
+    dashboard: { enabled: true }
+  };
+
+  const parkedPlan = buildOrchestrationPlan([
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-a" },
+      openIssues: [
+        { number: 10, title: "Owner decision", body: "", labels: [{ name: "df:ask-owner" }, { name: "df:blocked" }, { name: "stream:hygiene" }] },
+        { number: 11, title: "Enforcement", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:enforcement" }] }
+      ]
+    },
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-b" },
+      openIssues: [
+        { number: 12, title: "Feature", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:features" }] }
+      ]
+    }
+  ], policy);
+
+  assert.equal(parkedPlan.gate_wave, "enforcement");
+  assert.deepEqual(
+    parkedPlan.candidates.map((candidate: { repository: { repo: string }; issue: { number: number }; wave: string }) => [
+      candidate.repository.repo,
+      candidate.issue.number,
+      candidate.wave
+    ]),
+    [["pkg-a", 11, "enforcement"]]
+  );
+
+  const normalGatePlan = buildOrchestrationPlan([
+    {
+      repository: { owner: "marius-patrik", repo: "pkg-a" },
+      openIssues: [
+        { number: 20, title: "Open hygiene work", body: "", labels: [{ name: "roadmap" }, { name: "stream:hygiene" }] },
+        { number: 21, title: "Enforcement", body: "", labels: [{ name: "df:ready" }, { name: "P0" }, { name: "stream:enforcement" }] }
+      ]
+    }
+  ], policy);
+
+  assert.equal(normalGatePlan.gate_wave, "hygiene");
+  assert.deepEqual(normalGatePlan.candidates, []);
 });
 
 test("orchestrator updates the L6 dashboard issue after dispatch", async () => {

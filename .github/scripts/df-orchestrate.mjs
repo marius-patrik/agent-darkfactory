@@ -544,7 +544,7 @@ export function globalGateWave(snapshots, policyInput = DEFAULT_ORCHESTRATION_PO
 export function repositoryGateWave(openIssues, policyInput = DEFAULT_ORCHESTRATION_POLICY) {
   const policy = normalizeOrchestrationPolicy(policyInput);
   let gate = null;
-  for (const issue of openIssues.filter(isWorkIssue).filter((issue) => !issueLabelNames(issue).has("df:done"))) {
+  for (const issue of openIssues.filter(isWaveGateIssue)) {
     const wave = issueWave(issue, policy);
     if (!gate || waveRank(wave, policy) < waveRank(gate, policy)) gate = wave;
   }
@@ -996,6 +996,12 @@ function setIssueLabelNames(issue, labels) {
 function isWorkIssue(issue) {
   const names = issueLabelNames(issue);
   return [...names].some((label) => label.startsWith("df:") || label === "roadmap");
+}
+
+function isWaveGateIssue(issue) {
+  const names = issueLabelNames(issue);
+  if (names.has("df:done") || names.has("df:ask-owner") || names.has("df:blocked")) return false;
+  return isWorkIssue(issue);
 }
 
 function activeConcurrencyCounts(snapshots) {
