@@ -1311,6 +1311,11 @@ test("df-orchestrate workflow validates trusted refs before privileged tokens", 
   assert.match(workflow, /permission-workflows:\s+write/);
   assert.match(workflow, /permission-contents:\s+write/);
   assert.match(workflow, /permission-issues:\s+write/);
+  assert.match(workflow, /^\s+issues:\s*$/m);
+  assert.match(workflow, /^\s+issue_comment:\s*$/m);
+  assert.match(workflow, /github\.event\.label\.name == 'df:ready'/);
+  assert.match(workflow, /contains\(github\.event\.comment\.body, '\/df run'\)/);
+  assert.match(workflow, /github\.event\.comment\.author_association == 'OWNER'/);
   assert.match(workflow, /^\s+workflow_run:\s*$/m);
   assert.match(workflow, /workflows:\s*\n\s+-\s+DarkFactory Plan\s*\n\s+-\s+DarkFactory Work\s*\n\s+-\s+DarkFactory Follow Through/);
   assert.match(workflow, /types:\s*\n\s+-\s+completed/);
@@ -1324,6 +1329,9 @@ test("df-orchestrate script uses the active managed registry and dispatches via 
 
   assert.match(source, /const CONTROL_ROOT = path\.resolve/);
   assert.match(source, /listActiveManagedRepos\(gh, controlRepo, options\)/);
+  assert.match(source, /parseEventRequest\(process\.env\.GITHUB_EVENT_PAYLOAD/);
+  assert.match(source, /readySlashRunIssue/);
+  assert.match(source, /DarkFactory received `\/df run` and queued this issue with `df:ready`\./);
   assert.match(source, /\/repos\/\$\{repoName\(controlRepo\)\}\/actions\/workflows\/df-work\.yml\/dispatches/);
   assert.doesNotMatch(source, /df-prd:\[a-z0-9-\]\+/);
   assert.match(source, /df:running/);

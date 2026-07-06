@@ -83,6 +83,11 @@ export async function orchestrate(options) {
   } = options;
 
   assertAllowedRepo(controlRepo);
+  const eventRequest = parseEventRequest(process.env.GITHUB_EVENT_PAYLOAD || "", trigger, warn);
+  if (eventRequest?.slashRun) {
+    await readySlashRunIssue(gh, eventRequest.repository, eventRequest.issueNumber);
+  }
+
   const policy = normalizeOrchestrationPolicy(policyInput ?? await readOrchestrationPolicy(root, warn));
   const targets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
   const snapshots = [];
@@ -143,6 +148,48 @@ export async function orchestrate(options) {
 
 export async function targetRepositories(gh, controlRepo, options = {}) {
   return await listActiveManagedRepos(gh, controlRepo, options);
+}
+
+export function parseEventRequest(payloadText, trigger = "unknown", warn = console.warn) {
+  if (!payloadText || (trigger !== "issue_comment" && trigger !== "issues")) return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(payloadText);
+  } catch (error) {
+    warn(`DarkFactory event payload warning: ${error.message || String(error)}`);
+    return null;
+  }
+
+  const repository = payload.repository?.full_name ? parseRepo(payload.repository.full_name) : null;
+  const issueNumber = Number(payload.issue?.number);
+  if (!repository || !Number.isInteger(issueNumber) || issueNumber <= 0 || payload.issue?.pull_request) return null;
+
+  if (trigger === "issue_comment") {
+    const commentBody = String(payload.comment?.body || "");
+    const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+    return {
+      repository,
+      issueNumber,
+      slashRun: /^\/df\s+run\b/im.test(commentBody) && trustedAssociations.has(payload.comment?.author_association)
+    };
+  }
+
+  return {
+    repository,
+    issueNumber,
+    slashRun: false,
+    readyLabel: payload.label?.name === "df:ready"
+  };
+}
+
+async function readySlashRunIssue(gh, repository, issueNumber) {
+  assertAllowedRepo(repository);
+  await ensureLabels(gh, repository, WORK_LABELS);
+  await gh.request("POST", `/repos/${repoName(repository)}/issues/${issueNumber}/labels`, { labels: ["df:ready"] });
+  await gh.request("POST", `/repos/${repoName(repository)}/issues/${issueNumber}/comments`, {
+    body: "DarkFactory received `/df run` and queued this issue with `df:ready`."
+  });
 }
 
 export async function listReadyIssues(gh, repository) {
