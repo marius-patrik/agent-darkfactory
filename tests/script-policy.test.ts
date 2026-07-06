@@ -10,6 +10,8 @@ const dfFix: any = await import("../.github/scripts/df-fix.mjs");
 const dfSweep: any = await import("../.github/scripts/df-sweep.mjs");
 // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
 const codexReviewValidator: any = await import("../.github/scripts/validate-codex-review.mjs");
+// @ts-ignore js-yaml does not ship types in this package; tests only need load().
+const { load: loadYaml }: any = await import("js-yaml");
 
 const {
   assertAllowedRepo,
@@ -976,10 +978,13 @@ test("df-sweep re-fetches checks immediately before direct merge and blocks red 
 
 test("Codex Review workflow validates verdicts before comments and enforcement", async () => {
   const workflow = await readFile(new URL("../.github/workflows/codex-review.yml", import.meta.url), "utf8");
+  const parsedWorkflow = loadYaml(workflow);
+  const codexReviewJob = parsedWorkflow.jobs["codex-review"];
   const validate = workflow.indexOf("Validate Codex verdict");
   const comment = workflow.indexOf("Comment review");
   const enforce = workflow.indexOf("Enforce Codex verdict");
 
+  assert.equal(codexReviewJob.name, CODEX_REVIEW_REQUIRED_CONTEXT);
   assert.notEqual(validate, -1);
   assert.notEqual(comment, -1);
   assert.notEqual(enforce, -1);
