@@ -342,6 +342,38 @@ test("sequencing pass auto-readies scoped issues only when blockers are resolved
   assert.ok(calls.some((call) => call.method === "POST" && call.path === "/repos/marius-patrik/example/issues/26/labels"));
 });
 
+test("targeted sequencing runs resolve blockers against the full snapshot", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { autoReadySequencedIssues } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-auto-ready-scoped-test");
+  const calls: Array<{ method: string; path: string }> = [];
+  const snapshots = [
+    {
+      repository: { owner: "marius-patrik", repo: "example" },
+      openIssues: [
+        { number: 30, title: "Target", body: "Blocked-by: #31", labels: [{ name: "P0" }] },
+        { number: 31, title: "Open predecessor", body: "", labels: [{ name: "df:running" }] }
+      ]
+    }
+  ];
+
+  const gh = {
+    async request(method: string, path: string) {
+      calls.push({ method, path });
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  // Event-scoped run targeting #30: its predecessor #31 is open in the full
+  // snapshot, so #30 must NOT be auto-readied even though the run only
+  // considers #30 as a candidate.
+  const autoReadied = await autoReadySequencedIssues(gh, snapshots, () => {}, {
+    targetIssue: { repository: { owner: "marius-patrik", repo: "example" }, issueNumber: 30 }
+  });
+
+  assert.deepEqual(autoReadied, []);
+  assert.equal(calls.length, 0);
+});
+
 test("sequencing pass does not create an owner-reset ready label over repeated failures", async () => {
   // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
   const { autoReadySequencedIssues } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-auto-ready-reset-test");

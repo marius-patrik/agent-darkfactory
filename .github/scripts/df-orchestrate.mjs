@@ -137,7 +137,7 @@ export async function orchestrate(options) {
       openIssues: (snapshot.openIssues || []).filter((issue) => issue.number === eventRequest.issueNumber)
     }))
     : snapshots;
-  const autoReadied = await autoReadySequencedIssues(gh, scopedSnapshots, warn);
+  const autoReadied = await autoReadySequencedIssues(gh, snapshots, warn, { targetIssue: eventRequest });
   const escalated = await escalateOwnerDecisionIssues(gh, scopedSnapshots, warn);
   const plan = buildOrchestrationPlan(scopedSnapshots, policy, { targetIssue: eventRequest });
   const dispatched = [];
@@ -327,9 +327,13 @@ export function selectDispatchableIssues(openIssues, options = {}) {
     });
 }
 
-export async function autoReadySequencedIssues(gh, snapshots, warn = console.warn) {
+export async function autoReadySequencedIssues(gh, snapshots, warn = console.warn, options = {}) {
+  // Blocker resolution must always see the FULL open-issue state: a targeted
+  // (event-scoped) run may only consider one candidate issue, but its
+  // Blocked-by predecessors live in the unfiltered snapshots.
   const openIssueIndex = buildOpenIssueIndex(snapshots);
   const knownRepositories = buildKnownRepositories(snapshots);
+  const targetIssue = options.targetIssue || null;
   const autoReadied = [];
 
   for (const snapshot of snapshots) {
@@ -337,8 +341,13 @@ export async function autoReadySequencedIssues(gh, snapshots, warn = console.war
     const openIssues = Array.isArray(snapshot.openIssues) ? snapshot.openIssues : [];
     const currentRepoName = normalizedRepoName(repository);
     const currentRepoOpenIssueNumbers = new Set(openIssues.map((issue) => issue.number).filter(Number.isInteger));
+    const candidates = targetIssue
+      ? openIssues.filter((issue) =>
+        issue.number === targetIssue.issueNumber
+          && normalizedRepoName(targetIssue.repository) === currentRepoName)
+      : openIssues;
 
-    for (const issue of openIssues) {
+    for (const issue of candidates) {
       if (!shouldAutoReadySequencedIssue(issue, {
         repository,
         currentRepoOpenIssueNumbers,

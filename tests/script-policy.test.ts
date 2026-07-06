@@ -1459,7 +1459,9 @@ test("df-orchestrate claims ready issues before dispatching workers", async () =
 test("df-orchestrate runs scoped sequencing auto-ready before plan building", async () => {
   const source = await readFile(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url), "utf8");
 
-  const autoReadyIndex = source.indexOf("await autoReadySequencedIssues(gh, scopedSnapshots, warn)");
+  // Auto-ready resolves blockers against the FULL snapshots (event-scoped
+  // runs pass the target via options.targetIssue instead of pre-filtering).
+  const autoReadyIndex = source.indexOf("await autoReadySequencedIssues(gh, snapshots, warn, { targetIssue: eventRequest })");
   const escalationIndex = source.indexOf("await escalateOwnerDecisionIssues(gh, scopedSnapshots, warn)");
   const planIndex = source.indexOf("buildOrchestrationPlan(scopedSnapshots");
   assert.notEqual(autoReadyIndex, -1);
