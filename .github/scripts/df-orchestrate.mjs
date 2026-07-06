@@ -24,6 +24,7 @@ const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const ORCHESTRATION_POLICY_PATH = ".darkfactory/orchestration.json";
 export const DASHBOARD_MARKER = "df-dashboard:orchestration";
 export const ASK_OWNER_MARKER = "dark-factory:orchestrator-ask-owner";
+export const REPEATED_FAILURE_THRESHOLD = 3;
 export const DEFAULT_ORCHESTRATION_POLICY = {
   schemaVersion: 1,
   concurrency: {
@@ -116,8 +117,14 @@ export async function orchestrate(options) {
     }
   }
 
-  const escalated = await escalateOwnerDecisionIssues(gh, snapshots, warn);
-  const plan = buildOrchestrationPlan(snapshots, policy, { targetIssue: eventRequest });
+  const scopedSnapshots = eventRequest
+    ? snapshots.map((snapshot) => ({
+      ...snapshot,
+      openIssues: (snapshot.openIssues || []).filter((issue) => issue.number === eventRequest.issueNumber)
+    }))
+    : snapshots;
+  const escalated = await escalateOwnerDecisionIssues(gh, scopedSnapshots, warn);
+  const plan = buildOrchestrationPlan(scopedSnapshots, policy, { targetIssue: eventRequest });
   const dispatched = [];
 
   for (const candidate of plan.candidates) {
@@ -430,7 +437,15 @@ async function escalateOwnerDecisionIssues(gh, snapshots, warn = console.warn) {
   for (const snapshot of snapshots) {
     const repository = snapshot.repository;
     for (const issue of snapshot.openIssues || []) {
-      const escalation = ownerDecisionEscalation(issue, knownRepositories);
+      let escalation = ownerDecisionEscalation(issue, knownRepositories);
+      if (!escalation) {
+        try {
+          escalation = repeatedFailureEscalation(await listIssueFailureHistory(gh, repository, issue.number));
+        } catch (error) {
+          if (warnReadOnlyRepository(repository, error, "failure-history scan", warn)) continue;
+          warn(`Failed to inspect failure history for ${repoName(repository)}#${issue.number}: ${error.message || String(error)}`);
+        }
+      }
       if (!escalation) continue;
 
       try {
@@ -510,6 +525,123 @@ export function ownerDecisionEscalation(issue, knownRepositories = new Set()) {
   }
 
   return null;
+}
+
+export function repeatedFailureEscalation(history, threshold = REPEATED_FAILURE_THRESHOLD) {
+  const evidence = repeatedFailureEvidenceSinceReset(history);
+  if (evidence.count < threshold) return null;
+
+  return {
+    reason: "repeated-worker-failure",
+    detail: [
+      `Issue has ${evidence.count} worker failure evidence item(s) since the most recent owner reset.`,
+      evidence.resetAt ? `Reset point: ${evidence.resetAt}.` : "No owner reset was found after the previous failure batch.",
+      "Owner input is required before DarkFactory spends another worker run."
+    ].join(" ")
+  };
+}
+
+export function repeatedFailureEvidenceSinceReset(history = {}) {
+  const events = [
+    ...failureEvidenceItems(history.comments || []),
+    ...failureLabelEvidenceItems(history.timeline || []),
+    ...readyRelabelEvents(history.timeline || [])
+  ].sort(compareHistoryItems);
+
+  let resetAt = null;
+  let seenFailureBeforeReady = false;
+  for (const event of events) {
+    if (event.kind === "failure") {
+      seenFailureBeforeReady = true;
+      continue;
+    }
+    if (event.kind === "ready" && seenFailureBeforeReady) {
+      resetAt = event.createdAt;
+    }
+  }
+
+  const count = events.filter((event) => {
+    return event.kind === "failure" && (!resetAt || Date.parse(event.createdAt) > Date.parse(resetAt));
+  }).length;
+
+  return { count, resetAt };
+}
+
+function failureEvidenceItems(items) {
+  return items
+    .filter((item) => historyTimestamp(item) && isRepeatedFailureEvidence(item))
+    .map((item) => ({ kind: "failure", createdAt: historyTimestamp(item) }));
+}
+
+function failureLabelEvidenceItems(items) {
+  return items
+    .filter((item) => historyTimestamp(item) && item?.event === "labeled" && /^df:fix-round:\d+$/i.test(labelName(item)))
+    .map((item) => ({ kind: "failure", createdAt: historyTimestamp(item) }));
+}
+
+function readyRelabelEvents(items) {
+  return items
+    .filter((item) => historyTimestamp(item) && item?.event === "labeled" && labelName(item) === "df:ready")
+    .map((item) => ({ kind: "ready", createdAt: historyTimestamp(item) }));
+}
+
+function isRepeatedFailureEvidence(item) {
+  const body = String(item?.body || "");
+  return (
+    /\bdf:fix-round:\d+\b/i.test(body)
+    || /DarkFactory worker blocked\./i.test(body)
+    || /DarkFactory follow-through blocked this worker PR\./i.test(body)
+    || /dark-factory:sweep-blocked/i.test(body)
+  );
+}
+
+function labelName(item) {
+  return String(item?.label?.name || item?.label || "").toLowerCase();
+}
+
+function historyTimestamp(item) {
+  const timestamp = item?.created_at || item?.createdAt;
+  return Number.isFinite(Date.parse(timestamp || "")) ? new Date(timestamp).toISOString() : "";
+}
+
+function compareHistoryItems(a, b) {
+  return Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.kind === "failure" ? -1 : 1);
+}
+
+async function listIssueFailureHistory(gh, repository, issueNumber) {
+  const [comments, timeline] = await Promise.all([
+    listIssueComments(gh, repository, issueNumber),
+    listIssueTimeline(gh, repository, issueNumber)
+  ]);
+  return { comments, timeline };
+}
+
+async function listIssueComments(gh, repository, issueNumber) {
+  const comments = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const batch = await gh.request(
+      "GET",
+      `/repos/${repoName(repository)}/issues/${issueNumber}/comments?per_page=100&page=${page}`
+    );
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    comments.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return comments;
+}
+
+async function listIssueTimeline(gh, repository, issueNumber) {
+  const events = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const batch = await gh.request(
+      "GET",
+      `/repos/${repoName(repository)}/issues/${issueNumber}/timeline?per_page=100&page=${page}`
+    );
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    events.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return events;
 }
 
 function askOwnerComment(repository, issue, escalation) {

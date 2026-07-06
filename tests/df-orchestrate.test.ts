@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+function blockedComment(createdAt: string) {
+  return {
+    body: "DarkFactory worker blocked.\n\nBlocker:\n\n```text\nfailure\n```",
+    created_at: createdAt
+  };
+}
+
+function labeledEvent(label: string, createdAt: string) {
+  return {
+    event: "labeled",
+    label: { name: label },
+    created_at: createdAt
+  };
+}
+
 test("orchestrator dispatches open df:ready issues in active managed repos", async () => {
   // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
   const { orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-test");
@@ -471,6 +486,147 @@ test("orchestrator escalates ambiguous sequencing to df:ask-owner without dispat
   const dashboardUpdate = calls.find((call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/agent-darkfactory/issues/99");
   assert.match(dashboardUpdate?.body.body, /Owner Escalations/);
   assert.match(dashboardUpdate?.body.body, /marius-patrik\/example#17/);
+});
+
+test("repeated-failure scan ignores evidence before the latest owner reset", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { repeatedFailureEscalation, repeatedFailureEvidenceSinceReset } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-reset-history-test");
+
+  const history = {
+    comments: [
+      blockedComment("2026-07-06T10:00:00Z"),
+      blockedComment("2026-07-06T10:10:00Z"),
+      blockedComment("2026-07-06T10:20:00Z")
+    ],
+    timeline: [
+      labeledEvent("df:blocked", "2026-07-06T10:20:01Z"),
+      labeledEvent("df:ready", "2026-07-06T10:30:00Z")
+    ]
+  };
+
+  assert.deepEqual(repeatedFailureEvidenceSinceReset(history), {
+    count: 0,
+    resetAt: "2026-07-06T10:30:00.000Z"
+  });
+  assert.equal(repeatedFailureEscalation(history), null);
+});
+
+test("repeated-failure scan escalates historical failures when no reset follows them", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { repeatedFailureEscalation, repeatedFailureEvidenceSinceReset } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-no-reset-history-test");
+
+  const history = {
+    comments: [
+      blockedComment("2026-07-06T10:00:00Z"),
+      blockedComment("2026-07-06T10:10:00Z"),
+      blockedComment("2026-07-06T10:20:00Z")
+    ],
+    timeline: []
+  };
+
+  assert.deepEqual(repeatedFailureEvidenceSinceReset(history), { count: 3, resetAt: null });
+  assert.equal(repeatedFailureEscalation(history)?.reason, "repeated-worker-failure");
+});
+
+test("repeated-failure scan counts df:fix-round timeline labels as evidence", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { repeatedFailureEscalation, repeatedFailureEvidenceSinceReset } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-fix-round-history-test");
+
+  const history = {
+    comments: [
+      blockedComment("2026-07-06T10:00:00Z"),
+      blockedComment("2026-07-06T10:10:00Z")
+    ],
+    timeline: [labeledEvent("df:fix-round:1", "2026-07-06T10:20:00Z")]
+  };
+
+  assert.deepEqual(repeatedFailureEvidenceSinceReset(history), { count: 3, resetAt: null });
+  assert.equal(repeatedFailureEscalation(history)?.reason, "repeated-worker-failure");
+});
+
+test("repeated-failure scan escalates new failures after an owner reset", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { repeatedFailureEscalation, repeatedFailureEvidenceSinceReset } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-new-failures-history-test");
+
+  const history = {
+    comments: [
+      blockedComment("2026-07-06T10:00:00Z"),
+      blockedComment("2026-07-06T10:10:00Z"),
+      blockedComment("2026-07-06T10:20:00Z"),
+      blockedComment("2026-07-06T10:40:00Z"),
+      blockedComment("2026-07-06T10:50:00Z"),
+      blockedComment("2026-07-06T11:00:00Z")
+    ],
+    timeline: [labeledEvent("df:ready", "2026-07-06T10:30:00Z")]
+  };
+
+  assert.deepEqual(repeatedFailureEvidenceSinceReset(history), {
+    count: 3,
+    resetAt: "2026-07-06T10:30:00.000Z"
+  });
+  assert.equal(repeatedFailureEscalation(history)?.reason, "repeated-worker-failure");
+});
+
+test("orchestrator dispatches owner-reset issues instead of re-escalating stale failures", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-reset-dispatch-test");
+  const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+  const notFound = Object.assign(new Error("not found"), { status: 404 });
+
+  const gh = {
+    async graphql() {
+      return {
+        repository: {
+          pullRequests: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: []
+          }
+        }
+      };
+    },
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path, body });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=1") {
+        return [{ number: 30, title: "Reset lane", body: "", labels: [{ name: "df:ready" }] }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/30/comments?per_page=100&page=1") {
+        return [
+          blockedComment("2026-07-06T10:00:00Z"),
+          blockedComment("2026-07-06T10:10:00Z"),
+          blockedComment("2026-07-06T10:20:00Z")
+        ];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/30/comments?per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/30/timeline?per_page=100&page=1") {
+        return [labeledEvent("df:ready", "2026-07-06T10:30:00Z")];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/30/timeline?per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example") return { default_branch: "main", allow_auto_merge: true };
+      if (method === "GET" && path === "/repos/marius-patrik/example/git/ref/heads/dev") throw notFound;
+      if (method === "GET" && path === "/repos/marius-patrik/example/branches/main/protection") throw notFound;
+      if (method === "POST" && path === "/repos/marius-patrik/example/issues/30/labels") return {};
+      if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/30/labels/df%3Aready") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const result = await orchestrate({
+    gh,
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    registry: { repositories: { "marius-patrik/example": { state: "active" } } },
+    repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+    writeLedger: false,
+    updateDashboard: false,
+    warn: () => {},
+    log: () => {}
+  });
+
+  assert.deepEqual(result.escalated, []);
+  assert.deepEqual(result.dispatched, [{ repo: "marius-patrik/example", issue: 30, wave: "features", streams: ["default"] }]);
 });
 
 test("orchestrator turns trusted /df run comments into df:ready before dispatch", async () => {
