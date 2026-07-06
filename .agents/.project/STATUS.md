@@ -5,12 +5,12 @@
 | Area | State |
 | --- | --- |
 | Repository | `marius-patrik/agent-darkfactory` |
-| Branch | `main` |
-| Issue | n/a |
+| Branch | `df/68-m3-orchestrator-loop-streams` |
+| Issue | `#68` M3 - Orchestrator loop & streams |
 | Purpose | GitHub App bot for repository automation |
 | Version | `0.2.0` |
 | Managed setup | Workspace-backed `.agents/.global`, optional repo-specific `.agents/.project`, GitHub bootstrap, and Codex Review workflow PRs |
-| Release | `v0.2.0` shipped (M2 planning loop) |
+| Release | `v0.2.0` shipped (M2 planning loop); M3 orchestrator loop implementation in progress |
 | CI | GitHub Actions `validate` job |
 
 ## Validation
@@ -21,6 +21,8 @@ Run before committing:
 - `npm test`
 - `npm run build`
 - `npm run check`
+
+Latest issue #68 validation: all four commands passed locally on branch `df/68-m3-orchestrator-loop-streams`.
 
 ## Next Actions
 
