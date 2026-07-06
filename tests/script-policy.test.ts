@@ -1456,6 +1456,22 @@ test("df-orchestrate claims ready issues before dispatching workers", async () =
   assert.ok(claimIndex < dispatchIndex);
 });
 
+test("df-orchestrate runs scoped sequencing auto-ready before plan building", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url), "utf8");
+
+  const autoReadyIndex = source.indexOf("await autoReadySequencedIssues(gh, scopedSnapshots, warn)");
+  const escalationIndex = source.indexOf("await escalateOwnerDecisionIssues(gh, scopedSnapshots, warn)");
+  const planIndex = source.indexOf("buildOrchestrationPlan(scopedSnapshots");
+  assert.notEqual(autoReadyIndex, -1);
+  assert.notEqual(escalationIndex, -1);
+  assert.notEqual(planIndex, -1);
+  assert.ok(autoReadyIndex < escalationIndex);
+  assert.ok(escalationIndex < planIndex);
+  assert.match(source, /names\.has\("df:planned"\)/);
+  assert.match(source, /\\bdf-prd:/);
+  assert.match(source, /names\.has\("df:ready"\) \|\| names\.has\("df:running"\) \|\| names\.has\("df:blocked"\) \|\| names\.has\("df:done"\) \|\| names\.has\("df:ask-owner"\)/);
+});
+
 test("df-orchestrate blocks target auto-merge setup failures before worker dispatch", async () => {
   const source = await readFile(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url), "utf8");
 

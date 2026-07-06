@@ -137,6 +137,7 @@ export async function orchestrate(options) {
       openIssues: (snapshot.openIssues || []).filter((issue) => issue.number === eventRequest.issueNumber)
     }))
     : snapshots;
+  const autoReadied = await autoReadySequencedIssues(gh, scopedSnapshots, warn);
   const escalated = await escalateOwnerDecisionIssues(gh, scopedSnapshots, warn);
   const plan = buildOrchestrationPlan(scopedSnapshots, policy, { targetIssue: eventRequest });
   const dispatched = [];
@@ -165,6 +166,7 @@ export async function orchestrate(options) {
     concurrency: policy.concurrency,
     repositories: plan.repositories,
     dispatched,
+    auto_readied: autoReadied,
     escalated,
     token_usage: {
       codex_calls: 0,
@@ -181,7 +183,7 @@ export async function orchestrate(options) {
     await updateDashboardIssue(gh, controlRepo, policy, plan, dispatched, escalated, trigger, warn, log);
   }
   log(`DarkFactory orchestrator dispatched ${dispatched.length} worker runs and escalated ${escalated.length} owner decisions.`);
-  return { dispatched, escalated, ledger };
+  return { dispatched, autoReadied, escalated, ledger };
 }
 
 export async function targetRepositories(gh, controlRepo, options = {}) {
@@ -308,17 +310,12 @@ export function selectDispatchableIssues(openIssues, options = {}) {
       const names = issueLabelNames(issue);
       if (!names.has("df:ready")) return false;
       if (names.has("df:running") || names.has("df:blocked") || names.has("df:done") || names.has("df:ask-owner")) return false;
-      return blockedByIssueRefs(issue.body || "", options.repository).every((ref) => {
-        if (!Number.isInteger(ref.number)) return false;
-        if (ref.repository && ref.repository !== currentRepoName) {
-          // Cross-repo references only resolve as unblocked when the referenced
-          // repository is part of the managed snapshot set and the issue is
-          // positively observed as absent/closed there. Unknown repositories
-          // hold the issue so work is never dispatched past an unverified blocker.
-          if (!options.openIssueIndex || !options.knownRepositories?.has(ref.repository)) return false;
-          return !options.openIssueIndex.has(openIssueKey(ref.repository, ref.number));
-        }
-        return !openIssueNumbers.has(ref.number);
+      return blockedByRefsResolved(issue, {
+        repository: options.repository,
+        currentRepoOpenIssueNumbers: openIssueNumbers,
+        openIssueIndex: options.openIssueIndex,
+        knownRepositories: options.knownRepositories,
+        currentRepoName
       });
     })
     .sort(compareReadyIssues)
@@ -328,6 +325,86 @@ export function selectDispatchableIssues(openIssues, options = {}) {
       for (const lane of lanes) selectedLanes.add(lane);
       return true;
     });
+}
+
+export async function autoReadySequencedIssues(gh, snapshots, warn = console.warn) {
+  const openIssueIndex = buildOpenIssueIndex(snapshots);
+  const knownRepositories = buildKnownRepositories(snapshots);
+  const autoReadied = [];
+
+  for (const snapshot of snapshots) {
+    const repository = snapshot.repository;
+    const openIssues = Array.isArray(snapshot.openIssues) ? snapshot.openIssues : [];
+    const currentRepoName = normalizedRepoName(repository);
+    const currentRepoOpenIssueNumbers = new Set(openIssues.map((issue) => issue.number).filter(Number.isInteger));
+
+    for (const issue of openIssues) {
+      if (!shouldAutoReadySequencedIssue(issue, {
+        repository,
+        currentRepoOpenIssueNumbers,
+        openIssueIndex,
+        knownRepositories,
+        currentRepoName
+      })) continue;
+
+      try {
+        const escalation = repeatedFailureEscalation(await listIssueFailureHistory(gh, repository, issue.number));
+        if (escalation) continue;
+      } catch (error) {
+        if (warnReadOnlyRepository(repository, error, "failure-history scan", warn)) continue;
+        warn(`Failed to inspect failure history before auto-ready for ${repoName(repository)}#${issue.number}: ${error.message || String(error)}`);
+        continue;
+      }
+
+      try {
+        await replaceIssueLabels(gh, repository, issue.number, ["df:ready"], []);
+        setIssueLabelNames(issue, [...issueLabelNames(issue), "df:ready"]);
+        autoReadied.push({ repo: repoName(repository), issue: issue.number });
+      } catch (error) {
+        if (warnReadOnlyRepository(repository, error, "auto-ready sequencing", warn)) continue;
+        warn(`Failed to auto-ready sequenced issue ${repoName(repository)}#${issue.number}: ${error.message || String(error)}`);
+      }
+    }
+  }
+
+  return autoReadied;
+}
+
+export function shouldAutoReadySequencedIssue(issue, options = {}) {
+  const names = issueLabelNames(issue);
+  if (names.has("df:ready") || names.has("df:running") || names.has("df:blocked") || names.has("df:done") || names.has("df:ask-owner")) {
+    return false;
+  }
+  if (!hasPlanningSignal(issue)) return false;
+  return blockedByRefsResolved(issue, options);
+}
+
+function hasPlanningSignal(issue) {
+  const names = issueLabelNames(issue);
+  return names.has("df:planned")
+    || /\bdf-prd:/i.test(String(issue.body || ""))
+    || blockedByIssueRefs(issue.body || "").length > 0;
+}
+
+function blockedByRefsResolved(issue, options = {}) {
+  const refs = blockedByIssueRefs(issue.body || "", options.repository);
+  const currentRepoName = options.currentRepoName
+    ?? (options.repository ? normalizedRepoName(options.repository) : null);
+  const currentRepoOpenIssueNumbers = options.currentRepoOpenIssueNumbers
+    ?? new Set();
+
+  return refs.every((ref) => {
+    if (!Number.isInteger(ref.number)) return false;
+    if (ref.repository && ref.repository !== currentRepoName) {
+      // Cross-repo references only resolve as unblocked when the referenced
+      // repository is part of the managed snapshot set and the issue is
+      // positively observed as absent/closed there. Unknown repositories
+      // hold the issue so work is never dispatched past an unverified blocker.
+      if (!options.openIssueIndex || !options.knownRepositories?.has(ref.repository)) return false;
+      return !options.openIssueIndex.has(openIssueKey(ref.repository, ref.number));
+    }
+    return !currentRepoOpenIssueNumbers.has(ref.number);
+  });
 }
 
 export async function readOrchestrationPolicy(root = CONTROL_ROOT, warn = console.warn) {

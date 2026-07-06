@@ -292,6 +292,84 @@ test("orchestrator holds and escalates unknown cross-repo Blocked-by references"
   );
 });
 
+test("sequencing pass auto-readies scoped issues only when blockers are resolved", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { autoReadySequencedIssues } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-auto-ready-test");
+  const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+  const snapshots = [
+    {
+      repository: { owner: "marius-patrik", repo: "example" },
+      openIssues: [
+        { number: 20, title: "Sequenced", body: "Blocked-by: #19", labels: [{ name: "P0" }] },
+        { number: 21, title: "Backlog", body: "Plain backlog issue.", labels: [{ name: "P1" }] },
+        { number: 22, title: "Still blocked", body: "Blocked-by: #23", labels: [{ name: "P0" }] },
+        { number: 23, title: "Open predecessor", body: "", labels: [{ name: "df:running" }] },
+        { number: 24, title: "Malformed", body: "Blocked-by: #19 or ask owner", labels: [{ name: "P0" }] },
+        { number: 25, title: "Unknown cross repo", body: "Blocked-by: someone-else/unknown#1", labels: [{ name: "P0" }] }
+      ]
+    }
+  ];
+
+  const gh = {
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path, body });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/20/comments?per_page=100&page=1") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/20/timeline?per_page=100&page=1") return [];
+      if (method === "POST" && path === "/repos/marius-patrik/example/issues/20/labels") return {};
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const autoReadied = await autoReadySequencedIssues(gh, snapshots, () => {});
+
+  assert.deepEqual(autoReadied, [{ repo: "marius-patrik/example", issue: 20 }]);
+  assert.ok(snapshots[0].openIssues[0].labels.some((label: { name: string }) => label.name === "df:ready"));
+  assert.equal(calls.some((call) => call.path === "/repos/marius-patrik/example/issues/21/labels"), false);
+  assert.equal(calls.some((call) => call.path === "/repos/marius-patrik/example/issues/22/labels"), false);
+  assert.equal(calls.some((call) => call.path === "/repos/marius-patrik/example/issues/24/labels"), false);
+  assert.equal(calls.some((call) => call.path === "/repos/marius-patrik/example/issues/25/labels"), false);
+});
+
+test("sequencing pass does not create an owner-reset ready label over repeated failures", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { autoReadySequencedIssues } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-auto-ready-reset-test");
+  const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+  const snapshots = [
+    {
+      repository: { owner: "marius-patrik", repo: "example" },
+      openIssues: [
+        { number: 31, title: "Sequenced retry", body: "Blocked-by: #30", labels: [{ name: "P0" }] }
+      ]
+    }
+  ];
+
+  const gh = {
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path, body });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/31/comments?per_page=100&page=1") {
+        return [
+          blockedComment("2026-07-06T10:00:00Z"),
+          blockedComment("2026-07-06T10:10:00Z"),
+          blockedComment("2026-07-06T10:20:00Z")
+        ];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/31/comments?per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/31/timeline?per_page=100&page=1") return [];
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const autoReadied = await autoReadySequencedIssues(gh, snapshots, () => {});
+
+  assert.deepEqual(autoReadied, []);
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/repos/marius-patrik/example/issues/31/labels"), false);
+  assert.equal(snapshots[0].openIssues[0].labels.some((label: { name: string }) => label.name === "df:ready"), false);
+});
+
 test("orchestration plan applies wave gates and cross-repo concurrency caps", async () => {
   // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
   const { buildOrchestrationPlan } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-l6-plan-test");
