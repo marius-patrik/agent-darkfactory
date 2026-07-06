@@ -1122,6 +1122,29 @@ test("df-work no-ops instead of blocking when an open worker PR already exists",
   assert.match(source, /No new worker run is needed; follow-through will evaluate the existing PR/);
 });
 
+test("df-work blocks stale remote branches without open worker PRs", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
+
+  const openPrIndex = source.indexOf("const existingPullRequest = await findOpenWorkerPullRequestForIssue(gh, TARGET_REPO, TARGET_ISSUE_NUMBER)");
+  const remoteBranchIndex = source.indexOf("if (await remoteBranchExists(TARGET_REPO, branch))");
+
+  assert.notEqual(openPrIndex, -1);
+  assert.notEqual(remoteBranchIndex, -1);
+  assert.ok(openPrIndex < remoteBranchIndex);
+  assert.match(source, /action: "stale-worker-branch"/);
+  assert.match(source, /result: "blocked"/);
+  assert.match(source, /Stale worker branch exists without an open worker PR\. Owner\/manual recovery is required\./);
+  assert.match(source, /replaceIssueLabels\(TARGET_REPO, TARGET_ISSUE_NUMBER, \["df:blocked"\], \["df:ready", "df:running", "df:done"\]\)/);
+  assert.match(source, /upsertStaleBranchAskOwnerIssue\(branch\)/);
+  assert.match(source, /replaceIssueLabels\(TARGET_REPO, TARGET_ISSUE_NUMBER, \["df:ask-owner", "df:blocked"\], \["df:ready", "df:running", "df:done"\]\)/);
+  assert.match(source, /dark-factory:stale-worker-branch issue=\$\{TARGET_ISSUE_NUMBER\} branch=\$\{slug\(branch\)\}/);
+  assert.match(source, /findOpenIssueByMarker\(TARGET_REPO, marker\)/);
+  assert.match(source, /method === "PATCH"|gh\.request\("PATCH", `\/repos\/\$\{repoName\(TARGET_REPO\)\}\/issues\/\$\{existing\.number\}`/);
+  assert.match(source, /reason: "stale-worker-branch"/);
+  assert.match(source, /no open worker PR was found/);
+  assert.doesNotMatch(source, /action: "remote-branch-exists"/);
+});
+
 test("df-sweep does not skip green worker PRs solely because the issue is blocked", async () => {
   const source = await readFile(new URL("../.github/scripts/df-sweep.mjs", import.meta.url), "utf8");
 
@@ -1334,6 +1357,15 @@ test("df-orchestrate workflow validates trusted refs before privileged tokens", 
   assert.match(workflow, /github\.event_name == 'workflow_run'/);
   assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);
   assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
+});
+
+test("df-orchestrate source requires the app token for cross-repo writes", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /const appInstallationToken = requiredEnv\("DARK_FACTORY_TOKEN"\)/);
+  assert.match(source, /createGithubClient\(appInstallationToken, "darkfactory-orchestrate"\)/);
+  assert.match(source, /GITHUB_TOKEN[\s\S]+cannot perform cross-repo issue writes/);
+  assert.doesNotMatch(source, /process\.env\.GITHUB_TOKEN|github\.token/);
 });
 
 test("df-orchestrate script uses the active managed registry and dispatches via workflow_dispatch", async () => {

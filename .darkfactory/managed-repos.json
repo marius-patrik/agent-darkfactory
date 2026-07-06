@@ -35,8 +35,24 @@
       "note": "Agentos inference engine package repository."
     },
     "marius-patrik/darkfactory-templates": {
-      "state": "active",
-      "note": "DarkFactory templates package repository."
+      "state": "archived",
+      "note": "Folded into agent-darkfactory/templates/ via Phase D restructure."
+    },
+    "marius-patrik/template-bot": {
+      "state": "archived",
+      "note": "Folded into agent-darkfactory/templates/templates/template-bot via Phase D restructure."
+    },
+    "marius-patrik/template-cli": {
+      "state": "archived",
+      "note": "Folded into agent-darkfactory/templates/templates/template-cli via Phase D restructure."
+    },
+    "marius-patrik/template-repo": {
+      "state": "archived",
+      "note": "Folded into agent-darkfactory/templates/templates/template-repo via Phase D restructure."
+    },
+    "marius-patrik/template-web": {
+      "state": "archived",
+      "note": "Folded into agent-darkfactory/templates/templates/template-web via Phase D restructure."
     },
     "marius-patrik/workspace-darkfactory": {
       "state": "active",
