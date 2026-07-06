@@ -36,12 +36,12 @@ jobs:
             exit 1
           fi
 
-          if [[ "${GITHUB_REF:-}" != "refs/heads/dev" && "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
-            echo "::error::DarkFactory audit can only run from refs/heads/dev or refs/heads/main."
+          if [[ "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+            echo "::error::DarkFactory audit can only run from refs/heads/main."
             exit 1
           fi
 
-          if [[ "${GITHUB_REF_TYPE:-}" == "branch" && "${GITHUB_REF_NAME:-}" != "dev" && "${GITHUB_REF_NAME:-}" != "main" ]]; then
+          if [[ "${GITHUB_REF_TYPE:-}" == "branch" && "${GITHUB_REF_NAME:-}" != "main" ]]; then
             echo "::error::DarkFactory audit branch mismatch."
             exit 1
           fi

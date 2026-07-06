@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           # Privileged planning uses installation or repository tokens, so it only
-          # runs from a trusted default branch in an allowed owner.
+          # runs from the trusted control branch in an allowed owner.
           if [[ "${GITHUB_REPOSITORY_OWNER}" != "marius-patrik" ]]; then
             echo "::error::DarkFactory privileged planning can only run in the marius-patrik owner."
             exit 1
@@ -53,12 +53,12 @@ jobs:
           # Scheduled and push events reliably set GITHUB_REF to refs/heads/<branch>.
           # GITHUB_REF_TYPE/NAME are not always present for scheduled runs, so the
           # immutable ref is the trusted gate before any token is minted.
-          if [[ "${GITHUB_REF:-}" != "refs/heads/dev" && "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
-            echo "::error::DarkFactory privileged planning can only run from refs/heads/dev or refs/heads/main."
+          if [[ "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+            echo "::error::DarkFactory privileged planning can only run from refs/heads/main."
             exit 1
           fi
 
-          if [[ "${GITHUB_REF_TYPE:-}" == "branch" && "${GITHUB_REF_NAME:-}" != "dev" && "${GITHUB_REF_NAME:-}" != "main" ]]; then
+          if [[ "${GITHUB_REF_TYPE:-}" == "branch" && "${GITHUB_REF_NAME:-}" != "main" ]]; then
             echo "::error::DarkFactory privileged planning branch mismatch."
             exit 1
           fi
