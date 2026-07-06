@@ -147,7 +147,92 @@ jobs:
       - name: Validate Codex verdict
         if: always()
         shell: bash
-        run: node .github/scripts/validate-codex-review.mjs codex-review.json .github/codex-review.schema.json
+        run: |
+          # Keep this validator inline so pull_request_target enforcement does not execute
+          # schema or validator files from a pull request-controlled checkout.
+          node <<'NODE'
+          const fs = require("fs");
+
+          const reviewPath = "codex-review.json";
+          const schema = {
+            additionalProperties: false,
+            properties: {
+              approved: { type: "boolean" },
+              summary: { type: "string" },
+              blocking_findings: { type: "array", items: { type: "string" } },
+              non_blocking_notes: { type: "array", items: { type: "string" } },
+            },
+            required: ["approved", "summary", "blocking_findings", "non_blocking_notes"],
+          };
+
+          function isRecord(value) {
+            return typeof value === "object" && value !== null && !Array.isArray(value);
+          }
+
+          function validateReview(review) {
+            const errors = [];
+            if (!isRecord(review)) return ["review verdict must be a JSON object"];
+
+            const allowedProperties = new Set(Object.keys(schema.properties));
+            for (const property of Object.keys(review)) {
+              if (schema.additionalProperties === false && !allowedProperties.has(property)) {
+                errors.push(`unexpected property '${property}'`);
+              }
+            }
+
+            for (const property of schema.required) {
+              if (!(property in review)) errors.push(`missing required property '${property}'`);
+            }
+
+            if ("approved" in review && typeof review.approved !== "boolean") {
+              errors.push("property 'approved' must be boolean");
+            }
+            if ("summary" in review && typeof review.summary !== "string") {
+              errors.push("property 'summary' must be string");
+            }
+            for (const property of ["blocking_findings", "non_blocking_notes"]) {
+              if (!(property in review)) continue;
+              if (!Array.isArray(review[property])) {
+                errors.push(`property '${property}' must be an array`);
+                continue;
+              }
+              review[property].forEach((item, index) => {
+                if (typeof item !== "string") errors.push(`property '${property}[${index}]' must be string`);
+              });
+            }
+
+            return errors;
+          }
+
+          function blockedVerdict(errors) {
+            return {
+              approved: false,
+              summary: "Codex autoreview did not produce a schema-valid verdict.",
+              blocking_findings: [
+                `Fix the Codex Review automation so codex-review.json matches the inline trusted schema. Validation errors: ${errors.join("; ")}`
+              ],
+              non_blocking_notes: []
+            };
+          }
+
+          let review;
+          try {
+            review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            review = blockedVerdict([`review file is not valid JSON: ${message}`]);
+            fs.writeFileSync(reviewPath, `${JSON.stringify(review, null, 2)}\n`);
+            console.error(review.blocking_findings[0]);
+            process.exit(0);
+          }
+
+          const errors = validateReview(review);
+          if (errors.length > 0) {
+            const fallback = blockedVerdict(errors);
+            fs.writeFileSync(reviewPath, `${JSON.stringify(fallback, null, 2)}\n`);
+            console.error(`Codex review verdict failed schema validation: ${errors.join("; ")}`);
+          }
+          NODE
 
       - name: Comment review
         if: always()
