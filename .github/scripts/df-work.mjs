@@ -15,6 +15,7 @@ import {
   getRepository,
   preflightMergePolicy,
   parseRepo,
+  readManagedRepoRegistry,
   repoName,
   requiredEnv,
   sanitize,
@@ -31,6 +32,7 @@ import {
   runProviderWorker,
   runWithFailover
 } from "./df-providers.mjs";
+import { evaluateEnforcementRules, loadEnforcementRules } from "./df-enforcement.mjs";
 
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
@@ -85,6 +87,27 @@ async function main() {
 
   const repo = await getRepository(gh, TARGET_REPO);
   const workBaseBranch = await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch, TARGET_BASE_REF);
+
+  const enforcementRules = await loadEnforcementRules(CONTROL_ROOT);
+  const enforcement = await evaluateEnforcementRules(enforcementRules, {
+    gh,
+    repository: TARGET_REPO,
+    baseBranch: workBaseBranch,
+    registry: await readManagedRepoRegistry(CONTROL_ROOT),
+    token: TOKEN
+  });
+  ledger.actions.push({ action: "enforcement-rules", result: enforcement });
+  if (!enforcement.ok) {
+    ledger.status = "blocked";
+    ledger.error = enforcement.findings.map((finding) => `${finding.rule}: ${finding.message}`).join("\n");
+    await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
+    await createIssueComment(
+      TARGET_REPO,
+      TARGET_ISSUE_NUMBER,
+      enforcementBlockedComment(target, workBaseBranch, enforcement)
+    );
+    return;
+  }
 
   // Ensure work labels exist before any preflight failure path tries to apply
   // `df:blocked` to the issue, so the blocker comment is always left reliably.
@@ -286,6 +309,24 @@ function preflightBlockedComment(target, baseBranch, mergePolicy) {
     `Repository auto-merge enabled: \`${mergePolicy.autoMergeSupported ? "yes" : "no"}\``,
     "",
     "This is target repository setup work, not a code implementation failure."
+  ].join("\n");
+}
+
+function enforcementBlockedComment(target, baseBranch, enforcement) {
+  return [
+    `DarkFactory enforcement gate blocked \`${target}\` before cloning or running a worker.`,
+    "",
+    "Target branch:",
+    "",
+    `\`${baseBranch}\``,
+    "",
+    "Failed enforcement rules:",
+    "",
+    ...enforcement.findings
+      .filter((finding) => finding.severity === "block")
+      .map((finding) => `- **${finding.rule}**: ${finding.message}`),
+    "",
+    "This is a policy failure, not a code implementation failure."
   ].join("\n");
 }
 

@@ -1316,8 +1316,8 @@ test("df-sweep merges green app-authored dev worker PRs and blocks red ones", as
     }
   });
 
-  const greenResult = await considerSweepPullRequest(repository, green);
-  const redResult = await considerSweepPullRequest(repository, red);
+  const greenResult = await considerSweepPullRequest(repository, green, { rules: [] });
+  const redResult = await considerSweepPullRequest(repository, red, { rules: [] });
 
   assert.equal(greenResult.action, "merge");
   assert.equal(greenResult.base, "dev");
@@ -1357,7 +1357,7 @@ test("df-sweep holds worker PRs when the Codex Review context is present and red
     }
   });
 
-  const result = await considerSweepPullRequest(repository, pull);
+  const result = await considerSweepPullRequest(repository, pull, { rules: [] });
 
   assert.equal(result.action, "skip");
   assert.equal(result.reason, "checks-not-green");
@@ -1470,7 +1470,7 @@ test("df-sweep holds worker PRs when managed config declares Codex Review but th
     }
   });
 
-  const result = await considerSweepPullRequest(repository, pull);
+  const result = await considerSweepPullRequest(repository, pull, { rules: [] });
 
   assert.equal(result.action, "skip");
   assert.equal(result.reason, "checks-not-green");
@@ -1807,6 +1807,57 @@ test("df-orchestrate restores df:ready when workflow dispatch fails", async () =
   assert.notEqual(dispatchIndex, -1);
   assert.notEqual(restoreIndex, -1);
   assert.ok(dispatchIndex < restoreIndex);
+});
+
+test("df-sweep evaluates enforcement rules before merge", async () => {
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const pull = workerPull({ number: 200, checkConclusion: "SUCCESS", author: "app/darkfactory-agent" });
+  const enforcementRules = {
+    schemaVersion: 1,
+    rules: [{ id: "work-PRs-target-dev", enabled: true, severity: "block", parameters: { defaultBranch: "main" } }]
+  };
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+
+  configureSweepRuntime({
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    dataRepo: "marius-patrik/darkfactory-data",
+    gh: {
+      request: async (method: string, pathName: string, body?: any) => {
+        calls.push({ method, pathName, body });
+        if (method === "GET" && pathName.endsWith("/protection")) {
+          const error: Error & { status?: number } = new Error("Branch not protected");
+          error.status = 404;
+          throw error;
+        }
+        if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/200/labels") return {};
+        if (method === "DELETE" && pathName.startsWith("/repos/marius-patrik/active/issues/200/labels/")) return {};
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/200/comments?per_page=100") return [];
+        if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/200/comments") return {};
+        throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+      }
+    }
+  });
+
+  const result = await considerSweepPullRequest(repository, pull, enforcementRules);
+
+  assert.equal(result.action, "skip");
+  assert.equal(result.reason, "enforcement-rules");
+  assert.ok(result.findings.some((finding: { rule: string }) => finding.rule === "work-PRs-target-dev"));
+  assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/200/merge"), false);
+});
+
+test("df-work loads and evaluates enforcement rules before clone or provider", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /import \{ evaluateEnforcementRules, loadEnforcementRules \} from "\.\/df-enforcement\.mjs"/);
+  assert.match(source, /loadEnforcementRules\(CONTROL_ROOT\)/);
+  assert.match(source, /evaluateEnforcementRules\(enforcementRules,/);
+  assert.match(source, /enforcementBlockedComment\(/);
+  const enforcementIndex = source.indexOf("evaluateEnforcementRules(enforcementRules");
+  const cloneIndex = source.indexOf("await cloneRepository");
+  assert.notEqual(enforcementIndex, -1);
+  assert.notEqual(cloneIndex, -1);
+  assert.ok(enforcementIndex < cloneIndex);
 });
 
 function workerPull(options: {

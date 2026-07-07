@@ -33,11 +33,13 @@ test("checkRepositorySetup returns no comment when managed setup is current", as
       ".github/scripts/validate-codex-review.mjs": "#!/usr/bin/env node\n",
       ".github/scripts/dark-factory-release-check.mjs": "#!/usr/bin/env node\n",
       ".github/scripts/df-lib.mjs": "export {}\n",
+      ".github/scripts/df-enforcement.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-plan.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-orchestrate.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-sweep.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-work.mjs": "import './df-lib.mjs';\n",
       ".darkfactory/branching-policy.md": "# Branching\n",
+      ".darkfactory/enforcement-rules.json": "{}\n",
       ".darkfactory/labels.json": "{}\n",
       ".darkfactory/managed-repository.json": "{}\n",
       ".darkfactory/installer-policy.json": "{}\n",
@@ -79,6 +81,7 @@ test("checkRepositorySetup reports stale agents and missing github bootstrap", a
   assert.ok(comment?.includes(".github/workflows/df-work.yml"));
   assert.ok(comment?.includes(".github/workflows/codex-review.yml"));
   assert.ok(comment?.includes(".github/scripts/validate-codex-review.mjs"));
+  assert.ok(comment?.includes(".darkfactory/enforcement-rules.json"));
   assert.ok(comment?.includes(".darkfactory/managed-repository.json"));
 });
 

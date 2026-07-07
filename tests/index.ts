@@ -4,6 +4,7 @@ import "./df-audit.test.js";
 import "./df-orchestrate.test.js";
 import "./df-plan.test.js";
 import "./df-providers.test.js";
+import "./enforcement-rules.test.js";
 import "./managed-sync.test.js";
 import "./script-policy.test.js";
 import "./repository-setup.test.js";
