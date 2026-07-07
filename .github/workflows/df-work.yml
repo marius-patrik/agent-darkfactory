@@ -79,6 +79,8 @@ jobs:
         env:
           DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+          KIMI_AUTH_JSON: ${{ secrets.KIMI_AUTH_JSON }}
+          AGY_AUTH_JSON: ${{ secrets.AGY_AUTH_JSON }}
           DF_CONTROL_REPO: marius-patrik/agent-darkfactory
           DF_TARGET_REPO: ${{ inputs.repo }}
           DF_TARGET_ISSUE_NUMBER: ${{ inputs.issue_number }}
