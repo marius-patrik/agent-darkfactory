@@ -22,17 +22,23 @@ import {
   taskClassFromLabels,
   writeRunLedger
 } from "./df-lib.mjs";
+import {
+  availableProviders,
+  buildProviderImage,
+  loadProviderRegistry,
+  prepareProviderAuth,
+  resolveModel,
+  runProviderWorker,
+  runWithFailover
+} from "./df-providers.mjs";
 
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
-const CODEX_AUTH_JSON = process.env.CODEX_AUTH_JSON ?? "";
 const CONTROL_REPO = parseRepo(requiredEnv("DF_CONTROL_REPO"));
 const TARGET_REPO = parseRepo(requiredEnv("DF_TARGET_REPO"));
 const TARGET_ISSUE_NUMBER = Number(requiredEnv("DF_TARGET_ISSUE_NUMBER"));
 const TARGET_BASE_REF = process.env.DF_TARGET_BASE_REF?.trim() || "";
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
-const WORKER_IMAGE = process.env.DF_WORKER_IMAGE ?? "darkfactory-codex-worker";
-const CODEX_MODEL = process.env.DF_CODEX_MODEL ?? "gpt-5.5";
 const DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
 const GIT_BASIC_AUTH = Buffer.from(`x-access-token:${TOKEN}`).toString("base64");
 const gh = createGithubClient(TOKEN, "darkfactory-worker");
@@ -54,19 +60,24 @@ async function main() {
   const codeEffort = taskRouting.effort;
   const target = `${repoName(TARGET_REPO)}#${TARGET_ISSUE_NUMBER}`;
   const branch = `df/${TARGET_ISSUE_NUMBER}-${slug(issue.title)}`;
+  const providerRegistry = await loadProviderRegistry(CONTROL_ROOT);
+  const candidateProviders = availableProviders(providerRegistry, process.env);
+
   const ledger = {
     trigger: TRIGGER,
     issue: target,
     branch,
     status: "started",
     actions: [],
+    provider_attempts: [],
     token_usage: {
-      codex_calls: 0,
-      model: CODEX_MODEL,
+      total_calls: 0,
+      provider: "",
+      model: "",
       model_reasoning_effort: codeEffort,
       input_tokens: null,
       output_tokens: null,
-      note: "codex exec token counters are not exposed to this script yet"
+      note: "provider token counters are not exposed to this script yet"
     }
   };
   let tempRoot = "";
@@ -128,6 +139,7 @@ async function main() {
   }
 
   try {
+    const providerOrder = candidateProviders.map((provider) => provider.id).join(", ") || "none";
     await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:running"], ["df:ready", "df:blocked", "df:done"]);
     await createIssueComment(
       TARGET_REPO,
@@ -137,18 +149,18 @@ async function main() {
         "",
         `Branch: \`${branch}\``,
         `Task class: \`${taskRouting.taskClass}\``,
-        `Codex reasoning effort: \`${codeEffort}\``,
+        `Reasoning effort: \`${codeEffort}\``,
+        `Provider order: \`${providerOrder}\``,
         `Merge policy: ${mergePolicy.summary}`
       ].join("\n")
     );
 
-    if (!CODEX_AUTH_JSON.trim()) {
-      throw new Error("CODEX_AUTH_JSON is not configured for the worker.");
+    if (candidateProviders.length === 0) {
+      throw new Error("all providers quota-limited (no enabled providers with configured secrets)");
     }
 
     tempRoot = await mkdtemp(path.join(tmpdir(), "df-work-"));
     const worktree = path.join(tempRoot, "repo");
-    const codexHome = path.join(tempRoot, "codex-home");
 
     await cloneRepository(TARGET_REPO, worktree, workBaseBranch);
     if (await remoteBranchExists(TARGET_REPO, branch)) {
@@ -160,12 +172,36 @@ async function main() {
     }
     runGit(["checkout", "-b", branch], worktree);
 
-    await writeCodexAuth(codexHome);
     const briefInfo = await writeTaskBrief(worktree, issue, workBaseBranch, taskRouting);
     ledger.token_usage.input_brief_characters = briefInfo.characters;
-    buildWorkerImage();
-    ledger.token_usage.codex_calls += 1;
-    runCodexWorker(worktree, codexHome, codeEffort);
+
+    const workerResult = await runWithFailover(
+      candidateProviders,
+      async (provider, model) => {
+        const providerHome = path.join(tempRoot, `${provider.id}-home`);
+        const authJson = process.env[provider.secret] ?? "";
+        await prepareProviderAuth(provider, authJson, providerHome);
+        buildProviderImage(provider, CONTROL_ROOT);
+        return runProviderWorker(provider, {
+          worktree,
+          homeDir: providerHome,
+          model,
+          codeEffort,
+          controlRoot: CONTROL_ROOT
+        });
+      },
+      {
+        taskClass: taskRouting.taskClass,
+        onAttempt: (attempt) => {
+          ledger.provider_attempts.push(attempt);
+          if (attempt.result === "success" || attempt.result === "provider-failure") {
+            ledger.token_usage.total_calls += 1;
+          }
+        }
+      }
+    );
+    ledger.token_usage.provider = workerResult.provider;
+    ledger.token_usage.model = workerResult.model;
 
     const summary = await readWorkerSummary(worktree);
     await removeWorkerScratch(worktree);
@@ -206,6 +242,7 @@ async function main() {
       [
         `DarkFactory worker opened ${pullRequest.html_url}.`,
         "",
+        `Provider: \`${workerResult.provider}\` (${workerResult.model})`,
         `Automerge: ${automerge.enabled ? "enabled" : `not enabled (${automerge.reason})`}.`,
         "",
         "Worker summary:",
@@ -214,10 +251,11 @@ async function main() {
       ].join("\n")
     );
     ledger.status = "success";
-    ledger.actions.push({ action: "open-pr", url: pullRequest.html_url, automerge });
+    ledger.actions.push({ action: "open-pr", url: pullRequest.html_url, automerge, provider: workerResult.provider, model: workerResult.model });
   } catch (error) {
     ledger.status = "blocked";
-    ledger.error = sanitize(error.stack || error.message || String(error), TOKEN);
+    const baseError = sanitize(error.stack || error.message || String(error), TOKEN);
+    ledger.error = error.providerExhausted ? `all providers quota-limited\n\n${baseError}` : baseError;
     if (pullRequest) {
       ledger.pull_request = pullRequest.html_url;
     }
@@ -236,7 +274,7 @@ async function main() {
 
 function preflightBlockedComment(target, baseBranch, mergePolicy) {
   return [
-    `DarkFactory blocked \`${target}\` before cloning or running Codex.`,
+    `DarkFactory blocked \`${target}\` before cloning or running a worker.`,
     "",
     "Blocker:",
     "",
@@ -341,7 +379,7 @@ async function blockStaleWorkerBranch(branch) {
     TARGET_REPO,
     TARGET_ISSUE_NUMBER,
     [
-      "DarkFactory blocked this worker before running Codex.",
+      "DarkFactory blocked this worker before running a provider.",
       "",
       "Blocker:",
       "",
@@ -428,11 +466,6 @@ async function findOpenIssueByMarker(repository, marker) {
   return null;
 }
 
-async function writeCodexAuth(codexHome) {
-  await mkdir(codexHome, { recursive: true });
-  await writeFile(path.join(codexHome, "auth.json"), CODEX_AUTH_JSON, { mode: 0o600 });
-}
-
 async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting) {
   const scratchDir = path.join(worktree, ".darkfactory");
   await mkdir(scratchDir, { recursive: true });
@@ -452,7 +485,7 @@ async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting) {
     `Title: ${issue.title}`,
     `Labels: ${issueLabels || "(none)"}`,
     `Task class: ${taskRouting.taskClass}`,
-    `Codex reasoning effort: ${taskRouting.effort}`,
+    `Reasoning effort: ${taskRouting.effort}`,
     "",
     "## Contract",
     "",
@@ -482,46 +515,6 @@ async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting) {
   return { characters: brief.length };
 }
 
-function buildWorkerImage() {
-  const dockerfile = path.join(CONTROL_ROOT, ".github", "codex-review.Dockerfile");
-  runCommand("docker", ["build", "-f", dockerfile, "-t", WORKER_IMAGE, CONTROL_ROOT], process.cwd());
-}
-
-function runCodexWorker(worktree, codexHome, codeEffort) {
-  const script = [
-    "set -euo pipefail",
-    "git config --global --add safe.directory /workspace",
-    "cd /workspace",
-    "codex exec --cd /workspace --model \"${CODEX_MODEL}\" -c \"model_reasoning_effort=\\\"${CODEX_EFFORT}\\\"\" --sandbox danger-full-access --output-last-message .darkfactory/df-worker-summary.md - < .darkfactory/df-task-brief.md"
-  ].join("\n");
-
-  runCommand(
-    "docker",
-    [
-      "run",
-      "--rm",
-      "--entrypoint",
-      "bash",
-      "-e",
-      "CODEX_HOME=/codex-home",
-      "-e",
-      "HOME=/codex-home",
-      "-e",
-      `CODEX_MODEL=${CODEX_MODEL}`,
-      "-e",
-      `CODEX_EFFORT=${codeEffort}`,
-      "-v",
-      `${worktree}:/workspace`,
-      "-v",
-      `${codexHome}:/codex-home`,
-      WORKER_IMAGE,
-      "-lc",
-      script
-    ],
-    process.cwd()
-  );
-}
-
 async function readWorkerSummary(worktree) {
   const summary = await readOptional(path.join(worktree, ".darkfactory", "df-worker-summary.md"));
   return summary?.trim() || "Worker completed without a written summary.";
@@ -542,6 +535,8 @@ async function createPullRequest(repository, base, branch, issue, summary) {
       "## DarkFactory Worker Summary",
       "",
       truncate(summary, 10000),
+      "",
+      `Executed by provider \`${workerResult.provider}\` with model \`${workerResult.model}\`.`,
       "",
       `Closes #${TARGET_ISSUE_NUMBER}`
     ].join("\n")

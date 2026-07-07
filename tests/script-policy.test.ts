@@ -757,18 +757,18 @@ test("df-work merge-policy preflight blocks protected branches when target auto-
   assert.match(policy.reason, /requires GitHub auto-merge before dispatching a worker/);
 });
 
-test("df-work blocks target auto-merge setup failures before clone or Codex", async () => {
+test("df-work blocks target auto-merge setup failures before clone or provider worker", async () => {
   const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
 
   const blockIndex = source.indexOf("if (mergePolicy.blocked)");
   const cloneIndex = source.indexOf("await cloneRepository");
-  const codexIndex = source.indexOf("runCodexWorker");
+  const workerIndex = source.indexOf("await runWithFailover");
   assert.notEqual(blockIndex, -1);
   assert.notEqual(cloneIndex, -1);
-  assert.notEqual(codexIndex, -1);
+  assert.notEqual(workerIndex, -1);
   assert.ok(blockIndex < cloneIndex);
-  assert.ok(blockIndex < codexIndex);
-  assert.match(source, /before cloning or running Codex/);
+  assert.ok(blockIndex < workerIndex);
+  assert.match(source, /before cloning or running/);
   assert.match(source, /not a code implementation failure/);
 });
 
