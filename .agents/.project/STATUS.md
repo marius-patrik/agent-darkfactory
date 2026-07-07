@@ -5,8 +5,8 @@
 | Area | State |
 | --- | --- |
 | Repository | `marius-patrik/agent-darkfactory` |
-| Branch | `main` |
-| Issue | n/a |
+| Branch | `df/180-df-plan-human-closure-of-a-prd-marked-issue-must-not-be-silently-reopened` |
+| Issue | `#180` |
 | Purpose | GitHub App bot for repository automation |
 | Version | `0.2.0` |
 | Managed setup | Workspace-backed `.agents/.global`, optional repo-specific `.agents/.project`, GitHub bootstrap, and Codex Review workflow PRs |

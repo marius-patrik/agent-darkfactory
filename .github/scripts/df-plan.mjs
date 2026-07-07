@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DATA_REPO,
   PLANNING_LABELS,
@@ -30,21 +32,29 @@ import {
   writeRunLedger
 } from "./df-lib.mjs";
 
-const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
-const CONTROL_REPO = parseRepo(requiredEnv("DF_CONTROL_REPO"));
-let TARGET_REPO = parseRepo(process.env.DF_TARGET_REPO?.trim() || repoName(CONTROL_REPO));
+const PLANNER_BOT_LOGINS = new Set(["github-actions[bot]", "mp-agents[bot]"]);
+
 const DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const TARGET_REF = process.env.DF_TARGET_REF?.trim() || "";
 const PLAN_ALL = process.env.DF_PLAN_ALL === "true";
-const gh = createGithubClient(TOKEN, "darkfactory-plan");
 
-main().catch((error) => {
-  console.error(error.stack || error.message || String(error));
-  process.exitCode = 1;
-});
+let gh;
+let TARGET_REPO;
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.stack || error.message || String(error));
+    process.exitCode = 1;
+  });
+}
 
 async function main() {
+  const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
+  const CONTROL_REPO = parseRepo(requiredEnv("DF_CONTROL_REPO"));
+  TARGET_REPO = parseRepo(process.env.DF_TARGET_REPO?.trim() || repoName(CONTROL_REPO));
+  gh = createGithubClient(TOKEN, "darkfactory-plan");
+
   const registry = await readManagedRepoRegistry();
   const targets = PLAN_ALL ? await listActiveManagedRepos(gh, CONTROL_REPO, { registry }) : [TARGET_REPO];
   for (const target of targets) {
@@ -59,7 +69,7 @@ async function main() {
       continue;
     }
     try {
-      await reconcileTargetRepository(repo);
+      await reconcileTargetRepository(repo, CONTROL_REPO);
     } catch (error) {
       if (warnReadOnlyRepository(TARGET_REPO, error, "planning")) {
         try {
@@ -74,7 +84,7 @@ async function main() {
   }
 }
 
-async function reconcileTargetRepository(repo) {
+async function reconcileTargetRepository(repo, controlRepo) {
   assertAllowedRepo(TARGET_REPO);
   if (repo.archived === true || repo.disabled === true) {
     console.warn(`DarkFactory planning skipped ${repoName(TARGET_REPO)} because GitHub reports archived=${repo.archived === true} disabled=${repo.disabled === true}.`);
@@ -202,8 +212,8 @@ async function reconcileTargetRepository(repo) {
         body,
         labels: createLabels
       });
-      const labelUpdate = await setIssueLabels(TARGET_REPO, created.number, labels);
-      const dispatch = await dispatchIfNewlyReady(TARGET_REPO, created.number, labelUpdate);
+      const labelUpdate = await setIssueLabels(gh, TARGET_REPO, created.number, labels);
+      const dispatch = await dispatchIfNewlyReady(gh, TARGET_REPO, created.number, labelUpdate);
       ledger.actions.push({ action: "create-issue", marker: item.marker, issue: issueRef(created), labels });
       if (dispatch) ledger.actions.push(dispatch);
       previousIssueNumber = created.number;
@@ -212,17 +222,10 @@ async function reconcileTargetRepository(repo) {
     }
 
     if (existing.state === "closed") {
-      const reopened = await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${existing.number}`, {
-        title: item.title,
-        body,
-        state: "open"
-      });
-      const labelUpdate = await setIssueLabels(TARGET_REPO, existing.number, labels, { preserveWorkerState: false });
-      const dispatch = await dispatchIfNewlyReady(TARGET_REPO, existing.number, labelUpdate);
-      ledger.actions.push({ action: "reopen-prd-issue", marker: item.marker, issue: issueRef(reopened), labels });
-      if (dispatch) ledger.actions.push(dispatch);
-      previousIssueNumber = reopened.number;
-      previousOpenIssueNumber = reopened.number;
+      const { action, previousIssueNumber: nextPrevious, previousOpenIssueNumber: nextPreviousOpen } = await handleClosedIncompletePrdIssue(gh, TARGET_REPO, controlRepo, item, existing, labels, blockedBy);
+      ledger.actions.push(action);
+      previousIssueNumber = nextPrevious;
+      previousOpenIssueNumber = nextPreviousOpen;
       continue;
     }
 
@@ -246,9 +249,9 @@ async function reconcileTargetRepository(repo) {
       const updated = await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${existing.number}`, update);
       ledger.actions.push({ action: "update-issue", marker: item.marker, issue: issueRef(updated), fields: Object.keys(update) });
     }
-    const labelUpdate = await setIssueLabels(TARGET_REPO, existing.number, labels);
+    const labelUpdate = await setIssueLabels(gh, TARGET_REPO, existing.number, labels);
     ledger.actions.push({ action: "sequence-labels", marker: item.marker, issue: issueRef(existing), labels });
-    const dispatch = await dispatchIfNewlyReady(TARGET_REPO, existing.number, labelUpdate);
+    const dispatch = await dispatchIfNewlyReady(gh, TARGET_REPO, existing.number, labelUpdate);
     if (dispatch) ledger.actions.push(dispatch);
     previousIssueNumber = existing.number;
     previousOpenIssueNumber = existing.number;
@@ -516,7 +519,7 @@ async function upsertPrdBlockerIssue(repository, sourceRef, reason) {
       body,
       state: "open"
     });
-    await setIssueLabels(repository, existing.number, labels, { preserveWorkerState: false });
+    await setIssueLabels(gh, repository, existing.number, labels, { preserveWorkerState: false });
     return issueRef(updated);
   }
 
@@ -528,7 +531,7 @@ async function upsertPrdBlockerIssue(repository, sourceRef, reason) {
   return issueRef(created);
 }
 
-async function setIssueLabels(repository, issueNumber, labels, options = {}) {
+async function setIssueLabels(gh, repository, issueNumber, labels, options = {}) {
   const current = await gh.request("GET", `/repos/${repoName(repository)}/issues/${issueNumber}`);
   const currentNames = new Set(
     (current.labels || []).map((label) => typeof label === "string" ? label : label.name).filter(Boolean)
@@ -548,7 +551,7 @@ async function setIssueLabels(repository, issueNumber, labels, options = {}) {
   return { add, remove };
 }
 
-async function dispatchIfNewlyReady(repository, issueNumber, labelUpdate) {
+async function dispatchIfNewlyReady(gh, repository, issueNumber, labelUpdate) {
   if (!labelUpdate.add.includes("df:ready")) return null;
   return await dispatchReadyWorker(repository, issueNumber);
 }
@@ -716,7 +719,7 @@ async function upsertDriftIssue(repository, findings) {
       body,
       state: "open"
     });
-    await setIssueLabels(repository, existing.number, ["P1", "df:prd-drift", "df:class:standard"]);
+    await setIssueLabels(gh, repository, existing.number, ["P1", "df:prd-drift", "df:class:standard"]);
     return issueRef(updated);
   }
 
@@ -762,6 +765,131 @@ function applyBlockedBy(body, blockedBy) {
   return parts.length > 1 ? `${prefix}\n## Planning Notes\n${parts.slice(1).join("\n## Planning Notes\n")}` : prefix;
 }
 
+function isPlannerBotClosure(issue) {
+  const closedBy = issue?.closed_by;
+  if (!closedBy || typeof closedBy.login !== "string") return false;
+  if (closedBy.type !== "Bot") return false;
+  return PLANNER_BOT_LOGINS.has(closedBy.login);
+}
+
+function humanClosedPrdComment(item) {
+  return [
+    "DarkFactory L4 planning noticed this issue is closed, but the tracked PRD item is still marked as incomplete.",
+    "",
+    `PRD source: ${item.sourcePath || "PRD.md"} > ${item.section} > ${item.name}`,
+    "",
+    "If this work is done, please edit the PRD to mark the item `[x]`; otherwise reopen this issue so DarkFactory can continue tracking it.",
+    "",
+    "This disagreement has been escalated to a `df:ask-owner` planning issue in the control repository."
+  ].join("\n");
+}
+
+function askOwnerIssueMarker(repository, item) {
+  return `df-ask-owner:human-closed-prd:${slug(repoName(repository))}:${item.slug}`;
+}
+
+function askOwnerIssueTitle(repository, item) {
+  return `Human-closed PRD item - ${repoName(repository)} > ${item.name}`;
+}
+
+function askOwnerIssueBody(repository, item, issue) {
+  const marker = askOwnerIssueMarker(repository, item);
+  return [
+    `<!-- ${marker} -->`,
+    "## Human-closed PRD item",
+    "",
+    `Target repository: \`${repoName(repository)}\``,
+    `Closed issue: ${issue.html_url || `#${issue.number}`}`,
+    `PRD source: ${item.sourcePath || "PRD.md"} > ${item.section} > ${item.name}`,
+    "",
+    "### Question",
+    "",
+    `The PRD still lists **${item.name}** as incomplete, but the linked issue was closed by a human. Should DarkFactory:`,
+    "",
+    "- Mark the PRD item as completed by editing it to `[x]`, or",
+    "- Reopen the issue so the loop continues to track it.",
+    "",
+    "### Acceptance Criteria",
+    "",
+    "- Edit the PRD or reopen the issue so the PRD/backlog contradiction is resolved.",
+    "- Re-run DarkFactory planning and confirm this ask-owner issue is closed.",
+    "",
+    "### Token Use",
+    "",
+    "- AI tokens: 0 (deterministic planning escalation)."
+  ].join("\n");
+}
+
+async function escalateHumanClosedPrdIssue(gh, controlRepo, repository, item, issue) {
+  await ensureLabels(gh, controlRepo, [...PLANNING_LABELS, ...WORK_LABELS]);
+  const marker = askOwnerIssueMarker(repository, item);
+  const issues = await listIssues(gh, controlRepo, "all");
+  const existing = issues.find((candidate) => (candidate.body || "").includes(marker));
+  const title = askOwnerIssueTitle(repository, item);
+  const body = askOwnerIssueBody(repository, item, issue);
+  const labels = ["P1", "df:ask-owner", "df:class:standard"];
+
+  if (existing) {
+    const updated = await gh.request("PATCH", `/repos/${repoName(controlRepo)}/issues/${existing.number}`, {
+      title,
+      body,
+      state: "open"
+    });
+    await setIssueLabels(gh, controlRepo, existing.number, labels, { preserveWorkerState: false });
+    return {
+      action: "escalate-human-closed-prd-issue",
+      marker: item.marker,
+      issue: issueRef(issue),
+      ask_owner_issue: issueRef(updated)
+    };
+  }
+
+  await gh.request("POST", `/repos/${repoName(repository)}/issues/${issue.number}/comments`, {
+    body: humanClosedPrdComment(item)
+  });
+  const created = await gh.request("POST", `/repos/${repoName(controlRepo)}/issues`, {
+    title,
+    body,
+    labels
+  });
+  return {
+    action: "escalate-human-closed-prd-issue",
+    marker: item.marker,
+    issue: issueRef(issue),
+    ask_owner_issue: issueRef(created),
+    comment: true
+  };
+}
+
+async function handleClosedIncompletePrdIssue(gh, repository, controlRepo, item, existing, labels, blockedBy) {
+  if (isPlannerBotClosure(existing)) {
+    const reopened = await gh.request("PATCH", `/repos/${repoName(repository)}/issues/${existing.number}`, {
+      title: item.title,
+      body: prdIssueBody(item, blockedBy),
+      state: "open"
+    });
+    const labelUpdate = await setIssueLabels(gh, repository, existing.number, labels, { preserveWorkerState: false });
+    const dispatch = await dispatchIfNewlyReady(gh, repository, existing.number, labelUpdate);
+    const action = { action: "reopen-prd-issue", marker: item.marker, issue: issueRef(reopened), labels };
+    if (dispatch) action.dispatch = dispatch;
+    return { action, previousIssueNumber: reopened.number, previousOpenIssueNumber: reopened.number };
+  }
+
+  const escalation = await escalateHumanClosedPrdIssue(gh, controlRepo, repository, item, existing);
+  return { action: escalation, previousIssueNumber: existing.number, previousOpenIssueNumber: null };
+}
+
 function issueRef(issue) {
   return { number: issue.number, url: issue.html_url };
 }
+
+export {
+  PLANNER_BOT_LOGINS,
+  isPlannerBotClosure,
+  humanClosedPrdComment,
+  askOwnerIssueMarker,
+  askOwnerIssueTitle,
+  askOwnerIssueBody,
+  escalateHumanClosedPrdIssue,
+  handleClosedIncompletePrdIssue
+};
