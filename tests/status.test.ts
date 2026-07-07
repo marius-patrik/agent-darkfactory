@@ -302,6 +302,9 @@ function createStatusRequester(): GitHubRequester {
       if (path === ".darkfactory/managed-repos.json") {
         return managedReposContent({ "marius-patrik/dream": { state: "active" } });
       }
+      if (path === "PRD.md") {
+        return { type: "file" };
+      }
       if (path === "runs/marius-patrik/agent-darkfactory") {
         return [{ name: "2026-07-05T08-00-00Z-df-orchestrate.json", type: "file" }];
       }
@@ -313,6 +316,14 @@ function createStatusRequester(): GitHubRequester {
       }
       throw new Error(`unexpected path: ${path}`);
     },
+    "GET /repos/{owner}/{repo}": () => ({ default_branch: "main" }),
+    "GET /repos/{owner}/{repo}/git/trees/{tree_sha}": () => ({
+      tree: [
+        { type: "blob", path: "PRD.md" },
+        { type: "blob", path: "packages/core/package.json" },
+        { type: "blob", path: "packages/core/PRD.md" }
+      ]
+    }),
     "GET /repos/{owner}/{repo}/issues": () => [],
     "GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs": (parameters) => {
       const workflowId = String(parameters.workflow_id);
@@ -337,6 +348,8 @@ test("formatStatusReport renders a human-readable summary", async () => {
   assert.match(formatted, /df-orchestrate:/);
   assert.match(formatted, /Latest ledger: 1 dispatched at 2026-07-05T08:00:00Z/);
   assert.match(formatted, /Blocked: none/);
+  assert.match(formatted, /PRD coverage:/);
+  assert.match(formatted, /Backlog coverage:/);
 });
 
 test("buildStatusReport produces serializable JSON output", async () => {
@@ -348,4 +361,50 @@ test("buildStatusReport produces serializable JSON output", async () => {
   assert.ok(typeof json.recentRuns === "object");
   assert.ok(typeof json.latestLedger === "object" || json.latestLedger === null);
   assert.ok(Array.isArray(json.blocked));
+  assert.ok(Array.isArray(json.prdCoverage));
+  assert.ok(Array.isArray(json.backlogCoverage));
+});
+
+test("fetchPrdCoverage reports root and package PRD presence", async () => {
+  const github = createRequester({
+    "GET /repos/{owner}/{repo}": () => ({ default_branch: "main" }),
+    "GET /repos/{owner}/{repo}/contents/{path}": (parameters) => {
+      if (parameters.path === "PRD.md") {
+        return { type: "file" };
+      }
+      throw { status: 404 };
+    },
+    "GET /repos/{owner}/{repo}/git/trees/{tree_sha}": () => ({
+      tree: [
+        { type: "blob", path: "PRD.md" },
+        { type: "blob", path: "packages/core/package.json" },
+        { type: "blob", path: "packages/core/PRD.md" },
+        { type: "blob", path: "packages/ui/package.json" }
+      ]
+    })
+  });
+
+  const { fetchPrdCoverage } = await import("../src/status.js");
+  const coverage = await fetchPrdCoverage(github, [{ owner: "marius-patrik", repo: "dream" }]);
+
+  assert.deepEqual(coverage, [
+    { owner: "marius-patrik", repo: "dream", rootPrd: true, packagePrds: 1, totalPackages: 2 }
+  ]);
+});
+
+test("fetchBacklogCoverage counts PRD-tracked open issues", async () => {
+  const github = createRequester({
+    "GET /repos/{owner}/{repo}/issues": () => [
+      { number: 1, title: "Tracked", html_url: "https://example/1", body: "<!-- df-prd:milestones-m1 -->" },
+      { number: 2, title: "Untracked", html_url: "https://example/2", body: "Plain issue." },
+      { number: 3, title: "PR", html_url: "https://example/3", pull_request: {} }
+    ]
+  });
+
+  const { fetchBacklogCoverage } = await import("../src/status.js");
+  const coverage = await fetchBacklogCoverage(github, [{ owner: "marius-patrik", repo: "dream" }]);
+
+  assert.deepEqual(coverage, [
+    { owner: "marius-patrik", repo: "dream", openIssues: 2, prdTrackedIssues: 1 }
+  ]);
 });

@@ -50,6 +50,17 @@ export interface LedgerSummary {
   timestamp: string | null;
 }
 
+export interface PrdCoverage extends RepositoryRef {
+  rootPrd: boolean;
+  packagePrds: number;
+  totalPackages: number;
+}
+
+export interface BacklogCoverage extends RepositoryRef {
+  openIssues: number;
+  prdTrackedIssues: number;
+}
+
 export interface StatusReport {
   generatedAt: string;
   managedRepos: ManagedRepo[];
@@ -57,6 +68,8 @@ export interface StatusReport {
   recentRuns: RecentRuns;
   latestLedger: LedgerSummary | null;
   blocked: BlockedIssue[];
+  prdCoverage: PrdCoverage[];
+  backlogCoverage: BacklogCoverage[];
 }
 
 export interface StatusOptions {
@@ -121,11 +134,13 @@ export async function buildStatusReport(
   const dataRepo = options.dataRepo ?? DATA_REPO;
 
   const managedRepos = await fetchManagedRepos(github, { owner, repo: controlRepo }, owner);
-  const [loopState, recentRuns, latestLedger, blocked] = await Promise.all([
+  const [loopState, recentRuns, latestLedger, blocked, prdCoverage, backlogCoverage] = await Promise.all([
     fetchLoopStateForRepos(github, managedRepos),
     fetchRecentRuns(github, { owner, repo: controlRepo }),
     fetchLatestLedger(github, { owner, repo: dataRepo }, { owner, repo: controlRepo }),
-    fetchBlockedIssues(github, managedRepos)
+    fetchBlockedIssues(github, managedRepos),
+    fetchPrdCoverage(github, managedRepos),
+    fetchBacklogCoverage(github, managedRepos)
   ]);
 
   return {
@@ -134,7 +149,9 @@ export async function buildStatusReport(
     loopState,
     recentRuns,
     latestLedger,
-    blocked
+    blocked,
+    prdCoverage,
+    backlogCoverage
   };
 }
 
@@ -373,6 +390,170 @@ export async function fetchBlockedIssues(
   });
 }
 
+export async function fetchPrdCoverage(
+  github: GitHubRequester,
+  repos: RepositoryRef[]
+): Promise<PrdCoverage[]> {
+  return Promise.all(repos.map((repo) => fetchRepoPrdCoverage(github, repo)));
+}
+
+async function fetchRepoPrdCoverage(github: GitHubRequester, repo: RepositoryRef): Promise<PrdCoverage> {
+  const repoInfo = await github.request("GET /repos/{owner}/{repo}", {
+    owner: repo.owner,
+    repo: repo.repo
+  });
+
+  const defaultBranch = isRecord(repoInfo.data) && typeof repoInfo.data.default_branch === "string"
+    ? repoInfo.data.default_branch
+    : "main";
+
+  const rootPrd = await hasRootPrd(github, repo, defaultBranch);
+  const { packagePrds, totalPackages } = await countPackagePrds(github, repo, defaultBranch);
+
+  return {
+    owner: repo.owner,
+    repo: repo.repo,
+    rootPrd,
+    packagePrds,
+    totalPackages
+  };
+}
+
+async function hasRootPrd(github: GitHubRequester, repo: RepositoryRef, ref: string): Promise<boolean> {
+  try {
+    const response = await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
+      owner: repo.owner,
+      repo: repo.repo,
+      path: "PRD.md",
+      ref
+    });
+    return isRecord(response.data) && response.data.type === "file";
+  } catch (error) {
+    if (isRequestError(error) && error.status === 404) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function countPackagePrds(
+  github: GitHubRequester,
+  repo: RepositoryRef,
+  ref: string
+): Promise<{ packagePrds: number; totalPackages: number }> {
+  try {
+    const response = await github.request("GET /repos/{owner}/{repo}/git/trees/{tree_sha}", {
+      owner: repo.owner,
+      repo: repo.repo,
+      tree_sha: encodeURIComponent(ref),
+      recursive: 1
+    });
+
+    if (!isRecord(response.data) || !Array.isArray(response.data.tree)) {
+      return { packagePrds: 0, totalPackages: 0 };
+    }
+
+    const tree = response.data.tree as Array<{ type?: string; path?: string }>;
+    const packageDirs = new Set<string>();
+    const prdPaths = new Set<string>();
+
+    for (const entry of tree) {
+      if (entry.type !== "blob" || typeof entry.path !== "string") continue;
+      if (entry.path.endsWith("/package.json")) {
+        const dir = entry.path.slice(0, -"/package.json".length);
+        if (dir && !dir.includes("node_modules") && !dir.includes("/.") && dir !== ".") {
+          packageDirs.add(dir);
+        }
+      }
+      if (entry.path === "PRD.md" || entry.path.endsWith("/PRD.md")) {
+        prdPaths.add(entry.path);
+      }
+    }
+
+    let packagePrds = 0;
+    for (const dir of packageDirs) {
+      if (prdPaths.has(`${dir}/PRD.md`)) {
+        packagePrds += 1;
+      }
+    }
+
+    return { packagePrds, totalPackages: packageDirs.size };
+  } catch (error) {
+    if (isRequestError(error) && (error.status === 404 || error.status === 409)) {
+      return { packagePrds: 0, totalPackages: 0 };
+    }
+    throw error;
+  }
+}
+
+export async function fetchBacklogCoverage(
+  github: GitHubRequester,
+  repos: RepositoryRef[]
+): Promise<BacklogCoverage[]> {
+  return Promise.all(repos.map((repo) => fetchRepoBacklogCoverage(github, repo)));
+}
+
+async function fetchRepoBacklogCoverage(github: GitHubRequester, repo: RepositoryRef): Promise<BacklogCoverage> {
+  const issues = await listOpenIssues(github, repo);
+  let prdTrackedIssues = 0;
+  for (const issue of issues) {
+    const body = typeof issue.body === "string" ? issue.body : "";
+    if (/df-prd:[a-z0-9-]+/.test(body)) {
+      prdTrackedIssues += 1;
+    }
+  }
+
+  return {
+    owner: repo.owner,
+    repo: repo.repo,
+    openIssues: issues.length,
+    prdTrackedIssues
+  };
+}
+
+async function listOpenIssues(
+  github: GitHubRequester,
+  repo: RepositoryRef
+): Promise<Array<{ number: number; title: string; html_url: string; body?: string }>> {
+  const issues: Array<{ number: number; title: string; html_url: string; body?: string }> = [];
+
+  for (let page = 1; page <= 20; page += 1) {
+    const response = await github.request("GET /repos/{owner}/{repo}/issues", {
+      owner: repo.owner,
+      repo: repo.repo,
+      state: "open",
+      per_page: 100,
+      page
+    });
+
+    if (!Array.isArray(response.data)) {
+      throw new Error(`GitHub returned an invalid issues list for ${repo.owner}/${repo.repo}`);
+    }
+
+    const batch: Array<{ number: number; title: string; html_url: string; body?: string }> = [];
+    for (const item of response.data) {
+      if (!isRecord(item)) continue;
+      if (isRecord(item.pull_request)) continue;
+      if (
+        typeof item.number !== "number" ||
+        typeof item.title !== "string" ||
+        typeof item.html_url !== "string"
+      ) {
+        continue;
+      }
+      batch.push({ number: item.number, title: item.title, html_url: item.html_url, body: typeof item.body === "string" ? item.body : undefined });
+    }
+
+    issues.push(...batch);
+
+    if (!hasNextPage(response.headers)) {
+      break;
+    }
+  }
+
+  return issues;
+}
+
 export function formatStatusReport(report: StatusReport): string {
   const lines: string[] = [];
   lines.push("DarkFactory orchestration status");
@@ -422,6 +603,25 @@ export function formatStatusReport(report: StatusReport): string {
   } else {
     lines.push("Blocked: none");
   }
+  lines.push("");
+
+  lines.push("PRD coverage:");
+  lines.push(`  ${pad("repo", 32)} ${pad("root", 5)} ${pad("packages", 12)}`);
+  for (const coverage of report.prdCoverage) {
+    const packageCell = `${coverage.packagePrds}/${coverage.totalPackages}`;
+    lines.push(
+      `  ${pad(`${coverage.owner}/${coverage.repo}`, 32)} ${pad(coverage.rootPrd ? "yes" : "no", 5)} ${pad(packageCell, 12)}`
+    );
+  }
+  lines.push("");
+
+  lines.push("Backlog coverage:");
+  lines.push(`  ${pad("repo", 32)} ${pad("open", 5)} ${pad("prd", 5)}`);
+  for (const coverage of report.backlogCoverage) {
+    lines.push(
+      `  ${pad(`${coverage.owner}/${coverage.repo}`, 32)} ${pad(String(coverage.openIssues), 5)} ${pad(String(coverage.prdTrackedIssues), 5)}`
+    );
+  }
 
   return lines.join("\n");
 }
@@ -462,4 +662,8 @@ function decodeContentResponse(data: unknown): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isRequestError(error: unknown): error is { status: number } {
+  return isRecord(error) && typeof error.status === "number";
 }

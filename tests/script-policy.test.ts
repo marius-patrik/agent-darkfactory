@@ -20,6 +20,7 @@ const {
   cleanupTempRoot,
   CODEX_REVIEW_REQUIRED_CONTEXT,
   extractClosingIssueNumbers,
+  extractReadmeFirstParagraph,
   findAuditMarker,
   getBranchProtection,
   getRequiredStatusCheckContexts,
@@ -28,12 +29,15 @@ const {
   isDarkFactoryWorkerPullRequest,
   isParkedRepo,
   listActiveManagedRepos,
+  listPackagePaths,
   parsePrdItems,
   plannedIssueLabelDiff,
   preflightMergePolicy,
   prdIssueBody,
+  prdScaffoldPullRequestBody,
   reconcileLabelDiff,
   repoName,
+  scaffoldPackagePrd,
   taskClassFromLabels,
   withCodexReviewRequiredContext
 } = dfLib;
@@ -87,6 +91,46 @@ test("parsePrdItems treats checked PRD checkboxes as a completion signal", () =>
   assert.equal(openItem.completed, false);
   assert.equal(doneItem.completed, true);
   assert.equal(doneItem.marker, openItem.marker);
+});
+
+test("listPackagePaths finds package.json directories excluding node_modules", () => {
+  const paths = listPackagePaths([
+    { type: "blob", path: "package.json" },
+    { type: "blob", path: "packages/core/package.json" },
+    { type: "blob", path: "packages/ui/package.json" },
+    { type: "blob", path: "node_modules/lib/package.json" },
+    { type: "blob", path: "packages/core/index.ts" }
+  ]);
+
+  assert.deepEqual(paths, ["packages/core", "packages/ui"]);
+});
+
+test("scaffoldPackagePrd generates a minimal PRD with vision and product name", () => {
+  const prd = scaffoldPackagePrd("marius-patrik/example", {
+    vision: "Example product vision.",
+    packageName: "core",
+    isRoot: false
+  });
+
+  assert.match(prd, /# core PRD/);
+  assert.match(prd, /Example product vision\./);
+  assert.match(prd, /## Core loops/);
+  assert.match(prd, /## Milestones/);
+});
+
+test("extractReadmeFirstParagraph skips headings and returns first text paragraph", () => {
+  const readme = "# Example\n\nFirst paragraph.\nMore first.\n\nSecond paragraph.";
+  assert.equal(extractReadmeFirstParagraph(readme), "First paragraph. More first.");
+  assert.equal(extractReadmeFirstParagraph(""), "");
+  assert.equal(extractReadmeFirstParagraph(null), "");
+});
+
+test("prdScaffoldPullRequestBody includes the scaffold marker and file list", () => {
+  const body = prdScaffoldPullRequestBody("marius-patrik/example", ["PRD.md", "packages/core/PRD.md"]);
+
+  assert.match(body, /<!-- dark-factory:prd-scaffold -->/);
+  assert.match(body, /- `PRD.md`/);
+  assert.match(body, /- `packages\/core\/PRD.md`/);
 });
 
 test("task class labels map to Codex reasoning effort", () => {
@@ -544,7 +588,8 @@ test("df-plan workflow reacts safely to PRD edits on the trusted default branch"
   assert.match(workflow, /marius-patrik\/fabrica/);
   assert.match(workflow, /must be a marius-patrik repository/);
   assert.match(workflow, /permission-issues:\s+write/);
-  assert.doesNotMatch(workflow, /permission-pull-requests:\s+write/);
+  assert.match(workflow, /permission-pull-requests:\s+write/);
+  assert.match(workflow, /permission-contents:\s+write/);
   assert.doesNotMatch(workflow, /DARK_FACTORY_CONTROL_REF/);
 });
 

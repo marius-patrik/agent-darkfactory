@@ -7,6 +7,7 @@ import {
   driftIssueBody,
   ensureLabels,
   extractClosingIssueNumbers,
+  extractReadmeFirstParagraph,
   findDriftMarker,
   findPrdMarker,
   getOptionalFileContent,
@@ -14,13 +15,16 @@ import {
   isActiveManagedRepo,
   listActiveManagedRepos,
   listIssues,
+  listPackagePaths,
   readManagedRepoRegistry,
   parsePrdItems,
   parseRepo,
   plannedIssueLabelDiff,
   prdIssueBody,
+  prdScaffoldPullRequestBody,
   repoName,
   requiredEnv,
+  scaffoldPackagePrd,
   slug,
   warnReadOnlyRepository,
   writeRunLedger
@@ -49,18 +53,29 @@ async function main() {
       console.warn(`DarkFactory planning skipped ${repoName(TARGET_REPO)} because managed lifecycle state is not active.`);
       continue;
     }
+    const repo = await getRepository(gh, TARGET_REPO);
+    if (repo.archived === true || repo.disabled === true) {
+      console.warn(`DarkFactory planning skipped ${repoName(TARGET_REPO)} because GitHub reports archived=${repo.archived === true} disabled=${repo.disabled === true}.`);
+      continue;
+    }
     try {
-      await reconcileTargetRepository();
+      await reconcileTargetRepository(repo);
     } catch (error) {
-      if (warnReadOnlyRepository(TARGET_REPO, error, "planning")) continue;
+      if (warnReadOnlyRepository(TARGET_REPO, error, "planning")) {
+        try {
+          await upsertPrdBlockerIssue(TARGET_REPO, repo.default_branch || "main", `Planning could not write to ${repoName(TARGET_REPO)} because the repository is archived, disabled, or read-only: ${error.message || String(error)}`);
+        } catch (blockerError) {
+          console.warn(`DarkFactory failed to file PRD blocker issue for ${repoName(TARGET_REPO)}: ${blockerError.message || String(blockerError)}`);
+        }
+        continue;
+      }
       throw error;
     }
   }
 }
 
-async function reconcileTargetRepository() {
+async function reconcileTargetRepository(repo) {
   assertAllowedRepo(TARGET_REPO);
-  const repo = await getRepository(gh, TARGET_REPO);
   if (repo.archived === true || repo.disabled === true) {
     console.warn(`DarkFactory planning skipped ${repoName(TARGET_REPO)} because GitHub reports archived=${repo.archived === true} disabled=${repo.disabled === true}.`);
     return;
@@ -68,12 +83,11 @@ async function reconcileTargetRepository() {
 
   await ensureLabels(gh, TARGET_REPO, [...PLANNING_LABELS, ...WORK_LABELS]);
   const sourceRef = PLAN_ALL ? repo.default_branch : TARGET_REF || repo.default_branch;
-  const prdSources = await getPrdSources(TARGET_REPO, sourceRef);
   const ledger = {
     trigger: TRIGGER,
     default_branch: repo.default_branch,
     source_ref: sourceRef,
-    prd_files: prdSources.map((source) => source.path),
+    prd_files: [],
     actions: [],
     token_usage: {
       codex_calls: 0,
@@ -83,12 +97,42 @@ async function reconcileTargetRepository() {
     }
   };
 
-  if (prdSources.length === 0) {
-    const issue = await upsertDriftIssue(TARGET_REPO, [`No \`PRD.md\` files were found on \`${sourceRef}\`.`]);
-    ledger.actions.push({ action: "drift-report", reason: "missing-prd", issue });
+  const prdPresence = await ensurePrdPresence(TARGET_REPO, repo, sourceRef);
+  ledger.prd_coverage = {
+    root_present: prdPresence.rootPresent,
+    package_prds: prdPresence.packagePrds.length,
+    total_packages: prdPresence.packagePaths.length,
+    missing: prdPresence.missingPaths
+  };
+
+  if (!prdPresence.rootPresent) {
+    if (prdPresence.scaffoldPullRequest) {
+      ledger.actions.push({
+        action: "prd-scaffold-pr",
+        state: prdPresence.scaffoldPullRequest.isNew ? "created" : "exists",
+        pull_request: prdPresence.scaffoldPullRequest.ref,
+        missing: prdPresence.missingPaths
+      });
+      console.log(`DarkFactory planning opened PRD scaffold PR ${prdPresence.scaffoldPullRequest.ref.url} for ${repoName(TARGET_REPO)}.`);
+    } else {
+      const issue = await upsertPrdBlockerIssue(TARGET_REPO, sourceRef, "Root PRD.md is missing and DarkFactory could not open a scaffold PR.");
+      ledger.actions.push({ action: "prd-blocker-issue", reason: "missing-prd", issue });
+    }
     await writeLedger(ledger);
     return;
   }
+
+  if (prdPresence.scaffoldPullRequest) {
+    ledger.actions.push({
+      action: "package-prd-scaffold-pr",
+      state: prdPresence.scaffoldPullRequest.isNew ? "created" : "exists",
+      pull_request: prdPresence.scaffoldPullRequest.ref,
+      missing: prdPresence.missingPaths
+    });
+  }
+
+  const prdSources = await getPrdSources(TARGET_REPO, sourceRef, prdPresence.tree);
+  ledger.prd_files = prdSources.map((source) => source.path);
 
   const items = prdSources.flatMap((source) => parsePrdItems(source.content, source.path));
   const issues = await listIssues(gh, TARGET_REPO, "all");
@@ -241,8 +285,8 @@ async function reconcileTargetRepository() {
   console.log(`DarkFactory planning reconciled ${items.length} PRD items for ${repoName(TARGET_REPO)}.`);
 }
 
-async function getPrdSources(repository, ref) {
-  const paths = await listPrdPaths(repository, ref);
+async function getPrdSources(repository, ref, tree) {
+  const paths = await listPrdPaths(repository, ref, tree);
   const sources = [];
   for (const filePath of paths) {
     const content = await getOptionalFileContent(gh, repository, filePath, ref);
@@ -251,23 +295,26 @@ async function getPrdSources(repository, ref) {
   return sources;
 }
 
-async function listPrdPaths(repository, ref) {
-  try {
-    const tree = await getRecursiveTree(repository, ref);
-    const paths = (tree.tree || [])
-      .filter((entry) => entry.type === "blob" && (entry.path === "PRD.md" || entry.path.endsWith("/PRD.md")))
-      .map((entry) => entry.path)
-      .sort((a, b) => {
-        if (a === "PRD.md") return -1;
-        if (b === "PRD.md") return 1;
-        return a.localeCompare(b);
-      });
-    return paths;
-  } catch (error) {
-    if (error.status !== 404) throw error;
-    const root = await getOptionalFileContent(gh, repository, "PRD.md", ref);
-    return root ? ["PRD.md"] : [];
+async function listPrdPaths(repository, ref, tree) {
+  if (!tree) {
+    try {
+      tree = await getRecursiveTree(repository, ref);
+    } catch (error) {
+      if (error.status !== 404) throw error;
+      const root = await getOptionalFileContent(gh, repository, "PRD.md", ref);
+      return root ? ["PRD.md"] : [];
+    }
   }
+
+  const paths = (tree.tree || [])
+    .filter((entry) => entry.type === "blob" && (entry.path === "PRD.md" || entry.path.endsWith("/PRD.md")))
+    .map((entry) => entry.path)
+    .sort((a, b) => {
+      if (a === "PRD.md") return -1;
+      if (b === "PRD.md") return 1;
+      return a.localeCompare(b);
+    });
+  return paths;
 }
 
 async function getRecursiveTree(repository, ref) {
@@ -286,6 +333,199 @@ async function getRecursiveTree(repository, ref) {
       `/repos/${repoName(repository)}/git/trees/${encodeURIComponent(treeSha)}?recursive=1`
     );
   }
+}
+
+async function ensurePrdPresence(repository, repo, sourceRef) {
+  const tree = await getRecursiveTree(repository, sourceRef);
+  const prdPaths = await listPrdPaths(repository, sourceRef, tree);
+  const packagePaths = listPackagePaths(tree.tree);
+  const rootPresent = prdPaths.includes("PRD.md");
+  const missingPackagePrds = packagePaths.filter((dir) => {
+    const expected = dir === "." ? "PRD.md" : `${dir}/PRD.md`;
+    return !prdPaths.includes(expected);
+  });
+  const missingPaths = [];
+  if (!rootPresent) {
+    missingPaths.push("PRD.md");
+  }
+  for (const pkg of missingPackagePrds) {
+    missingPaths.push(pkg === "." ? "PRD.md" : `${pkg}/PRD.md`);
+  }
+
+  if (missingPaths.length === 0) {
+    return {
+      rootPresent: true,
+      tree,
+      prdPaths,
+      packagePaths,
+      packagePrds: packagePaths.map((dir) => dir === "." ? "PRD.md" : `${dir}/PRD.md`),
+      missingPaths: [],
+      scaffoldPullRequest: null
+    };
+  }
+
+  const existingPr = await findOpenPrdScaffoldPullRequest(repository);
+  if (existingPr) {
+    return {
+      rootPresent,
+      tree,
+      prdPaths,
+      packagePaths,
+      packagePrds: [],
+      missingPaths,
+      scaffoldPullRequest: { ref: existingPr, isNew: false }
+    };
+  }
+
+  const files = await buildScaffoldFiles(repository, sourceRef, missingPaths);
+  const pr = await createPrdScaffoldPullRequest(repository, repo.default_branch, files);
+  return {
+    rootPresent,
+    tree,
+    prdPaths,
+    packagePaths,
+    packagePrds: [],
+    missingPaths,
+    scaffoldPullRequest: { ref: pr, isNew: true }
+  };
+}
+
+async function findOpenPrdScaffoldPullRequest(repository) {
+  const marker = "<!-- dark-factory:prd-scaffold -->";
+  for (let page = 1; page <= 5; page += 1) {
+    const pulls = await gh.request("GET", `/repos/${repoName(repository)}/pulls?state=open&per_page=100&page=${page}`);
+    if (!Array.isArray(pulls) || pulls.length === 0) break;
+    const match = pulls.find((pull) => typeof pull.body === "string" && pull.body.includes(marker));
+    if (match) return issueRef(match);
+    if (pulls.length < 100) break;
+  }
+  return null;
+}
+
+async function buildScaffoldFiles(repository, ref, missingPaths) {
+  const readme = await getOptionalFileContent(gh, repository, "README.md", ref);
+  const rootVision = extractReadmeFirstParagraph(readme);
+  const files = [];
+
+  for (const path of missingPaths) {
+    const isRoot = path === "PRD.md";
+    const dir = isRoot ? "." : path.slice(0, -"/PRD.md".length);
+    let packageName = "";
+    let vision = "";
+
+    if (!isRoot) {
+      packageName = dir.split("/").pop() || "";
+      const packageReadme = await getOptionalFileContent(gh, repository, `${dir}/README.md`, ref);
+      const packageJson = await getOptionalFileContent(gh, repository, `${dir}/package.json`, ref);
+      vision = extractReadmeFirstParagraph(packageReadme);
+      if (!vision && packageJson) {
+        try {
+          const parsed = JSON.parse(packageJson);
+          vision = typeof parsed.description === "string" ? parsed.description : "";
+        } catch {
+          vision = "";
+        }
+      }
+    } else {
+      vision = rootVision;
+    }
+
+    files.push({
+      path,
+      content: scaffoldPackagePrd(repoName(repository), { vision, packageName, isRoot })
+    });
+  }
+
+  return files;
+}
+
+async function createPrdScaffoldPullRequest(repository, baseBranch, files) {
+  const timestamp = Date.now();
+  const branch = `dark-factory/prd-scaffold-${timestamp}`;
+  const baseRef = await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeURIComponent(baseBranch)}`);
+  const baseSha = baseRef?.object?.sha;
+  if (typeof baseSha !== "string") {
+    throw new Error(`GitHub returned an invalid base ref for ${baseBranch}`);
+  }
+
+  const baseCommit = await gh.request("GET", `/repos/${repoName(repository)}/git/commits/${encodeURIComponent(baseSha)}`);
+  const baseTreeSha = baseCommit?.tree?.sha;
+  if (typeof baseTreeSha !== "string") {
+    throw new Error(`GitHub returned an invalid base commit tree for ${baseBranch}`);
+  }
+
+  const newTree = await gh.request("POST", `/repos/${repoName(repository)}/git/trees`, {
+    base_tree: baseTreeSha,
+    tree: files.map((file) => ({
+      path: file.path,
+      mode: "100644",
+      type: "blob",
+      content: file.content
+    }))
+  });
+
+  const newCommit = await gh.request("POST", `/repos/${repoName(repository)}/git/commits`, {
+    message: "Add DarkFactory PRD scaffold",
+    tree: newTree.sha,
+    parents: [baseSha]
+  });
+
+  await gh.request("POST", `/repos/${repoName(repository)}/git/refs`, {
+    ref: `refs/heads/${branch}`,
+    sha: newCommit.sha
+  });
+
+  const pull = await gh.request("POST", `/repos/${repoName(repository)}/pulls`, {
+    title: "Add DarkFactory PRD scaffold",
+    head: branch,
+    base: baseBranch,
+    body: prdScaffoldPullRequestBody(repoName(repository), files.map((file) => file.path))
+  });
+
+  return issueRef(pull);
+}
+
+async function upsertPrdBlockerIssue(repository, sourceRef, reason) {
+  const marker = `df-prd-blocker:${slug(repoName(repository))}`;
+  const issues = await listIssues(gh, repository, "all");
+  const existing = issues.find((issue) => (issue.body || "").includes(marker));
+  const body = [
+    `<!-- ${marker} -->`,
+    "## PRD Blocker",
+    "",
+    `Target repository: \`${repoName(repository)}\``,
+    `Source ref: \`${sourceRef}\``,
+    "",
+    reason,
+    "",
+    "## Acceptance Criteria",
+    "",
+    "- Resolve the blocker so DarkFactory can open a PRD scaffold PR (e.g., enable writes, unarchive the repository, or create the PRD manually).",
+    "- Re-run DarkFactory planning and confirm this blocker is closed.",
+    "",
+    "## Token Use",
+    "",
+    "- AI tokens: 0 (deterministic fleet bootstrap check)."
+  ].join("\n");
+  const title = `PRD scaffold blocked - ${repoName(repository)}`;
+  const labels = ["P1", "df:ask-owner", "df:class:standard"];
+
+  if (existing) {
+    const updated = await gh.request("PATCH", `/repos/${repoName(repository)}/issues/${existing.number}`, {
+      title,
+      body,
+      state: "open"
+    });
+    await setIssueLabels(repository, existing.number, labels, { preserveWorkerState: false });
+    return issueRef(updated);
+  }
+
+  const created = await gh.request("POST", `/repos/${repoName(repository)}/issues`, {
+    title,
+    body,
+    labels
+  });
+  return issueRef(created);
 }
 
 async function setIssueLabels(repository, issueNumber, labels, options = {}) {
