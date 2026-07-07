@@ -460,6 +460,7 @@ test("df-plan reopens PRD-tracked issues when the PRD item still exists", async 
 
   assert.match(source, /action: "keep-closed"/);
   assert.match(source, /action: "reopen-prd-issue"/);
+  assert.match(source, /action: "escalate-human-closed-prd-issue"/);
   assert.match(source, /state: "open"/);
   assert.match(source, /listPrdPaths/);
   assert.match(source, /getRecursiveTree/);

@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DATA_REPO,
   PLANNING_LABELS,
@@ -11,7 +13,9 @@ import {
   findPrdMarker,
   getOptionalFileContent,
   getRepository,
+  humanClosedPrdAskOwnerBody,
   isActiveManagedRepo,
+  isDarkFactoryActor,
   listActiveManagedRepos,
   listIssues,
   readManagedRepoRegistry,
@@ -26,51 +30,64 @@ import {
   writeRunLedger
 } from "./df-lib.mjs";
 
-const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
-const CONTROL_REPO = parseRepo(requiredEnv("DF_CONTROL_REPO"));
-let TARGET_REPO = parseRepo(process.env.DF_TARGET_REPO?.trim() || repoName(CONTROL_REPO));
-const DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
-const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
-const TARGET_REF = process.env.DF_TARGET_REF?.trim() || "";
-const PLAN_ALL = process.env.DF_PLAN_ALL === "true";
-const gh = createGithubClient(TOKEN, "darkfactory-plan");
-
-main().catch((error) => {
-  console.error(error.stack || error.message || String(error));
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.stack || error.message || String(error));
+    process.exitCode = 1;
+  });
+}
 
 async function main() {
+  const token = requiredEnv("DARK_FACTORY_TOKEN");
+  const controlRepo = parseRepo(requiredEnv("DF_CONTROL_REPO"));
+  const dataRepo = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
+  const trigger = process.env.DF_TRIGGER ?? "unknown";
+  const targetRef = process.env.DF_TARGET_REF?.trim() || "";
+  const planAll = process.env.DF_PLAN_ALL === "true";
+  const gh = createGithubClient(token, "darkfactory-plan");
+  let targetRepo = parseRepo(process.env.DF_TARGET_REPO?.trim() || repoName(controlRepo));
+
   const registry = await readManagedRepoRegistry();
-  const targets = PLAN_ALL ? await listActiveManagedRepos(gh, CONTROL_REPO, { registry }) : [TARGET_REPO];
+  const targets = planAll ? await listActiveManagedRepos(gh, controlRepo, { registry }) : [targetRepo];
   for (const target of targets) {
-    TARGET_REPO = target;
-    if (!isActiveManagedRepo(TARGET_REPO, registry)) {
-      console.warn(`DarkFactory planning skipped ${repoName(TARGET_REPO)} because managed lifecycle state is not active.`);
+    targetRepo = target;
+    if (!isActiveManagedRepo(targetRepo, registry)) {
+      console.warn(`DarkFactory planning skipped ${repoName(targetRepo)} because managed lifecycle state is not active.`);
       continue;
     }
     try {
-      await reconcileTargetRepository();
+      await reconcileRepository({ gh, targetRepo, controlRepo, dataRepo, trigger, sourceRef: targetRef, planAll });
     } catch (error) {
-      if (warnReadOnlyRepository(TARGET_REPO, error, "planning")) continue;
+      if (warnReadOnlyRepository(targetRepo, error, "planning")) continue;
       throw error;
     }
   }
 }
 
-async function reconcileTargetRepository() {
-  assertAllowedRepo(TARGET_REPO);
-  const repo = await getRepository(gh, TARGET_REPO);
+export async function reconcileRepository(options) {
+  const {
+    gh,
+    targetRepo,
+    controlRepo,
+    dataRepo,
+    trigger = "unknown",
+    sourceRef: sourceRefInput = "",
+    planAll = false,
+    writeLedger: shouldWriteLedger = true
+  } = options;
+
+  assertAllowedRepo(targetRepo);
+  const repo = await getRepository(gh, targetRepo);
   if (repo.archived === true || repo.disabled === true) {
-    console.warn(`DarkFactory planning skipped ${repoName(TARGET_REPO)} because GitHub reports archived=${repo.archived === true} disabled=${repo.disabled === true}.`);
+    console.warn(`DarkFactory planning skipped ${repoName(targetRepo)} because GitHub reports archived=${repo.archived === true} disabled=${repo.disabled === true}.`);
     return;
   }
 
-  await ensureLabels(gh, TARGET_REPO, [...PLANNING_LABELS, ...WORK_LABELS]);
-  const sourceRef = PLAN_ALL ? repo.default_branch : TARGET_REF || repo.default_branch;
-  const prdSources = await getPrdSources(TARGET_REPO, sourceRef);
+  await ensureLabels(gh, targetRepo, [...PLANNING_LABELS, ...WORK_LABELS]);
+  const sourceRef = planAll ? repo.default_branch : sourceRefInput || repo.default_branch;
+  const prdSources = await getPrdSources(gh, targetRepo, sourceRef);
   const ledger = {
-    trigger: TRIGGER,
+    trigger,
     default_branch: repo.default_branch,
     source_ref: sourceRef,
     prd_files: prdSources.map((source) => source.path),
@@ -84,14 +101,14 @@ async function reconcileTargetRepository() {
   };
 
   if (prdSources.length === 0) {
-    const issue = await upsertDriftIssue(TARGET_REPO, [`No \`PRD.md\` files were found on \`${sourceRef}\`.`]);
+    const issue = await upsertDriftIssue(targetRepo, [`No \`PRD.md\` files were found on \`${sourceRef}\`.`]);
     ledger.actions.push({ action: "drift-report", reason: "missing-prd", issue });
-    await writeLedger(ledger);
+    await writeLedger(gh, ledger, { shouldWriteLedger });
     return;
   }
 
   const items = prdSources.flatMap((source) => parsePrdItems(source.content, source.path));
-  const issues = await listIssues(gh, TARGET_REPO, "all");
+  const issues = await listIssues(gh, targetRepo, "all");
   const byMarker = new Map();
   const driftIssues = [];
 
@@ -111,15 +128,15 @@ async function reconcileTargetRepository() {
 
     if (item.completed) {
       if (!existing) {
-        const created = await gh.request("POST", `/repos/${repoName(TARGET_REPO)}/issues`, {
+        const created = await gh.request("POST", `/repos/${repoName(targetRepo)}/issues`, {
           title: item.title,
           body: prdIssueBody(item, previousIssueNumber ? [previousIssueNumber] : []),
           labels
         });
-        const closed = await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${created.number}`, {
+        const closed = await gh.request("PATCH", `/repos/${repoName(targetRepo)}/issues/${created.number}`, {
           state: "closed"
         });
-        await gh.request("POST", `/repos/${repoName(TARGET_REPO)}/issues/${created.number}/comments`, {
+        await gh.request("POST", `/repos/${repoName(targetRepo)}/issues/${created.number}/comments`, {
           body: "DarkFactory L4 planning created and closed this issue because the PRD already marks this item as completed."
         });
         ledger.actions.push({ action: "create-closed-completed-prd-issue", marker: item.marker, issue: issueRef(closed) });
@@ -131,10 +148,10 @@ async function reconcileTargetRepository() {
         previousIssueNumber = existing.number;
         continue;
       }
-      const closed = await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${existing.number}`, {
+      const closed = await gh.request("PATCH", `/repos/${repoName(targetRepo)}/issues/${existing.number}`, {
         state: "closed"
       });
-      await gh.request("POST", `/repos/${repoName(TARGET_REPO)}/issues/${existing.number}/comments`, {
+      await gh.request("POST", `/repos/${repoName(targetRepo)}/issues/${existing.number}/comments`, {
         body: "DarkFactory L4 planning closed this issue because the PRD marks this item as completed."
       });
       ledger.actions.push({ action: "close-completed-prd-issue", marker: item.marker, issue: issueRef(closed) });
@@ -153,13 +170,13 @@ async function reconcileTargetRepository() {
       // GitHub emits a trusted `issues:labeled` event that the L3 worker trigger
       // can react to.
       const createLabels = labels.filter((label) => label !== "df:ready");
-      const created = await gh.request("POST", `/repos/${repoName(TARGET_REPO)}/issues`, {
+      const created = await gh.request("POST", `/repos/${repoName(targetRepo)}/issues`, {
         title: item.title,
         body,
         labels: createLabels
       });
-      const labelUpdate = await setIssueLabels(TARGET_REPO, created.number, labels);
-      const dispatch = await dispatchIfNewlyReady(TARGET_REPO, created.number, labelUpdate);
+      const labelUpdate = await setIssueLabels(gh, targetRepo, created.number, labels);
+      const dispatch = await dispatchIfNewlyReady(targetRepo, created.number, labelUpdate);
       ledger.actions.push({ action: "create-issue", marker: item.marker, issue: issueRef(created), labels });
       if (dispatch) ledger.actions.push(dispatch);
       previousIssueNumber = created.number;
@@ -168,13 +185,26 @@ async function reconcileTargetRepository() {
     }
 
     if (existing.state === "closed") {
-      const reopened = await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${existing.number}`, {
+      const closer = await findIssueCloser(gh, targetRepo, existing.number);
+      if (closer && !isDarkFactoryActor(closer.login)) {
+        const escalation = await escalateHumanClosedPrdIssue(gh, targetRepo, controlRepo, existing, item);
+        ledger.actions.push({
+          action: "escalate-human-closed-prd-issue",
+          marker: item.marker,
+          issue: issueRef(existing),
+          escalation
+        });
+        previousIssueNumber = existing.number;
+        continue;
+      }
+
+      const reopened = await gh.request("PATCH", `/repos/${repoName(targetRepo)}/issues/${existing.number}`, {
         title: item.title,
         body,
         state: "open"
       });
-      const labelUpdate = await setIssueLabels(TARGET_REPO, existing.number, labels, { preserveWorkerState: false });
-      const dispatch = await dispatchIfNewlyReady(TARGET_REPO, existing.number, labelUpdate);
+      const labelUpdate = await setIssueLabels(gh, targetRepo, existing.number, labels, { preserveWorkerState: false });
+      const dispatch = await dispatchIfNewlyReady(targetRepo, existing.number, labelUpdate);
       ledger.actions.push({ action: "reopen-prd-issue", marker: item.marker, issue: issueRef(reopened), labels });
       if (dispatch) ledger.actions.push(dispatch);
       previousIssueNumber = reopened.number;
@@ -199,12 +229,12 @@ async function reconcileTargetRepository() {
       update.body = applyBlockedBy(existing.body || "", expectedBlockedBy);
     }
     if (Object.keys(update).length) {
-      const updated = await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${existing.number}`, update);
+      const updated = await gh.request("PATCH", `/repos/${repoName(targetRepo)}/issues/${existing.number}`, update);
       ledger.actions.push({ action: "update-issue", marker: item.marker, issue: issueRef(updated), fields: Object.keys(update) });
     }
-    const labelUpdate = await setIssueLabels(TARGET_REPO, existing.number, labels);
+    const labelUpdate = await setIssueLabels(gh, targetRepo, existing.number, labels);
     ledger.actions.push({ action: "sequence-labels", marker: item.marker, issue: issueRef(existing), labels });
-    const dispatch = await dispatchIfNewlyReady(TARGET_REPO, existing.number, labelUpdate);
+    const dispatch = await dispatchIfNewlyReady(targetRepo, existing.number, labelUpdate);
     if (dispatch) ledger.actions.push(dispatch);
     previousIssueNumber = existing.number;
     previousOpenIssueNumber = existing.number;
@@ -216,33 +246,34 @@ async function reconcileTargetRepository() {
   });
 
   for (const issue of staleMarkedIssues) {
-    await gh.request("POST", `/repos/${repoName(TARGET_REPO)}/issues/${issue.number}/comments`, {
+    await gh.request("POST", `/repos/${repoName(targetRepo)}/issues/${issue.number}/comments`, {
       body: "DarkFactory L4 planning closed this issue because its `df-prd:` marker is no longer present in any tracked `PRD.md` file."
     });
-    await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${issue.number}`, { state: "closed" });
+    await gh.request("PATCH", `/repos/${repoName(targetRepo)}/issues/${issue.number}`, { state: "closed" });
     ledger.actions.push({ action: "close-stale-prd-issue", issue: issueRef(issue) });
   }
 
-  const driftFindings = await detectCodeDrift(TARGET_REPO, repo.default_branch, items, staleMarkedIssues);
+  const driftFindings = await detectCodeDrift(gh, targetRepo, repo.default_branch, items, staleMarkedIssues);
   if (driftFindings.length) {
-    const driftIssue = await upsertDriftIssue(TARGET_REPO, driftFindings);
+    const driftIssue = await upsertDriftIssue(gh, targetRepo, driftFindings);
     ledger.actions.push({ action: "drift-report", issue: driftIssue, findings: driftFindings });
   } else {
     for (const issue of driftIssues.filter((issue) => issue.state === "open")) {
-      await gh.request("POST", `/repos/${repoName(TARGET_REPO)}/issues/${issue.number}/comments`, {
+      await gh.request("POST", `/repos/${repoName(targetRepo)}/issues/${issue.number}/comments`, {
         body: "DarkFactory L4 planning no longer detects this drift condition."
       });
-      await gh.request("PATCH", `/repos/${repoName(TARGET_REPO)}/issues/${issue.number}`, { state: "closed" });
+      await gh.request("PATCH", `/repos/${repoName(targetRepo)}/issues/${issue.number}`, { state: "closed" });
       ledger.actions.push({ action: "close-resolved-drift", issue: issueRef(issue) });
     }
   }
 
-  await writeLedger(ledger);
-  console.log(`DarkFactory planning reconciled ${items.length} PRD items for ${repoName(TARGET_REPO)}.`);
+  await writeLedger(gh, ledger, { shouldWriteLedger });
+  console.log(`DarkFactory planning reconciled ${items.length} PRD items for ${repoName(targetRepo)}.`);
+  return { ledger };
 }
 
-async function getPrdSources(repository, ref) {
-  const paths = await listPrdPaths(repository, ref);
+async function getPrdSources(gh, repository, ref) {
+  const paths = await listPrdPaths(gh, repository, ref);
   const sources = [];
   for (const filePath of paths) {
     const content = await getOptionalFileContent(gh, repository, filePath, ref);
@@ -251,9 +282,9 @@ async function getPrdSources(repository, ref) {
   return sources;
 }
 
-async function listPrdPaths(repository, ref) {
+async function listPrdPaths(gh, repository, ref) {
   try {
-    const tree = await getRecursiveTree(repository, ref);
+    const tree = await getRecursiveTree(gh, repository, ref);
     const paths = (tree.tree || [])
       .filter((entry) => entry.type === "blob" && (entry.path === "PRD.md" || entry.path.endsWith("/PRD.md")))
       .map((entry) => entry.path)
@@ -270,7 +301,7 @@ async function listPrdPaths(repository, ref) {
   }
 }
 
-async function getRecursiveTree(repository, ref) {
+async function getRecursiveTree(gh, repository, ref) {
   try {
     return await gh.request(
       "GET",
@@ -288,7 +319,7 @@ async function getRecursiveTree(repository, ref) {
   }
 }
 
-async function setIssueLabels(repository, issueNumber, labels, options = {}) {
+async function setIssueLabels(gh, repository, issueNumber, labels, options = {}) {
   const current = await gh.request("GET", `/repos/${repoName(repository)}/issues/${issueNumber}`);
   const currentNames = new Set(
     (current.labels || []).map((label) => typeof label === "string" ? label : label.name).filter(Boolean)
@@ -325,14 +356,14 @@ async function dispatchReadyWorker(repository, issueNumber) {
   };
 }
 
-async function detectCodeDrift(repository, ref, items, staleMarkedIssues) {
+async function detectCodeDrift(gh, repository, ref, items, staleMarkedIssues) {
   const findings = staleMarkedIssues.map((issue) => {
     const marker = findPrdMarker(issue.body || "");
     return `Backlog issue #${issue.number} still had stale marker \`${marker}\` after the PRD item was removed.`;
   });
   const itemText = items.map((item) => `${item.name} ${item.description}`).join("\n").toLowerCase();
 
-  findings.push(...await detectPrdArtifactDrift(repository, ref, itemText));
+  findings.push(...await detectPrdArtifactDrift(gh, repository, ref, itemText));
 
   if (itemText.includes("l4 planning")) {
     const workflow = await getOptionalFileContent(gh, repository, ".github/workflows/df-plan.yml", ref);
@@ -363,7 +394,7 @@ async function detectCodeDrift(repository, ref, items, staleMarkedIssues) {
     findings.push(`Open issue #${issue.number} is not tracked by any PRD item.`);
   }
 
-  const pulls = await listOpenPullRequests(repository);
+  const pulls = await listOpenPullRequests(gh, repository);
   for (const pull of pulls) {
     const closes = extractClosingIssueNumbers(pull.body || "", repoName(repository));
     const linkedToPrd = closes.some((number) => prdTrackedNumbers.has(number));
@@ -375,7 +406,7 @@ async function detectCodeDrift(repository, ref, items, staleMarkedIssues) {
   return findings;
 }
 
-async function detectPrdArtifactDrift(repository, ref, itemText) {
+async function detectPrdArtifactDrift(gh, repository, ref, itemText) {
   const findings = [];
   const rules = [
     {
@@ -449,7 +480,7 @@ function isDarkFactoryManagedIssue(labels) {
   return labels.includes("roadmap") || labels.some((label) => /^df:(ready|running|blocked|done|class:)/.test(label));
 }
 
-async function listOpenPullRequests(repository) {
+async function listOpenPullRequests(gh, repository) {
   const pulls = [];
   for (let page = 1; page <= 20; page += 1) {
     const batch = await gh.request(
@@ -463,7 +494,7 @@ async function listOpenPullRequests(repository) {
   return pulls;
 }
 
-async function upsertDriftIssue(repository, findings) {
+async function upsertDriftIssue(gh, repository, findings) {
   const marker = `df-prd-drift:${slug(repoName(repository))}`;
   const issues = await listIssues(gh, repository, "all");
   const existing = issues.find((issue) => (issue.body || "").includes(marker));
@@ -476,7 +507,7 @@ async function upsertDriftIssue(repository, findings) {
       body,
       state: "open"
     });
-    await setIssueLabels(repository, existing.number, ["P1", "df:prd-drift", "df:class:standard"]);
+    await setIssueLabels(gh, repository, existing.number, ["P1", "df:prd-drift", "df:class:standard"]);
     return issueRef(updated);
   }
 
@@ -488,9 +519,67 @@ async function upsertDriftIssue(repository, findings) {
   return issueRef(created);
 }
 
-async function writeLedger(ledger) {
+async function findIssueCloser(gh, repository, issueNumber) {
+  const events = [];
+  for (let page = 1; page <= 5; page += 1) {
+    const batch = await gh.request(
+      "GET",
+      `/repos/${repoName(repository)}/issues/${issueNumber}/timeline?per_page=100&page=${page}`
+    );
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    events.push(...batch);
+    if (batch.length < 100) break;
+  }
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    if (events[i].event === "closed") {
+      return events[i].actor || null;
+    }
+  }
+  return null;
+}
+
+async function escalateHumanClosedPrdIssue(gh, targetRepo, controlRepo, issue, item) {
+  const targetRepoName = repoName(targetRepo);
+  const closer = await findIssueCloser(gh, targetRepo, issue.number);
+  const closerName = closer?.login ? `@${closer.login}` : "a human";
+  const commentBody = `DarkFactory L4 planning noticed this issue was closed by ${closerName}, but the PRD still lists \`${item.name}\` as incomplete. DarkFactory will not reopen it automatically. An ask-owner escalation has been created in the control repository to resolve the disagreement.`;
+  await gh.request("POST", `/repos/${targetRepoName}/issues/${issue.number}/comments`, { body: commentBody });
+  const askOwner = await upsertAskOwnerIssue(gh, controlRepo, targetRepoName, issue, item);
+  return { target_issue: issueRef(issue), ask_owner_issue: askOwner, closer: closer?.login || null };
+}
+
+async function upsertAskOwnerIssue(gh, controlRepo, targetRepoName, targetIssue, item) {
+  const marker = `df-ask-owner:human-closed-prd:${slug(targetRepoName)}:${item.slug}`;
+  const issues = await listIssues(gh, controlRepo, "all");
+  const existing = issues.find((issue) => (issue.body || "").includes(marker));
+  const title = `Human-closed PRD item in ${targetRepoName} — ${item.name}`;
+  const body = humanClosedPrdAskOwnerBody(targetRepoName, targetIssue, item);
+  const labels = [item.priority || "P1", "df:ask-owner", `df:class:${item.taskClass || "standard"}`];
+
+  await ensureLabels(gh, controlRepo, WORK_LABELS);
+
+  if (existing) {
+    const updated = await gh.request("PATCH", `/repos/${repoName(controlRepo)}/issues/${existing.number}`, {
+      title,
+      body,
+      state: "open"
+    });
+    await setIssueLabels(gh, controlRepo, existing.number, labels, { preserveWorkerState: false });
+    return issueRef(updated);
+  }
+
+  const created = await gh.request("POST", `/repos/${repoName(controlRepo)}/issues`, {
+    title,
+    body,
+    labels
+  });
+  return issueRef(created);
+}
+
+async function writeLedger(gh, ledger, { shouldWriteLedger = true } = {}) {
+  if (!shouldWriteLedger) return;
   try {
-    const written = await writeRunLedger(gh, DATA_REPO, "df-plan", repoName(TARGET_REPO), ledger);
+    const written = await writeRunLedger(gh, dataRepo, "df-plan", repoName(targetRepo), ledger);
     console.log(`DarkFactory ledger written to ${written.repository}/${written.path}`);
   } catch (error) {
     console.warn(`DarkFactory ledger warning: ${error.message || String(error)}`);

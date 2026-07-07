@@ -1,5 +1,6 @@
 import "./config.test.js";
 import "./df-orchestrate.test.js";
+import "./df-plan.test.js";
 import "./df-providers.test.js";
 import "./managed-sync.test.js";
 import "./script-policy.test.js";

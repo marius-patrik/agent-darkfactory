@@ -38,6 +38,12 @@ export const WORKER_PULL_REQUEST_AUTHORS = new Set([
   "app/darkfactory-agent",
   "darkfactory-agent"
 ]);
+
+export function isDarkFactoryActor(login) {
+  if (!login || typeof login !== "string") return false;
+  return WORKER_PULL_REQUEST_AUTHORS.has(login);
+}
+
 export const WORKER_STATE_LABELS = ["df:running", "df:blocked", "df:done"];
 export const PLANNER_RECONCILED_LABELS = [
   "df:ready",
@@ -621,6 +627,34 @@ export function auditIssueBody(targetRepoName, findings, metadata = {}) {
     "- Doc staleness: stale PRD/agent docs relative to recent repository activity.",
     "- AI tokens: 0 (deterministic audit checks).",
     "- Harness migration path: this GitHub-native audit issue stream migrates to harness observers when L5 moves into the harness scheduler."
+  ].join("\n");
+}
+
+export function humanClosedPrdAskOwnerBody(targetRepoName, targetIssue, item) {
+  return [
+    `<!-- df-ask-owner:human-closed-prd:${slug(targetRepoName)}:${item.slug} -->`,
+    "## Human-Closed PRD Item",
+    "",
+    `Target repository: \`${targetRepoName}\``,
+    `Target issue: #${targetIssue.number}`,
+    "",
+    "A PRD-tracked issue was closed by a human, but the PRD still lists the item as incomplete.",
+    "",
+    "## PRD Item",
+    "",
+    `${item.sourcePath || "PRD.md"} > ${item.section} > ${item.name}`,
+    "",
+    item.description || item.name,
+    "",
+    "## Acceptance Criteria",
+    "",
+    "- If the item is done, edit the PRD to mark it `[x]`; DarkFactory planning will keep the issue closed.",
+    "- If the item is not done, reopen the target issue so DarkFactory planning can resume tracking it.",
+    "- DarkFactory will not reopen this issue automatically while it is closed by a human.",
+    "",
+    "## Token Use",
+    "",
+    "- AI tokens: 0 (deterministic planning escalation)."
   ].join("\n");
 }
 
