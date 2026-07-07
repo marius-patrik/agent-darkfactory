@@ -1,3 +1,4 @@
+import "./bot.test.js";
 import "./config.test.js";
 import "./df-orchestrate.test.js";
 import "./df-providers.test.js";

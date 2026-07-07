@@ -5,7 +5,15 @@ import {
   formatRepositorySetupComment,
   type GitHubRequester
 } from "./repository-setup.js";
-import { ensureManagedRepositorySetup } from "./managed-sync.js";
+import {
+  DARK_FACTORY_CONTROL_REPOSITORY,
+  ensureManagedRepositorySetup,
+  orderManagedRepositoriesForSync,
+  type ManagedRepository
+} from "./managed-sync.js";
+import type { ManagedFile } from "./managed-files.js";
+
+export type { GitHubRequester };
 
 export interface BotOptions {
   appId: string;
@@ -146,28 +154,39 @@ async function syncAddedRepositories(
   await syncRepositories(octokit, payload.repositories_added ?? []);
 }
 
-async function syncRepositories(
+export async function syncRepositories(
   octokit: GitHubRequester,
-  repositories: InstallationRepository[]
+  repositories: InstallationRepository[],
+  files?: ManagedFile[]
 ): Promise<void> {
-  for (const repository of repositories) {
-    const parsed = parseRepository(repository);
+  const parsed = repositories
+    .map(parseRepository)
+    .filter((repository): repository is NonNullable<ReturnType<typeof parseRepository>> => repository !== null);
+  const controlKey = repositoryKey(DARK_FACTORY_CONTROL_REPOSITORY);
 
-    if (!parsed) {
-      continue;
-    }
+  for (const repository of orderManagedRepositoriesForSync(parsed, (repository) => repository)) {
+    const isControl = repositoryKey(repository) === controlKey;
 
     try {
-      const result = await ensureManagedRepositorySetup(octokit, parsed);
+      const result = await ensureManagedRepositorySetup(octokit, repository, files);
       console.log(
         `Managed setup ${result.status} for ${result.owner}/${result.repo}${
           result.pullRequestUrl ? `: ${result.pullRequestUrl}` : ""
         }`
       );
     } catch (error) {
-      console.error(`Failed to sync managed setup for ${parsed.owner}/${parsed.repo}`, error);
+      console.error(`Failed to sync managed setup for ${repository.owner}/${repository.repo}`, error);
+
+      // DarkFactory must manage itself before it manages other repositories.
+      if (isControl) {
+        break;
+      }
     }
   }
+}
+
+function repositoryKey(repository: Pick<ManagedRepository, "owner" | "repo">): string {
+  return `${repository.owner.toLowerCase()}/${repository.repo.toLowerCase()}`;
 }
 
 function parseRepository(repository: InstallationRepository) {
