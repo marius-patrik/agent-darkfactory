@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "kimi",
+      "enabled": true,
+      "secret": "KIMI_AUTH_JSON",
+      "install": {
+        "method": "npm",
+        "package": "@moonshot-ai/kimi-code",
+        "version": "latest"
+      },
+      "models": {
+        "default": "kimi-k2",
+        "byTaskClass": {
+          "mechanical": "kimi-k2",
+          "standard": "kimi-k2",
+          "hard": "kimi-k2"
+        }
+      },
+      "maxConcurrency": 2
+    },
+    {
+      "id": "codex",
+      "enabled": true,
+      "secret": "CODEX_AUTH_JSON",
+      "models": {
+        "default": "gpt-5.5",
+        "byTaskClass": {
+          "mechanical": "gpt-5.5",
+          "standard": "gpt-5.5",
+          "hard": "gpt-5.5"
+        }
+      },
+      "maxConcurrency": 1,
+      "dockerImage": "darkfactory-codex-worker"
+    },
+    {
+      "id": "agy",
+      "enabled": false,
+      "secret": "AGY_AUTH_JSON",
+      "models": {
+        "default": "agy-default"
+      },
+      "maxConcurrency": 1
+    }
+  ]
+}
