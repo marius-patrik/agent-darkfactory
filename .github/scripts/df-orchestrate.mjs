@@ -24,6 +24,7 @@ const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const ORCHESTRATION_POLICY_PATH = ".darkfactory/orchestration.json";
 export const DASHBOARD_MARKER = "df-dashboard:orchestration";
 export const ASK_OWNER_MARKER = "dark-factory:orchestrator-ask-owner";
+export const RESUME_MARKER = "dark-factory:worker-resume";
 export const REPEATED_FAILURE_THRESHOLD = 3;
 export const DEFAULT_ORCHESTRATION_POLICY = {
   schemaVersion: 1,
@@ -140,6 +141,14 @@ export async function orchestrate(options) {
   const autoReadied = await autoReadySequencedIssues(gh, snapshots, warn, { targetIssue: eventRequest });
   const escalated = await escalateOwnerDecisionIssues(gh, scopedSnapshots, warn);
   const plan = buildOrchestrationPlan(scopedSnapshots, policy, { targetIssue: eventRequest });
+
+  const interrupted = await detectInterruptedWorkerRuns(gh, scopedSnapshots, { warn });
+  const recoveries = [];
+  for (const item of interrupted) {
+    const recovery = await resumeInterruptedWorker(gh, controlRepo, item.repository, item.issue, item.classification, { warn });
+    recoveries.push(recovery);
+  }
+
   const dispatched = [];
 
   for (const candidate of plan.candidates) {
@@ -166,6 +175,7 @@ export async function orchestrate(options) {
     concurrency: policy.concurrency,
     repositories: plan.repositories,
     dispatched,
+    recovery: recoveries,
     auto_readied: autoReadied,
     escalated,
     token_usage: {
@@ -180,10 +190,10 @@ export async function orchestrate(options) {
     await writeLedger(gh, dataRepo, controlRepo, ledger, warn, log);
   }
   if (shouldUpdateDashboard && policy.dashboard.enabled) {
-    await updateDashboardIssue(gh, controlRepo, policy, plan, dispatched, escalated, trigger, warn, log);
+    await updateDashboardIssue(gh, controlRepo, policy, plan, dispatched, escalated, recoveries, trigger, warn, log);
   }
-  log(`DarkFactory orchestrator dispatched ${dispatched.length} worker runs and escalated ${escalated.length} owner decisions.`);
-  return { dispatched, autoReadied, escalated, ledger };
+  log(`DarkFactory orchestrator dispatched ${dispatched.length} worker runs, recovered ${recoveries.length} interrupted runs, and escalated ${escalated.length} owner decisions.`);
+  return { dispatched, recoveries, autoReadied, escalated, ledger };
 }
 
 export async function targetRepositories(gh, controlRepo, options = {}) {
@@ -263,6 +273,173 @@ function normalizeDispatchRequest(request, warn = console.warn) {
     request.sourceEvent ?? request.source_event ?? "",
     warn
   );
+}
+
+export function isWorkerStartedComment(body) {
+  return /DarkFactory worker started for/i.test(String(body || ""));
+}
+
+export function isWorkerTerminalComment(body) {
+  const text = String(body || "");
+  return /DarkFactory worker (opened|blocked|skipped|updated)/i.test(text)
+    || /DarkFactory resumed this worker/i.test(text)
+    || /DarkFactory detected an interrupted worker run/i.test(text);
+}
+
+function isWorkerComment(body) {
+  return /DarkFactory worker (started|opened|blocked|skipped|updated)|DarkFactory resumed this worker|DarkFactory detected an interrupted worker run/i.test(String(body || ""));
+}
+
+export function isInterruptedWorkerRun(comments) {
+  if (!Array.isArray(comments) || comments.length === 0) return false;
+
+  const workerComments = comments
+    .filter((comment) => isWorkerComment(comment.body))
+    .sort((a, b) => Date.parse(b.created_at || b.createdAt || "") - Date.parse(a.created_at || a.createdAt || ""));
+
+  if (workerComments.length === 0) return false;
+
+  const latest = workerComments[0];
+  return isWorkerStartedComment(latest.body) && !isWorkerTerminalComment(latest.body);
+}
+
+export async function detectInterruptedWorkerRuns(gh, snapshots, options = {}) {
+  const warn = options.warn ?? console.warn;
+  const interrupted = [];
+
+  for (const snapshot of snapshots) {
+    const repository = snapshot.repository;
+    for (const issue of (snapshot.openIssues || [])) {
+      if (!issueLabelNames(issue).has("df:running")) continue;
+
+      try {
+        const comments = await listIssueComments(gh, repository, issue.number);
+        if (!isInterruptedWorkerRun(comments)) continue;
+
+        const classification = await classifyResumeTarget(gh, repository, issue);
+        interrupted.push({ repository, issue, classification });
+      } catch (error) {
+        if (warnReadOnlyRepository(repository, error, "resume detection", warn)) continue;
+        warn(`Failed to inspect resume state for ${repoName(repository)}#${issue.number}: ${error.message || String(error)}`);
+      }
+    }
+  }
+
+  return interrupted;
+}
+
+export async function classifyResumeTarget(gh, repository, issue) {
+  const existingPullRequest = await findOpenWorkerPullRequestForIssue(gh, repository, issue.number);
+  if (existingPullRequest) {
+    return {
+      type: "pr",
+      pr: existingPullRequest,
+      baseRef: existingPullRequest.baseRefName || "",
+      branch: existingPullRequest.headRefName || ""
+    };
+  }
+
+  const branch = await findPushedWorkerBranch(gh, repository, issue.number);
+  if (branch) {
+    const repo = await getRepository(gh, repository);
+    const baseRef = await resolveWorkBaseBranch(gh, repository, repo.default_branch);
+    return { type: "branch", branch, baseRef };
+  }
+
+  return { type: "none" };
+}
+
+async function findPushedWorkerBranch(gh, repository, issueNumber) {
+  const prefix = `df/${issueNumber}-`;
+  const refs = await gh.request(
+    "GET",
+    `/repos/${repoName(repository)}/git/matching-refs/heads/${encodeURIComponent(prefix)}`
+  );
+  if (!Array.isArray(refs)) return null;
+  const match = refs.find((ref) => typeof ref.ref === "string" && ref.ref.startsWith(`refs/heads/${prefix}`));
+  return match ? match.ref.slice("refs/heads/".length) : null;
+}
+
+export async function resumeInterruptedWorker(gh, controlRepo, repository, issue, classification, options = {}) {
+  const warn = options.warn ?? console.warn;
+  const target = `${repoName(repository)}#${issue.number}`;
+  const recovery = {
+    repo: repoName(repository),
+    issue: issue.number,
+    type: classification.type,
+    action: "none",
+    reason: ""
+  };
+
+  try {
+    if (classification.type === "pr") {
+      await dispatchWorkerResume(gh, controlRepo, repository, issue.number, {
+        base_ref: classification.baseRef,
+        resume_pr: String(classification.pr.number)
+      });
+      await createIssueComment(gh, repository, issue.number, resumeComment(target, classification));
+      recovery.action = "resume-pr";
+      recovery.pr = classification.pr.number;
+      recovery.branch = classification.branch;
+    } else if (classification.type === "branch") {
+      await dispatchWorkerResume(gh, controlRepo, repository, issue.number, {
+        base_ref: classification.baseRef,
+        resume_branch: classification.branch
+      });
+      await createIssueComment(gh, repository, issue.number, resumeComment(target, classification));
+      recovery.action = "resume-branch";
+      recovery.branch = classification.branch;
+    } else {
+      await replaceIssueLabels(gh, repository, issue.number, ["df:ready"], ["df:running", "df:blocked", "df:done"]);
+      await createIssueComment(gh, repository, issue.number, requeueComment(target, issue.number));
+      recovery.action = "requeue";
+      recovery.reason = "no-usable-branch";
+    }
+  } catch (error) {
+    if (warnReadOnlyRepository(repository, error, "resume dispatch", warn)) {
+      recovery.action = "error";
+      recovery.error = "read-only repository";
+      return recovery;
+    }
+    warn(`Failed to resume ${target}: ${error.message || String(error)}`);
+    recovery.action = "error";
+    recovery.error = error.message || String(error);
+  }
+
+  return recovery;
+}
+
+function resumeComment(target, classification) {
+  const lines = [
+    `<!-- ${RESUME_MARKER} issue=${classification.pr?.number || classification.issue?.number || ""} type=${classification.type} -->`,
+    `DarkFactory resumed this worker for \`${target}\`.`,
+    "",
+    "Reason: the previous worker run ended without a terminal success/failure comment and was reconstructed from GitHub state.",
+    ""
+  ];
+
+  if (classification.type === "pr") {
+    lines.push(`Resuming against existing PR: ${classification.pr.url || `#${classification.pr.number}`}`);
+    lines.push(`Branch: \`${classification.branch}\``);
+    lines.push(`Base: \`${classification.baseRef}\``);
+  } else if (classification.type === "branch") {
+    lines.push(`Resuming from pushed branch: \`${classification.branch}\``);
+    lines.push(`Base: \`${classification.baseRef}\``);
+  }
+
+  lines.push("");
+  lines.push("The resumed worker will focus on the smallest merge-first task, such as resolving current review findings or getting the existing PR green.");
+
+  return lines.join("\n");
+}
+
+function requeueComment(target, issueNumber) {
+  return [
+    `<!-- ${RESUME_MARKER} issue=${issueNumber} type=none -->`,
+    `DarkFactory detected an interrupted worker run for \`${target}\` but found no usable branch or PR to resume from.`,
+    "",
+    "The issue has been requeued with `df:ready` so a fresh worker run can start on the next orchestrator tick."
+  ].join("\n");
 }
 
 async function readySlashRunIssue(gh, repository, issueNumber) {
@@ -788,11 +965,11 @@ function askOwnerComment(repository, issue, escalation) {
   ].join("\n");
 }
 
-async function updateDashboardIssue(gh, controlRepo, policy, plan, dispatched, escalated, trigger, warn = console.warn, log = console.log) {
+async function updateDashboardIssue(gh, controlRepo, policy, plan, dispatched, escalated, recoveries, trigger, warn = console.warn, log = console.log) {
   try {
     await ensureLabels(gh, controlRepo, PLANNING_LABELS);
     const title = policy.dashboard.issueTitle;
-    const body = dashboardIssueBody(policy, plan, dispatched, escalated, trigger);
+    const body = dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, trigger);
     const existing = await findDashboardIssue(gh, controlRepo);
     if (existing) {
       await gh.request("PATCH", `/repos/${repoName(controlRepo)}/issues/${existing.number}`, { title, body });
@@ -827,7 +1004,7 @@ async function findDashboardIssue(gh, controlRepo) {
   return null;
 }
 
-function dashboardIssueBody(policy, plan, dispatched, escalated, trigger) {
+function dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, trigger) {
   const updatedAt = new Date().toISOString();
   const rows = plan.repositories.length
     ? plan.repositories.map((state) => {
@@ -841,6 +1018,9 @@ function dashboardIssueBody(policy, plan, dispatched, escalated, trigger) {
   const escalationRows = escalated.length
     ? escalated.map((item) => `- \`${item.repo}#${item.issue}\` (${item.reason})`).join("\n")
     : "- No owner escalations in this tick.";
+  const recoveryRows = recoveries.length
+    ? recoveries.map((item) => `- \`${item.repo}#${item.issue}\` (${item.action}${item.reason ? `; ${item.reason}` : ""})`).join("\n")
+    : "- No worker recoveries in this tick.";
 
   return [
     `<!-- ${DASHBOARD_MARKER} -->`,
@@ -869,6 +1049,10 @@ function dashboardIssueBody(policy, plan, dispatched, escalated, trigger) {
     "## Dispatches",
     "",
     dispatchRows,
+    "",
+    "## Worker Recoveries",
+    "",
+    recoveryRows,
     "",
     "## Owner Escalations",
     "",
@@ -1067,6 +1251,19 @@ export async function dispatchWorker(gh, controlRepo, repository, issueNumber) {
     throw error;
   }
   return true;
+}
+
+async function dispatchWorkerResume(gh, controlRepo, repository, issueNumber, inputs) {
+  await gh.request("POST", `/repos/${repoName(controlRepo)}/actions/workflows/df-work.yml/dispatches`, {
+    ref: "main",
+    inputs: {
+      repo: repoName(repository),
+      issue_number: String(issueNumber),
+      base_ref: inputs.base_ref || "",
+      resume_pr: inputs.resume_pr || "",
+      resume_branch: inputs.resume_branch || ""
+    }
+  });
 }
 
 async function resolveWorkBaseBranch(gh, repository, defaultBranch) {

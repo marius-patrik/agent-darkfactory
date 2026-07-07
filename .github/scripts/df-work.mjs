@@ -10,11 +10,14 @@ import {
   assertAllowedRepo,
   cleanupTempRoot,
   createGithubClient,
+  darkFactoryWorkerIssueNumber,
   ensureLabels,
   findOpenWorkerPullRequestForIssue,
   getRepository,
+  isDarkFactoryWorkerPullRequest,
   preflightMergePolicy,
   parseRepo,
+  readManagedRepoRegistry,
   repoName,
   requiredEnv,
   sanitize,
@@ -31,6 +34,7 @@ import {
   runProviderWorker,
   runWithFailover
 } from "./df-providers.mjs";
+import { evaluateEnforcementRules, loadEnforcementRules } from "./df-enforcement.mjs";
 
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
@@ -38,6 +42,9 @@ const CONTROL_REPO = parseRepo(requiredEnv("DF_CONTROL_REPO"));
 const TARGET_REPO = parseRepo(requiredEnv("DF_TARGET_REPO"));
 const TARGET_ISSUE_NUMBER = Number(requiredEnv("DF_TARGET_ISSUE_NUMBER"));
 const TARGET_BASE_REF = process.env.DF_TARGET_BASE_REF?.trim() || "";
+const RESUME_PR_NUMBER = process.env.DF_RESUME_PR?.trim() ? Number(process.env.DF_RESUME_PR.trim()) : 0;
+const RESUME_BRANCH = process.env.DF_RESUME_BRANCH?.trim() || "";
+const IS_RESUME = (Number.isInteger(RESUME_PR_NUMBER) && RESUME_PR_NUMBER > 0) || RESUME_BRANCH.length > 0;
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const DATA_REPO = process.env.DF_DATA_REPO ?? DEFAULT_DATA_REPO;
 const GIT_BASIC_AUTH = Buffer.from(`x-access-token:${TOKEN}`).toString("base64");
@@ -59,7 +66,9 @@ async function main() {
   const taskRouting = taskClassFromLabels(issue.labels);
   const codeEffort = taskRouting.effort;
   const target = `${repoName(TARGET_REPO)}#${TARGET_ISSUE_NUMBER}`;
-  const branch = `df/${TARGET_ISSUE_NUMBER}-${slug(issue.title)}`;
+  const resumeInfo = await buildResumeInfo(TARGET_REPO, TARGET_ISSUE_NUMBER);
+  const branch = resumeInfo?.branch || `df/${TARGET_ISSUE_NUMBER}-${slug(issue.title)}`;
+  ledger.resume = resumeInfo ? { type: resumeInfo.type, branch: resumeInfo.branch } : null;
   const providerRegistry = await loadProviderRegistry(CONTROL_ROOT);
   const candidateProviders = availableProviders(providerRegistry, process.env);
 
@@ -84,7 +93,28 @@ async function main() {
   let pullRequest = null;
 
   const repo = await getRepository(gh, TARGET_REPO);
-  const workBaseBranch = await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch, TARGET_BASE_REF);
+  const workBaseBranch = resumeInfo?.baseRef || await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch, TARGET_BASE_REF);
+
+  const enforcementRules = await loadEnforcementRules(CONTROL_ROOT);
+  const enforcement = await evaluateEnforcementRules(enforcementRules, {
+    gh,
+    repository: TARGET_REPO,
+    baseBranch: workBaseBranch,
+    registry: await readManagedRepoRegistry(CONTROL_ROOT),
+    token: TOKEN
+  });
+  ledger.actions.push({ action: "enforcement-rules", result: enforcement });
+  if (!enforcement.ok) {
+    ledger.status = "blocked";
+    ledger.error = enforcement.findings.map((finding) => `${finding.rule}: ${finding.message}`).join("\n");
+    await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
+    await createIssueComment(
+      TARGET_REPO,
+      TARGET_ISSUE_NUMBER,
+      enforcementBlockedComment(target, workBaseBranch, enforcement)
+    );
+    return;
+  }
 
   // Ensure work labels exist before any preflight failure path tries to apply
   // `df:blocked` to the issue, so the blocker comment is always left reliably.
@@ -98,30 +128,32 @@ async function main() {
   }
   await ensureLabels(gh, TARGET_REPO, WORK_LABELS);
 
-  const existingPullRequest = await findOpenWorkerPullRequestForIssue(gh, TARGET_REPO, TARGET_ISSUE_NUMBER);
-  if (existingPullRequest) {
-    ledger.status = "success";
-    ledger.pull_request = existingPullRequest.url;
-    ledger.actions.push({
-      action: "existing-worker-pr",
-      result: "noop",
-      url: existingPullRequest.url,
-      branch: existingPullRequest.headRefName
-    });
-    await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:running"], ["df:ready", "df:blocked", "df:done"]);
-    await createIssueComment(
-      TARGET_REPO,
-      TARGET_ISSUE_NUMBER,
-      [
-        `DarkFactory worker skipped \`${target}\` because an open worker PR already exists.`,
-        "",
-        `PR: ${existingPullRequest.url || `#${existingPullRequest.number}`}`,
-        `Branch: \`${existingPullRequest.headRefName || branch}\``,
-        "",
-        "No new worker run is needed; follow-through will evaluate the existing PR."
-      ].join("\n")
-    );
-    return;
+  if (!resumeInfo) {
+    const existingPullRequest = await findOpenWorkerPullRequestForIssue(gh, TARGET_REPO, TARGET_ISSUE_NUMBER);
+    if (existingPullRequest) {
+      ledger.status = "success";
+      ledger.pull_request = existingPullRequest.url;
+      ledger.actions.push({
+        action: "existing-worker-pr",
+        result: "noop",
+        url: existingPullRequest.url,
+        branch: existingPullRequest.headRefName
+      });
+      await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:running"], ["df:ready", "df:blocked", "df:done"]);
+      await createIssueComment(
+        TARGET_REPO,
+        TARGET_ISSUE_NUMBER,
+        [
+          `DarkFactory worker skipped \`${target}\` because an open worker PR already exists.`,
+          "",
+          `PR: ${existingPullRequest.url || `#${existingPullRequest.number}`}`,
+          `Branch: \`${existingPullRequest.headRefName || branch}\``,
+          "",
+          "No new worker run is needed; follow-through will evaluate the existing PR."
+        ].join("\n")
+      );
+      return;
+    }
   }
 
   const mergePolicy = await preflightMergePolicy(gh, TARGET_REPO, workBaseBranch, repo);
@@ -144,15 +176,7 @@ async function main() {
     await createIssueComment(
       TARGET_REPO,
       TARGET_ISSUE_NUMBER,
-      [
-        `DarkFactory worker started for \`${target}\` from \`${TRIGGER}\`.`,
-        "",
-        `Branch: \`${branch}\``,
-        `Task class: \`${taskRouting.taskClass}\``,
-        `Reasoning effort: \`${codeEffort}\``,
-        `Provider order: \`${providerOrder}\``,
-        `Merge policy: ${mergePolicy.summary}`
-      ].join("\n")
+      workerStartedComment(target, branch, taskRouting, codeEffort, providerOrder, mergePolicy.summary, resumeInfo)
     );
 
     if (candidateProviders.length === 0) {
@@ -163,16 +187,24 @@ async function main() {
     const worktree = path.join(tempRoot, "repo");
 
     await cloneRepository(TARGET_REPO, worktree, workBaseBranch);
-    if (await remoteBranchExists(TARGET_REPO, branch)) {
-      const staleBranchResult = await blockStaleWorkerBranch(branch);
-      ledger.status = "blocked";
-      ledger.error = staleBranchResult.message;
-      ledger.actions.push(staleBranchResult);
-      return;
+    if (resumeInfo) {
+      if (!(await remoteBranchExists(TARGET_REPO, branch))) {
+        throw new Error(`Resume branch \`${branch}\` does not exist on the remote.`);
+      }
+      runGit(["fetch", "origin", branch], worktree);
+      runGit(["checkout", branch], worktree);
+    } else {
+      if (await remoteBranchExists(TARGET_REPO, branch)) {
+        const staleBranchResult = await blockStaleWorkerBranch(branch);
+        ledger.status = "blocked";
+        ledger.error = staleBranchResult.message;
+        ledger.actions.push(staleBranchResult);
+        return;
+      }
+      runGit(["checkout", "-b", branch], worktree);
     }
-    runGit(["checkout", "-b", branch], worktree);
 
-    const briefInfo = await writeTaskBrief(worktree, issue, workBaseBranch, taskRouting);
+    const briefInfo = await writeTaskBrief(worktree, issue, workBaseBranch, taskRouting, resumeInfo);
     ledger.token_usage.input_brief_characters = briefInfo.characters;
 
     const workerResult = await runWithFailover(
@@ -215,12 +247,12 @@ async function main() {
     }
 
     const ahead = Number(gitOutput(["rev-list", "--count", `origin/${workBaseBranch}..HEAD`], worktree));
-    if (!Number.isInteger(ahead) || ahead <= 0) {
+    if (!Number.isInteger(ahead) || ahead < 0 || (ahead === 0 && !resumeInfo)) {
       throw new Error("Worker completed without producing a commit.");
     }
 
     runGit(["push", "origin", `HEAD:refs/heads/${branch}`], worktree);
-    pullRequest = await createPullRequest(TARGET_REPO, workBaseBranch, branch, issue, summary, workerResult);
+    pullRequest = await openOrReusePullRequest(TARGET_REPO, workBaseBranch, branch, issue, summary, workerResult, resumeInfo);
     ledger.pull_request = pullRequest.html_url;
 
     let automerge;
@@ -239,19 +271,17 @@ async function main() {
     await createIssueComment(
       TARGET_REPO,
       TARGET_ISSUE_NUMBER,
-      [
-        `DarkFactory worker opened ${pullRequest.html_url}.`,
-        "",
-        `Provider: \`${workerResult.provider}\` (${workerResult.model})`,
-        `Automerge: ${automerge.enabled ? "enabled" : `not enabled (${automerge.reason})`}.`,
-        "",
-        "Worker summary:",
-        "",
-        truncate(summary, 5000)
-      ].join("\n")
+      workerSuccessComment(pullRequest, workerResult, summary, automerge, resumeInfo)
     );
     ledger.status = "success";
-    ledger.actions.push({ action: "open-pr", url: pullRequest.html_url, automerge, provider: workerResult.provider, model: workerResult.model });
+    ledger.actions.push({
+      action: resumeInfo ? "resume-pr" : "open-pr",
+      url: pullRequest.html_url,
+      automerge,
+      provider: workerResult.provider,
+      model: workerResult.model,
+      resumed: !!resumeInfo
+    });
   } catch (error) {
     ledger.status = "blocked";
     const baseError = sanitize(error.stack || error.message || String(error), TOKEN);
@@ -272,6 +302,32 @@ async function main() {
   }
 }
 
+function workerStartedComment(target, branch, taskRouting, codeEffort, providerOrder, mergePolicySummary, resumeInfo) {
+  const lines = resumeInfo
+    ? [
+        `DarkFactory worker resumed for \`${target}\` from \`${TRIGGER}\`.`,
+        "",
+        resumeInfo.type === "pr"
+          ? `Resuming against existing PR: ${resumeInfo.pr.html_url || `#${resumeInfo.pr.number}`}`
+          : `Resuming from pushed branch: \`${resumeInfo.branch}\``,
+        `Branch: \`${branch}\``,
+        `Task class: \`${taskRouting.taskClass}\``,
+        `Reasoning effort: \`${codeEffort}\``,
+        `Provider order: \`${providerOrder}\``,
+        `Merge policy: ${mergePolicySummary}`
+      ]
+    : [
+        `DarkFactory worker started for \`${target}\` from \`${TRIGGER}\`.`,
+        "",
+        `Branch: \`${branch}\``,
+        `Task class: \`${taskRouting.taskClass}\``,
+        `Reasoning effort: \`${codeEffort}\``,
+        `Provider order: \`${providerOrder}\``,
+        `Merge policy: ${mergePolicySummary}`
+      ];
+  return lines.join("\n");
+}
+
 function preflightBlockedComment(target, baseBranch, mergePolicy) {
   return [
     `DarkFactory blocked \`${target}\` before cloning or running a worker.`,
@@ -286,6 +342,24 @@ function preflightBlockedComment(target, baseBranch, mergePolicy) {
     `Repository auto-merge enabled: \`${mergePolicy.autoMergeSupported ? "yes" : "no"}\``,
     "",
     "This is target repository setup work, not a code implementation failure."
+  ].join("\n");
+}
+
+function enforcementBlockedComment(target, baseBranch, enforcement) {
+  return [
+    `DarkFactory enforcement gate blocked \`${target}\` before cloning or running a worker.`,
+    "",
+    "Target branch:",
+    "",
+    `\`${baseBranch}\``,
+    "",
+    "Failed enforcement rules:",
+    "",
+    ...enforcement.findings
+      .filter((finding) => finding.severity === "block")
+      .map((finding) => `- **${finding.rule}**: ${finding.message}`),
+    "",
+    "This is a policy failure, not a code implementation failure."
   ].join("\n");
 }
 
@@ -317,6 +391,80 @@ async function resolveWorkBaseBranch(repository, defaultBranch, requestedBranch 
 
 async function ensureBranchExists(repository, branch) {
   await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeRefPath(branch)}`);
+}
+
+async function buildResumeInfo(repository, issueNumber) {
+  if (RESUME_PR_NUMBER > 0) {
+    const pr = await fetchResumePullRequest(repository, RESUME_PR_NUMBER);
+    if (darkFactoryWorkerIssueNumber(pr) !== issueNumber) {
+      throw new Error(`Resume PR #${RESUME_PR_NUMBER} is not a worker PR for issue #${issueNumber}`);
+    }
+    if (!isDarkFactoryWorkerPullRequest(pr, repository)) {
+      throw new Error(`Resume PR #${RESUME_PR_NUMBER} is not a DarkFactory worker PR`);
+    }
+    return {
+      type: "pr",
+      pr: {
+        number: pr.number,
+        html_url: pr.html_url,
+        node_id: pr.node_id
+      },
+      branch: pr.headRefName,
+      baseRef: pr.baseRefName
+    };
+  }
+
+  if (RESUME_BRANCH) {
+    return { type: "branch", branch: RESUME_BRANCH, baseRef: "" };
+  }
+
+  return null;
+}
+
+async function fetchResumePullRequest(repository, pullNumber) {
+  const pull = await gh.request("GET", `/repos/${repoName(repository)}/pulls/${pullNumber}`);
+  if (pull.state !== "open") {
+    throw new Error(`Resume PR #${pullNumber} is not open`);
+  }
+  return {
+    number: pull.number,
+    html_url: pull.html_url,
+    node_id: pull.node_id,
+    title: pull.title || "",
+    body: pull.body || "",
+    headRefName: pull.head?.ref || "",
+    baseRefName: pull.base?.ref || "",
+    headRepository: {
+      name: pull.head?.repo?.name || "",
+      owner: { login: pull.head?.repo?.owner?.login || "" }
+    },
+    author: { login: pull.user?.login || "" }
+  };
+}
+
+async function openOrReusePullRequest(repository, base, branch, issue, summary, workerResult, resumeInfo) {
+  if (resumeInfo?.type === "pr") {
+    return resumeInfo.pr;
+  }
+
+  const existing = await findOpenWorkerPullRequestForIssue(gh, repository, TARGET_ISSUE_NUMBER);
+  if (existing) return existing;
+
+  return createPullRequest(repository, base, branch, issue, summary, workerResult);
+}
+
+function workerSuccessComment(pullRequest, workerResult, summary, automerge, resumeInfo) {
+  const action = resumeInfo ? "updated" : "opened";
+  return [
+    `DarkFactory worker ${action} ${pullRequest.html_url}.`,
+    "",
+    `Provider: \`${workerResult.provider}\` (${workerResult.model})`,
+    `Automerge: ${automerge.enabled ? "enabled" : `not enabled (${automerge.reason})`}.`,
+    "",
+    "Worker summary:",
+    "",
+    truncate(summary, 5000)
+  ].join("\n");
 }
 
 async function replaceIssueLabels(repository, issueNumber, add, remove) {
@@ -466,7 +614,29 @@ async function findOpenIssueByMarker(repository, marker) {
   return null;
 }
 
-async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting) {
+function buildResumeContext(resumeInfo, defaultBranch) {
+  if (!resumeInfo) return "";
+
+  const lines = [
+    "## Resume Context",
+    "",
+    "This worker run is resuming an interrupted previous run. Do not create a new branch or PR."
+  ];
+
+  if (resumeInfo.type === "pr") {
+    lines.push(`Resuming against existing PR #${resumeInfo.pr.number} (${resumeInfo.pr.html_url}).`);
+    lines.push(`Branch: \`${resumeInfo.branch}\`, base: \`${resumeInfo.baseRef}\`.`);
+  } else if (resumeInfo.type === "branch") {
+    lines.push(`Resuming from pushed branch \`${resumeInfo.branch}\`.`);
+    lines.push(`Base: \`${defaultBranch}\`.`);
+  }
+
+  lines.push("Focus on the smallest merge-first task: resolve current review findings or get the existing PR green.");
+  lines.push("");
+  return lines.join("\n");
+}
+
+async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting, resumeInfo = null) {
   const scratchDir = path.join(worktree, ".darkfactory");
   await mkdir(scratchDir, { recursive: true });
 
@@ -475,6 +645,8 @@ async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting) {
   const issueLabels = Array.isArray(issue.labels)
     ? issue.labels.map((label) => typeof label === "string" ? label : label.name).filter(Boolean).join(", ")
     : "";
+
+  const resumeContext = buildResumeContext(resumeInfo, defaultBranch);
 
   const brief = [
     "# DarkFactory Worker Brief",
@@ -502,6 +674,7 @@ async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting) {
     "",
     extractAcceptanceCriteria(issue.body || "") || "Use the issue body as the acceptance criteria.",
     "",
+    resumeContext,
     "## Root AGENTS.md",
     "",
     agentsContext || "(AGENTS.md not present)",

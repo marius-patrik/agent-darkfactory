@@ -24,6 +24,7 @@ import {
   writeRunLedger
 } from "./df-lib.mjs";
 import { pathToFileURL } from "node:url";
+import { evaluateEnforcementRules, loadEnforcementRules } from "./df-enforcement.mjs";
 
 const MODE = process.env.DF_FOLLOW_THROUGH_MODE ?? "sweep";
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
@@ -66,6 +67,7 @@ async function main() {
 
   const repos = await targetRepositories();
   const excluded = new Set(repoList(process.env.DF_SWEEP_EXCLUDE_REPOS || DEFAULT_EXCLUDED_REPOS).map((repo) => repoName(repo).toLowerCase()));
+  const enforcementRules = await loadEnforcementRules();
   const ledger = {
     trigger: TRIGGER,
     mode: MODE,
@@ -96,7 +98,7 @@ async function main() {
       console.log(`DarkFactory sweep listed ${pulls.length} open ${[...baseBranches].join(",")} worker candidate PRs for ${repoName(repository)}.`);
       for (const pull of pulls) {
         try {
-          const result = await considerPullRequest(repository, pull);
+          const result = await considerPullRequest(repository, pull, enforcementRules);
           console.log(formatPullDecision(repository, pull, result));
           ledger.actions.push(result);
         } catch (error) {
@@ -145,21 +147,49 @@ function formatPullDecision(repository, pull, result) {
   ].join(" ");
 }
 
-export async function considerPullRequest(repository, pull) {
+export async function considerPullRequest(repository, pull, enforcementRules = null) {
   const ref = `${repoName(repository)}#${pull.number}`;
 
   if (pull.isDraft) return { repo: repoName(repository), pr: ref, action: "skip", reason: "draft" };
   if (!isWorkerPullRequest(pull, repository)) return { repo: repoName(repository), pr: ref, action: "skip", reason: "not-worker-pr" };
 
-  if (!emptyCheckRollupHasSettled(pull)) {
-    return { repo: repoName(repository), pr: ref, action: "skip", reason: "checks-not-reported-yet" };
-  }
-
+  const rules = enforcementRules ?? (await loadEnforcementRules());
+  const registry = await readManagedRepoRegistry();
   const branchProtectionContexts = await getRequiredStatusCheckContexts(gh, repository, pull.baseRefName);
   const codexReview = await codexReviewProvisioning(repository, pull);
   const requiredContexts = codexReview.required
     ? withCodexReviewRequiredContext(branchProtectionContexts)
     : branchProtectionContexts;
+
+  const enforcement = await evaluateEnforcementRules(rules, {
+    gh,
+    repository,
+    pull,
+    baseBranch: pull.baseRefName,
+    registry,
+    requiredContexts,
+    statusCheckRollup: pull.statusCheckRollup,
+    token: process.env.DARK_FACTORY_TOKEN || ""
+  });
+
+  if (!enforcement.ok) {
+    const issueUpdate = await markWorkerIssueBlocked(repository, pull, "enforcement-rules", [
+      ...enforcement.findings.filter((finding) => finding.severity === "block").map((finding) => `${finding.rule}: ${finding.message}`)
+    ]);
+    return {
+      repo: repoName(repository),
+      pr: ref,
+      action: "skip",
+      reason: "enforcement-rules",
+      issue_update: issueUpdate,
+      findings: enforcement.findings
+    };
+  }
+
+  if (!emptyCheckRollupHasSettled(pull)) {
+    return { repo: repoName(repository), pr: ref, action: "skip", reason: "checks-not-reported-yet" };
+  }
+
   const hasReportedChecks = Array.isArray(pull.statusCheckRollup) && pull.statusCheckRollup.length > 0;
   if (!hasReportedChecks && requiredContexts.length === 0 && !NO_CHECK_ALLOWLIST.has(repoName(repository).toLowerCase())) {
     const issueUpdate = await markWorkerIssueBlocked(repository, pull, "no-checks-not-allowed", [
