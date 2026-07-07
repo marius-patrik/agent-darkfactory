@@ -9,6 +9,7 @@ import {
   ensureSharedState,
   readCreditStore,
   readInstalls,
+  readSessionConfig,
   sharedState,
   sharedStateFromEnv,
   writeCreditStore,
@@ -25,6 +26,7 @@ import {
 } from "./packages";
 import { listSecrets, secretPath, syncGitHubSecret, writeSecret } from "./secrets";
 import { osCommand } from "./os-lifecycle";
+import { TuiApp, configuredProviderModels } from "./tui";
 import {
   defaultAgentsHome,
   ensureSyncConfig,
@@ -39,9 +41,42 @@ import {
   toolStateSpecs,
   type ToolStateId,
 } from "./state-consolidation";
+import {
+  createSession,
+  describeSession,
+  listSessions,
+  loadSessionState,
+  loadTranscript,
+  runSessionTurn,
+  switchSessionProvider,
+  type SessionDescriptor,
+  type SessionMode,
+} from "../harness/session";
+import { providerSessionAdapter } from "./session-adapters";
+import {
+  ensureOrchestratorState,
+  initializeOrchestratorState,
+  orchestratorSystemPrompt,
+  writeOrchestratorHeartbeat,
+} from "./orchestrator";
 
 const root = process.cwd();
 const gitmodulesPath = path.join(root, ".gitmodules");
+
+function systemPromptForMode(mode: SessionMode): string | undefined {
+  return mode === "orchestrator" ? orchestratorSystemPrompt() : undefined;
+}
+
+async function prepareOrchestratorSession(state: SharedState, descriptor: SessionDescriptor): Promise<void> {
+  if (descriptor.mode !== "orchestrator") return;
+  await ensureOrchestratorState(state);
+  await initializeOrchestratorState(state, descriptor.sessionId, descriptor.provider, descriptor.model);
+  await writeOrchestratorHeartbeat(state, descriptor.sessionId, {
+    provider: descriptor.provider,
+    model: descriptor.model,
+  });
+}
+const runModes = new Set<SessionMode>(["orchestrator", "default", "chat", "task"]);
 const defaultDataPath = path.join("data", "data-agentos");
 const packageKinds = new Map([
   ["agent", "agents"],
@@ -63,6 +98,10 @@ function help(): void {
   console.log(`agents - Bun agent package manager
 
 Usage:
+  agents run [--mode orchestrator|default] [--provider <id>] [--model <model>] [--tui] <prompt>
+  agents tui [--provider <id>] [--model <model>] [--mode <mode>]
+  agents sessions list [--json]
+  agents sessions resume <id> <prompt>
   agents list [--json]
   agents info <name-or-path> [--json]
   agents add <name> <git-url> [--kind agent|app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
@@ -93,6 +132,9 @@ Usage:
   agents harness list [--json]
   agents harness doctor <name>
   agents harness run <name> -- <args...>
+  agents session run --provider <id> --model <model> [--mode chat|task] [--session <id>] [--stream] <prompt>
+  agents session list [--json]
+  agents session show <id> [--json]
   agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-url>
   agents installs [--json]
   agents secrets list [--json]
@@ -505,6 +547,263 @@ async function harnessCommand(args: string[], flags: Record<string, string | boo
   throw new Error(`unknown harness action: ${action}`);
 }
 
+async function sessionCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const [action = "run"] = args;
+  const state = runtimeState();
+  await ensureSharedState(state);
+
+  if (action === "list") {
+    const sessions = await listSessions(state);
+    if (flags.json) {
+      console.log(JSON.stringify(sessions, null, 2));
+      return;
+    }
+    for (const descriptor of sessions) {
+      console.log(`${descriptor.sessionId.padEnd(32)} ${descriptor.provider.padEnd(10)} ${descriptor.model}`);
+    }
+    return;
+  }
+
+  if (action === "show") {
+    const sessionId = args[1];
+    if (!sessionId) throw new Error("session show requires a session id");
+    const sessionState = await loadSessionState(state, sessionId);
+    const transcript = await loadTranscript(state, sessionId);
+    if (!sessionState || !transcript) throw new Error(`session not found: ${sessionId}`);
+    if (flags.json) {
+      console.log(JSON.stringify({ state: sessionState, transcript }, null, 2));
+      return;
+    }
+    console.log(describeSession({
+      sessionId: sessionState.sessionId,
+      provider: sessionState.provider,
+      model: sessionState.model,
+      mode: sessionState.mode,
+      workdir: sessionState.workdir,
+      stateDir: state.sessionsDir,
+    }));
+    console.log(`turns: ${sessionState.turnCount}`);
+    for (const message of transcript.messages) {
+      console.log(`\n[${message.role}] ${message.content.slice(0, 200)}${message.content.length > 200 ? "..." : ""}`);
+    }
+    return;
+  }
+
+  if (action === "run") {
+    const prompt = args.slice(1).join(" ").trim();
+    if (!prompt) throw new Error("session run requires a prompt");
+
+    const provider = typeof flags.provider === "string" ? flags.provider : undefined;
+    const model = typeof flags.model === "string" ? flags.model : undefined;
+    const sessionId = typeof flags.session === "string" ? flags.session : undefined;
+    const mode = (typeof flags.mode === "string" ? flags.mode : "chat") as SessionMode;
+    const stream = Boolean(flags.stream);
+
+    if (!sessionId && (!provider || !model)) {
+      throw new Error("session run requires --provider and --model, or --session to continue an existing session");
+    }
+
+    let descriptor;
+    if (sessionId) {
+      const existing = await loadSessionState(state, sessionId);
+      if (!existing) throw new Error(`session not found: ${sessionId}`);
+      if (provider && model) {
+        descriptor = await switchSessionProvider(state, sessionId, provider, model);
+      } else {
+        descriptor = {
+          sessionId: existing.sessionId,
+          provider: existing.provider,
+          model: existing.model,
+          mode: existing.mode,
+          workdir: existing.workdir,
+          stateDir: state.sessionsDir,
+        };
+      }
+    } else {
+      descriptor = await createSession(state, { provider: provider!, model: model!, mode });
+    }
+
+    await prepareOrchestratorSession(state, descriptor);
+    const systemPrompt = systemPromptForMode(descriptor.mode);
+    const activeProvider = descriptor.provider;
+    const adapter = providerSessionAdapter(activeProvider);
+
+    if (stream && adapter.streamTurn) {
+      for await (const chunk of await import("../harness/session").then((m) => m.streamSessionTurn(state, adapter, descriptor, { prompt, stream, systemPrompt }))) {
+        if (chunk.type === "text" && chunk.delta) process.stdout.write(chunk.delta);
+        if (chunk.type === "error") console.error(chunk.error);
+      }
+      console.log();
+    } else {
+      const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+      if (result.error) {
+        console.error(result.error);
+        process.exitCode = 1;
+      } else {
+        console.log(result.content);
+      }
+    }
+
+    console.error(`session: ${descriptor.sessionId}`);
+    return;
+  }
+
+  throw new Error(`unknown session action: ${action}`);
+}
+
+async function resolveSessionDefaults(
+  state: SharedState,
+  flags: Record<string, string | boolean>,
+): Promise<{ provider: string; model: string; mode: SessionMode }> {
+  const config = await readSessionConfig(state);
+  const provider = typeof flags.provider === "string" ? flags.provider : config.defaultProvider;
+  const model = typeof flags.model === "string" ? flags.model : config.defaultModel;
+  const modeFlag = typeof flags.mode === "string" ? flags.mode : config.defaultMode;
+  const mode = runModes.has(modeFlag as SessionMode) ? (modeFlag as SessionMode) : "default";
+  if (!provider || !model) {
+    throw new Error("provider and model are required; set defaults in config or use --provider and --model");
+  }
+  return { provider, model, mode };
+}
+
+async function launchTui(state: SharedState, descriptor: SessionDescriptor, systemPrompt?: string): Promise<void> {
+  const { providers, modelsByProvider } = configuredProviderModels();
+  const app = new TuiApp({ state, descriptor, providers, modelsByProvider, systemPrompt });
+  await app.start();
+  console.error(`session: ${descriptor.sessionId}`);
+}
+
+async function tuiCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const state = runtimeState();
+  await ensureSharedState(state);
+  const { provider, model, mode } = await resolveSessionDefaults(state, flags);
+  const descriptor = await createSession(state, { provider, model, mode });
+  await prepareOrchestratorSession(state, descriptor);
+  await launchTui(state, descriptor, systemPromptForMode(mode));
+}
+
+async function runCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const prompt = args.join(" ").trim();
+  const useTui = Boolean(flags.tui);
+  if (!prompt && !useTui) throw new Error("run requires a prompt");
+
+  const state = runtimeState();
+  await ensureSharedState(state);
+  const { provider, model, mode } = await resolveSessionDefaults(state, flags);
+
+  const descriptor = await createSession(state, { provider, model, mode });
+  await prepareOrchestratorSession(state, descriptor);
+  const systemPrompt = systemPromptForMode(mode);
+
+  if (useTui) {
+    if (prompt) {
+      const adapter = providerSessionAdapter(descriptor.provider);
+      await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+    }
+    await launchTui(state, descriptor);
+    return;
+  }
+
+  const adapter = providerSessionAdapter(descriptor.provider);
+  const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+
+  if (result.error) {
+    console.error(result.error);
+    process.exitCode = 1;
+  } else {
+    console.log(result.content);
+  }
+  console.error(`session: ${descriptor.sessionId}`);
+}
+
+interface SessionListItem {
+  sessionId: string;
+  provider: string;
+  model: string;
+  mode: SessionMode;
+  updated: string;
+}
+
+async function readSessionListItems(state: SharedState): Promise<SessionListItem[]> {
+  const descriptors = await listSessions(state);
+  const items: SessionListItem[] = [];
+  for (const descriptor of descriptors) {
+    const sessionState = await loadSessionState(state, descriptor.sessionId);
+    const transcript = await loadTranscript(state, descriptor.sessionId);
+    const updated = sessionState?.lastTurnAt ?? transcript?.updatedAt ?? transcript?.createdAt ?? "";
+    items.push({
+      sessionId: descriptor.sessionId,
+      provider: descriptor.provider,
+      model: descriptor.model,
+      mode: descriptor.mode,
+      updated,
+    });
+  }
+  return items.sort((a, b) => b.updated.localeCompare(a.updated));
+}
+
+async function sessionsCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const [action = "list"] = args;
+  const state = runtimeState();
+  await ensureSharedState(state);
+
+  if (action === "list") {
+    const items = await readSessionListItems(state);
+    if (flags.json) {
+      console.log(JSON.stringify(items, null, 2));
+      return;
+    }
+    for (const item of items) {
+      console.log(
+        `${item.sessionId.padEnd(32)} ${item.provider.padEnd(10)} ${item.model.padEnd(16)} ${item.mode.padEnd(12)} ${item.updated}`,
+      );
+    }
+    return;
+  }
+
+  if (action === "resume") {
+    const sessionId = args[1];
+    if (!sessionId) throw new Error("sessions resume requires a session id");
+    const prompt = args.slice(2).join(" ").trim();
+    if (!prompt) throw new Error("sessions resume requires a prompt");
+
+    let descriptor;
+    const existing = await loadSessionState(state, sessionId);
+    if (!existing) throw new Error(`session not found: ${sessionId}`);
+
+    const provider = typeof flags.provider === "string" ? flags.provider : undefined;
+    const model = typeof flags.model === "string" ? flags.model : undefined;
+    if (provider && model) {
+      descriptor = await switchSessionProvider(state, sessionId, provider, model);
+    } else {
+      descriptor = {
+        sessionId: existing.sessionId,
+        provider: existing.provider,
+        model: existing.model,
+        mode: existing.mode,
+        workdir: existing.workdir,
+        stateDir: state.sessionsDir,
+      };
+    }
+
+    await prepareOrchestratorSession(state, descriptor);
+    const systemPrompt = systemPromptForMode(descriptor.mode);
+
+    const adapter = providerSessionAdapter(descriptor.provider);
+    const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+    if (result.error) {
+      console.error(result.error);
+      process.exitCode = 1;
+    } else {
+      console.log(result.content);
+    }
+    console.error(`session: ${descriptor.sessionId}`);
+    return;
+  }
+
+  throw new Error(`unknown sessions action: ${action}`);
+}
+
 async function harnessesFromState(state: SharedState): Promise<Array<{ id: string; path: string; manifest: AgentsPackageManifest }>> {
   const registrations = await readPackageRegistrations(state);
   const out: Array<{ id: string; path: string; manifest: AgentsPackageManifest }> = [];
@@ -563,6 +862,7 @@ function sharedHarnessEnv(state: SharedState, harness: { id: string }): Record<s
     AGENTS_HOOKS: state.hooksDir,
     AGENTS_TEMPLATES: state.templatesDir,
     AGENTS_SECRETS: state.secretsDir,
+    AGENTS_ORCHESTRATOR: state.orchestratorDir,
     AGENTS_CREDITS: state.creditsFile,
     AGENTS_DATA_REPOS: state.dataReposFile,
     AGENTS_ENVIRONMENTS: state.environmentsFile,
@@ -586,6 +886,7 @@ function sharedPackageEnv(state: SharedState): Record<string, string> {
     AGENTS_HOOKS: state.hooksDir,
     AGENTS_TEMPLATES: state.templatesDir,
     AGENTS_SECRETS: state.secretsDir,
+    AGENTS_ORCHESTRATOR: state.orchestratorDir,
     AGENTS_CREDITS: state.creditsFile,
     AGENTS_DATA_REPOS: state.dataReposFile,
     AGENTS_ENVIRONMENTS: state.environmentsFile,
@@ -871,6 +1172,9 @@ async function main(): Promise<void> {
   const [command = "help", ...rest] = Bun.argv.slice(2);
   const { values, flags } = parseArgs(rest);
   if (command === "help" || flags.help) return help();
+  if (command === "run") return runCommand(values, flags);
+  if (command === "tui") return tuiCommand(values, flags);
+  if (command === "sessions") return sessionsCommand(values, flags);
   if (command === "list") return list(flags);
   if (command === "info") return info(values[0], flags);
   if (command === "add") return add(values, flags);
@@ -882,6 +1186,7 @@ async function main(): Promise<void> {
   if (command === "env") return envCommand(values, flags);
   if (command === "data") return dataCommand(values, flags);
   if (command === "harness") return harnessCommand(values, flags);
+  if (command === "session") return sessionCommand(values, flags);
   if (command === "install") return install(values);
   if (command === "installs") return installs(flags);
   if (command === "secrets") return secretsCommand(values, flags);

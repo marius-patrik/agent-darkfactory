@@ -76,12 +76,21 @@ export interface SharedState {
   hooksDir: string;
   templatesDir: string;
   secretsDir: string;
+  sessionsDir: string;
+  orchestratorDir: string;
   creditsFile: string;
   installsFile: string;
   packagesFile: string;
   environmentsFile: string;
   dataReposFile: string;
+  configFile: string;
   envFile: string;
+}
+
+export interface SessionConfig {
+  defaultProvider?: string;
+  defaultModel?: string;
+  defaultMode?: "orchestrator" | "default";
 }
 
 export function sharedStateAt(root: string, stateDir: string): SharedState {
@@ -97,11 +106,14 @@ export function sharedStateAt(root: string, stateDir: string): SharedState {
     hooksDir: path.join(stateDir, "hooks"),
     templatesDir: path.join(stateDir, "templates"),
     secretsDir: path.join(stateDir, "secrets"),
+    sessionsDir: path.join(stateDir, "sessions"),
+    orchestratorDir: path.join(stateDir, "orchestrator"),
     creditsFile: path.join(stateDir, "credits.json"),
     installsFile: path.join(stateDir, "installs.json"),
     packagesFile: path.join(stateDir, "packages.json"),
     environmentsFile: path.join(stateDir, "environments.json"),
     dataReposFile: path.join(stateDir, "data-repos.json"),
+    configFile: path.join(stateDir, "config.json"),
     envFile: path.join(stateDir, "env"),
   };
 }
@@ -126,9 +138,12 @@ export function sharedStateFromEnv(cwd: string, env: Record<string, string | und
     hooksDir: env.AGENTS_HOOKS?.trim() || path.join(stateDir, "hooks"),
     templatesDir: env.AGENTS_TEMPLATES?.trim() || path.join(stateDir, "templates"),
     secretsDir: env.AGENTS_SECRETS?.trim() || path.join(stateDir, "secrets"),
+    sessionsDir: env.AGENTS_SESSIONS?.trim() || path.join(stateDir, "sessions"),
+    orchestratorDir: env.AGENTS_ORCHESTRATOR?.trim() || path.join(stateDir, "orchestrator"),
     creditsFile: env.AGENTS_CREDITS?.trim() || path.join(stateDir, "credits.json"),
     dataReposFile: env.AGENTS_DATA_REPOS?.trim() || path.join(stateDir, "data-repos.json"),
     environmentsFile: env.AGENTS_ENVIRONMENTS?.trim() || path.join(stateDir, "environments.json"),
+    configFile: env.AGENTS_CONFIG?.trim() || path.join(stateDir, "config.json"),
   };
 }
 
@@ -141,6 +156,8 @@ export async function ensureSharedState(state: SharedState): Promise<void> {
     mkdir(state.hooksDir, { recursive: true }),
     mkdir(state.templatesDir, { recursive: true }),
     mkdir(state.secretsDir, { recursive: true }),
+    mkdir(state.sessionsDir, { recursive: true }),
+    mkdir(state.orchestratorDir, { recursive: true }),
   ]);
 
   if (!(await Bun.file(state.installsFile).exists())) {
@@ -213,9 +230,12 @@ export async function ensureSharedState(state: SharedState): Promise<void> {
       `AGENTS_HOOKS=${state.hooksDir}`,
       `AGENTS_TEMPLATES=${state.templatesDir}`,
       `AGENTS_SECRETS=${state.secretsDir}`,
+      `AGENTS_SESSIONS=${state.sessionsDir}`,
+      `AGENTS_ORCHESTRATOR=${state.orchestratorDir}`,
       `AGENTS_CREDITS=${state.creditsFile}`,
       `AGENTS_DATA_REPOS=${state.dataReposFile}`,
       `AGENTS_ENVIRONMENTS=${state.environmentsFile}`,
+      `AGENTS_CONFIG=${state.configFile}`,
       `AGENTOS_DATA_ROOT=${defaultDataRepoPath(state.root)}`,
       "",
     ].join("\n"),
@@ -237,5 +257,14 @@ export async function readCreditStore(state: SharedState): Promise<CreditStore> 
 
 export async function writeCreditStore(state: SharedState, store: CreditStore): Promise<void> {
   await Bun.write(state.creditsFile, `${JSON.stringify(store, null, 2)}\n`);
+}
+
+export async function readSessionConfig(state: SharedState): Promise<SessionConfig> {
+  if (!(await Bun.file(state.configFile).exists())) return {};
+  return JSON.parse(await Bun.file(state.configFile).text()) as SessionConfig;
+}
+
+export async function writeSessionConfig(state: SharedState, config: SessionConfig): Promise<void> {
+  await Bun.write(state.configFile, `${JSON.stringify(config, null, 2)}\n`);
 }
 

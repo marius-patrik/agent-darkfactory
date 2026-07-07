@@ -49,6 +49,9 @@ agents data repo env <id>
 agents harness list [--json]
 agents harness doctor <name>
 agents harness run <name> -- <args...>
+agents session run --provider <id> --model <model> [--mode chat|task] [--session <id>] [--stream] <prompt>
+agents session list [--json]
+agents session show <id> [--json]
 agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-url>
 agents installs [--json]
 agents secrets list [--json]
@@ -89,6 +92,10 @@ agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev]
   hooks/
   templates/
   secrets/
+  sessions/
+    <id>/
+      transcript.json
+      state.json
   credits.json
   data-repos.json
   installs.json
@@ -97,7 +104,7 @@ agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev]
   env
 ```
 
-The CLI exports `AGENTS_HOME`, `AGENTS_ROOT`, `AGENTS_CLIS`, `AGENTS_HARNESSES`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, `AGENTS_HOOKS`, `AGENTS_TEMPLATES`, `AGENTS_SECRETS`, `AGENTS_CREDITS`, `AGENTS_DATA_REPOS`, and `AGENTS_ENVIRONMENTS`. Package and harness execution also exports configured data repository variables such as `AGENTOS_DATA_ROOT`.
+The CLI exports `AGENTS_HOME`, `AGENTS_ROOT`, `AGENTS_CLIS`, `AGENTS_HARNESSES`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, `AGENTS_HOOKS`, `AGENTS_TEMPLATES`, `AGENTS_SECRETS`, `AGENTS_SESSIONS`, `AGENTS_CREDITS`, `AGENTS_DATA_REPOS`, and `AGENTS_ENVIRONMENTS`. Package and harness execution also exports configured data repository variables such as `AGENTOS_DATA_ROOT`.
 
 ## Roadmap
 

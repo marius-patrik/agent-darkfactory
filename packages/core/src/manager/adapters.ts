@@ -93,6 +93,7 @@ export function adapterEnv(state: SharedState, id: CliId): Record<string, string
     AGENTS_HOOKS: state.hooksDir,
     AGENTS_TEMPLATES: state.templatesDir,
     AGENTS_SECRETS: state.secretsDir,
+    AGENTS_ORCHESTRATOR: state.orchestratorDir,
     AGENTS_CREDITS: state.creditsFile,
     AGENTS_DATA_REPOS: state.dataReposFile,
     AGENTOS_DATA_ROOT: path.join(state.root, defaultDataPath),

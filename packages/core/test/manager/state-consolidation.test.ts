@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   buildSyncCandidates,
   defaultSyncConfig,
   executeAdopt,
+  executeSync,
   isPathAllowed,
   isPathHardDenied,
   matchesGlob,
@@ -43,6 +44,10 @@ describe("state sync allowlist/denylist", () => {
     expect(isPathAllowed("clis/codex/config.json", defaultSyncConfig).allowed).toBe(true);
     expect(isPathAllowed("clis/kimi/settings.toml", defaultSyncConfig).allowed).toBe(true);
     expect(isPathAllowed("data-repos.json", defaultSyncConfig).allowed).toBe(true);
+    expect(isPathAllowed("sessions/chat-a/state.json", defaultSyncConfig).allowed).toBe(true);
+    expect(isPathAllowed("sessions/chat-a/transcript.json", defaultSyncConfig).allowed).toBe(true);
+    expect(isPathAllowed("orchestrator/STATE.md", defaultSyncConfig).allowed).toBe(true);
+    expect(isPathAllowed("orchestrator/ledger.json", defaultSyncConfig).allowed).toBe(true);
   });
 
   test("default allowlist excludes unspecified paths", () => {
@@ -67,6 +72,16 @@ describe("state sync allowlist/denylist", () => {
     const config: StateSyncConfig = { schemaVersion: 1, include: ["skills/**"], exclude: ["skills/private/**"] };
     expect(isPathAllowed("skills/public/SKILL.md", config).allowed).toBe(true);
     expect(isPathAllowed("skills/private/SKILL.md", config).allowed).toBe(false);
+  });
+
+  test("hard denylist rejects secrets, caches, and logs inside sessions and orchestrator", () => {
+    expect(isPathAllowed("sessions/chat-a/cache/embedding.json", defaultSyncConfig).allowed).toBe(false);
+    expect(isPathAllowed("sessions/chat-a/logs/debug.log", defaultSyncConfig).allowed).toBe(false);
+    expect(isPathAllowed("sessions/chat-a/secret.json", defaultSyncConfig).allowed).toBe(false);
+    expect(isPathAllowed("sessions/chat-a/credentials.json", defaultSyncConfig).allowed).toBe(false);
+    expect(isPathAllowed("orchestrator/cache/state.json", defaultSyncConfig).allowed).toBe(false);
+    expect(isPathAllowed("orchestrator/logs/heartbeat.log", defaultSyncConfig).allowed).toBe(false);
+    expect(isPathAllowed("orchestrator/auth/token.json", defaultSyncConfig).allowed).toBe(false);
   });
 
   test("buildSyncCandidates excludes denied dirs early and reports file-level denials", async () => {
@@ -159,6 +174,123 @@ describe("state adopt planning", () => {
       expect(await Bun.file(path.join(original, "auth.json")).exists()).toBe(true);
     } finally {
       await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("state sync round-trip", () => {
+  async function git(cwd: string, args: string[]): Promise<string> {
+    const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    const [out, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (code !== 0) {
+      throw new Error(`git ${args.join(" ")} failed in ${cwd}: ${err.trim() || out.trim() || `exit ${code}`}`);
+    }
+    return out.trim();
+  }
+
+  async function createBareUpstream(root: string): Promise<string> {
+    const seed = path.join(root, "seed");
+    const upstream = path.join(root, "upstream.git");
+    await mkdir(seed, { recursive: true });
+    await git(seed, ["init", "-b", "main"]);
+    await git(seed, ["config", "user.email", "test@local"]);
+    await git(seed, ["config", "user.name", "test"]);
+    await Bun.write(path.join(seed, "README.md"), "# state sync upstream\n");
+    await git(seed, ["add", "README.md"]);
+    await git(seed, ["commit", "-m", "init"]);
+    await git(seed, ["clone", "--bare", seed, upstream]);
+    return upstream;
+  }
+
+  async function machineState(machinesDir: string, hostname: string): Promise<Record<string, string>> {
+    const hostDir = path.join(machinesDir, hostname);
+    const out: Record<string, string> = {};
+    async function walk(current: string, prefix: string): Promise<void> {
+      const entries = await readdir(current, { withFileTypes: true });
+      for (const entry of entries) {
+        const entryPath = path.join(current, entry.name);
+        const key = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          await walk(entryPath, key);
+        } else {
+          out[key] = await readFile(entryPath, "utf-8");
+        }
+      }
+    }
+    await walk(hostDir, "");
+    return out;
+  }
+
+  test("session and orchestrator state written on machine A appears on machine B", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-roundtrip-"));
+    try {
+      const upstream = await createBareUpstream(root);
+
+      // Machine A writes state and syncs.
+      const machineA = path.join(root, "machine-a");
+      const agentsHomeA = path.join(machineA, ".agents");
+      const sessionId = "session-2026-001";
+      await Bun.write(path.join(agentsHomeA, "sessions", sessionId, "state.json"), JSON.stringify({ provider: "fake", model: "test" }));
+      await Bun.write(path.join(agentsHomeA, "sessions", sessionId, "transcript.json"), JSON.stringify({ messages: [] }));
+      await Bun.write(path.join(agentsHomeA, "orchestrator", "STATE.md"), "# Orchestrator State\n");
+      // Denied files must not be synced.
+      await Bun.write(path.join(agentsHomeA, "sessions", sessionId, "secret.json"), "should-not-sync");
+
+      const syncA = await executeSync({ agentsHome: agentsHomeA, hostname: "machine-a", remoteUrl: upstream });
+      expect(syncA.committed).toBe(true);
+      expect(syncA.pushed).toBe(true);
+      expect(syncA.candidates.some((c) => c.relPath.includes("secret.json") && !c.denied)).toBe(false);
+
+      // Machine B clones the state repo and sees machine A's files.
+      const machineB = path.join(root, "machine-b");
+      const agentsHomeB = path.join(machineB, ".agents");
+      const repoB = path.join(agentsHomeB, "state-repo");
+      await mkdir(repoB, { recursive: true });
+      await git(repoB, ["clone", upstream, "."]);
+
+      const stateB = await machineState(path.join(repoB, "machines"), "machine-a");
+      expect(stateB["sessions/session-2026-001/state.json"]).toContain("fake");
+      expect(stateB["sessions/session-2026-001/transcript.json"]).toBeDefined();
+      expect(stateB["orchestrator/STATE.md"]).toContain("# Orchestrator State");
+      expect(stateB["sessions/session-2026-001/secret.json"]).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("updates on machine A are rebased into machine B's state repo on pull", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-rebase-"));
+    try {
+      const upstream = await createBareUpstream(root);
+
+      const machineA = path.join(root, "machine-a");
+      const agentsHomeA = path.join(machineA, ".agents");
+      const sessionId = "session-2026-002";
+      await Bun.write(path.join(agentsHomeA, "sessions", sessionId, "state.json"), JSON.stringify({ turnCount: 1 }));
+      await executeSync({ agentsHome: agentsHomeA, hostname: "machine-a", remoteUrl: upstream });
+
+      const machineB = path.join(root, "machine-b");
+      const agentsHomeB = path.join(machineB, ".agents");
+      const repoB = path.join(agentsHomeB, "state-repo");
+      await mkdir(repoB, { recursive: true });
+      await git(repoB, ["clone", upstream, "."]);
+      await git(repoB, ["config", "user.email", "test@local"]);
+      await git(repoB, ["config", "user.name", "test"]);
+
+      // Machine A updates state and syncs again.
+      await Bun.write(path.join(agentsHomeA, "sessions", sessionId, "state.json"), JSON.stringify({ turnCount: 2 }));
+      await executeSync({ agentsHome: agentsHomeA, hostname: "machine-a", remoteUrl: upstream });
+
+      // Machine B pulls with rebase and sees the update.
+      await git(repoB, ["pull", "--rebase", "origin", "main"]);
+      const updated = await readFile(path.join(repoB, "machines", "machine-a", "sessions", sessionId, "state.json"), "utf-8");
+      expect(updated).toContain('"turnCount":2');
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

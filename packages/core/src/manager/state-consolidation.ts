@@ -88,6 +88,8 @@ export const defaultSyncConfig: StateSyncConfig = {
     "skills/**",
     "bin/**",
     "state/**",
+    "sessions/**",
+    "orchestrator/**",
     "clis/**/config.*",
     "clis/**/settings.*",
     "data-repos.json",
@@ -112,11 +114,13 @@ const hardDenyComponents = [
   "caches",
   "log",
   "logs",
-  "transcript",
-  "transcripts",
   "history",
   "histories",
 ];
+
+// Session transcript files are intentionally allowed because they are part of the
+// session ledger that must sync across machines.
+const alwaysAllowedFileNames = new Set(["transcript.json", "transcripts.json"]);
 
 function componentLooksDenied(component: string): boolean {
   const lower = component.toLowerCase();
@@ -129,6 +133,8 @@ function componentLooksDenied(component: string): boolean {
 export function isPathHardDenied(relPath: string): boolean {
   const normalized = relPath.replace(/\\/g, "/");
   const parts = normalized.split("/").filter(Boolean);
+  const basename = parts[parts.length - 1] ?? "";
+  if (alwaysAllowedFileNames.has(basename.toLowerCase())) return false;
   for (const part of parts) {
     if (componentLooksDenied(part)) return true;
   }
@@ -410,13 +416,17 @@ export async function readStateRepoStatus(repoPath: string): Promise<SyncRepoSta
   return { configured: true, path: repoPath, branch, clean: porcelain === "", remoteUrl };
 }
 
-async function ensureStateRepo(repoPath: string): Promise<void> {
-  if (await exists(path.join(repoPath, ".git"))) return;
+async function ensureStateRepo(repoPath: string, remoteUrl?: string): Promise<void> {
+  const resolvedRemote = remoteUrl ?? "https://github.com/marius-patrik/agents-data.git";
+  if (await exists(path.join(repoPath, ".git"))) {
+    const current = await gitOutput(repoPath, ["remote", "get-url", "origin"]).catch(() => null);
+    if (current !== resolvedRemote) {
+      await gitOutput(repoPath, ["remote", "set-url", "origin", resolvedRemote]);
+    }
+    return;
+  }
   await mkdir(path.dirname(repoPath), { recursive: true });
-  const proc = Bun.spawn(
-    ["git", "clone", "https://github.com/marius-patrik/agents-data.git", repoPath],
-    { stdout: "pipe", stderr: "pipe" },
-  );
+  const proc = Bun.spawn(["git", "clone", resolvedRemote, repoPath], { stdout: "pipe", stderr: "pipe" });
   const code = await proc.exited;
   if (code !== 0) {
     const err = await new Response(proc.stderr).text();
@@ -436,6 +446,7 @@ export async function executeSync(
     agentsHome?: string;
     dryRun?: boolean;
     hostname?: string;
+    remoteUrl?: string;
   } = {},
 ): Promise<{ candidates: SyncCandidate[]; committed: boolean; pushed: boolean; message: string }> {
   const agentsHome = options.agentsHome ?? defaultAgentsHome();
@@ -450,7 +461,7 @@ export async function executeSync(
     return { candidates, committed: false, pushed: false, message: "dry-run" };
   }
 
-  await ensureStateRepo(repoPath);
+  await ensureStateRepo(repoPath, options.remoteUrl);
   await ensureGitUser(repoPath);
 
   const machineDir = path.join(repoPath, "machines", hostname);
