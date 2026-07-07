@@ -220,7 +220,7 @@ async function main() {
     }
 
     runGit(["push", "origin", `HEAD:refs/heads/${branch}`], worktree);
-    pullRequest = await createPullRequest(TARGET_REPO, workBaseBranch, branch, issue, summary);
+    pullRequest = await createPullRequest(TARGET_REPO, workBaseBranch, branch, issue, summary, workerResult);
     ledger.pull_request = pullRequest.html_url;
 
     let automerge;
@@ -525,7 +525,7 @@ async function removeWorkerScratch(worktree) {
   await rm(path.join(worktree, ".darkfactory", "df-worker-summary.md"), { force: true });
 }
 
-async function createPullRequest(repository, base, branch, issue, summary) {
+async function createPullRequest(repository, base, branch, issue, summary, workerResult) {
   return await gh.request("POST", `/repos/${repoName(repository)}/pulls`, {
     title: issue.title,
     head: branch,
