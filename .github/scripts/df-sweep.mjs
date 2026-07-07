@@ -24,6 +24,11 @@ import {
   writeRunLedger
 } from "./df-lib.mjs";
 import { pathToFileURL } from "node:url";
+import {
+  evaluateEnforcementRules,
+  formatEnforcementResult,
+  loadEnforcementRules
+} from "./df-enforcement.mjs";
 
 const MODE = process.env.DF_FOLLOW_THROUGH_MODE ?? "sweep";
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
@@ -160,6 +165,32 @@ export async function considerPullRequest(repository, pull) {
   const requiredContexts = codexReview.required
     ? withCodexReviewRequiredContext(branchProtectionContexts)
     : branchProtectionContexts;
+
+  const enforcementRules = await loadEnforcementRules(gh, repository);
+  const enforcementResult = evaluateEnforcementRules(enforcementRules, "merge", {
+    repository,
+    pull,
+    requiredContexts,
+    statusCheckRollup: pull.statusCheckRollup
+  });
+  if (!enforcementResult.passed) {
+    const issueUpdate = await markWorkerIssueBlocked(
+      repository,
+      pull,
+      "enforcement-rules-failed",
+      [formatEnforcementResult(enforcementResult) || "One or more enforcement rules failed."]
+    );
+    return {
+      repo: repoName(repository),
+      pr: ref,
+      action: "skip",
+      reason: "enforcement-rules-failed",
+      issue_update: issueUpdate,
+      enforcement_result: enforcementResult,
+      ...codexReviewLedgerGap(codexReview)
+    };
+  }
+
   const hasReportedChecks = Array.isArray(pull.statusCheckRollup) && pull.statusCheckRollup.length > 0;
   if (!hasReportedChecks && requiredContexts.length === 0 && !NO_CHECK_ALLOWLIST.has(repoName(repository).toLowerCase())) {
     const issueUpdate = await markWorkerIssueBlocked(repository, pull, "no-checks-not-allowed", [

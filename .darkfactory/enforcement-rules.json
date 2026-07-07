@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "description": "DarkFactory configurable enforcement rules. Evaluated by df-work and df-follow-through as merge/action gates. Rules are declarative and extensible: new gates can be added by declaring a supported gate type with parameters, and new gate types can be registered in the rule engine without changing the schema.",
+  "rules": [
+    {
+      "id": "never-merge-red",
+      "enabled": true,
+      "scope": ["merge"],
+      "gate": "required_checks_pass",
+      "message": "All required checks must be success before merging."
+    },
+    {
+      "id": "no-force-push",
+      "enabled": true,
+      "scope": ["dispatch", "merge"],
+      "gate": "policy_assertion",
+      "message": "DarkFactory workers never force-push."
+    },
+    {
+      "id": "no-admin-bypass",
+      "enabled": true,
+      "scope": ["merge"],
+      "gate": "policy_assertion",
+      "message": "DarkFactory never bypasses branch protection or admin gates."
+    },
+    {
+      "id": "secrets-never-logged",
+      "enabled": true,
+      "scope": ["dispatch", "merge"],
+      "gate": "policy_assertion",
+      "message": "DarkFactory redacts secrets from logs and comments."
+    },
+    {
+      "id": "parked-repos-untouched",
+      "enabled": true,
+      "scope": ["dispatch", "merge"],
+      "gate": "repo_not_in_set",
+      "params": {
+        "set": [
+          "marius-patrik/fabrica",
+          "marius-patrik/skyblock-agent",
+          "marius-patrik/singularity",
+          "marius-patrik/life-support"
+        ]
+      },
+      "message": "DarkFactory must not act on parked repositories."
+    },
+    {
+      "id": "work-PRs-target-dev",
+      "enabled": true,
+      "scope": ["dispatch"],
+      "gate": "base_branch_is",
+      "params": { "branch": "dev", "fallback_to_default": true },
+      "message": "DarkFactory work PRs must target the dev branch where it exists."
+    }
+  ]
+}

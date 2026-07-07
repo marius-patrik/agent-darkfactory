@@ -23,12 +23,14 @@ export const DARK_FACTORY_PLAN_SCRIPT_PATH = ".github/scripts/df-plan.mjs";
 export const DARK_FACTORY_ORCHESTRATE_SCRIPT_PATH = ".github/scripts/df-orchestrate.mjs";
 export const DARK_FACTORY_SWEEP_SCRIPT_PATH = ".github/scripts/df-sweep.mjs";
 export const DARK_FACTORY_WORK_SCRIPT_PATH = ".github/scripts/df-work.mjs";
+export const DARK_FACTORY_ENFORCEMENT_SCRIPT_PATH = ".github/scripts/df-enforcement.mjs";
 export const DARK_FACTORY_MANAGED_CONFIG_PATH = ".darkfactory/managed-repository.json";
 export const DARK_FACTORY_INSTALLER_POLICY_PATH = ".darkfactory/installer-policy.json";
 export const DARK_FACTORY_RELEASE_POLICY_PATH = ".darkfactory/release-policy.json";
 export const DARK_FACTORY_BRANCHING_POLICY_PATH = ".darkfactory/branching-policy.md";
 export const DARK_FACTORY_LABELS_PATH = ".darkfactory/labels.json";
 export const DARK_FACTORY_RELEASE_CONVENTIONS_PATH = ".darkfactory/release-conventions.md";
+export const DARK_FACTORY_ENFORCEMENT_RULES_PATH = ".darkfactory/enforcement-rules.json";
 
 export interface ManagedFile {
   path: string;
@@ -52,7 +54,8 @@ const PACKAGE_MANAGED_FILES = [
   DARK_FACTORY_PLAN_SCRIPT_PATH,
   DARK_FACTORY_ORCHESTRATE_SCRIPT_PATH,
   DARK_FACTORY_SWEEP_SCRIPT_PATH,
-  DARK_FACTORY_WORK_SCRIPT_PATH
+  DARK_FACTORY_WORK_SCRIPT_PATH,
+  DARK_FACTORY_ENFORCEMENT_SCRIPT_PATH
 ] as const;
 const DATA_REPO_PATH_SEGMENTS = ["data", "data-agentos"] as const;
 const WORKSPACE_PATH_SEGMENTS = ["workspaces", "workspace-darkfactory"] as const;
@@ -131,7 +134,8 @@ export function requiredManagedFilePaths(_root = resolveManagedWorkspaceRoot()):
     DARK_FACTORY_MANAGED_CONFIG_PATH,
     DARK_FACTORY_INSTALLER_POLICY_PATH,
     DARK_FACTORY_RELEASE_CONVENTIONS_PATH,
-    DARK_FACTORY_RELEASE_POLICY_PATH
+    DARK_FACTORY_RELEASE_POLICY_PATH,
+    DARK_FACTORY_ENFORCEMENT_RULES_PATH
   ];
 }
 

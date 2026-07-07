@@ -1202,6 +1202,11 @@ test("df-sweep merges green app-authored dev worker PRs and blocks red ones", as
       }),
       request: async (method: string, pathName: string, body?: any) => {
         calls.push({ method, pathName, body });
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/contents/.darkfactory/enforcement-rules.json") {
+          const error: Error & { status?: number } = new Error("not found");
+          error.status = 404;
+          throw error;
+        }
         if (method === "GET" && pathName.endsWith("/protection")) {
           const error: Error & { status?: number } = new Error("Branch not protected");
           error.status = 404;
@@ -1232,7 +1237,9 @@ test("df-sweep merges green app-authored dev worker PRs and blocks red ones", as
   assert.equal(greenResult.action, "merge");
   assert.equal(greenResult.base, "dev");
   assert.equal(redResult.action, "skip");
-  assert.equal(redResult.reason, "checks-not-green");
+  assert.equal(redResult.reason, "enforcement-rules-failed");
+  assert.equal(redResult.enforcement_result?.passed, false);
+  assert.ok(redResult.enforcement_result?.results.some((r: { id: string; status: string }) => r.id === "never-merge-red" && r.status === "fail"));
   assert.ok(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/40/merge"));
   assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/41/merge"), false);
 });
@@ -1253,6 +1260,11 @@ test("df-sweep holds worker PRs when the Codex Review context is present and red
     gh: {
       request: async (method: string, pathName: string, body?: any) => {
         calls.push({ method, pathName, body });
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/contents/.darkfactory/enforcement-rules.json") {
+          const error: Error & { status?: number } = new Error("not found");
+          error.status = 404;
+          throw error;
+        }
         if (method === "GET" && pathName.endsWith("/protection")) {
           const error: Error & { status?: number } = new Error("Branch not protected");
           error.status = 404;
@@ -1270,8 +1282,9 @@ test("df-sweep holds worker PRs when the Codex Review context is present and red
   const result = await considerSweepPullRequest(repository, pull);
 
   assert.equal(result.action, "skip");
-  assert.equal(result.reason, "checks-not-green");
-  assert.deepEqual(result.required_checks, ["Codex Review"]);
+  assert.equal(result.reason, "enforcement-rules-failed");
+  assert.equal(result.enforcement_result?.passed, false);
+  assert.ok(result.enforcement_result?.results.some((r: { id: string; status: string }) => r.id === "never-merge-red" && r.status === "fail"));
   assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/42/merge"), false);
   assert.equal(calls.some((call) => call.pathName.includes("managed-repository.json")), false);
 });
@@ -1306,6 +1319,11 @@ test("df-sweep falls back to branch-protection checks when Codex Review is not p
         }),
         request: async (method: string, pathName: string, body?: any) => {
           calls.push({ method, pathName, body });
+          if (method === "GET" && pathName === "/repos/marius-patrik/active/contents/.darkfactory/enforcement-rules.json") {
+            const error: Error & { status?: number } = new Error("not found");
+            error.status = 404;
+            throw error;
+          }
           if (method === "GET" && pathName.endsWith("/protection")) {
             const error: Error & { status?: number } = new Error("Branch not protected");
             error.status = 404;
@@ -1359,6 +1377,11 @@ test("df-sweep holds worker PRs when managed config declares Codex Review but th
     gh: {
       request: async (method: string, pathName: string, body?: any) => {
         calls.push({ method, pathName, body });
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/contents/.darkfactory/enforcement-rules.json") {
+          const error: Error & { status?: number } = new Error("not found");
+          error.status = 404;
+          throw error;
+        }
         if (method === "GET" && pathName.endsWith("/protection")) {
           const error: Error & { status?: number } = new Error("Branch not protected");
           error.status = 404;
@@ -1383,8 +1406,9 @@ test("df-sweep holds worker PRs when managed config declares Codex Review but th
   const result = await considerSweepPullRequest(repository, pull);
 
   assert.equal(result.action, "skip");
-  assert.equal(result.reason, "checks-not-green");
-  assert.deepEqual(result.required_checks, ["Codex Review"]);
+  assert.equal(result.reason, "enforcement-rules-failed");
+  assert.equal(result.enforcement_result?.passed, false);
+  assert.ok(result.enforcement_result?.results.some((r: { id: string; status: string }) => r.id === "never-merge-red" && r.status === "fail"));
   assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/44/merge"), false);
 });
 
@@ -1413,6 +1437,11 @@ test("df-sweep merges green app-authored dev worker PRs even when the worker iss
       }),
       request: async (method: string, pathName: string, body?: any) => {
         calls.push({ method, pathName, body });
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/contents/.darkfactory/enforcement-rules.json") {
+          const error: Error & { status?: number } = new Error("not found");
+          error.status = 404;
+          throw error;
+        }
         if (method === "GET" && pathName.endsWith("/protection")) {
           const error: Error & { status?: number } = new Error("Branch not protected");
           error.status = 404;
@@ -1468,6 +1497,11 @@ test("df-sweep merges green app-authored worker PRs even when the worker issue i
       }),
       request: async (method: string, pathName: string, body?: any) => {
         calls.push({ method, pathName, body });
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/contents/.darkfactory/enforcement-rules.json") {
+          const error: Error & { status?: number } = new Error("not found");
+          error.status = 404;
+          throw error;
+        }
         if (method === "GET" && pathName.endsWith("/protection")) {
           const error: Error & { status?: number } = new Error("Branch not protected");
           error.status = 404;

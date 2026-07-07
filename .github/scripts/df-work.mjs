@@ -23,6 +23,11 @@ import {
   writeRunLedger
 } from "./df-lib.mjs";
 import {
+  evaluateEnforcementRules,
+  formatEnforcementResult,
+  loadEnforcementRules
+} from "./df-enforcement.mjs";
+import {
   availableProviders,
   buildProviderImage,
   loadProviderRegistry,
@@ -121,6 +126,21 @@ async function main() {
         "No new worker run is needed; follow-through will evaluate the existing PR."
       ].join("\n")
     );
+    return;
+  }
+
+  const enforcementRules = await loadEnforcementRules(gh, TARGET_REPO);
+  const enforcementResult = evaluateEnforcementRules(enforcementRules, "dispatch", {
+    repository: TARGET_REPO,
+    baseBranch: workBaseBranch,
+    defaultBranch: repo.default_branch
+  });
+  ledger.actions.push({ action: "enforcement-rules", scope: "dispatch", result: enforcementResult });
+  if (!enforcementResult.passed) {
+    ledger.status = "blocked";
+    ledger.error = formatEnforcementResult(enforcementResult);
+    await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:blocked"], ["df:ready", "df:running", "df:done"]);
+    await createIssueComment(TARGET_REPO, TARGET_ISSUE_NUMBER, ledger.error);
     return;
   }
 
