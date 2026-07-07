@@ -398,14 +398,22 @@ export async function getBranchProtection(gh, repository, branch) {
 export async function preflightMergePolicy(gh, repository, baseBranch, repo) {
   const branchProtection = await getBranchProtection(gh, repository, baseBranch);
   const autoMergeSupported = repo.allow_auto_merge === true;
+  const requiredContexts = branchProtection.configured
+    ? await getRequiredStatusCheckContexts(gh, repository, baseBranch)
+    : [];
 
-  if (!branchProtection.configured) {
+  if (!branchProtection.configured || requiredContexts.length === 0) {
+    const summary = branchProtection.configured
+      ? `branch protection on \`${baseBranch}\` has no required status checks; green-PR sweep will squash-merge directly after checks`
+      : `no branch protection on \`${baseBranch}\`; green-PR sweep will squash-merge directly after checks`;
+
     return {
       blocked: false,
       useAutomerge: false,
       autoMergeSupported,
       branchProtection,
-      summary: `no branch protection on \`${baseBranch}\`; green-PR sweep will squash-merge directly after checks`
+      requiredChecks: requiredContexts,
+      summary
     };
   }
 
@@ -415,6 +423,7 @@ export async function preflightMergePolicy(gh, repository, baseBranch, repo) {
       useAutomerge: true,
       autoMergeSupported,
       branchProtection,
+      requiredChecks: requiredContexts,
       summary: `auto-merge is available for \`${baseBranch}\`; GitHub automerge will be attempted`
     };
   }
@@ -422,14 +431,15 @@ export async function preflightMergePolicy(gh, repository, baseBranch, repo) {
   return {
     blocked: true,
     reason: [
-      `Target repository ${repoName(repository)} has branch protection configured on \`${baseBranch}\`,`,
+      `Target repository ${repoName(repository)} has branch protection with required status checks configured on \`${baseBranch}\`,`,
       "so DarkFactory policy requires GitHub auto-merge before dispatching a worker.",
       "Enable repository auto-merge or open managed setup work to enable it, then re-apply `df:ready`."
     ].join(" "),
     useAutomerge: false,
     autoMergeSupported,
     branchProtection,
-    summary: `branch protection is configured on \`${baseBranch}\`, but target repository auto-merge is disabled; worker dispatch is blocked`
+    requiredChecks: requiredContexts,
+    summary: `branch protection with required status checks is configured on \`${baseBranch}\`, but target repository auto-merge is disabled; worker dispatch is blocked`
   };
 }
 

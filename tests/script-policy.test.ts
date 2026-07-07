@@ -757,6 +757,30 @@ test("df-work merge-policy preflight blocks protected branches when target auto-
   assert.match(policy.reason, /requires GitHub auto-merge before dispatching a worker/);
 });
 
+test("df-work merge-policy preflight uses direct sweep when branch protection has no required checks", async () => {
+  const repository = { owner: "marius-patrik", repo: "example" };
+  const policy = await preflightMergePolicy(
+    {
+      request: async (method: string, pathName: string) => {
+        if (method === "GET" && pathName.endsWith("/protection")) {
+          return { required_status_checks: null };
+        }
+        throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+      }
+    },
+    repository,
+    "dev",
+    { allow_auto_merge: false }
+  );
+
+  assert.equal(policy.blocked, false);
+  assert.equal(policy.useAutomerge, false);
+  assert.equal(policy.autoMergeSupported, false);
+  assert.deepEqual(policy.requiredChecks, []);
+  assert.match(policy.summary, /no required status checks/);
+  assert.match(policy.summary, /green-PR sweep will squash-merge directly after checks/);
+});
+
 test("df-work blocks target auto-merge setup failures before clone or provider worker", async () => {
   const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
 
@@ -1496,6 +1520,73 @@ test("df-sweep merges green app-authored worker PRs even when the worker issue i
   assert.equal(result.sha, "merged-blocked-issue-sha");
   assert.ok(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/8/merge"));
   assert.equal(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/8/labels"), false);
+});
+
+test("df-sweep direct-merges protected branch with no required checks instead of arming automerge", async () => {
+  const repository = { owner: "marius-patrik", repo: "active" };
+  const pull = workerPull({
+    number: 50,
+    checkConclusion: "SUCCESS",
+    includeCodexReview: false,
+    author: "app/darkfactory-agent"
+  });
+  const calls: Array<{ method: string; pathName: string; body?: any }> = [];
+  const graphqlCalls: string[] = [];
+
+  configureSweepRuntime({
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    dataRepo: "marius-patrik/darkfactory-data",
+    gh: {
+      graphql: async (query: string, variables: { number: number }) => {
+        graphqlCalls.push(query);
+        return {
+          repository: {
+            pullRequest: {
+              ...(variables.number === 50 ? pull : {}),
+              id: `PR_${variables.number}`,
+              mergeable: "MERGEABLE",
+              statusCheckRollup: {
+                contexts: {
+                  nodes: (variables.number === 50 ? pull : { statusCheckRollup: [] }).statusCheckRollup
+                }
+              }
+            }
+          }
+        };
+      },
+      request: async (method: string, pathName: string, body?: any) => {
+        calls.push({ method, pathName, body });
+        if (method === "GET" && pathName.endsWith("/protection")) {
+          return { required_status_checks: null };
+        }
+        if (method === "GET" && pathName.includes("/contents/.darkfactory/managed-repository.json")) {
+          const error: Error & { status?: number } = new Error("Missing managed config");
+          error.status = 404;
+          throw error;
+        }
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/50") {
+          return { labels: [] };
+        }
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/50/comments?per_page=100") {
+          return [];
+        }
+        if (method === "PUT" && pathName === "/repos/marius-patrik/active/pulls/50/merge") {
+          return { sha: "direct-merged-protected-no-checks-sha" };
+        }
+        if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/50/comments") return {};
+        if (method === "PATCH" && pathName === "/repos/marius-patrik/active/issues/50") return {};
+        throw new Error(`unexpected mocked request: ${method} ${pathName}`);
+      }
+    }
+  });
+
+  const result = await considerSweepPullRequest(repository, pull);
+
+  assert.equal(result.action, "merge");
+  assert.equal(result.base, "dev");
+  assert.equal(result.sha, "direct-merged-protected-no-checks-sha");
+  assert.ok(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/50/merge"));
+  assert.equal(graphqlCalls.some((query) => query.includes("enablePullRequestAutoMerge")), false);
 });
 
 test("df-orchestrate workflow validates trusted refs before privileged tokens", async () => {

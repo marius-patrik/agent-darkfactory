@@ -232,7 +232,7 @@ export async function considerPullRequest(repository, pull) {
   }
 
   const protectedBranch = await branchIsProtected(repository, pull.baseRefName);
-  if (protectedBranch) {
+  if (protectedBranch && requiredContexts.length > 0) {
     const enabled = await enableAutoMerge(pull.id);
     if (enabled.enabled) {
       return {
@@ -493,7 +493,7 @@ async function closeIssuesIfDevMerge(repository, pull) {
       continue;
     }
     await gh.request("POST", `/repos/${repoName(repository)}/issues/${issue_number}/comments`, {
-      body: `merged to dev in ${pull.url}; releases with the next dev→main PR`
+      body: `merged to dev in ${pull.url}, releases with the next dev→main PR`
     });
     await gh.request("PATCH", `/repos/${repoName(repository)}/issues/${issue_number}`, { state: "closed" });
     closed.push(issue_number);
