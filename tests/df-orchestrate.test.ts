@@ -1186,3 +1186,351 @@ test("orchestrator ignores event runs for inactive managed repositories", async 
     else process.env.GITHUB_EVENT_PAYLOAD = previousPayload;
   }
 });
+
+test("orchestrator resumes interrupted run against existing open worker PR", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { RESUME_MARKER, orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-resume-pr-test");
+  const calls: Array<{ method: string; path: string; body?: any }> = [];
+
+  const gh = {
+    async graphql() {
+      return {
+        repository: {
+          pullRequests: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [
+              {
+                id: "PR_21",
+                number: 21,
+                title: "Worker PR",
+                body: "<!-- dark-factory:worker-pr issue=8 -->\n\nCloses #8",
+                url: "https://github.com/marius-patrik/example/pull/21",
+                headRefName: "df/8-worker",
+                baseRefName: "main",
+                headRepository: { owner: { login: "marius-patrik" }, name: "example" },
+                author: { login: "mp-agents[bot]" }
+              }
+            ]
+          }
+        }
+      };
+    },
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path, body });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=1") {
+        return [{ number: 8, labels: [{ name: "df:running" }] }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/8/comments?per_page=100&page=1") {
+        return [
+          { body: "DarkFactory worker started for `marius-patrik/example#8` from `workflow_dispatch`.", created_at: "2026-07-06T10:00:00Z" }
+        ];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/8/comments?per_page=100&page=2") return [];
+      if (method === "POST" && path === "/repos/marius-patrik/example/issues/8/comments") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const result = await orchestrate({
+    gh,
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    registry: { repositories: { "marius-patrik/example": { state: "active" } } },
+    repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+    policy: {
+      concurrency: { global: 2, perRepository: 1, perStream: 1 },
+      waves: [{ name: "features", streams: ["features", "default"] }],
+      dashboard: { enabled: false }
+    },
+    writeLedger: false,
+    updateDashboard: false,
+    warn: () => {},
+    log: () => {}
+  });
+
+  assert.deepEqual(result.recoveries, [
+    { repo: "marius-patrik/example", issue: 8, type: "pr", action: "resume-pr", reason: "", pr: 21, branch: "df/8-worker" }
+  ]);
+  assert.deepEqual(result.dispatched, []);
+  const dispatch = calls.find(
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches"
+  )?.body;
+  assert.deepEqual(dispatch, {
+    ref: "main",
+    inputs: {
+      repo: "marius-patrik/example",
+      issue_number: "8",
+      base_ref: "main",
+      resume_pr: "21",
+      resume_branch: ""
+    }
+  });
+  const comment = calls.find(
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/example/issues/8/comments"
+  )?.body;
+  assert.ok(String(comment?.body).includes(RESUME_MARKER));
+});
+
+test("orchestrator resumes interrupted run from pushed branch when no PR exists", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { RESUME_MARKER, orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-resume-branch-test");
+  const calls: Array<{ method: string; path: string; body?: any }> = [];
+  const notFound = Object.assign(new Error("not found"), { status: 404 });
+
+  const gh = {
+    async graphql() {
+      return {
+        repository: {
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] }
+        }
+      };
+    },
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path, body });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=1") {
+        return [{ number: 9, labels: [{ name: "df:running" }] }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/9/comments?per_page=100&page=1") {
+        return [
+          { body: "DarkFactory worker started for `marius-patrik/example#9`.", created_at: "2026-07-06T10:00:00Z" }
+        ];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/9/comments?per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/git/matching-refs/heads/df%2F9-") {
+        return [{ ref: "refs/heads/df/9-resume-test" }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/git/ref/heads/dev") throw notFound;
+      if (method === "GET" && path === "/repos/marius-patrik/example") return { default_branch: "main", allow_auto_merge: true };
+      if (method === "POST" && path === "/repos/marius-patrik/example/issues/9/comments") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const result = await orchestrate({
+    gh,
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    registry: { repositories: { "marius-patrik/example": { state: "active" } } },
+    repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+    policy: {
+      concurrency: { global: 2, perRepository: 1, perStream: 1 },
+      waves: [{ name: "features", streams: ["features", "default"] }],
+      dashboard: { enabled: false }
+    },
+    writeLedger: false,
+    updateDashboard: false,
+    warn: () => {},
+    log: () => {}
+  });
+
+  assert.deepEqual(result.recoveries, [
+    { repo: "marius-patrik/example", issue: 9, type: "branch", action: "resume-branch", reason: "", branch: "df/9-resume-test" }
+  ]);
+  const dispatch = calls.find(
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches"
+  )?.body;
+  assert.equal(dispatch.inputs.resume_branch, "df/9-resume-test");
+  assert.equal(dispatch.inputs.base_ref, "main");
+  assert.equal(dispatch.inputs.resume_pr, "");
+  const comment = calls.find(
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/example/issues/9/comments"
+  )?.body;
+  assert.ok(String(comment?.body).includes(RESUME_MARKER));
+});
+
+test("orchestrator requeues interrupted run with no usable branch", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { RESUME_MARKER, orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-resume-requeue-test");
+  const calls: Array<{ method: string; path: string; body?: any }> = [];
+
+  const gh = {
+    async graphql() {
+      return {
+        repository: {
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] }
+        }
+      };
+    },
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path, body });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=1") {
+        return [{ number: 10, labels: [{ name: "df:running" }] }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/10/comments?per_page=100&page=1") {
+        return [
+          { body: "DarkFactory worker started for `marius-patrik/example#10`.", created_at: "2026-07-06T10:00:00Z" }
+        ];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/10/comments?per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/git/matching-refs/heads/df%2F10-") return [];
+      if (method === "POST" && path === "/repos/marius-patrik/example/issues/10/labels") return {};
+      if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/10/labels/df%3Arunning") return {};
+      if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/10/labels/df%3Ablocked") return {};
+      if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/10/labels/df%3Adone") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/example/issues/10/comments") return {};
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const result = await orchestrate({
+    gh,
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    registry: { repositories: { "marius-patrik/example": { state: "active" } } },
+    repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+    policy: {
+      concurrency: { global: 2, perRepository: 1, perStream: 1 },
+      waves: [{ name: "features", streams: ["features", "default"] }],
+      dashboard: { enabled: false }
+    },
+    writeLedger: false,
+    updateDashboard: false,
+    warn: () => {},
+    log: () => {}
+  });
+
+  assert.deepEqual(result.recoveries, [
+    { repo: "marius-patrik/example", issue: 10, type: "none", action: "requeue", reason: "no-usable-branch" }
+  ]);
+  const labelUpdate = calls.find(
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/example/issues/10/labels"
+  )?.body;
+  assert.deepEqual(labelUpdate, { labels: ["df:ready"] });
+  const comment = calls.find(
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/example/issues/10/comments"
+  )?.body;
+  assert.ok(String(comment?.body).includes(RESUME_MARKER));
+  assert.ok(String(comment?.body).includes("no usable branch"));
+  assert.equal(calls.some((call) => call.path.endsWith("/actions/workflows/df-work.yml/dispatches")), false);
+});
+
+test("orchestrator does not resume running issue with terminal comment", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-no-resume-test");
+  const calls: Array<{ method: string; path: string }> = [];
+
+  const gh = {
+    async graphql() {
+      return {
+        repository: {
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] }
+        }
+      };
+    },
+    async request(method: string, path: string) {
+      calls.push({ method, path });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=1") {
+        return [{ number: 11, labels: [{ name: "df:running" }] }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/11/comments?per_page=100&page=1") {
+        return [
+          { body: "DarkFactory worker started for `marius-patrik/example#11`.", created_at: "2026-07-06T10:00:00Z" },
+          { body: "DarkFactory worker opened https://github.com/marius-patrik/example/pull/30.", created_at: "2026-07-06T10:05:00Z" }
+        ];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/11/comments?per_page=100&page=2") return [];
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const result = await orchestrate({
+    gh,
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    registry: { repositories: { "marius-patrik/example": { state: "active" } } },
+    repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+    policy: {
+      concurrency: { global: 2, perRepository: 1, perStream: 1 },
+      waves: [{ name: "features", streams: ["features", "default"] }],
+      dashboard: { enabled: false }
+    },
+    writeLedger: false,
+    updateDashboard: false,
+    warn: () => {},
+    log: () => {}
+  });
+
+  assert.deepEqual(result.recoveries, []);
+  assert.equal(calls.some((call) => call.path.includes("/git/matching-refs/")), false);
+  assert.equal(calls.some((call) => call.path.endsWith("/actions/workflows/df-work.yml/dispatches")), false);
+});
+
+test("orchestrator surfaces recovery decisions in ledger and dashboard", async () => {
+  // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
+  const { DASHBOARD_MARKER, orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-resume-dashboard-test");
+  const calls: Array<{ method: string; path: string; body?: any }> = [];
+  const notFound = Object.assign(new Error("not found"), { status: 404 });
+
+  const gh = {
+    async graphql() {
+      return {
+        repository: {
+          pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] }
+        }
+      };
+    },
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path, body });
+
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=1") {
+        return [{ number: 12, labels: [{ name: "df:running" }] }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues?state=open&per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/12/comments?per_page=100&page=1") {
+        return [
+          { body: "DarkFactory worker started for `marius-patrik/example#12`.", created_at: "2026-07-06T10:00:00Z" }
+        ];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/issues/12/comments?per_page=100&page=2") return [];
+      if (method === "GET" && path === "/repos/marius-patrik/example/git/matching-refs/heads/df%2F12-") {
+        return [{ ref: "refs/heads/df/12-resume-test" }];
+      }
+      if (method === "GET" && path === "/repos/marius-patrik/example/git/ref/heads/dev") throw notFound;
+      if (method === "GET" && path === "/repos/marius-patrik/example") return { default_branch: "main", allow_auto_merge: true };
+      if (method === "POST" && path === "/repos/marius-patrik/example/issues/12/comments") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/labels") return {};
+      if (method === "GET" && path === "/repos/marius-patrik/agent-darkfactory/issues?state=open&per_page=100&page=1") {
+        return [{ number: 99, body: `<!-- ${DASHBOARD_MARKER} -->`, labels: [] }];
+      }
+      if (method === "PATCH" && path === "/repos/marius-patrik/agent-darkfactory/issues/99") return {};
+
+      throw new Error(`Unexpected GitHub request: ${method} ${path}`);
+    }
+  };
+
+  const result = await orchestrate({
+    gh,
+    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    registry: { repositories: { "marius-patrik/example": { state: "active" } } },
+    repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
+    policy: {
+      concurrency: { global: 2, perRepository: 1, perStream: 1 },
+      waves: [{ name: "features", streams: ["features", "default"] }],
+      dashboard: { enabled: true, issueTitle: "Dashboard" }
+    },
+    writeLedger: false,
+    updateDashboard: true,
+    warn: () => {},
+    log: () => {}
+  });
+
+  assert.deepEqual(result.ledger.recovery, [
+    { repo: "marius-patrik/example", issue: 12, type: "branch", action: "resume-branch", reason: "", branch: "df/12-resume-test" }
+  ]);
+  const dashboardUpdate = calls.find(
+    (call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/agent-darkfactory/issues/99"
+  );
+  assert.ok(String(dashboardUpdate?.body.body).includes("## Worker Recoveries"));
+  assert.ok(String(dashboardUpdate?.body.body).includes("marius-patrik/example#12"));
+});

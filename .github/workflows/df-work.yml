@@ -15,6 +15,14 @@ on:
         description: Target repository base branch for regenerated work.
         required: false
         type: string
+      resume_pr:
+        description: Optional open PR number to resume (reuses branch, no new PR).
+        required: false
+        type: string
+      resume_branch:
+        description: Optional pushed branch to resume when no PR exists yet.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -85,6 +93,8 @@ jobs:
           DF_TARGET_REPO: ${{ inputs.repo }}
           DF_TARGET_ISSUE_NUMBER: ${{ inputs.issue_number }}
           DF_TARGET_BASE_REF: ${{ inputs.base_ref }}
+          DF_RESUME_PR: ${{ inputs.resume_pr }}
+          DF_RESUME_BRANCH: ${{ inputs.resume_branch }}
           DF_TRIGGER: ${{ github.event_name }}
           DF_DATA_REPO: marius-patrik/darkfactory-data
         run: node darkfactory-control/.github/scripts/df-work.mjs
