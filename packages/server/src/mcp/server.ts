@@ -39,9 +39,16 @@ export function buildMcpServer(kb: KnowledgeBase): McpServer {
       },
     },
     async ({ content, suggested_path }) => {
-      const instruction = suggested_path
-        ? `${content}\n\n(If it fits, place new content at ${suggested_path}.)`
-        : content;
+      // Wrap the payload as an explicit directive. Bare content (e.g. a plain
+      // fact like "The user's name is Anirban Kar.") otherwise reads as a chat
+      // message and the agent replies conversationally instead of persisting it.
+      const instruction =
+        `Persist the following knowledge into the knowledge base. Search for an ` +
+        `existing concept it belongs to and update it; otherwise create a new ` +
+        `concept in a fitting directory. This is content to store, not a message ` +
+        `to answer — you must use the write tools.\n\n` +
+        `KNOWLEDGE TO RECORD:\n${content}` +
+        (suggested_path ? `\n\nIf it fits, place new content at ${suggested_path}.` : "");
       const { summary, filesChanged } = await runMutation(kb, instruction);
       return {
         content: [

@@ -44,7 +44,11 @@ Answer the user's question from the knowledge base. Search, read the relevant co
     case "mutate":
       return `## Your task mode: MUTATE
 
-Apply the requested knowledge change. Search first (rule 1), then create or update concepts. When done, summarize exactly what changed: every file created, updated, or deleted, with its bundle path.`;
+The input is knowledge to persist or a change to apply to the knowledge base — NOT a message to reply to. Do not respond conversationally and do not just acknowledge it. You MUST act with the write tools.
+
+Search first (rule 1), then create or update concepts. Even a single standalone fact must be recorded: update the concept it belongs to, or create a new one in a fitting directory (create the directory if none fits). The only case where you write nothing is if the exact knowledge already exists verbatim — then say so and name the concept.
+
+When done, summarize exactly what changed: every file created, updated, or deleted, with its bundle path.`;
     case "chat":
       return `## Your task mode: CHAT
 
