@@ -20,7 +20,20 @@ pnpm monorepo:
 | `packages/server` | Fastify: MCP streamable-HTTP at `/mcp`, stdio bin, REST browse API at `/api/*`, streaming chat at `/api/chat`, serves the web build |
 | `packages/web` | Vite + React + TS + Tailwind: bundle browser + agent chat (`useChat`) |
 
-Providers (env-selected, swappable per chat): **Anthropic** (default), **OpenRouter**, **local** (any OpenAI-compatible endpoint, e.g. llama.cpp).
+Providers (env-selected, swappable per chat): **Anthropic** (default), **OpenRouter**, **llamacpp** (llama.cpp `llama-server` / llama-swap — model auto-discovered from `/v1/models`, loaded model preferred), **local** (any other OpenAI-compatible endpoint).
+
+### llama.cpp
+
+```bash
+# on the inference box — --jinja enables OpenAI-style tool calling
+llama-server -m model.gguf --jinja --host 0.0.0.0 --port 8080
+
+# here — no model id needed, it's discovered
+LLM_PROVIDER=llamacpp LLAMACPP_BASE_URL=http://inference-box:8080 \
+BUNDLE_ROOT=./sample-bundle node packages/server/dist/index.js
+```
+
+Works behind llama-swap too: discovery prefers the currently **loaded** model so a query doesn't trigger a multi-minute model swap. Pin a specific model with `LLM_MODEL=`.
 
 ## Quick start
 

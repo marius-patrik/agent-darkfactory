@@ -27,7 +27,7 @@ async function promptContext(kb: KnowledgeBase, mode: "query" | "mutate" | "chat
   return { existingTypes: types, treeSummary: formatTree(tree), mode };
 }
 
-function pickModel(options: AgentOptions): LanguageModel {
+function pickModel(options: AgentOptions): Promise<LanguageModel> {
   return resolveModel(options.provider, options.model);
 }
 
@@ -39,7 +39,7 @@ export async function runQuery(
 ): Promise<QueryResult> {
   const ctx = await promptContext(kb, "query");
   const result = await generateText({
-    model: pickModel(options),
+    model: await pickModel(options),
     system: buildSystemPrompt(ctx),
     prompt: question,
     tools: buildReadTools(kb),
@@ -57,7 +57,7 @@ export async function runMutation(
   const ctx = await promptContext(kb, "mutate");
   const filesChanged = new Set<string>();
   const result = await generateText({
-    model: pickModel(options),
+    model: await pickModel(options),
     system: buildSystemPrompt(ctx),
     prompt: instruction,
     tools: { ...buildReadTools(kb), ...buildWriteTools(kb, filesChanged) },
@@ -76,7 +76,7 @@ export async function streamChat(
   const ctx = await promptContext(kb, "chat");
   const filesChanged = new Set<string>();
   const result = streamText({
-    model: pickModel(options),
+    model: await pickModel(options),
     system: buildSystemPrompt(ctx),
     messages,
     tools: { ...buildReadTools(kb), ...buildWriteTools(kb, filesChanged) },

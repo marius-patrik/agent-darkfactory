@@ -10,6 +10,9 @@ if [ -f "$HOME/Claude/.secrets/openrouter.json" ] && [ -z "${OPENROUTER_API_KEY:
   export LLM_MODEL="${LLM_MODEL:-anthropic/claude-sonnet-5}"
 fi
 
+# Homelab llama-server (cortex) — enables the llamacpp provider in the UI picker.
+export LLAMACPP_BASE_URL="${LLAMACPP_BASE_URL:-http://192.168.1.101:8080}"
+
 export BUNDLE_ROOT="${BUNDLE_ROOT:-$REPO/sample-bundle}"
 export PORT="${PORT:-3800}"
 exec node "$REPO/packages/server/dist/index.js"
