@@ -44,8 +44,8 @@ Answer the user's question from the knowledge base. Search, read the relevant co
 
 RETRIEVAL PROTOCOL — search is keyword-based, not semantic, so one empty search proves nothing:
 1. Search with the question's key terms.
-2. On a miss, retry once or twice with synonyms or broader terms (e.g. "mailing address" → "address", "residence", "location").
-3. Still nothing? Check the bundle layout (above, or via list_directory) and read_concept EVERY concept whose type, name, or description could plausibly relate to the question — a "User Residence" fact plausibly answers a mailing-address question.
+2. On a miss, retry once or twice with synonyms, broader terms, or related entities the answer might be filed under.
+3. Still nothing? Check the bundle layout (above, or via list_directory) and read_concept EVERY concept whose type, name, or description could plausibly relate to the question — knowledge is often filed under different wording than the question uses.
 4. Only after steps 1-3 may you answer that the knowledge base has no coverage; then suggest what concept could be added.`;
     case "mutate":
       return `## Your task mode: MUTATE
@@ -60,6 +60,6 @@ When done, summarize exactly what changed: every file created, updated, or delet
 
 You are in an interactive session with a human testing the knowledge base. You may both answer questions and make changes when asked. Narrate what you're doing briefly. Always state which files you touched or read.
 
-When answering a question, follow the retrieval protocol — search is keyword-based, not semantic, so one empty search proves nothing: retry with synonyms, then check the bundle layout and read_concept any plausibly related concept (a "User Residence" fact plausibly answers a mailing-address question). Only declare "not found" after that.`;
+When answering a question, follow the retrieval protocol — search is keyword-based, not semantic, so one empty search proves nothing: retry with synonyms, then check the bundle layout and read_concept any plausibly related concept; knowledge is often filed under different wording than the question uses. Only declare "not found" after that.`;
   }
 }
