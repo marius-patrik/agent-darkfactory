@@ -12,6 +12,7 @@ import {
   parseReview,
   persistRefreshedCredential,
   requestReview,
+  reviewMaxTokens,
   reviewTimeoutMs,
   shouldTakeOver,
 } from "./run-kimi-review.mjs";
@@ -82,14 +83,22 @@ test("takeover dispatch uses only the trusted automation exit code", () => {
 });
 
 test("takeover timeout is long enough for large reviews and remains bounded", () => {
-  assert.equal(reviewTimeoutMs(), 600_000);
+  assert.equal(reviewTimeoutMs(), 900_000);
   assert.equal(reviewTimeoutMs("900000"), 900_000);
   assert.throws(() => reviewTimeoutMs("29999"), /between 30000 and 900000/);
   assert.throws(() => reviewTimeoutMs("invalid"), /between 30000 and 900000/);
 });
 
+test("large-review completion budget is configurable and bounded", () => {
+  assert.equal(reviewMaxTokens(), 16_384);
+  assert.equal(reviewMaxTokens("32768"), 32_768);
+  assert.throws(() => reviewMaxTokens("4095"), /between 4096 and 32768/);
+  assert.throws(() => reviewMaxTokens("invalid"), /between 4096 and 32768/);
+});
+
 test("workflow isolates Codex and Kimi credentials in separate provider steps", async () => {
   const workflow = await readFile(".github/workflows/codex-review.yml", "utf8");
+  assert.match(workflow, /timeout-minutes: 35/);
   const codexStep = workflow.match(/- name: Run Codex review[\s\S]*?(?=\n\s{6}- name:)/)?.[0] || "";
   const kimiStep = workflow.match(/- name: Run credential-isolated Kimi takeover[\s\S]*?(?=\n\s{6}- name:)/)?.[0] || "";
   assert.match(codexStep, /CODEX_AUTH_JSON:/);
@@ -278,7 +287,7 @@ test("uses the review API without placing credentials in model input", async () 
   assert.match(request.init.body, /blocking_findings/);
   assert.match(request.init.body, /non_blocking_notes/);
   assert.equal(JSON.parse(request.init.body).temperature, 1);
-  assert.equal(JSON.parse(request.init.body).max_tokens, 8192);
+  assert.equal(JSON.parse(request.init.body).max_tokens, 16_384);
   assert.match(JSON.parse(request.init.body).prompt_cache_key, /^[a-f0-9]{64}$/);
 });
 

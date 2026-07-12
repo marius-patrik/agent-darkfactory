@@ -7,7 +7,8 @@ import { pathToFileURL } from "node:url";
 
 const DEFAULT_API_BASE = "https://api.kimi.com/coding/v1";
 const DEFAULT_OAUTH_HOST = "https://auth.kimi.com";
-const DEFAULT_REVIEW_TIMEOUT_MS = 600_000;
+const DEFAULT_REVIEW_TIMEOUT_MS = 900_000;
+const DEFAULT_REVIEW_MAX_TOKENS = 16_384;
 const KIMI_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098";
 
 function delay(milliseconds) {
@@ -20,6 +21,14 @@ export function reviewTimeoutMs(value) {
     throw new Error("KIMI_REVIEW_TIMEOUT_MS must be an integer between 30000 and 900000");
   }
   return timeout;
+}
+
+export function reviewMaxTokens(value) {
+  const tokens = Number(value ?? DEFAULT_REVIEW_MAX_TOKENS);
+  if (!Number.isSafeInteger(tokens) || tokens < 4_096 || tokens > 32_768) {
+    throw new Error("KIMI_REVIEW_MAX_TOKENS must be an integer between 4096 and 32768");
+  }
+  return tokens;
 }
 
 function reviewShape(value) {
@@ -177,7 +186,7 @@ export async function requestReview({
       model: env.KIMI_REVIEW_MODEL || "kimi-for-coding",
       // Kimi Code's coding models currently accept temperature=1 only.
       temperature: 1,
-      max_tokens: 8192,
+      max_tokens: reviewMaxTokens(env.KIMI_REVIEW_MAX_TOKENS),
       prompt_cache_key: createHash("sha256").update(prompt).digest("hex"),
       response_format: { type: "json_object" },
       messages: [
