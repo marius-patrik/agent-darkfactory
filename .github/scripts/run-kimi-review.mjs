@@ -9,6 +9,7 @@ const DEFAULT_API_BASE = "https://api.kimi.com/coding/v1";
 const DEFAULT_OAUTH_HOST = "https://auth.kimi.com";
 const DEFAULT_REVIEW_TIMEOUT_MS = 900_000;
 const DEFAULT_REVIEW_MAX_TOKENS = 16_384;
+const DEFAULT_REVIEW_CHUNK_CHARS = 40_000;
 const KIMI_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098";
 
 function delay(milliseconds) {
@@ -29,6 +30,49 @@ export function reviewMaxTokens(value) {
     throw new Error("KIMI_REVIEW_MAX_TOKENS must be an integer between 4096 and 32768");
   }
   return tokens;
+}
+
+export function reviewChunkChars(value) {
+  const characters = value === undefined
+    ? DEFAULT_REVIEW_CHUNK_CHARS
+    : typeof value === "number" || (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value))
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isSafeInteger(characters) || characters < 10_000 || characters > 100_000) {
+    throw new Error("KIMI_REVIEW_CHUNK_CHARS must be an integer between 10000 and 100000");
+  }
+  return characters;
+}
+
+function splitText(text, maxCharacters) {
+  if (text.length <= maxCharacters) return [text];
+  const chunks = [];
+  let offset = 0;
+  while (offset < text.length) {
+    let end = Math.min(text.length, offset + maxCharacters);
+    if (end < text.length) {
+      const newline = text.lastIndexOf("\n", end);
+      if (newline > offset + Math.floor(maxCharacters / 2)) end = newline + 1;
+    }
+    chunks.push(text.slice(offset, end));
+    offset = end;
+  }
+  return chunks;
+}
+
+function splitReviewPrompt(prompt, maxCharacters) {
+  if (prompt.length <= maxCharacters) return [prompt];
+  const marker = "\n--- FULL DIFF ---\n";
+  const markerIndex = prompt.indexOf(marker);
+  if (markerIndex >= 0) {
+    const sharedContext = prompt.slice(0, markerIndex + marker.length);
+    const segmentCharacters = maxCharacters - sharedContext.length;
+    if (segmentCharacters >= 10_000) {
+      return splitText(prompt.slice(markerIndex + marker.length), segmentCharacters)
+        .map((segment) => `${sharedContext}${segment}`);
+    }
+  }
+  return splitText(prompt, maxCharacters);
 }
 
 function reviewShape(value) {
@@ -168,7 +212,7 @@ export async function persistRefreshedCredential(credential, env = process.env, 
   await completed;
 }
 
-export async function requestReview({
+async function requestReviewChunk({
   prompt,
   credential,
   fetchImpl = fetch,
@@ -245,7 +289,7 @@ export async function requestReview({
   const content = choice?.message?.content;
   if (typeof content !== "string") throw new Error("Kimi review API returned no message content");
   try {
-    return parseReview(content);
+    return { review: parseReview(content), credential: active };
   } catch (error) {
     const finishReason = typeof choice?.finish_reason === "string" && /^[a-z_]+$/.test(choice.finish_reason)
       ? choice.finish_reason
@@ -253,6 +297,37 @@ export async function requestReview({
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`${message} (finish_reason=${finishReason}, content_chars=${content.length})`);
   }
+}
+
+export async function requestReview(options) {
+  const env = options.env ?? process.env;
+  const chunks = splitReviewPrompt(options.prompt, reviewChunkChars(env.KIMI_REVIEW_CHUNK_CHARS));
+  let credential = options.credential;
+  const reviews = [];
+  for (let index = 0; index < chunks.length; index += 1) {
+    const prompt = chunks.length === 1
+      ? chunks[index]
+      : [
+          `Review segment ${index + 1} of ${chunks.length} for one pull request.`,
+          "Review only this segment; automation combines all segment verdicts fail-closed.",
+          "",
+          chunks[index],
+        ].join("\n");
+    const result = await requestReviewChunk({ ...options, env, prompt, credential });
+    credential = result.credential;
+    reviews.push(result.review);
+  }
+  if (reviews.length === 1) return reviews[0];
+  const blockingFindings = [...new Set(reviews.flatMap((review) => review.blocking_findings))];
+  const nonBlockingNotes = [...new Set(reviews.flatMap((review) => review.non_blocking_notes))];
+  return {
+    approved: reviews.every((review) => review.approved) && blockingFindings.length === 0,
+    summary: `Kimi quota-takeover segmented review (${reviews.length} segments): ${reviews
+      .map((review) => review.summary.replace(/^Kimi quota-takeover review:\s*/, ""))
+      .join(" | ")}`,
+    blocking_findings: blockingFindings,
+    non_blocking_notes: nonBlockingNotes,
+  };
 }
 
 function blockedReview(error) {

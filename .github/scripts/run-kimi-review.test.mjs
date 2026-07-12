@@ -12,6 +12,7 @@ import {
   parseReview,
   persistRefreshedCredential,
   requestReview,
+  reviewChunkChars,
   reviewMaxTokens,
   reviewTimeoutMs,
   shouldTakeOver,
@@ -94,6 +95,14 @@ test("large-review completion budget is configurable and bounded", () => {
   assert.equal(reviewMaxTokens("32768"), 32_768);
   assert.throws(() => reviewMaxTokens("4095"), /between 4096 and 32768/);
   assert.throws(() => reviewMaxTokens("invalid"), /between 4096 and 32768/);
+});
+
+test("review prompt chunks are configurable and bounded", () => {
+  assert.equal(reviewChunkChars(), 40_000);
+  assert.equal(reviewChunkChars("100000"), 100_000);
+  assert.throws(() => reviewChunkChars("9999"), /between 10000 and 100000/);
+  assert.throws(() => reviewChunkChars("0x9c40"), /between 10000 and 100000/);
+  assert.throws(() => reviewChunkChars("invalid"), /between 10000 and 100000/);
 });
 
 test("workflow isolates Codex and Kimi credentials in separate provider steps", async () => {
@@ -289,6 +298,42 @@ test("uses the review API without placing credentials in model input", async () 
   assert.equal(JSON.parse(request.init.body).temperature, 1);
   assert.equal(JSON.parse(request.init.body).max_tokens, 16_384);
   assert.match(JSON.parse(request.init.body).prompt_cache_key, /^[a-f0-9]{64}$/);
+});
+
+test("reviews large prompts in bounded segments and combines findings fail-closed", async () => {
+  const requests = [];
+  const segmentReviews = [
+    validReview,
+    {
+      approved: false,
+      summary: "Middle segment found a blocker.",
+      blocking_findings: ["segment blocker"],
+      non_blocking_notes: [],
+    },
+    validReview,
+  ];
+  const fetchImpl = async (_url, init) => {
+    requests.push(JSON.parse(init.body));
+    const review = segmentReviews[requests.length - 1];
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(review) } }] }), {
+      status: 200,
+    });
+  };
+  const sharedContext = "shared issue and repository context\n--- FULL DIFF ---\n";
+  const review = await requestReview({
+    prompt: `${sharedContext}${"x".repeat(85_000)}`,
+    credential: { access_token: "token", expires_at: Math.floor(Date.now() / 1000) + 3_600 },
+    fetchImpl,
+    env: { KIMI_REVIEW_CHUNK_CHARS: "40000" },
+  });
+  assert.equal(requests.length, 3);
+  assert.match(requests[0].messages[1].content, /Review segment 1 of 3/);
+  assert.match(requests[2].messages[1].content, /Review segment 3 of 3/);
+  assert.ok(requests.every((request) => request.messages[1].content.includes(sharedContext)));
+  assert.notEqual(requests[0].prompt_cache_key, requests[1].prompt_cache_key);
+  assert.equal(review.approved, false);
+  assert.deepEqual(review.blocking_findings, ["segment blocker"]);
+  assert.match(review.summary, /3 segments/);
 });
 
 test("retries one transient provider failure with the same cached prompt", async () => {
