@@ -276,6 +276,26 @@ class TestModelRegistry:
         with pytest.raises(RegistryError, match="keys must match entry ids"):
             ModelRegistry(registry_path=reg_path, schema_path=schema_path)
 
+    def test_schema_requires_endpoint_only_for_unmanaged_models(self, tmp_registry):
+        gateway_root = Path(__file__).resolve().parents[1]
+        schema_path = gateway_root / "registry" / "schema.json"
+        reg_path, _, _ = tmp_registry
+        base = {
+            "id": "model",
+            "provider": "local",
+            "model": "model",
+            "role": "general",
+            "context_length": 1024,
+            "enabled": True,
+        }
+        reg_path.write_text(yaml.safe_dump({"schema_version": "gateway-registry-v1", "models": {"model": base}}))
+        with pytest.raises(RegistryError, match="api_base"):
+            ModelRegistry(reg_path, schema_path)
+
+        managed = {**base, "extra": {"inferctl_managed": True}}
+        reg_path.write_text(yaml.safe_dump({"schema_version": "gateway-registry-v1", "models": {"model": managed}}))
+        assert ModelRegistry(reg_path, schema_path).get("model").inferctl_managed is True
+
     def test_default_registry_declares_local_fabric(self):
         """The shipped models.yaml seeds the five local engines."""
         gateway_root = Path(__file__).resolve().parents[1]

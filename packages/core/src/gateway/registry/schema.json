@@ -22,13 +22,27 @@
           "quant": {"type": ["string", "null"]},
           "gpu": {"type": ["string", "null"]},
           "tensor_parallel": {"type": ["integer", "null"], "minimum": 1},
-          "enabled": {"type": "boolean"}
-          ,"extra": {
+          "enabled": {"type": "boolean"},
+          "extra": {
             "type": "object",
             "properties": {"inferctl_managed": {"type": "boolean"}},
             "additionalProperties": false
           }
         },
+        "allOf": [
+          {
+            "if": {
+              "required": ["extra"],
+              "properties": {
+                "extra": {
+                  "required": ["inferctl_managed"],
+                  "properties": {"inferctl_managed": {"const": true}}
+                }
+              }
+            },
+            "else": {"required": ["api_base"]}
+          }
+        ],
         "additionalProperties": false
       }
     }
