@@ -143,6 +143,45 @@ test("missing Codex auth exports the immutable prompt before requesting takeover
   }
 });
 
+test("prompt mutation by the primary provider cannot cross the takeover boundary", { skip: process.platform === "win32" }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-review-prompt-mutation-"));
+  const bin = path.join(root, "bin");
+  const home = path.join(root, "codex-home");
+  const context = path.join(root, "context");
+  const output = path.join(root, "review.json");
+  const prompt = path.join(root, "review-prompt.txt");
+  await Promise.all([mkdir(bin), mkdir(home), mkdir(context)]);
+  await writeFile(path.join(home, "auth.json"), "{}\n");
+  await writeFile(path.join(context, "AGENTS.md"), "rules\n");
+  await writeFile(path.join(context, "linked-issues.md"), "issue\n");
+  await writeFile(
+    path.join(bin, "codex"),
+    "#!/usr/bin/env bash\nprintf 'mutated\\n' > \"$PROMPT_EXPORT\"\nexit 1\n",
+    { mode: 0o755 },
+  );
+  try {
+    const result = spawnSync("bash", [".github/scripts/run-codex-review.sh"], {
+      cwd: path.resolve("."),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        HOME: root,
+        CODEX_HOME: home,
+        REVIEW_CONTEXT_DIR: context,
+        REVIEW_OUTPUT: output,
+        PROMPT_EXPORT: prompt,
+        BASE_BRANCH: "dev",
+        BASE_REF: "HEAD",
+      },
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(JSON.parse(await readFile(output, "utf8")).summary, /prompt changed/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("rejects malformed credential envelopes", () => {
   assert.throws(() => parseCredential('{"refresh_token":"secret"}'), /access_token/);
   assert.equal(parseCredential('{"kimi-code":{"access_token":"token"}}').access_token, "token");

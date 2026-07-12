@@ -141,6 +141,7 @@ fi
 if [ -n "${PROMPT_EXPORT}" ]; then
   cp "${PROMPT_FILE}" "${PROMPT_EXPORT}"
 fi
+PROMPT_DIGEST="$(sha256sum "${PROMPT_FILE}" | awk '{print $1}')"
 
 if [ ! -s "${CODEX_HOME}/auth.json" ]; then
   write_blocked_review \
@@ -157,6 +158,22 @@ codex exec \
   --output-schema "${SCHEMA_PATH}" \
   --output-last-message "${REVIEW_OUTPUT}" \
   - < "${PROMPT_FILE}" || CODEX_EXIT=$?
+
+CURRENT_PROMPT_DIGEST="$(sha256sum "${PROMPT_FILE}" | awk '{print $1}')"
+EXPORTED_PROMPT_DIGEST="${PROMPT_DIGEST}"
+if [ -n "${PROMPT_EXPORT}" ]; then
+  if [ -s "${PROMPT_EXPORT}" ]; then
+    EXPORTED_PROMPT_DIGEST="$(sha256sum "${PROMPT_EXPORT}" | awk '{print $1}')"
+  else
+    EXPORTED_PROMPT_DIGEST="missing"
+  fi
+fi
+if [ "${CURRENT_PROMPT_DIGEST}" != "${PROMPT_DIGEST}" ] || [ "${EXPORTED_PROMPT_DIGEST}" != "${PROMPT_DIGEST}" ]; then
+  write_blocked_review \
+    "The immutable review prompt changed during primary-provider execution." \
+    "Rejecting provider takeover because the exported prompt no longer matches the trusted pre-execution digest."
+  exit 1
+fi
 
 AUTOMATION_FAILED=0
 if ! node -e "const r=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8')); if(typeof r.approved!=='boolean'||typeof r.summary!=='string'||!Array.isArray(r.blocking_findings)||r.blocking_findings.some(x=>typeof x!=='string')||!Array.isArray(r.non_blocking_notes)||r.non_blocking_notes.some(x=>typeof x!=='string')) process.exit(1)" "${REVIEW_OUTPUT}"; then
