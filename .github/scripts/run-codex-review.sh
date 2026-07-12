@@ -67,6 +67,10 @@ DIFF_FILE="$(mktemp)"
 GENERATED_FILE="$(mktemp)"
 PROMPT_FILE="$(mktemp)"
 PR_BODY_FILE="$(mktemp)"
+cleanup_review_temp() {
+  rm -f "${DIFF_FILE}" "${GENERATED_FILE}" "${PROMPT_FILE}" "${PR_BODY_FILE}"
+}
+trap cleanup_review_temp EXIT
 printf '%s\n' "${PR_BODY}" > "${PR_BODY_FILE}"
 DIFF_EXCLUDES=(
   ':!dist/**'
@@ -88,7 +92,7 @@ GENERATED_PATHS=(
 git diff --stat "${BASE_REF}...HEAD" -- . "${DIFF_EXCLUDES[@]}" > "${DIFF_FILE}"
 printf '\n--- FULL DIFF ---\n' >> "${DIFF_FILE}"
 git diff --find-renames "${BASE_REF}...HEAD" -- . "${DIFF_EXCLUDES[@]}" >> "${DIFF_FILE}"
-git diff --name-status "${BASE_REF}...HEAD" -- "${GENERATED_PATHS[@]}" > "${GENERATED_FILE}"
+git diff --find-renames --name-status "${BASE_REF}...HEAD" -- "${GENERATED_PATHS[@]}" > "${GENERATED_FILE}"
 
 {
 cat <<EOF

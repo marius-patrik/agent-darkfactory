@@ -7,7 +7,14 @@ import { PassThrough } from "node:stream";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { parseCredential, parseReview, persistRefreshedCredential, requestReview, shouldTakeOver } from "./run-kimi-review.mjs";
+import {
+  parseCredential,
+  parseReview,
+  persistRefreshedCredential,
+  requestReview,
+  reviewTimeoutMs,
+  shouldTakeOver,
+} from "./run-kimi-review.mjs";
 
 const validReview = {
   approved: true,
@@ -38,6 +45,14 @@ test("invalid review shapes report the missing contract without echoing model co
       return true;
     },
   );
+  assert.throws(
+    () => parseReview('not-json-private-content'),
+    (error) => {
+      assert.match(error.message, /response was not parseable JSON/);
+      assert.doesNotMatch(error.message, /private-content/);
+      return true;
+    },
+  );
 });
 
 test("takeover dispatch uses only the trusted automation exit code", () => {
@@ -45,6 +60,13 @@ test("takeover dispatch uses only the trusted automation exit code", () => {
   assert.equal(shouldTakeOver(0), false);
   assert.equal(shouldTakeOver(1), false);
   assert.equal(shouldTakeOver("42"), true);
+});
+
+test("takeover timeout is long enough for large reviews and remains bounded", () => {
+  assert.equal(reviewTimeoutMs(), 600_000);
+  assert.equal(reviewTimeoutMs("900000"), 900_000);
+  assert.throws(() => reviewTimeoutMs("29999"), /between 30000 and 900000/);
+  assert.throws(() => reviewTimeoutMs("invalid"), /between 30000 and 900000/);
 });
 
 test("workflow isolates Codex and Kimi credentials in separate provider steps", async () => {
@@ -68,8 +90,10 @@ test("review prompt budgets generated payloads as a file summary", async () => {
   ]) {
     assert.match(runner, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
   }
-  assert.match(runner, /git diff --name-status/);
+  assert.match(runner, /git diff --find-renames --name-status/);
   assert.match(runner, /Generated payload file summary/);
+  assert.match(runner, /trap cleanup_review_temp EXIT/);
+  assert.match(runner, /rm -f .*GENERATED_FILE/);
 });
 
 test("persists rotated credentials through an in-memory gh stdin pipe", async () => {
@@ -235,6 +259,7 @@ test("uses the review API without placing credentials in model input", async () 
   assert.match(request.init.body, /blocking_findings/);
   assert.match(request.init.body, /non_blocking_notes/);
   assert.equal(JSON.parse(request.init.body).temperature, 1);
+  assert.equal(JSON.parse(request.init.body).max_tokens, 4096);
 });
 
 test("refreshes an expired OAuth token before the review request", async () => {

@@ -6,7 +6,16 @@ import { pathToFileURL } from "node:url";
 
 const DEFAULT_API_BASE = "https://api.kimi.com/coding/v1";
 const DEFAULT_OAUTH_HOST = "https://auth.kimi.com";
+const DEFAULT_REVIEW_TIMEOUT_MS = 600_000;
 const KIMI_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098";
+
+export function reviewTimeoutMs(value) {
+  const timeout = Number(value ?? DEFAULT_REVIEW_TIMEOUT_MS);
+  if (!Number.isSafeInteger(timeout) || timeout < 30_000 || timeout > 900_000) {
+    throw new Error("KIMI_REVIEW_TIMEOUT_MS must be an integer between 30000 and 900000");
+  }
+  return timeout;
+}
 
 function reviewShape(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("review must be a JSON object");
@@ -34,16 +43,21 @@ export function parseReview(text) {
   const start = trimmed.indexOf("{");
   const end = trimmed.lastIndexOf("}");
   if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
-  let lastError = new Error("response was not parseable JSON");
+  let shapeError = null;
   for (const candidate of candidates) {
+    let parsed;
     try {
-      return reviewShape(JSON.parse(candidate));
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    try {
+      return reviewShape(parsed);
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      // Try the next bounded representation.
+      shapeError = error instanceof Error ? error : new Error(String(error));
     }
   }
-  throw new Error(`Kimi returned invalid review JSON: ${lastError.message}`);
+  throw new Error(`Kimi returned invalid review JSON: ${shapeError?.message ?? "response was not parseable JSON"}`);
 }
 
 export function parseCredential(raw) {
@@ -124,7 +138,7 @@ export async function requestReview({ prompt, credential, fetchImpl = fetch, env
       model: env.KIMI_REVIEW_MODEL || "kimi-for-coding",
       // Kimi Code's coding models currently accept temperature=1 only.
       temperature: 1,
-      max_tokens: 8192,
+      max_tokens: 4096,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -140,7 +154,7 @@ export async function requestReview({ prompt, credential, fetchImpl = fetch, env
         { role: "user", content: prompt },
       ],
     }),
-    signal: AbortSignal.timeout(300_000),
+    signal: AbortSignal.timeout(reviewTimeoutMs(env.KIMI_REVIEW_TIMEOUT_MS)),
   });
   if (!response.ok) throw new Error(`Kimi review API failed with HTTP ${response.status}`);
   const payload = await response.json();
