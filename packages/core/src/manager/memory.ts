@@ -838,7 +838,15 @@ async function removeStaleProjectionEntries(directory: string, expected: Set<str
     // State-v2 publishers prepare complete bytes beside the destination and
     // then publish with an atomic link/rename. Concurrent projection cleanup
     // must not delete another writer's unpublished source file.
-    if (/^\..+\.\d+\.[0-9a-f-]{36}\.tmp$/i.test(entry.name)) continue;
+    const publication = entry.name.match(/^\..+\.(\d+)\.[0-9a-f-]{36}\.tmp$/i);
+    if (publication) {
+      try {
+        process.kill(Number(publication[1]), 0);
+        continue;
+      } catch {
+        // The publishing process is gone; clean its abandoned temp below.
+      }
+    }
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) throw new Error(`unexpected memory projection directory: ${entryPath}`);
     await rm(entryPath, { force: true });
