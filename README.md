@@ -54,8 +54,9 @@ ready. Do not use an old product checkout or installer as an update source.
 - **Agent OS** is the final product.
 - **Andromeda** is this repository. The npm package surface remains `@marius-patrik/agents-manager` as a recorded exception until a package rename is scheduled.
 - **agents** is the CLI.
-- `packages/core` is the consolidated implementation package containing the
-  manager, contracts, harness, gateway, inference, and plugin domains.
+- `packages/` contains one direct child for each implementation domain.
+- `plugins/` contains the managed product plugins and is also the authored
+  root for repository-owned plugin capabilities.
 
 Older product and topology names are migration evidence only. They are not
 aliases, compatibility surfaces, install roots, or names for new work.
@@ -128,22 +129,24 @@ older snapshot-sync or provider-adoption command to fall back to.
 
 ## Repository layout
 
-- `packages/core/src/manager/` — `agents` CLI and Agent OS state/runtime logic.
-- `packages/core/src/core/` — shared contracts, schemas, and generated clients.
-- `packages/core/src/harness/` — managed runtime harness.
-- `packages/core/src/gateway/` — model gateway and provider routing.
-- `packages/core/src/inference/` — agent loop and inference runtime.
-- `packages/darkfactory/`, `packages/life-support/`,
-  `packages/skyblock-agent/`, and `packages/singularity/` — managed packages.
+- `packages/manager/src/` — `agents` CLI and Agent OS state/runtime logic.
+- `packages/core/` — shared contracts, schemas, and generated clients.
+- `packages/harness/` — managed runtime harness.
+- `packages/gateway/` — model gateway and provider routing.
+- `packages/inference/` — agent loop and inference runtime.
+- `plugins/darkfactory/`, `plugins/life-support/`,
+  `plugins/skyblock-agent/`, and `plugins/singularity/` — managed product plugins.
+- `skills/`, `hooks/`, `roles/`, and `commands/` — authored capability roots;
+  `persona.md` is the authored identity persona.
 - `data/agent-os/` — the sole managed Agent OS data checkout, not an alternate runtime-state root.
 
 ## Shared capability contract
 
-User-installed capabilities live only under their canonical paths in
-`AGENTS_HOME`: `skills/<name>/`, `plugins/<name>/`, `hooks/<name>/`, and
-`templates/<name>/`. Package-owned capabilities remain inside their package.
-Do not recreate an obsolete root-level `skills/` directory or provider-specific
-copies that can drift from the canonical installation.
+The repository authors its capability floor directly at `skills/`, `plugins/`,
+`hooks/`, `roles/`, and `commands/`. The installer validates and publishes that
+source into the canonical `AGENTS_HOME` state tree; provider-specific copies are
+not another authority. Managed product plugins and authored plugin capabilities
+share `plugins/`, so every direct child must have one owner and one manifest.
 
 ## Validation
 
@@ -154,4 +157,4 @@ bun run ci
 ```
 
 Root validation covers the TypeScript manager surface under
-`packages/core/src/manager` and its tests under `packages/core/test/manager`.
+`packages/manager/src` and its tests under `packages/manager/test`.

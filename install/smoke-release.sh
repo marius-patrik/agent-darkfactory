@@ -45,6 +45,7 @@ done < <(git -C "$ROOT_DIR" ls-files --others --exclude-standard -z)
 # Replace the real component remotes and multi-gigabyte gitlinks with tiny local
 # repositories. The installer still has to initialize every submodule and prove
 # its exact gitlink; this keeps the boundary test deterministic and networkless.
+git -C "$SOURCE_DIR" add -A
 STUB_ROOT="$SANDBOX/component-stubs"
 mkdir -p "$STUB_ROOT"
 while read -r _key component_name; do
@@ -64,7 +65,7 @@ done < <(git -C "$SOURCE_DIR" config --file .gitmodules --name-only --get-regexp
 
 git -C "$SOURCE_DIR" config user.name "Agent OS smoke"
 git -C "$SOURCE_DIR" config user.email "agent-os-smoke@invalid"
-git -C "$SOURCE_DIR" add -A
+git -C "$SOURCE_DIR" add .gitmodules
 git -C "$SOURCE_DIR" commit -q --allow-empty -m "smoke source snapshot"
 
 # The manager runtime does not need installed third-party packages for this

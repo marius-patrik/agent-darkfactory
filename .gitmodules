@@ -1,17 +1,17 @@
-[submodule "packages/darkfactory"]
-	path = packages/darkfactory
+[submodule "plugins/darkfactory"]
+	path = plugins/darkfactory
 	url = https://github.com/marius-patrik/DarkFactory.git
 	branch = main
-[submodule "packages/life-support"]
-	path = packages/life-support
+[submodule "plugins/life-support"]
+	path = plugins/life-support
 	url = https://github.com/marius-patrik/life-support.git
 	branch = main
-[submodule "packages/singularity"]
-	path = packages/singularity
+[submodule "plugins/singularity"]
+	path = plugins/singularity
 	url = https://github.com/marius-patrik/singularity.git
 	branch = main
-[submodule "packages/skyblock-agent"]
-	path = packages/skyblock-agent
+[submodule "plugins/skyblock-agent"]
+	path = plugins/skyblock-agent
 	url = https://github.com/marius-patrik/SkyAgent.git
 	branch = main
 [submodule "data"]

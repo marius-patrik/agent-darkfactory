@@ -12,6 +12,37 @@ const tracked = execFileSync("git", ["-C", root, "ls-files", "--cached", "--othe
   .filter((relative) => fs.statSync(path.join(root, relative), { throwIfNoEntry: false })?.isFile());
 
 const issues = [];
+const requiredLayout = [
+  "plugins",
+  "packages/core",
+  "packages/gateway",
+  "packages/harness",
+  "packages/inference",
+  "packages/manager",
+  "skills",
+  "hooks",
+  "roles",
+  "commands",
+];
+for (const relative of requiredLayout) {
+  if (!fs.statSync(path.join(root, relative), { throwIfNoEntry: false })?.isDirectory()) {
+    issues.push(`required repository root is missing: ${relative}`);
+  }
+}
+for (const retired of ["packages/core/src", "packages/core/test", "packages/core/capabilities"]) {
+  if (fs.statSync(path.join(root, retired), { throwIfNoEntry: false })) {
+    issues.push(`retired nested repository root remains: ${retired}`);
+  }
+}
+
+const gitmodules = fs.readFileSync(path.join(root, ".gitmodules"), "utf8");
+for (const match of gitmodules.matchAll(/^\s*path\s*=\s*(.+)\s*$/gm)) {
+  const submodulePath = match[1].trim();
+  if (submodulePath !== "data/agent-os" && !submodulePath.startsWith("plugins/")) {
+    issues.push(`managed product submodule is outside plugins/: ${submodulePath}`);
+  }
+}
+
 const forbiddenPaths = [
   [/(^|\/)\.agents\/\.global(\/|$)/, "copied global agent state"],
   [/(^|\/)legacy(\/|$)/i, "legacy implementation tree"],
@@ -42,9 +73,9 @@ const retiredContent = [
 
 const retiredVariableRejectionFiles = new Set([
   "install/install.sh",
-  "packages/core/src/manager/runtime-paths.ts",
-  "packages/core/src/manager/state-doctor.ts",
-  "packages/core/test/manager/state.test.ts",
+  "packages/manager/src/runtime-paths.ts",
+  "packages/manager/src/state-doctor.ts",
+  "packages/manager/test/state.test.ts",
 ]);
 
 // This policy file necessarily spells the retired identifiers it rejects.

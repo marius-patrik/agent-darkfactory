@@ -4,19 +4,20 @@
   "description": "Agent OS manager and unified `agents` CLI for canonical state, memory, providers, sessions, orchestration, packages, and harnesses.",
   "type": "module",
   "workspaces": [
-    "packages/core",
-    "packages/core/src/core/clients/*"
+    "packages/manager",
+    "packages/core/clients/*"
   ],
   "bin": {
-    "agents": "./packages/core/src/manager/cli.ts"
+    "agents": "./packages/manager/src/cli.ts"
   },
   "scripts": {
-    "agents": "bun packages/core/src/manager/cli.ts",
+    "agents": "bun packages/manager/src/cli.ts",
     "check": "bunx tsc --noEmit",
-    "test": "bun test packages/core/test/manager/*.test.ts",
+    "test": "bun test packages/manager/test/*.test.ts",
     "proto:check": "bun scripts/verify-codegen.ts",
-    "ci": "bun run check && bun run test && bun run proto:check && node --test .github/scripts/run-kimi-review.test.mjs",
-    "smoke:release": "bash install/smoke-release.sh"
+    "layout:check": "node scripts/verify-single-product.mjs",
+    "ci": "bun run layout:check && bun run check && bun run test && bun run proto:check && node --test .github/scripts/run-kimi-review.test.mjs",
+    "smoke:release": "bun scripts/run-release-smoke.mjs"
   },
   "devDependencies": {
     "@bufbuild/buf": "1.71.0",

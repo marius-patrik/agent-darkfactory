@@ -126,10 +126,10 @@ test("workflow isolates Codex and Kimi credentials in separate provider steps", 
 test("review prompt budgets generated payloads as a file summary", async () => {
   const runner = await readFile(".github/scripts/run-codex-review.sh", "utf8");
   for (const path of [
-    "packages/core/src/core/contracts-go/gen/**",
-    "packages/core/src/core/clients/shared-ts/src/gen/**",
-    "packages/core/src/gateway/agent_os/**",
-    "packages/core/src/inference/python-agent/agent/gen/**",
+    "packages/core/contracts-go/gen/**",
+    "packages/core/clients/shared-ts/src/gen/**",
+    "packages/gateway/agent_os/**",
+    "packages/inference/python-agent/agent/gen/**",
   ]) {
     assert.match(runner, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
   }

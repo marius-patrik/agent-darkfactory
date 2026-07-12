@@ -18,8 +18,8 @@ capabilities around it.
 - **Andromeda** — repository. npm package surface stays `@marius-patrik/agents-manager` (recorded exception).
 - **agents** — CLI command.
 - **`~/.agents` / `AGENTS_HOME`** — only authoritative runtime state root.
-- **`packages/core`** — consolidated code package; its domain folders are not
-  separate products.
+- **`packages/`** — implementation domains, each rooted as one direct child.
+- **`plugins/`** — managed product plugins and authored plugin capabilities.
 
 Historical product, repository, and layout names are evidence to migrate and
 retire. They are not supported aliases or compatibility contracts.
@@ -226,16 +226,20 @@ tombstones, and produces identical projection hashes on participating machines.
 
 ```text
 packages/core/
-  src/core/
-  src/manager/
-  src/harness/
-  src/gateway/
-  src/inference/
-packages/darkfactory/
-packages/life-support/
-packages/skyblock-agent/
-packages/singularity/
-data/
+packages/manager/
+packages/harness/
+packages/gateway/
+packages/inference/
+plugins/darkfactory/
+plugins/life-support/
+plugins/skyblock-agent/
+plugins/singularity/
+skills/
+hooks/
+roles/
+commands/
+persona.md
+data/agent-os/
 ```
 
 No obsolete `os/` package topology is part of the final product.

@@ -1,0 +1,45 @@
+# Canonical codegen for the Agent OS wire contract [S3.0].
+#
+# One proto module (proto/) -> three language stubs, via buf REMOTE plugins
+# (no local protoc/plugin install needed). Run from agent-os-core:
+#
+#   buf generate proto
+#
+# Outputs (all committable in this repo):
+#   * Go  -> contracts-go/gen   (protobuf-go + connect-go)
+#   * TS  -> clients/shared-ts/src/gen   (protobuf-es v2; carries the Connect
+#                                         service descriptors consumed by
+#                                         @connectrpc/connect v2 at runtime)
+# Python stubs are generated for the in-repository inference consumer with the
+# explicit buf.gen.python.yaml template.
+#
+# Connect-python is intentionally NOT generated for VS0 (plain protobuf py is
+# sufficient; the Connect-python decision is deferred to VS2 — see
+# docs/contracts/wire.md).
+version: v2
+
+# Managed mode injects per-language package options (e.g. go_package) so the
+# .proto files stay free of language-specific boilerplate.
+managed:
+  enabled: true
+  override:
+    # Root the Go import path at the contracts-go module's gen package.
+    - file_option: go_package_prefix
+      value: github.com/marius-patrik/agents-manager/packages/core/contracts-go/gen
+
+plugins:
+  # ---- Go: messages + Connect service stubs --------------------------------
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: contracts-go/gen
+    opt: paths=source_relative
+  - remote: buf.build/connectrpc/go:v1.20.0
+    out: contracts-go/gen
+    opt: paths=source_relative
+
+  # ---- TypeScript: protobuf-es v2 (messages + service descriptors) ---------
+  # protobuf-es v2 emits the Connect-compatible service descriptors in *_pb.ts;
+  # @connectrpc/connect v2 builds typed clients from them — no separate
+  # connect-es codegen needed.
+  - remote: buf.build/bufbuild/es:v2.12.0
+    out: clients/shared-ts/src/gen
+    opt: target=ts

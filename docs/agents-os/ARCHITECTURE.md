@@ -11,12 +11,12 @@ Agent OS remains one product inside or outside a container:
 
 - `agents-manager` owns state discovery, provider pinning, sessions, memory,
   capabilities, package registries, and lifecycle commands.
-- `packages/core` contains manager, harness, contracts, gateway, inference, and
-  bundled plugin domains; those are components, not separate products.
-- `packages/darkfactory` is a GitHub control-plane package, not a second agent
+- `packages/manager`, `packages/harness`, `packages/core`, `packages/gateway`,
+  and `packages/inference` are implementation components, not separate products.
+- `plugins/darkfactory` is a GitHub control-plane package, not a second agent
   brain.
-- `packages/life-support`, `packages/skyblock-agent`, and
-  `packages/singularity` are managed packages.
+- `plugins/life-support`, `plugins/skyblock-agent`, and
+  `plugins/singularity` are managed packages.
 - `data/agent-os/` is the sole managed data checkout, never an alternate Agent OS state root.
 
 The container is replaceable compute. It must mount the one authoritative

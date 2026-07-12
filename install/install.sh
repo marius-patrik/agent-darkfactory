@@ -207,7 +207,7 @@ install_launcher() {
       write_ps_env AGENTS_CONFIG "$(native_path "$AGENTS_HOME/config.json")"
       write_ps_env AGENTS_SYSTEM_DATA_ROOT "$(native_path "$AGENTS_ROOT/data/agent-os")"
       write_ps_env AGENTS_BUN "$(native_path "$bun_bin")"
-      write_ps_env AGENTS_ENTRYPOINT "$(native_path "$AGENTS_ROOT/packages/core/src/manager/cli.ts")"
+      write_ps_env AGENTS_ENTRYPOINT "$(native_path "$AGENTS_ROOT/packages/manager/src/cli.ts")"
       printf '& $env:AGENTS_BUN $env:AGENTS_ENTRYPOINT @args\n'
       printf 'exit $LASTEXITCODE\n'
     } >"$temporary"
@@ -242,7 +242,7 @@ install_launcher() {
       write_export AGENTS_CONFIG "$AGENTS_HOME/config.json"
       write_export AGENTS_SYSTEM_DATA_ROOT "$AGENTS_ROOT/data/agent-os"
       write_export AGENTS_BUN "$bun_bin"
-      write_export AGENTS_ENTRYPOINT "$AGENTS_ROOT/packages/core/src/manager/cli.ts"
+      write_export AGENTS_ENTRYPOINT "$AGENTS_ROOT/packages/manager/src/cli.ts"
       echo 'exec "$AGENTS_BUN" "$AGENTS_ENTRYPOINT" "$@"'
     } >"$temporary"
   fi
@@ -251,18 +251,33 @@ install_launcher() {
 }
 
 install_default_capabilities() {
-  local skill_root="$AGENTS_ROOT/packages/core/capabilities/skills"
-  local identity_root="$AGENTS_ROOT/packages/core/capabilities/identity"
-  local skill_path name
+  local skill_root="$AGENTS_ROOT/skills"
+  local role_root="$AGENTS_ROOT/roles"
+  local command_root="$AGENTS_ROOT/commands"
+  local persona="$AGENTS_ROOT/persona.md"
+  local identity_bundle skill_path name
 
   [ -d "$skill_root" ] || die "bundled skill floor is missing: $skill_root"
-  [ -d "$identity_root" ] || die "bundled identity is missing: $identity_root"
+  [ -d "$role_root" ] || die "bundled role floor is missing: $role_root"
+  [ -d "$command_root" ] || die "bundled command floor is missing: $command_root"
+  [ -f "$persona" ] || die "bundled persona is missing: $persona"
   for skill_path in "$skill_root"/*; do
     [ -d "$skill_path" ] || continue
     name="$(basename "$skill_path")"
     run_launcher install skill "$name" "$skill_path" --replace
   done
-  run_launcher identity activate "$identity_root" --replace
+
+  identity_bundle="$AGENTS_HOME/runtime/tmp/bundled-identity-source"
+  rm -rf "$identity_bundle"
+  mkdir -p "$identity_bundle/roles" "$identity_bundle/prompts"
+  cp "$persona" "$identity_bundle/persona.md"
+  cp "$role_root"/*.yaml "$identity_bundle/roles/"
+  cp "$command_root"/*.md "$identity_bundle/prompts/"
+  if ! run_launcher identity activate "$identity_bundle" --replace; then
+    rm -rf "$identity_bundle"
+    return 1
+  fi
+  rm -rf "$identity_bundle"
 }
 
 pin_installed_providers() {

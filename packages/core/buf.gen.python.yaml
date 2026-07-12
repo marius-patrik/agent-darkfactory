@@ -1,0 +1,22 @@
+# Python codegen for the in-repository Agent OS inference consumer.
+#
+# Run from packages/core when intentionally refreshing the Python
+# protobuf types consumed by ../inference/python-agent:
+#
+#   buf generate proto --template buf.gen.python.yaml
+#
+# The default buf.gen.yaml remains limited to Go and TypeScript outputs; this
+# explicit template refreshes the Python consumer in the same product tree.
+version: v2
+
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/marius-patrik/agents-manager/packages/core/contracts-go/gen
+
+plugins:
+  - remote: buf.build/protocolbuffers/python:v35.0
+    out: ../inference/python-agent/agent/gen
+  - remote: buf.build/protocolbuffers/pyi:v35.0
+    out: ../inference/python-agent/agent/gen

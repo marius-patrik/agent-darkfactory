@@ -78,16 +78,16 @@ DIFF_EXCLUDES=(
   ':!coverage/**'
   ':!node_modules/**'
   ':!packages/web/dist/**'
-  ':!packages/core/src/core/contracts-go/gen/**'
-  ':!packages/core/src/core/clients/shared-ts/src/gen/**'
-  ':!packages/core/src/gateway/agent_os/**'
-  ':!packages/core/src/inference/python-agent/agent/gen/**'
+  ':!packages/core/contracts-go/gen/**'
+  ':!packages/core/clients/shared-ts/src/gen/**'
+  ':!packages/gateway/agent_os/**'
+  ':!packages/inference/python-agent/agent/gen/**'
 )
 GENERATED_PATHS=(
-  'packages/core/src/core/contracts-go/gen/**'
-  'packages/core/src/core/clients/shared-ts/src/gen/**'
-  'packages/core/src/gateway/agent_os/**'
-  'packages/core/src/inference/python-agent/agent/gen/**'
+  'packages/core/contracts-go/gen/**'
+  'packages/core/clients/shared-ts/src/gen/**'
+  'packages/gateway/agent_os/**'
+  'packages/inference/python-agent/agent/gen/**'
 )
 git diff --stat "${BASE_REF}...HEAD" -- . "${DIFF_EXCLUDES[@]}" > "${DIFF_FILE}"
 printf '\n--- FULL DIFF ---\n' >> "${DIFF_FILE}"

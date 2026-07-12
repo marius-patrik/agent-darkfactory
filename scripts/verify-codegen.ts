@@ -13,15 +13,15 @@ import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 
 const root = resolve(import.meta.dir, "..");
-const core = join(root, "packages/core/src/core");
+const core = join(root, "packages/core");
 const buf = join(root, "node_modules/.bin", process.platform === "win32" ? "buf.exe" : "buf");
 const temp = mkdtempSync(join(tmpdir(), "andromeda-codegen-"));
 const beforeRoot = join(temp, "before");
 const outputs = [
-  "packages/core/src/core/contracts-go/gen",
-  "packages/core/src/core/clients/shared-ts/src/gen",
-  "packages/core/src/inference/python-agent/agent/gen",
-  "packages/core/src/gateway/agent_os",
+  "packages/core/contracts-go/gen",
+  "packages/core/clients/shared-ts/src/gen",
+  "packages/inference/python-agent/agent/gen",
+  "packages/gateway/agent_os",
 ];
 
 function generatedFilter(source: string): boolean {
@@ -94,12 +94,12 @@ try {
 
   // This package-owned barrel is intentionally not emitted by Buf.
   cpSync(
-    join(beforeRoot, "packages/core/src/core/clients/shared-ts/src/gen/index.ts"),
-    join(root, "packages/core/src/core/clients/shared-ts/src/gen/index.ts"),
+    join(beforeRoot, "packages/core/clients/shared-ts/src/gen/index.ts"),
+    join(root, "packages/core/clients/shared-ts/src/gen/index.ts"),
   );
   for (const init of ["__init__.py", "agent_os/__init__.py", "agent_os/v1/__init__.py"]) {
-    const source = join(beforeRoot, "packages/core/src/inference/python-agent/agent/gen", init);
-    const destination = join(root, "packages/core/src/inference/python-agent/agent/gen", init);
+    const source = join(beforeRoot, "packages/inference/python-agent/agent/gen", init);
+    const destination = join(root, "packages/inference/python-agent/agent/gen", init);
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(source, destination);
   }

@@ -10,11 +10,27 @@
         "typescript": "5.9.3",
       },
     },
-    "packages/core": {
-      "name": "@marius-patrik/agents-manager-core",
+    "packages/core/clients/shared-ts": {
+      "name": "@agent-os/shared-ts",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bufbuild/protobuf": "2.12.1",
+        "@connectrpc/connect": "2.1.2",
+      },
+    },
+    "packages/core/clients/tui": {
+      "name": "@agent-os/tui",
+      "version": "0.1.0",
+    },
+    "packages/core/clients/web": {
+      "name": "@agent-os/web",
+      "version": "0.1.0",
+    },
+    "packages/manager": {
+      "name": "@marius-patrik/andromeda-manager",
       "version": "0.1.0",
       "bin": {
-        "agents": "./src/manager/cli.ts",
+        "agents": "./src/cli.ts",
       },
       "dependencies": {
         "@bufbuild/protobuf": "2.12.1",
@@ -25,29 +41,13 @@
         "typescript": "5.9.3",
       },
     },
-    "packages/core/src/core/clients/shared-ts": {
-      "name": "@agent-os/shared-ts",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bufbuild/protobuf": "2.12.1",
-        "@connectrpc/connect": "2.1.2",
-      },
-    },
-    "packages/core/src/core/clients/tui": {
-      "name": "@agent-os/tui",
-      "version": "0.1.0",
-    },
-    "packages/core/src/core/clients/web": {
-      "name": "@agent-os/web",
-      "version": "0.1.0",
-    },
   },
   "packages": {
-    "@agent-os/shared-ts": ["@agent-os/shared-ts@workspace:packages/core/src/core/clients/shared-ts"],
+    "@agent-os/shared-ts": ["@agent-os/shared-ts@workspace:packages/core/clients/shared-ts"],
 
-    "@agent-os/tui": ["@agent-os/tui@workspace:packages/core/src/core/clients/tui"],
+    "@agent-os/tui": ["@agent-os/tui@workspace:packages/core/clients/tui"],
 
-    "@agent-os/web": ["@agent-os/web@workspace:packages/core/src/core/clients/web"],
+    "@agent-os/web": ["@agent-os/web@workspace:packages/core/clients/web"],
 
     "@bufbuild/buf": ["@bufbuild/buf@1.71.0", "", { "optionalDependencies": { "@bufbuild/buf-darwin-arm64": "1.71.0", "@bufbuild/buf-darwin-x64": "1.71.0", "@bufbuild/buf-linux-aarch64": "1.71.0", "@bufbuild/buf-linux-armv7": "1.71.0", "@bufbuild/buf-linux-x64": "1.71.0", "@bufbuild/buf-win32-arm64": "1.71.0", "@bufbuild/buf-win32-x64": "1.71.0" }, "bin": { "buf": "bin/buf", "protoc-gen-buf-breaking": "bin/protoc-gen-buf-breaking", "protoc-gen-buf-lint": "bin/protoc-gen-buf-lint" } }, "sha512-GDcjBCwLgHT/4nX4YSnYatZ7sDZDpHV6dxQvoT2/P6gKvV23O6hl8NryzLIRKmeau0FRXpQKHVy1dMfnBSpy+w=="],
 
@@ -69,7 +69,7 @@
 
     "@connectrpc/connect": ["@connectrpc/connect@2.1.2", "", { "peerDependencies": { "@bufbuild/protobuf": "^2.7.0" } }, "sha512-MXkBijtcX09R10Eb6sFeIetc6w6746eio6xtfuyVOH7oQAacT1X0GzMIQFux6Qy8cq3W/T5qX5Bei8YbFtmRGA=="],
 
-    "@marius-patrik/agents-manager-core": ["@marius-patrik/agents-manager-core@workspace:packages/core"],
+    "@marius-patrik/andromeda-manager": ["@marius-patrik/andromeda-manager@workspace:packages/manager"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
