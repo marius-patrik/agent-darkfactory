@@ -89,7 +89,8 @@ export async function requestReview({ prompt, credential, fetchImpl = fetch, env
     },
     body: JSON.stringify({
       model: env.KIMI_REVIEW_MODEL || "kimi-for-coding",
-      temperature: 0,
+      // Kimi Code's coding models currently accept temperature=1 only.
+      temperature: 1,
       max_tokens: 8192,
       response_format: { type: "json_object" },
       messages: [

@@ -41,6 +41,7 @@ test("uses the review API without placing credentials in model input", async () 
   assert.equal(request.init.headers.authorization, "Bearer top-secret");
   assert.doesNotMatch(request.init.body, /top-secret/);
   assert.match(request.init.body, /review this diff/);
+  assert.equal(JSON.parse(request.init.body).temperature, 1);
 });
 
 test("refreshes an expired OAuth token before the review request", async () => {
