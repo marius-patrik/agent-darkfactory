@@ -167,7 +167,6 @@ const STRUCTURAL_STRING_FIELDS = new Set([
   "eventHash",
   "previousEventHash",
   "contentHash",
-  "uri",
   "at",
   "createdAt",
   "updatedAt",

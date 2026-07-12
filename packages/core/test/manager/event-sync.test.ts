@@ -210,6 +210,18 @@ describe("encrypted cross-machine event exchange", () => {
       });
       await expect(exportEventBundle(secretSource, path.join(root, "secret.bundle.json"))).rejects.toThrow("local-only");
 
+      const credentialUriSource = await exchangeState(path.join(root, "credential-uri"));
+      await rememberMemory(credentialUriSource, {
+        scope: "project",
+        subject: "Andromeda",
+        predicate: "credential-uri",
+        value: "must-not-roam",
+        evidence: { ...evidence, uri: "https://service:super-secret-password@example.invalid/evidence" },
+      });
+      await expect(
+        exportEventBundle(credentialUriSource, path.join(root, "credential-uri.bundle.json")),
+      ).rejects.toThrow("secret-like");
+
       const secretSession = await exchangeState(path.join(root, "secret-session"));
       await createSession(secretSession, {
         sessionId: "secret-session",

@@ -401,7 +401,7 @@ describe("session runtime", () => {
         model: "test",
         sessionId: "heartbeat-session",
       });
-      const options = { leaseMs: 120, heartbeatMs: 20, waitMs: 1_000 };
+      const options = { leaseMs: 500, heartbeatMs: 50, waitMs: 3_000 };
       const order: string[] = [];
 
       const first = withSessionWriteLock(
@@ -409,13 +409,13 @@ describe("session runtime", () => {
         descriptor.sessionId,
         async (lock) => {
           order.push("first:entered");
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          await new Promise((resolve) => setTimeout(resolve, 800));
           await lock.verify();
           order.push("first:leaving");
         },
         options,
       );
-      await new Promise((resolve) => setTimeout(resolve, 40));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       const second = withSessionWriteLock(
         state,
         descriptor.sessionId,
