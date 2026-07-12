@@ -44,7 +44,7 @@ if [ ! -s "${CODEX_HOME}/auth.json" ]; then
   write_blocked_review \
     "Codex autoreview could not run because CODEX_HOME/auth.json is missing." \
     "Configure CODEX_AUTH_JSON in GitHub repository secrets and mount it into the review container as CODEX_HOME/auth.json."
-  exit 0
+  exit 42
 fi
 
 git config --global --add safe.directory /workspace
