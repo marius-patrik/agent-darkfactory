@@ -161,6 +161,30 @@ env \
   GIT_ALLOW_PROTOCOL=file \
   bash "$SOURCE_DIR/install/install.sh"
 
+# A populated pre-checkout state root is migrated by staging, overlaying, and
+# atomically swapping while retaining a sibling rollback tree.
+LEGACY_USER_HOME="$SANDBOX/legacy-home"
+LEGACY_AGENTS_HOME="$LEGACY_USER_HOME/.agents"
+LEGACY_ROOT="$LEGACY_USER_HOME/marius-patrik/Andromeda"
+mkdir -p "$LEGACY_AGENTS_HOME/memory" "$(dirname "$LEGACY_ROOT")"
+printf '%s\n' 'preserve-me' >"$LEGACY_AGENTS_HOME/memory/legacy-marker"
+env \
+  PATH="$FAKE_BIN:$PATH" \
+  HOME="$LEGACY_USER_HOME" \
+  ANDROMEDA_SOURCE="$SOURCE_DIR" \
+  ANDROMEDA_DATA_SOURCE="$STUB_ROOT/data" \
+  ANDROMEDA_BRANCH=dev \
+  AGENTS_HOME="$LEGACY_AGENTS_HOME" \
+  AGENTS_USER_HOME="$LEGACY_USER_HOME" \
+  AGENTS_ROOT="$LEGACY_ROOT" \
+  GIT_ALLOW_PROTOCOL=file \
+  bash "$SOURCE_DIR/install/install.sh"
+test -d "$LEGACY_AGENTS_HOME/.git"
+grep -F 'preserve-me' "$LEGACY_AGENTS_HOME/memory/legacy-marker"
+legacy_backups=("$LEGACY_USER_HOME"/.agents.pre-andromeda-data-*)
+[ "${#legacy_backups[@]}" -eq 1 ]
+grep -F 'preserve-me' "${legacy_backups[0]}/memory/legacy-marker"
+
 # An existing worktree with the wrong origin must remain a hard failure.
 DENIED_USER_HOME="$SANDBOX/denied-home"
 DENIED_ROOT="$DENIED_USER_HOME/marius-patrik/Andromeda"

@@ -125,8 +125,47 @@ install_or_update_state_checkout() {
     git clone --branch "$DATA_BRANCH" --single-branch "$DATA_SOURCE_URL" "$AGENTS_HOME"
     git -C "$AGENTS_HOME" remote set-url origin "$DATA_REPO_URL"
   else
-    die "AGENTS_HOME contains state but is not the Andromeda-data checkout; migrate it before installing: $AGENTS_HOME"
+    migrate_legacy_state_checkout
   fi
+}
+
+migrate_legacy_state_checkout() {
+  local parent stage backup stamp
+  parent="$(dirname "$AGENTS_HOME")"
+  stage="${AGENTS_HOME}.andromeda-data-stage-$$"
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup="${AGENTS_HOME}.pre-andromeda-data-${stamp}"
+  [ ! -e "$stage" ] || die "state migration staging path already exists: $stage"
+  [ ! -e "$backup" ] || die "state migration rollback path already exists: $backup"
+  [ ! -e "$AGENTS_HOME/.git" ] || die "legacy AGENTS_HOME contains a broken Git marker: $AGENTS_HOME/.git"
+  [ "$(dirname "$stage")" = "$parent" ] || die "state migration staging path escaped the user home"
+  [ "$(dirname "$backup")" = "$parent" ] || die "state migration rollback path escaped the user home"
+  if find "$AGENTS_HOME" -type l -print -quit | grep -q .; then
+    die "legacy AGENTS_HOME contains a symbolic link; refusing state migration"
+  fi
+
+  echo "Migrating existing Agent OS state into an Andromeda-data checkout ..."
+  if ! git clone --branch "$DATA_BRANCH" --single-branch "$DATA_SOURCE_URL" "$stage"; then
+    rm -rf -- "$stage"
+    die "could not stage the Andromeda-data checkout"
+  fi
+  git -C "$stage" remote set-url origin "$DATA_REPO_URL"
+  if ! cp -a "$AGENTS_HOME/." "$stage/"; then
+    rm -rf -- "$stage"
+    die "could not overlay legacy Agent OS state into the staged checkout"
+  fi
+  [ -z "$(git -C "$stage" status --porcelain --untracked-files=no)" ] || {
+    rm -rf -- "$stage"
+    die "legacy Agent OS state conflicts with tracked Andromeda-data content"
+  }
+
+  mv -- "$AGENTS_HOME" "$backup"
+  if ! mv -- "$stage" "$AGENTS_HOME"; then
+    mv -- "$backup" "$AGENTS_HOME" || true
+    die "could not activate the staged state checkout; rollback was attempted"
+  fi
+  chmod 700 "$AGENTS_HOME"
+  echo "Legacy state preserved at $backup"
 }
 
 write_export() {

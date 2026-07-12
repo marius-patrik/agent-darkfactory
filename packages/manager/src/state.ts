@@ -1,5 +1,5 @@
 import path from "node:path";
-import { chmod, mkdir } from "node:fs/promises";
+import { chmod, lstat, mkdir } from "node:fs/promises";
 import { resolveRuntimeAgentsHome, resolveUserHome, type RuntimePathEnv } from "./runtime-paths";
 import { ensureStateV2, writeTextAtomic, writeTextExclusive, writeTextIfChanged } from "./state-v2";
 import { withStateFileLock } from "./state-lock";
@@ -268,6 +268,13 @@ export async function ensureSharedState(state: SharedState): Promise<void> {
 }
 
 async function convergeSystemDataRegistration(state: SharedState): Promise<void> {
+  try {
+    const gitMarker = await lstat(path.join(state.stateDir, ".git"));
+    if (gitMarker.isSymbolicLink() || (!gitMarker.isDirectory() && !gitMarker.isFile())) return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
   await withStateFileLock(state, "data-repos", async () => {
     const parsed = JSON.parse(await Bun.file(state.dataReposFile).text()) as unknown;
     if (!Array.isArray(parsed)) return;

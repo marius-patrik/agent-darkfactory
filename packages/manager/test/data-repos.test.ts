@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { dataRepoManagedRoot, readDataRepos, upsertDataRepo } from "../src/data-repos";
@@ -65,6 +65,12 @@ describe("data repos", () => {
         ], null, 2)}\n`,
       );
 
+      await ensureSharedState(state);
+      const beforeCheckout = JSON.parse(await Bun.file(state.dataReposFile).text());
+      expect(beforeCheckout[0].repo).toBe("marius-patrik/agents-data");
+      expect(beforeCheckout[0].path).toBe(path.join(root, "data", "agent-os"));
+
+      await mkdir(path.join(state.stateDir, ".git"), { recursive: true });
       await ensureSharedState(state);
       const [registration] = await readDataRepos(state);
       expect(registration.repo).toBe("marius-patrik/Andromeda-data");
