@@ -71,7 +71,7 @@ class ModelRegistry:
         )
         self._models: dict[str, ModelEntry] = {}
         self._definitions: dict[str, dict[str, Any]] = {}
-        self._status_signature: tuple[bool, int, int] | None = None
+        self._status_signature: tuple[bool, int, int, int] | None = None
         self._inferctl_status_error: str | None = None
         self._schema: dict[str, Any] | None = None
         self.load()
@@ -155,12 +155,12 @@ class ModelRegistry:
         self._models = models
         self._status_signature = signature
 
-    def _inferctl_signature(self) -> tuple[bool, int, int]:
+    def _inferctl_signature(self) -> tuple[bool, int, int, int]:
         try:
             info = self.inferctl_status_path.lstat()
-            return True, info.st_mtime_ns, info.st_size
+            return True, info.st_mtime_ns, info.st_size, info.st_ino
         except OSError:
-            return False, 0, 0
+            return False, 0, 0, 0
 
     def _load_inferctl_status(self) -> dict[str, dict[str, Any]]:
         self._inferctl_status_error = None
@@ -227,7 +227,12 @@ def _http_api_base(value: Any) -> str | None:
 
 def _inferctl_state(status: dict[str, Any]) -> str:
     healthy = status.get("healthy")
+    state = _optional_string(status.get("status") or status.get("state"))
+    if state is not None:
+        normalized = state.lower()
+        if normalized in INFERCTL_READY_STATUSES and healthy is False:
+            return "unhealthy"
+        return normalized
     if isinstance(healthy, bool):
         return "healthy" if healthy else "unhealthy"
-    state = _optional_string(status.get("status") or status.get("state"))
-    return (state or "unknown").lower()
+    return "unknown"

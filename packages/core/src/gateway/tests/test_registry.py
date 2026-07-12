@@ -123,6 +123,34 @@ class TestModelRegistry:
         assert reg.get("broken").extra["inferctl"]["status"] == "malformed"
         assert reg.get("bad-url").extra["inferctl"]["status"] == "malformed"
 
+    def test_stopped_lifecycle_cannot_be_overridden_by_stale_healthy_flag(self, tmp_registry):
+        reg_path, schema_path, td = tmp_registry
+        schema_path.write_text(json.dumps({"type": "object"}))
+        definition = {
+            "id": "managed",
+            "provider": "local",
+            "model": "managed",
+            "role": "general",
+            "context_length": 1024,
+            "enabled": True,
+            "extra": {"inferctl_managed": True},
+        }
+        reg_path.write_text(yaml.safe_dump({"schema_version": "gateway-registry-v1", "models": {"managed": definition}}))
+        status_path = Path(td) / "inferctl.yaml"
+        status_path.write_text(yaml.safe_dump({
+            "schema_version": "inferctl-local-engines-v1",
+            "engines": {
+                "managed": {
+                    "healthy": True,
+                    "status": "stopped",
+                    "api_base": "http://127.0.0.1:9101/v1",
+                },
+            },
+        }))
+        reg = ModelRegistry(reg_path, schema_path, status_path)
+        assert reg.list_enabled() == []
+        assert reg.get("managed").extra["inferctl"]["status"] == "stopped"
+
     def test_load_valid_registry(self, tmp_registry):
         reg_path, schema_path, _ = tmp_registry
         schema = {
