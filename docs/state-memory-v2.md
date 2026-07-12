@@ -1,6 +1,6 @@
 # Canonical State and Memory v2
 
-Status: implemented local-state contract; cross-machine exchange remains gated.
+Status: implemented local-state and encrypted cross-machine event-exchange contract.
 
 ## Objective
 
@@ -17,21 +17,21 @@ copy of an authoritative record.
 The v2 root resolver, manifest, private directory modes, generated environment,
 read-only doctor, pinned provider registry, evidence-backed memory store,
 immutable session/orchestrator events, content-addressed capability floor, and
-managed identity/memory/capability startup projection are implemented.
+managed identity/memory/capability startup projection, and authenticated
+encrypted event exchange are implemented.
 Provider discovery is canonical only, raw provider execution is not a CLI
 surface, and no credential copier, provider-adoption engine, mutable Git
 snapshot-sync engine, old launcher, or legacy runtime tree remains live.
 
-The personal installation has one physical provider root per CLI below
-`/Users/user/.agents/clis`. The standalone provider homes and Chrome native
-host have been preserved offline and removed; the live doctor is green.
+Each personal installation has one canonical provider root per CLI below
+`~/.agents/clis`. Physical Windows desktop roots may coexist only as declared,
+non-authoritative `app-owned` surfaces; bridges and standalone-only roots fail.
 
-The current master thread is the first canonical orchestrator session, and the
-personal install exposes one `agents` launcher. Remaining product work is
-adapter-native provider continuation where a provider exposes a stable resume
-handle, plus future two-machine encrypted event exchange. Exchange stays
-disabled until its full merge, tombstone, interruption, and adversarial safety
-contract is proven.
+The personal install exposes exactly one platform-native `agents` launcher.
+Encrypted bundle exchange now proves deterministic per-machine merge,
+tombstone propagation, interruption recovery, and adversarial secret/path
+rejection. Adapter-native provider continuation remains conditional on each
+provider exposing a stable resume handle.
 
 ## Canonical paths
 
@@ -87,9 +87,9 @@ contract is proven.
     logs/
   sync/
     config.json
-    repo/
     outbox/
-    status.json
+    imports/<payload-hash>.json
+    repo/
   provenance/
     events/<machine-id>/<event-id>.json
     migrations/<migration-id>/manifest.json
@@ -238,13 +238,14 @@ equivalent to native continuation and is only an explicitly labelled fallback.
 - **Per-machine:** machine facts and provider availability.
 - **Local-only:** provider databases/WALs, models, caches, logs, temporary files,
   locks, and process state.
-- **Secret:** never synced unless a future explicit encrypted-secret protocol
-  is selected.
+- **Secret:** never exchanged by the event transport. The bundle key remains a
+  local `AGENTS_SYNC_KEY` secret and is provisioned out of band.
 
-Raw transcripts are local-only by default because path names cannot classify
-secrets embedded in content. Sync must reject symlinks and path escapes, use
-immutable event exchange plus deterministic replay, support tombstones, and be
-idempotent.
+Raw provider transcripts are local-only. Canonical session events roam only
+through the allow-listed encrypted transport, which rejects secret-like
+content, symlinks, path escapes, and immutable collisions. Memory supersession
+and retraction events are tombstones; authoritative event files remain
+append-only. Imports are journalled and idempotent.
 
 ## Migration
 
@@ -266,8 +267,9 @@ Migration is staged, journalled, idempotent, and reversible:
    session the first canonical orchestrator session.
 6. **Capabilities:** content-address shared capabilities and expose them through
    provider-native projections; vendor system skills remain provider-owned.
-7. **Sync:** prove two-machine event exchange, deterministic materialization,
-   tombstones, and secret/symlink rejection.
+7. **Sync:** exchange authenticated encrypted event bundles, validate the
+   combined history before publication, then deterministically rebuild
+   projections and commit the import journal.
 8. **Retire shims:** remove obsolete paths only after rollback and acceptance
    proofs pass.
 

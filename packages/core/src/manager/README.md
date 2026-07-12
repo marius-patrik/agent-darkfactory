@@ -42,16 +42,18 @@ The canonical layout includes:
 - `skills/`, `plugins/`, `hooks/`, and `templates/` — shared capabilities;
 - `secrets/` — local secret registry and explicit materializations;
 - `runtime/` — locks, process state, temporary data, caches, and logs;
-- `sync/` — future v2 event exchange;
+- `sync/` — encrypted bundle exchange configuration and import journals;
 - `provenance/` — source and migration evidence;
 - `harnesses/<id>/runtime/` — harness-local runtime data;
 - top-level canonical registries such as `installs.json`, `packages.json`,
   `data-repos.json`, `environments.json`, and `providers.json`.
 
-No `~/.agents/state` tree exists in the final layout. No physical directory or
-link at `~/.codex`, `~/.claude`, `~/.kimi-code`, or `~/.gemini` is supported.
-Legacy product-specific root variables are not state locators. Provider-native
-environment variables are derived projections into `AGENTS_HOME/clis/`.
+No `~/.agents/state` tree, provider bridge, or standalone-only provider root is
+supported. Physical Windows `.codex` and `.claude` desktop-runtime directories
+may coexist only as non-authoritative `app-owned` surfaces when their canonical
+CLI homes also exist. Legacy product-specific root variables are not state
+locators. Provider-native environment variables are derived projections into
+`AGENTS_HOME/clis/`.
 
 The complete authority and migration contract is
 [`docs/state-memory-v2.md`](../../../../docs/state-memory-v2.md).
@@ -63,8 +65,10 @@ The complete authority and migration contract is
   `app-owned`, `split`, or `missing`. `app-owned` is limited to declared
   Windows desktop roots and never changes Agent OS authority.
 - Retired move-and-link adoption and Git snapshot-sync commands do not exist.
-- Cross-machine exchange stays disabled until tombstones, encrypted transport,
-  deterministic merge, recovery, and secret/symlink rejection are proven.
+- Cross-machine exchange is disabled by default. When explicitly enabled, it
+  exchanges only encrypted immutable events, validates a deterministic merged
+  history before publication, journals recovery, and rejects secrets,
+  symlinks, path escapes, and collisions.
 
 There is no compatibility mode or alternate loader to bypass.
 
@@ -79,7 +83,12 @@ agents list [--json]
 agents info <name-or-path> [--json]
 agents add <name> <git-url> [--kind app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
 agents remove <name-or-path>
-agents sync
+agents sync [source]
+agents sync enable [--generate-key]
+agents sync disable
+agents sync status [--json]
+agents sync export <bundle-file> [--json]
+agents sync import <bundle-file> [--json]
 agents state init
 agents state env
 agents state doctor [--json]
@@ -149,5 +158,7 @@ bun run ci
 ```
 
 These scripts typecheck the repository and run the manager tests. Provider
-authentication and future two-machine exchange still require explicit
-integration proofs at their real boundaries.
+authentication still requires explicit integration proofs at its real
+boundary; cross-machine exchange is covered by encrypted convergence,
+interruption recovery, idempotence, collision, tamper, and secret-rejection
+tests.

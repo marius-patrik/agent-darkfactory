@@ -5,6 +5,7 @@ import type { SharedState } from "./state";
 import {
   ensureStateV2,
   retryWindowsFileOperation,
+  readStateManifest,
   stateV2Paths,
   writeTextAtomic,
   type AgentStateManifest,
@@ -946,13 +947,22 @@ async function withMemoryLock<T>(
   now: Date,
   callback: (manifest: AgentStateManifest) => Promise<T>,
 ): Promise<T> {
-  const manifest = await ensureStateV2(state, now);
+  const manifest = (await readStateManifest(state)) ?? await ensureStateV2(state, now);
   const release = await acquireMemoryLock(state, manifest, operation);
   try {
-    return await callback(manifest);
+    return await callback(await ensureStateV2(state, now));
   } finally {
     await release();
   }
+}
+
+export async function withMemoryEventWriteLock<T>(
+  state: SharedState,
+  operation: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  const now = new Date();
+  return withMemoryLock(state, operation, now, callback);
 }
 
 async function loadCanonicalMemoryUnlocked(
@@ -1208,18 +1218,20 @@ export async function renderStartupMemory(state: SharedState): Promise<RenderSta
   });
 }
 
+export async function rebuildMemoryProjectionsWhileLocked(state: SharedState): Promise<MemoryProjectionRebuild> {
+  const { stream, records, projection } = await loadCanonicalMemoryUnlocked(state);
+  return {
+    events: stream.events.length,
+    records: records.length,
+    eventHeads: stream.eventHeads,
+    projectionHash: projection.projectionHash,
+    startupView: path.join(stateV2Paths(state).memoryViewsDir, "startup.md"),
+    startupContent: projection.startup.content,
+  };
+}
+
 export async function rebuildMemoryProjections(state: SharedState): Promise<MemoryProjectionRebuild> {
-  return withMemoryLock(state, "rebuild", new Date(), async () => {
-    const { stream, records, projection } = await loadCanonicalMemoryUnlocked(state);
-    return {
-      events: stream.events.length,
-      records: records.length,
-      eventHeads: stream.eventHeads,
-      projectionHash: projection.projectionHash,
-      startupView: path.join(stateV2Paths(state).memoryViewsDir, "startup.md"),
-      startupContent: projection.startup.content,
-    };
-  });
+  return withMemoryLock(state, "rebuild", new Date(), () => rebuildMemoryProjectionsWhileLocked(state));
 }
 
 async function projectionIssues(

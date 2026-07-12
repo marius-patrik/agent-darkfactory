@@ -33,6 +33,14 @@ import { doctorState, formatStateDoctor } from "./state-doctor";
 import { memoryCommand } from "./memory";
 import { recordSourceInstall } from "./source-install";
 import {
+  disableEventSync,
+  enableEventSync,
+  eventSyncStatus,
+  exportEventBundle,
+  importEventBundle,
+  recoverPreparedEventImports,
+} from "./event-sync";
+import {
   createSession,
   describeSession,
   listSessions,
@@ -96,7 +104,13 @@ Usage:
   agents info <name-or-path> [--json]
   agents add <name> <git-url> [--kind app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
   agents remove <name-or-path>
-  agents sync
+  agents sync [source]
+  agents sync enable [--generate-key]
+  agents sync disable
+  agents sync status [--json]
+  agents sync export <bundle-file> [--json]
+  agents sync import <bundle-file> [--json]
+  agents sync recover [--json]
   agents state init
   agents state env
   agents state doctor [--json]
@@ -267,9 +281,43 @@ async function remove(query: string | undefined): Promise<void> {
   console.log(`removed ${item.path}`);
 }
 
-async function sync(): Promise<void> {
-  await Bun.$`git submodule sync --recursive`;
-  await Bun.$`git submodule update --init --recursive`;
+async function syncCommand(values: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const action = values[0] ?? "source";
+  if (action === "source") {
+    await Bun.$`git submodule sync --recursive`;
+    await Bun.$`git submodule update --init --recursive`;
+    return;
+  }
+  const state = runtimeState();
+  await ensureSharedState(state);
+  if (action === "enable") {
+    await enableEventSync(state, Boolean(flags["generate-key"]));
+    console.log(`event exchange enabled; key remains local at ${secretPath(state, "AGENTS_SYNC_KEY")}`);
+    return;
+  }
+  if (action === "disable") {
+    await disableEventSync(state);
+    console.log("event exchange disabled");
+    return;
+  }
+  if (action === "status") {
+    const status = await eventSyncStatus(state);
+    console.log(flags.json ? JSON.stringify(status, null, 2) : Object.entries(status).map(([key, value]) => `${key} ${value}`).join("\n"));
+    return;
+  }
+  if (action === "recover") {
+    const results = await recoverPreparedEventImports(state);
+    console.log(flags.json ? JSON.stringify(results, null, 2) : `recovered ${results.length} prepared import(s)`);
+    return;
+  }
+  if (action === "export" || action === "import") {
+    const bundlePath = values[1];
+    if (!bundlePath) throw new Error(`sync ${action} requires a bundle file`);
+    const result = action === "export" ? await exportEventBundle(state, bundlePath) : await importEventBundle(state, bundlePath);
+    console.log(flags.json ? JSON.stringify(result, null, 2) : `${action} ${result.entries} event(s) ${result.payloadHash}`);
+    return;
+  }
+  throw new Error(`unknown sync action: ${action}`);
 }
 
 async function stateCommand(values: string[], flags: Record<string, string | boolean>): Promise<void> {
@@ -1148,7 +1196,7 @@ async function main(): Promise<void> {
   if (command === "info") return info(values[0], flags);
   if (command === "add") return add(values, flags);
   if (command === "remove") return remove(values[0]);
-  if (command === "sync") return sync();
+  if (command === "sync") return syncCommand(values, flags);
   if (command === "state") return stateCommand(values, flags);
   if (command === "memory") return memoryCommand(runtimeState(), values, flags);
   if (command === "identity") return identityCommand(values, flags);
