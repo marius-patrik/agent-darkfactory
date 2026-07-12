@@ -44,8 +44,11 @@ operation; they do not exchange runtime state.
   files are eligible. Credentials, provider homes, mutable databases, runtime
   state, and projections cannot enter a bundle.
 - Paths are allow-listed. Symbolic links, path escapes, hidden entries,
-  unsupported files, secret memory, private keys, and known credential-like
-  content fail closed before export or publication.
+  unsupported files, secret memory, private keys, credential field names,
+  bearer/JWT/connection-string formats, provider-token formats, credential
+  assignments, and long mixed high-entropy strings fail closed before export
+  or publication. False positives must be removed or rephrased locally; they
+  are never bypassed by the transport.
 - Imports decrypt and validate every entry, build the combined local+incoming
   history in a disposable shadow root, and run the canonical event validators
   before writing any event.

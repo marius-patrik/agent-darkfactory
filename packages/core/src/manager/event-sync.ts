@@ -158,43 +158,81 @@ function assertAllowedPath(relativePath: string): void {
   }
 }
 
-function containsSecretField(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(containsSecretField);
+const STRUCTURAL_STRING_FIELDS = new Set([
+  "id",
+  "agentId",
+  "machineId",
+  "sessionId",
+  "turnId",
+  "eventHash",
+  "previousEventHash",
+  "contentHash",
+  "uri",
+  "at",
+  "createdAt",
+  "updatedAt",
+  "observedAt",
+  "validFrom",
+  "expiresAt",
+  "leaseExpiresAt",
+  "lastBeatAt",
+  "nextCheckAt",
+]);
+
+function secretLikeText(value: string): boolean {
+  if (
+    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(value) ||
+    /\bAKIA[A-Z0-9]{16}\b/.test(value) ||
+    /\bgh[pousr]_[A-Za-z0-9]{20,}\b/.test(value) ||
+    /\b(?:sk-(?:ant-|proj-)?|xox[baprs]-|hf_|npm_|pypi-)[A-Za-z0-9_\-]{16,}\b/.test(value) ||
+    /\bAIza[A-Za-z0-9_-]{30,}\b/.test(value) ||
+    /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/.test(value) ||
+    /\bBearer\s+[A-Za-z0-9._~+\/-]{16,}={0,2}\b/i.test(value) ||
+    /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp|https?):\/\/[^\s/:@]+:[^\s/@]+@/i.test(value) ||
+    /\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|authorization|connection[_-]?string|dsn)\s*[:=]\s*["']?[^\s"']{8,}/i.test(value)
+  ) {
+    return true;
+  }
+  for (const candidate of value.match(/[A-Za-z0-9_+\/-]{32,}={0,2}/g) ?? []) {
+    if (/^[a-f0-9]{64}$/.test(candidate)) continue;
+    if (/[A-Za-z]/.test(candidate) && (/[0-9]/.test(candidate) || /[_+\/-]/.test(candidate))) return true;
+  }
+  return false;
+}
+
+function containsSecretField(value: unknown, field = ""): boolean {
+  if (typeof value === "string") {
+    if (STRUCTURAL_STRING_FIELDS.has(field)) return false;
+    return secretLikeText(value);
+  }
+  if (Array.isArray(value)) return value.some((item) => containsSecretField(item, field));
   if (!value || typeof value !== "object") return false;
   for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
     if (
-      /^(?:password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|private[_-]?key)$/i.test(key) &&
+      /(?:password|passwd|pwd|secret|token|api.?key|credential|authorization|private.?key|connection.?string|dsn)/i.test(key) &&
       typeof nested === "string" &&
       nested.length > 0
     ) {
       return true;
     }
-    if (containsSecretField(nested)) return true;
+    if (containsSecretField(nested, key)) return true;
   }
   return false;
 }
 
 function assertNoPlantedSecret(relativePath: string, content: string): void {
-  if (
-    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(content) ||
-    /\bAKIA[A-Z0-9]{16}\b/.test(content) ||
-    /\bgh[pousr]_[A-Za-z0-9]{20,}\b/.test(content) ||
-    /\bsk-[A-Za-z0-9_-]{20,}\b/.test(content)
-  ) {
-    throw new Error(`event exchange payload contains secret-like material: ${relativePath}`);
-  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch (error) {
     throw new Error(`event exchange payload is not valid JSON at ${relativePath}: ${String(error)}`);
   }
-  if (containsSecretField(parsed)) {
-    throw new Error(`event exchange payload contains a secret-like field: ${relativePath}`);
-  }
   const record = (parsed as { data?: { record?: { sensitivity?: unknown } } }).data?.record;
   if (record?.sensitivity === "secret") {
     throw new Error(`secret memory events are local-only and cannot roam: ${relativePath}`);
+  }
+  if (containsSecretField(parsed)) {
+    throw new Error(`event exchange payload contains a secret-like field: ${relativePath}`);
   }
 }
 
@@ -530,13 +568,12 @@ export async function importEventBundle(
         }
         if (complete) {
           await validateMergedEvents(state, incoming);
-          await options.beforeProjection?.();
           return {
             payloadHash,
             entries: incoming.size,
             imported: 0,
             skipped: incoming.size,
-            projectionHash: await rebuildImportedProjectionsWhileLocked(state, incoming),
+            projectionHash: journal.projectionHash ?? await projectionHash(state, incoming),
             idempotent: true,
           };
         }

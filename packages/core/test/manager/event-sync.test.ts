@@ -12,6 +12,7 @@ import {
   withSessionWriteTransaction,
 } from "../../src/harness/session";
 import { doctorState } from "../../src/manager/state-doctor";
+import { appendOrchestratorLedger, initializeOrchestratorState } from "../../src/manager/orchestrator";
 import {
   disableEventSync,
   enableEventSync,
@@ -208,6 +209,36 @@ describe("encrypted cross-machine event exchange", () => {
         sensitivity: "secret",
       });
       await expect(exportEventBundle(secretSource, path.join(root, "secret.bundle.json"))).rejects.toThrow("local-only");
+
+      const secretSession = await exchangeState(path.join(root, "secret-session"));
+      await createSession(secretSession, {
+        sessionId: "secret-session",
+        provider: "codex",
+        model: "gpt-5",
+        mode: "task",
+        workdir: "/workspace",
+      });
+      await withSessionWriteTransaction(secretSession, "secret-session", async (transaction) => {
+        const turnId = await transaction.beginTurn();
+        await transaction.appendMessage(turnId, {
+          role: "user",
+          content: "Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789",
+        });
+        await transaction.completeTurn(turnId);
+      });
+      await expect(exportEventBundle(secretSession, path.join(root, "secret-session.bundle.json"))).rejects.toThrow(
+        "secret-like",
+      );
+
+      const secretOrchestrator = await exchangeState(path.join(root, "secret-orchestrator"));
+      await initializeOrchestratorState(secretOrchestrator, "secret-orchestrator", "codex", "gpt-5");
+      await appendOrchestratorLedger(secretOrchestrator, "secret-orchestrator", {
+        action: "probe",
+        note: "postgres://service:correct-horse-battery-staple@database.internal/agents",
+      });
+      await expect(
+        exportEventBundle(secretOrchestrator, path.join(root, "secret-orchestrator.bundle.json")),
+      ).rejects.toThrow("secret-like");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
