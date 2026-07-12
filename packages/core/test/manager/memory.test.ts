@@ -210,8 +210,23 @@ describe("canonical event-authoritative memory", () => {
       expect(initial.ok).toBe(true);
 
       await writeFile(recordPath, '{"schemaVersion":2,"value":"forged"}\n', "utf8");
-      await writeFile(startupPath, "forged startup\n", "utf8");
+      await rm(startupPath, { force: true });
       await writeFile(path.join(paths.memoryRecordsDir, "fabricated.json"), '{"fake":true}\n', "utf8");
+      const abandoned = path.join(
+        paths.memoryViewsDir,
+        ".startup.md.2147483647.00000000-0000-4000-8000-000000000000.tmp",
+      );
+      await writeFile(abandoned, "abandoned\n", "utf8");
+      const abandonedBackup = path.join(
+        paths.memoryViewsDir,
+        ".startup.md.2147483647.00000000-0000-4000-8000-000000000001.bak",
+      );
+      await writeFile(abandonedBackup, expectedStartup, "utf8");
+      const activeBackup = path.join(
+        paths.memoryViewsDir,
+        `.startup.md.${process.pid}.00000000-0000-4000-8000-000000000000.bak`,
+      );
+      await writeFile(activeBackup, expectedStartup, "utf8");
       const damaged = await inspectMemoryIntegrity(state);
       expect(damaged.eventIntegrity).toBe(true);
       expect(damaged.projectionIntegrity).toBe(false);
@@ -222,6 +237,10 @@ describe("canonical event-authoritative memory", () => {
       expect(await readFile(recordPath, "utf8")).toBe(expectedRecord);
       expect(await readFile(startupPath, "utf8")).toBe(expectedStartup);
       expect(await Bun.file(path.join(paths.memoryRecordsDir, "fabricated.json")).exists()).toBe(false);
+      expect(await Bun.file(abandoned).exists()).toBe(false);
+      expect(await Bun.file(abandonedBackup).exists()).toBe(false);
+      expect(await Bun.file(activeBackup).exists()).toBe(true);
+      await rm(activeBackup, { force: true });
       expect(
         await Promise.all(events.names.map((name) => readFile(path.join(events.directory, name), "utf8"))),
       ).toEqual(eventBytes);

@@ -92,6 +92,17 @@ jobs:
                 : "No linked issue was found in the PR body using closes/fixes/resolves syntax.",
             );
 
+      - name: Create secret-rotation token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARKFACTORY_APP_ID }}
+          private-key: ${{ secrets.DARKFACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Andromeda
+          permission-secrets: write
+
       - name: Run Codex review
         id: review
         env:
@@ -101,41 +112,59 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         shell: bash
         run: |
-          if [ -z "${CODEX_AUTH_JSON:-}" ]; then
-            cat > codex-review.json <<'EOF'
-          {
-            "approved": false,
-            "summary": "Codex autoreview could not run because repository secret CODEX_AUTH_JSON is not configured.",
-            "blocking_findings": [
-              "Configure CODEX_AUTH_JSON in GitHub repository secrets to enable automated Codex PR review with Codex OAuth auth."
-            ],
-            "non_blocking_notes": []
-          }
-          EOF
-            exit 0
-          fi
-
           CODEX_HOME_DIR="${RUNNER_TEMP}/codex-home"
+          REVIEW_OUTPUT_DIR="${RUNNER_TEMP}/review-output"
           mkdir -p "${CODEX_HOME_DIR}"
+          mkdir -p "${REVIEW_OUTPUT_DIR}"
           printf '%s' "${CODEX_AUTH_JSON}" > "${CODEX_HOME_DIR}/auth.json"
           chmod 600 "${CODEX_HOME_DIR}/auth.json"
 
+          set +e
           docker run --rm \
             -e CODEX_HOME=/codex-home \
             -e HOME=/codex-home \
             -e BASE_BRANCH \
             -e BASE_REF=origin/${BASE_BRANCH} \
-            -e REVIEW_OUTPUT=codex-review.json \
+            -e REVIEW_OUTPUT=/review-output/codex-review.json \
+            -e PROMPT_EXPORT=/review-output/review-prompt.txt \
             -e REVIEW_CONTEXT_DIR=/review-context \
             -e PR_TITLE \
             -e PR_BODY \
-            -e KIMI_AUTH_JSON \
-            -v "${PWD}/pr-workspace:/workspace" \
+            -v "${PWD}/pr-workspace:/workspace:ro" \
             -v "${PWD}/review-context:/review-context:ro" \
             -v "${CODEX_HOME_DIR}:/codex-home" \
+            -v "${REVIEW_OUTPUT_DIR}:/review-output" \
             darkfactory-codex-review
+          REVIEW_EXIT_CODE=$?
+          set -e
 
-          cp pr-workspace/codex-review.json codex-review.json
+          if [ -s "${REVIEW_OUTPUT_DIR}/codex-review.json" ]; then
+            cp "${REVIEW_OUTPUT_DIR}/codex-review.json" codex-review.json
+          else
+            node -e "const fs=require('fs'); fs.writeFileSync('codex-review.json', JSON.stringify({approved:false,summary:'The primary review container produced no result.',blocking_findings:['Inspect the Codex Review workflow infrastructure before allowing merge.'],non_blocking_notes:[]},null,2)+'\\n')"
+          fi
+
+          if node .github/scripts/run-kimi-review.mjs --should-takeover "${REVIEW_EXIT_CODE}"; then
+            echo "takeover=true" >> "${GITHUB_OUTPUT}"
+          elif [ "${REVIEW_EXIT_CODE}" -ne 0 ]; then
+            node -e "const fs=require('fs'); fs.writeFileSync('codex-review.json', JSON.stringify({approved:false,summary:'The primary review container failed outside the provider-takeover contract.',blocking_findings:['Inspect the Codex Review workflow infrastructure before allowing merge.'],non_blocking_notes:[]},null,2)+'\\n')"
+          fi
+
+      - name: Run credential-isolated Kimi takeover
+        if: steps.review.outputs.takeover == 'true'
+        env:
+          KIMI_AUTH_JSON: ${{ secrets.KIMI_AUTH_JSON }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          if [ -z "${KIMI_AUTH_JSON:-}" ]; then
+            node -e "const fs=require('fs'); fs.writeFileSync('codex-review.json', JSON.stringify({approved:false,summary:'Codex failed and Kimi takeover credentials are unavailable.',blocking_findings:['Configure KIMI_AUTH_JSON before allowing provider takeover.'],non_blocking_notes:[]},null,2)+'\\n')"
+            exit 0
+          fi
+          KIMI_REVIEW_PROMPT="${RUNNER_TEMP}/review-output/review-prompt.txt" \
+          KIMI_REVIEW_OUTPUT="${PWD}/codex-review.json" \
+          node .github/scripts/run-kimi-review.mjs
+
 
       - name: Comment review
         if: always()
@@ -151,8 +180,8 @@ jobs:
             const notes = review.non_blocking_notes.length
               ? review.non_blocking_notes.map((item) => `- ${item}`).join("\n")
               : "- None";
-            const verdict = review.approved ? "Approved" : "Changes required";
-            const commentBody = `${marker}\n## Codex Autoreview\n\n**Verdict:** ${verdict}\n\n${review.summary}\n\n### Blocking Findings\n\n${blocking}\n\n### Non-Blocking Notes\n\n${notes}`;
+            const verdict = review.approved && review.blocking_findings.length === 0 ? "Approved" : "Changes required";
+            const commentBody = `${marker}\n## Agent Autoreview\n\n**Verdict:** ${verdict}\n\n${review.summary}\n\n### Blocking Findings\n\n${blocking}\n\n### Non-Blocking Notes\n\n${notes}`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
@@ -167,4 +196,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          node -e "const fs = require('fs'); const r = JSON.parse(fs.readFileSync('codex-review.json', 'utf8')); if (!r.approved) { console.error('Codex review did not approve this PR.'); process.exit(1); }"
+          node -e "const fs = require('fs'); const r = JSON.parse(fs.readFileSync('codex-review.json', 'utf8')); if (!r.approved || r.blocking_findings.length) { console.error('Automated review did not approve this PR.'); process.exit(1); }"

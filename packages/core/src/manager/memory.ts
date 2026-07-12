@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
-import { chmod, link, lstat, mkdir, open, readFile, readdir, rm } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import type { SharedState } from "./state";
 import {
   ensureStateV2,
+  retryWindowsFileOperation,
+  readStateManifest,
   stateV2Paths,
   writeTextAtomic,
   type AgentStateManifest,
@@ -512,16 +514,16 @@ async function tryCreatePrivateFile(filePath: string, content: string): Promise<
   const directory = path.dirname(filePath);
   await ensurePrivateDirectory(directory);
   const temporary = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
-  const handle = await open(temporary, "wx", 0o600);
   try {
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
+    const handle = await open(temporary, "wx", 0o600);
     try {
-      await link(temporary, filePath);
+      await handle.writeFile(content, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      await retryWindowsFileOperation(() => link(temporary, filePath));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
       throw error;
@@ -530,7 +532,7 @@ async function tryCreatePrivateFile(filePath: string, content: string): Promise<
     await syncDirectory(directory);
     return true;
   } finally {
-    await rm(temporary, { force: true });
+    await retryWindowsFileOperation(() => rm(temporary, { force: true }));
   }
 }
 
@@ -835,8 +837,31 @@ async function removeStaleProjectionEntries(directory: string, expected: Set<str
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (expected.has(entry.name)) continue;
     const entryPath = path.join(directory, entry.name);
+    // State-v2 publishers prepare complete bytes beside the destination and
+    // then publish with an atomic link/rename or a Windows backup swap.
+    // Concurrent cleanup must not delete another live writer's source/backup.
+    const publication = entry.name.match(/^\.(.+)\.(\d+)\.[0-9a-f-]{36}\.(tmp|bak)$/i);
+    if (publication) {
+      try {
+        process.kill(Number(publication[2]), 0);
+        continue;
+      } catch {
+        // The publishing process is gone. Restore an expected backup only
+        // when its destination is absent; otherwise remove the artifact.
+      }
+      if (publication[3].toLowerCase() === "bak" && expected.has(publication[1])) {
+        const destination = path.join(directory, publication[1]);
+        try {
+          await lstat(destination);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          await retryWindowsFileOperation(() => rename(entryPath, destination));
+          continue;
+        }
+      }
+    }
     if (entry.isDirectory()) throw new Error(`unexpected memory projection directory: ${entryPath}`);
-    await rm(entryPath, { force: true });
+    await retryWindowsFileOperation(() => rm(entryPath, { force: true }));
   }
 }
 
@@ -900,22 +925,22 @@ async function acquireMemoryLock(
     if (await tryCreatePrivateFile(lockPath, `${JSON.stringify(document, null, 2)}\n`)) {
       return async () => {
         try {
-          const current = JSON.parse(await readFile(lockPath, "utf8")) as Partial<MemoryLock>;
-          if (current.token === token) await rm(lockPath, { force: true });
+          const current = JSON.parse(await retryWindowsFileOperation(() => readFile(lockPath, "utf8"))) as Partial<MemoryLock>;
+          if (current.token === token) await retryWindowsFileOperation(() => rm(lockPath, { force: true }));
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
       };
     }
     try {
-      const existing = JSON.parse(await readFile(lockPath, "utf8")) as Partial<MemoryLock>;
+      const existing = JSON.parse(await retryWindowsFileOperation(() => readFile(lockPath, "utf8"))) as Partial<MemoryLock>;
       if (typeof existing.expiresAt !== "string" || !Number.isFinite(Date.parse(existing.expiresAt))) {
         throw new Error(`invalid canonical memory lock: ${lockPath}`);
       }
       if (Date.parse(existing.expiresAt) <= Date.now()) {
         const staleToken = existing.token;
-        const current = JSON.parse(await readFile(lockPath, "utf8")) as Partial<MemoryLock>;
-        if (current.token === staleToken) await rm(lockPath, { force: true });
+        const current = JSON.parse(await retryWindowsFileOperation(() => readFile(lockPath, "utf8"))) as Partial<MemoryLock>;
+        if (current.token === staleToken) await retryWindowsFileOperation(() => rm(lockPath, { force: true }));
         continue;
       }
     } catch (error) {
@@ -933,13 +958,22 @@ async function withMemoryLock<T>(
   now: Date,
   callback: (manifest: AgentStateManifest) => Promise<T>,
 ): Promise<T> {
-  const manifest = await ensureStateV2(state, now);
+  const manifest = (await readStateManifest(state)) ?? await ensureStateV2(state, now);
   const release = await acquireMemoryLock(state, manifest, operation);
   try {
-    return await callback(manifest);
+    return await callback(await ensureStateV2(state, now));
   } finally {
     await release();
   }
+}
+
+export async function withMemoryEventWriteLock<T>(
+  state: SharedState,
+  operation: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  const now = new Date();
+  return withMemoryLock(state, operation, now, callback);
 }
 
 async function loadCanonicalMemoryUnlocked(
@@ -1195,18 +1229,20 @@ export async function renderStartupMemory(state: SharedState): Promise<RenderSta
   });
 }
 
+export async function rebuildMemoryProjectionsWhileLocked(state: SharedState): Promise<MemoryProjectionRebuild> {
+  const { stream, records, projection } = await loadCanonicalMemoryUnlocked(state);
+  return {
+    events: stream.events.length,
+    records: records.length,
+    eventHeads: stream.eventHeads,
+    projectionHash: projection.projectionHash,
+    startupView: path.join(stateV2Paths(state).memoryViewsDir, "startup.md"),
+    startupContent: projection.startup.content,
+  };
+}
+
 export async function rebuildMemoryProjections(state: SharedState): Promise<MemoryProjectionRebuild> {
-  return withMemoryLock(state, "rebuild", new Date(), async () => {
-    const { stream, records, projection } = await loadCanonicalMemoryUnlocked(state);
-    return {
-      events: stream.events.length,
-      records: records.length,
-      eventHeads: stream.eventHeads,
-      projectionHash: projection.projectionHash,
-      startupView: path.join(stateV2Paths(state).memoryViewsDir, "startup.md"),
-      startupContent: projection.startup.content,
-    };
-  });
+  return withMemoryLock(state, "rebuild", new Date(), () => rebuildMemoryProjectionsWhileLocked(state));
 }
 
 async function projectionIssues(

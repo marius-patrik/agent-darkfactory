@@ -17,7 +17,7 @@ import {
   type ActiveRenewableLock,
   type RenewableLockOptions,
 } from "../manager/state-lock";
-import { writeTextAtomic } from "../manager/state-v2";
+import { retryWindowsFileOperation, writeTextAtomic } from "../manager/state-v2";
 
 export interface SessionStateRoot {
   root: string;
@@ -359,16 +359,16 @@ async function tryCreatePrivateFile(filePath: string, content: string): Promise<
   const directory = path.dirname(filePath);
   await ensurePrivateDirectory(directory);
   const temporary = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
-  const handle = await open(temporary, "wx", 0o600);
   try {
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
+    const handle = await open(temporary, "wx", 0o600);
     try {
-      await link(temporary, filePath);
+      await handle.writeFile(content, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      await retryWindowsFileOperation(() => link(temporary, filePath));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
       throw error;
@@ -377,7 +377,7 @@ async function tryCreatePrivateFile(filePath: string, content: string): Promise<
     await syncDirectory(directory);
     return true;
   } finally {
-    await rm(temporary, { force: true });
+    await retryWindowsFileOperation(() => rm(temporary, { force: true }));
   }
 }
 
@@ -568,20 +568,30 @@ async function readSessionEventsUnlocked(
 
   const eventIds = new Set<string>();
   const eventHashes = new Set<string>();
-  const machineSequences = new Map<string, number>();
-  for (const [index, event] of events.entries()) {
+  const machineEvents = new Map<string, SessionEvent[]>();
+  for (const event of events) {
     if (eventIds.has(event.id)) throw new Error(`duplicate canonical session event id: ${event.id}`);
     if (eventHashes.has(event.eventHash)) throw new Error(`duplicate canonical session event hash: ${event.eventHash}`);
     eventIds.add(event.id);
     eventHashes.add(event.eventHash);
-    const expectedMachineSequence = (machineSequences.get(event.machineId) ?? 0) + 1;
-    if (event.machineSequence !== expectedMachineSequence) {
-      throw new Error(`non-contiguous machine event sequence for ${event.machineId}`);
+    const partition = machineEvents.get(event.machineId) ?? [];
+    partition.push(event);
+    machineEvents.set(event.machineId, partition);
+  }
+  for (const [machineId, partition] of machineEvents) {
+    partition.sort((left, right) => left.machineSequence - right.machineSequence);
+    for (const [index, event] of partition.entries()) {
+      if (event.machineSequence !== index + 1) {
+        throw new Error(`non-contiguous machine event sequence for ${machineId}`);
+      }
+      const previous = partition[index - 1];
+      if (event.previousEventHash !== (previous?.eventHash ?? null)) {
+        throw new Error(`broken canonical session event chain at ${event.id}`);
+      }
+      if (previous && event.lamport <= previous.lamport) {
+        throw new Error(`non-monotonic session Lamport clock at ${event.id}`);
+      }
     }
-    machineSequences.set(event.machineId, event.machineSequence);
-    if (event.lamport !== index + 1) throw new Error(`non-contiguous canonical session event order at ${event.id}`);
-    const expectedPrevious = index === 0 ? null : events[index - 1].eventHash;
-    if (event.previousEventHash !== expectedPrevious) throw new Error(`broken canonical session event chain at ${event.id}`);
   }
   return events;
 }
@@ -678,6 +688,13 @@ export async function rebuildSessionProjections(
   return withSessionWriteLock(state, sessionId, () => rebuildSessionProjectionsUnlocked(state, sessionId));
 }
 
+export async function rebuildSessionProjectionsWhileLocked(
+  state: SessionStateRoot,
+  rawSessionId: string,
+): Promise<SessionProjection | null> {
+  return rebuildSessionProjectionsUnlocked(state, validateSessionId(rawSessionId));
+}
+
 export async function loadSessionEvents(state: SessionStateRoot, rawSessionId: string): Promise<SessionEvent[]> {
   const sessionId = validateSessionId(rawSessionId);
   return withSessionWriteLock(state, sessionId, async () => {
@@ -695,7 +712,8 @@ async function appendSessionEventUnlocked(
   options: { allowEmpty?: boolean; at?: Date } = {},
 ): Promise<SessionProjection> {
   const events = await readSessionEventsUnlocked(state, sessionId, { allowEmpty: options.allowEmpty });
-  const machineSequence = events.filter((event) => event.machineId === machineId).length + 1;
+  const machineEvents = events.filter((event) => event.machineId === machineId);
+  const machineSequence = machineEvents.length + 1;
   const unsigned = {
     schemaVersion: 1 as const,
     id: randomUUID().replaceAll("-", ""),
@@ -704,7 +722,7 @@ async function appendSessionEventUnlocked(
     machineSequence,
     lamport: events.length + 1,
     at: (options.at ?? new Date()).toISOString(),
-    previousEventHash: events.at(-1)?.eventHash ?? null,
+    previousEventHash: machineEvents.at(-1)?.eventHash ?? null,
     type: draft.type,
     data: canonicalClone(draft.data),
   } as Omit<SessionEvent, "eventHash">;

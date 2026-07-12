@@ -1,6 +1,7 @@
 import path from "node:path";
 import { chmod, link, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { SharedState } from "./state";
 
 export const STATE_SCHEMA_VERSION = 2 as const;
@@ -58,34 +59,133 @@ async function exists(filePath: string): Promise<boolean> {
   }
 }
 
-export async function writeTextAtomic(filePath: string, content: string, mode = 0o600): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const temporary = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
-  const handle = await open(temporary, "wx", mode);
+const TRANSIENT_WINDOWS_PUBLICATION_ERRORS = new Set(["EACCES", "EBUSY", "ENOENT", "EPERM"]);
+const atomicPublicationTails = new Map<string, Promise<void>>();
+
+async function serializeAtomicPublication(filePath: string, operation: () => Promise<void>): Promise<void> {
+  const previous = atomicPublicationTails.get(filePath) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  atomicPublicationTails.set(filePath, current);
   try {
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
+    await current;
   } finally {
-    await handle.close();
+    if (atomicPublicationTails.get(filePath) === current) atomicPublicationTails.delete(filePath);
   }
-  await rename(temporary, filePath);
-  if (process.platform !== "win32") await chmod(filePath, mode);
+}
+
+export async function retryWindowsFileOperation<T>(
+  operation: () => Promise<T>,
+  platform = process.platform,
+  wait: (milliseconds: number) => Promise<void> = delay,
+): Promise<T> {
+  if (platform !== "win32") {
+    return await operation();
+  }
+  const attempts = 8;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (!TRANSIENT_WINDOWS_PUBLICATION_ERRORS.has(code) || attempt === attempts - 1) throw error;
+      await wait(Math.min(80, 5 * 2 ** attempt));
+    }
+  }
+  throw new Error("unreachable Windows file-operation retry state");
+}
+
+interface AtomicReplacementOperations {
+  platform: NodeJS.Platform;
+  rename: typeof rename;
+  rm: typeof rm;
+  stat: typeof stat;
+  wait: (milliseconds: number) => Promise<void>;
+  randomId: () => string;
+}
+
+export async function publishAtomicReplacement(
+  temporary: string,
+  filePath: string,
+  overrides: Partial<AtomicReplacementOperations> = {},
+): Promise<void> {
+  const operations: AtomicReplacementOperations = {
+    platform: process.platform,
+    rename,
+    rm,
+    stat,
+    wait: delay,
+    randomId: randomUUID,
+    ...overrides,
+  };
+  const retry = <T>(operation: () => Promise<T>) => (
+    retryWindowsFileOperation(operation, operations.platform, operations.wait)
+  );
+  try {
+    await retry(() => operations.rename(temporary, filePath));
+    return;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "";
+    if (operations.platform !== "win32" || !TRANSIENT_WINDOWS_PUBLICATION_ERRORS.has(code)) throw error;
+  }
+
+  // Windows can refuse rename-over-existing even after bounded retries. Keep
+  // the prior complete projection recoverable instead of deleting it.
+  await operations.stat(filePath);
+  const backup = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${operations.randomId()}.bak`,
+  );
+  await retry(() => operations.rename(filePath, backup));
+  try {
+    await retry(() => operations.rename(temporary, filePath));
+  } catch (replacementError) {
+    try {
+      await retry(() => operations.rename(backup, filePath));
+    } catch (restoreError) {
+      throw new AggregateError(
+        [replacementError, restoreError],
+        `failed to publish or restore complete projection: ${filePath}`,
+      );
+    }
+    throw replacementError;
+  }
+  await retry(() => operations.rm(backup, { force: true }));
+}
+
+export async function writeTextAtomic(filePath: string, content: string, mode = 0o600): Promise<void> {
+  await serializeAtomicPublication(filePath, async () => {
+    await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+    const temporary = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
+    try {
+      const handle = await open(temporary, "wx", mode);
+      try {
+        await handle.writeFile(content, "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await publishAtomicReplacement(temporary, filePath);
+      if (process.platform !== "win32") await chmod(filePath, mode);
+    } finally {
+      await retryWindowsFileOperation(() => rm(temporary, { force: true }));
+    }
+  });
 }
 
 export async function writeTextExclusive(filePath: string, content: string, mode = 0o600): Promise<boolean> {
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
-  const handle = await open(temporary, "wx", mode);
   try {
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
+    const handle = await open(temporary, "wx", mode);
     try {
-      await link(temporary, filePath);
+      await handle.writeFile(content, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      await retryWindowsFileOperation(() => link(temporary, filePath));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
       throw error;
@@ -101,7 +201,7 @@ export async function writeTextExclusive(filePath: string, content: string, mode
     }
     return true;
   } finally {
-    await rm(temporary, { force: true });
+    await retryWindowsFileOperation(() => rm(temporary, { force: true }));
   }
 }
 

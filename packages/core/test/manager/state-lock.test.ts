@@ -26,18 +26,18 @@ describe("canonical mutable-state locks", () => {
       const state = sharedState(root);
       await ensureSharedState(state);
       const order: string[] = [];
-      const options = { leaseMs: 120, heartbeatMs: 20, waitMs: 1_000 };
+      const options = { leaseMs: 500, heartbeatMs: 50, waitMs: 3_000 };
       const first = withStateFileLock(
         state,
         "probe",
         async () => {
           order.push("first:entered");
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          await new Promise((resolve) => setTimeout(resolve, 800));
           order.push("first:leaving");
         },
         options,
       );
-      await new Promise((resolve) => setTimeout(resolve, 40));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       const second = withStateFileLock(state, "probe", async () => order.push("second:entered"), options);
       await Promise.all([first, second]);
       expect(order).toEqual(["first:entered", "first:leaving", "second:entered"]);

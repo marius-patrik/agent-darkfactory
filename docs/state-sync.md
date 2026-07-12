@@ -1,80 +1,108 @@
 # Event Exchange Safety Runbook
 
-Status: cross-machine exchange is disabled. No snapshot-sync or provider-root
-adoption engine remains in the product.
+Status: encrypted cross-machine event exchange is implemented. It is disabled
+by default and must be enabled independently on each machine with the same
+local key.
 
-Agent OS has one authoritative state root, `AGENTS_HOME` (normally
-`~/.agents`). Local memory and session authority is immutable events plus
-deterministic projections; a Git copy of mutable machine state is not a sync
-protocol and is not exposed by the CLI.
+Agent OS has one authoritative state root per machine, `AGENTS_HOME` (normally
+`~/.agents`). Exchange moves only immutable, machine-partitioned memory,
+session, and orchestrator events. Records, views, session transcripts, state
+documents, and baton Markdown remain derived projections and are rebuilt after
+the complete imported history validates.
 
-## Available inspection
+## Enable and exchange
+
+Generate a 32-byte key on the first machine and enable exchange:
 
 ```sh
+agents sync enable --generate-key
+agents secrets path AGENTS_SYNC_KEY
+```
+
+Transfer `AGENTS_SYNC_KEY.secret` through an authenticated, private channel to
+the same canonical secret path on the other machine, then enable exchange
+there without `--generate-key`. The key is never embedded in a bundle.
+
+```sh
+agents sync enable
+agents sync status --json
+agents sync export /private/path/windows-to-mac.bundle.json --json
+agents sync import /private/path/windows-to-mac.bundle.json --json
+agents sync recover --json
+```
+
+Exchange is symmetric: export and import a bundle in each direction. A bundle
+contains the complete immutable event set known to its source. Reimporting the
+same authenticated payload is idempotent. `agents sync disable` disables
+export/import without deleting canonical events or the local key. Bare
+`agents sync` and `agents sync source` retain the repository/submodule update
+operation; they do not exchange runtime state.
+
+## Security and recovery contract
+
+- Bundles use AES-256-GCM with a random nonce and authenticated payload hash.
+- Only `memory/events`, `sessions/*/events`, and `orchestrator/events` JSON
+  files are eligible. Credentials, provider homes, mutable databases, runtime
+  state, and projections cannot enter a bundle.
+- Paths are allow-listed. Symbolic links, path escapes, hidden entries,
+  unsupported files, secret memory, private keys, credential field names,
+  bearer/JWT/connection-string formats, provider-token formats, credential
+  assignments, and long mixed high-entropy strings fail closed before export
+  or publication. False positives must be removed or rephrased locally; they
+  are never bypassed by the transport.
+- Imports decrypt and validate every entry, build the combined local+incoming
+  history in a disposable shadow root, and run the canonical event validators
+  before writing any event.
+- Existing paths with identical bytes are no-ops. Existing paths with different
+  bytes are immutable-event collisions and abort the import.
+- `sync/imports/<payload-hash>.json` records `prepared` and `committed` phases
+  together with the exact encrypted envelope and checked entry metadata.
+  `agents sync recover` reauthenticates that durable envelope with the local key,
+  resumes without the original external bundle, verifies already-published
+  bytes, rebuilds projections, and commits the journal. `state doctor` fails
+  while an import is prepared.
+- Memory retraction and supersession events are the deletion/tombstone model.
+  Authoritative event files are append-only and are never deleted by exchange.
+- Session and orchestrator hash chains are verified per machine. Cross-machine
+  order is deterministic by Lamport clock, machine id, machine sequence, and
+  event id.
+
+## Inspection
+
+```sh
+agents sync status --json
 agents state doctor --json
-agents state status --json
 agents memory status
 agents sessions list --json
 ```
 
-`state doctor` is read-only. `state status` reports canonical, forbidden,
-split, or missing provider roots. There is no command that moves a provider
-home, creates a bridge, exports mutable state, commits a machine snapshot, or
-pushes state to a remote.
+`state doctor` is read-only. When exchange is enabled it verifies the encrypted
+bundle transport selection, local 32-byte key, physical import journal
+directory, absence of interrupted imports, and absence of retired snapshot
+sync artifacts.
 
-## Path contract
+## Path and authority contract
 
-- `AGENTS_HOME` is the only state root.
+- `AGENTS_HOME` is the only state root on a machine.
 - Provider homes are `AGENTS_HOME/clis/<provider>`.
-- Exchange configuration and future transport state live below
-  `AGENTS_HOME/sync/`.
-- Roaming authority consists of immutable records/events, not projections.
-- Migration evidence lives below `AGENTS_HOME/provenance/migrations/` and in
+- Exchange configuration and journals live below `AGENTS_HOME/sync/`.
+- Roaming authority consists of immutable events, never projections.
+- Raw provider databases/WALs, provider transcripts, credentials, models,
+  caches, logs, temporary files, locks, process state, and arbitrary files are
+  local-only.
+- Migration evidence remains below `AGENTS_HOME/provenance/migrations/` and in
   the separately protected Recovery archive.
 
-The following are failures:
+The following are failures: a second writable state root; a provider bridge;
+a mutable Git machine snapshot presented as exchange; an unauthenticated or
+wrong-key bundle; a different event at an existing immutable path; any
+unallowlisted, secret-like, or linked exchange entry; or a prepared import that
+has not been recovered.
 
-- `AGENTS_HOME/state/`;
-- a second writable state root;
-- top-level provider paths that Agent OS reads as authority, any bridge link,
-  or any standalone provider path without a matching canonical CLI home;
-- a historical root variable used as a locator;
-- a mutable Git machine snapshot presented as restore-capable exchange.
-
-## Preconditions for future exchange
-
-Before transport can be enabled, the implementation must:
-
-1. exchange append-only, machine-partitioned memory, session, and orchestrator
-   events;
-2. authenticate and encrypt transport without placing credentials in roaming
-   payloads;
-3. merge deterministically, import idempotently, and support deletion
-   tombstones;
-4. reject symbolic links, path escapes, planted secrets, and mutable provider
-   databases;
-5. distinguish roaming, reproducible, per-machine, local-only, and secret
-   classes;
-6. journal imports and prove interruption recovery;
-7. converge two machines to identical projection hashes under adversarial
-   replay and reordering tests.
-
-Raw provider transcripts are local evidence by default because filenames
-cannot classify secrets embedded in content. Provider databases/WALs,
-credentials, models, caches, logs, temporary files, locks, and process state
-are never normal exchange payloads.
-
-On Windows, the Codex and Claude desktop applications may require physical
-top-level `.codex` and `.claude` runtime directories. The doctor reports these
-as `app-owned` only when a distinct canonical CLI home exists under
-`AGENTS_HOME/clis`; Agent OS never reads the app-owned directories as memory,
-session, credential, or orchestration authority. Links and standalone-only
-roots still fail closed.
-
-Provider-root migration is an offline semantic operation with source and
-destination hashes, tool versions, timestamps, outcome, and rollback evidence.
-After verification, the old live path is removed. No link, loader, dry-run
-adoption command, or compatibility mode remains.
+On Windows, physical top-level `.codex` and `.claude` directories used by the
+desktop applications may coexist as `app-owned` surfaces only when distinct
+canonical CLI homes exist below `AGENTS_HOME/clis`. They are never exchange
+sources or Agent OS authority.
 
 See [Canonical State and Memory v2](state-memory-v2.md) for the complete
 authority and acceptance contract.

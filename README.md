@@ -70,9 +70,10 @@ is another state root.
 
 Provider-native homes are derived below `AGENTS_HOME/clis/`. Legacy
 product-specific root variables are not accepted as state locators. The final
-installation has no `~/.agents/state`, no top-level `~/.codex`, `~/.claude`,
-`~/.kimi-code`, or `~/.gemini` directory or link, and no writable duplicate of
-canonical state.
+installation has no `~/.agents/state`, no provider bridge, and no writable
+duplicate of canonical state. On Windows, physical `.codex` and `.claude`
+desktop-runtime directories may coexist only as non-authoritative `app-owned`
+surfaces; standalone-only roots and every linked root still fail.
 
 Important canonical paths include:
 
@@ -83,7 +84,7 @@ Important canonical paths include:
 - `skills/`, `plugins/`, `hooks/`, and `templates/` for capabilities;
 - `secrets/` for local secret metadata/materialization;
 - `runtime/` for locks, process state, temporary data, caches, and logs;
-- `sync/` for the future event-exchange implementation;
+- `sync/` for encrypted event-exchange configuration and import journals;
 - `provenance/` for migration and source evidence.
 
 Provider histories and generated memories are evidence, not Agent OS memory
@@ -108,15 +109,22 @@ agents sessions list --json
 
 agents memory status
 agents memory list
+agents sync enable --generate-key
+agents sync status --json
+agents sync export <bundle-file> --json
+agents sync import <bundle-file> --json
+agents sync recover --json
 agents installs --json
 agents identity activate <source-directory> --replace
 agents doctor
 ```
 
-Cross-machine event exchange remains disabled until tombstones, encrypted
-transport, deterministic merge, and secret/symlink rejection satisfy the v2
-contract. There is no older snapshot-sync or provider-adoption command to fall
-back to.
+Cross-machine event exchange now satisfies the v2 tombstone, encrypted
+transport, deterministic merge, recovery, and secret/symlink rejection
+contract. The transport is disabled by default; enable it with
+`agents sync enable`, exchange encrypted bundles with `agents sync export` and
+`agents sync import`, and inspect it with `agents sync status`. There is no
+older snapshot-sync or provider-adoption command to fall back to.
 
 ## Repository layout
 

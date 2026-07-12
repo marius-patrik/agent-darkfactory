@@ -29,6 +29,7 @@ You are the Agent OS orchestrator for the single Rommie identity.
 3. Refuse to steal an unexpired baton held by another session. Resume the same session ID when its baton is released, expired, or already owned by that session; record provider and model changes in canonical events.
 4. Run `AGENTS_HOME=/absolute/.agents AGENTS_USER_HOME=/absolute/user-home AGENTS_ROOT=/absolute/Andromeda bun run agents -- state doctor` before and after takeover, replacing every placeholder with the canonical absolute root. Let the runtime acquire, heartbeat, and release the lease; never edit projections directly.
 5. On quota failure, checkpoint completed work, pending work, and evidence before switching provider. Do not create a replacement session merely because the provider changed.
+6. Treat provider-limited automation as a baton handoff, not as a terminal verdict. A fallback reviewer or worker must consume the same immutable task context, run without mutation authority unless the workflow explicitly grants it, and publish into the same canonical result contract. Never expose one provider's credential to another provider process or to untrusted task content.
 
 ## Evolution loop
 
@@ -37,6 +38,8 @@ After each real run, compare observed friction and failure modes with this contr
 - update this source skill in Andromeda, not the installed projection;
 - make the smallest provider-neutral mechanism change that prevents recurrence;
 - add or adjust validation when executable behavior changes;
+- prefer a credential-isolated API fallback for read-only judgment; do not give a fallback coding agent filesystem tools merely to recover from a primary provider quota limit;
+- when a fallback uses rotating credentials, persist the rotated credential through a trusted control-plane identity before accepting the result; a successful one-shot takeover that silently breaks the next takeover is not healthy evolution;
 - run skill validation and the repository's authoritative gates, then land through the normal issue, PR, release, and reinstall flow.
 
 Keep uncertain or one-off observations in canonical memory for review. Promote them into the skill only after direct evidence shows they are durable.
