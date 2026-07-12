@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { TextDecoder } from "node:util";
 
 const root = resolve(import.meta.dir, "..");
 const core = join(root, "packages/core/src/core");
@@ -41,6 +42,7 @@ function filesUnder(directory: string): string[] {
   return files.sort();
 }
 
+// Extend this allowlist when a pinned generator adds another text format.
 const GENERATED_TEXT_EXTENSIONS = new Set([".go", ".py", ".pyi", ".ts"]);
 
 function comparableGeneratedContent(file: string): Buffer {
@@ -50,7 +52,11 @@ function comparableGeneratedContent(file: string): Buffer {
   // generators emit LF. Codegen freshness is a content invariant, so compare
   // one canonical newline representation. Unknown and future binary artifacts
   // remain byte-exact.
-  return Buffer.from(content.toString("utf8").replaceAll("\r\n", "\n"));
+  try {
+    return Buffer.from(new TextDecoder("utf-8", { fatal: true }).decode(content).replaceAll("\r\n", "\n"));
+  } catch {
+    return content;
+  }
 }
 
 function assertTreesEqual(expected: string, actual: string, label: string): void {

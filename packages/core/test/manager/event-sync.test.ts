@@ -468,6 +468,18 @@ describe("encrypted cross-machine event exchange", () => {
         "secret-like",
       );
 
+      const unqualifiedLineageSecret = await exchangeState(path.join(root, "unqualified-lineage-secret"));
+      await rememberMemory(unqualifiedLineageSecret, {
+        scope: "project",
+        subject: "Andromeda",
+        predicate: "opaque-value",
+        value: "(renamed from aaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)",
+        evidence,
+      });
+      await expect(
+        exportEventBundle(unqualifiedLineageSecret, path.join(root, "unqualified-lineage-secret.bundle.json")),
+      ).rejects.toThrow("secret-like");
+
       const urlPathSecret = await exchangeState(path.join(root, "url-path-secret"));
       await rememberMemory(urlPathSecret, {
         scope: "project",
@@ -517,6 +529,13 @@ describe("encrypted cross-machine event exchange", () => {
           "https://github.com/marius-patrik/Andromeda (renamed from agents-mono/agents-manager/agents-os); released v0.2.0; dev=main",
         evidence,
       });
+      await rememberMemory(source, {
+        scope: "project",
+        subject: "Andromeda",
+        predicate: "previous-remote",
+        value: "https://github.com/marius-patrik/andromeda-platform (renamed from marius-patrik/agents-manager-platform)",
+        evidence,
+      });
       const original = await rememberMemory(source, {
         scope: "project",
         subject: "Andromeda",
@@ -550,7 +569,7 @@ describe("encrypted cross-machine event exchange", () => {
         evidence,
       });
       const exported = await exportEventBundle(source, path.join(root, "safe-identifiers.bundle.json"));
-      expect(exported.entries).toBe(6);
+      expect(exported.entries).toBe(7);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
