@@ -34,14 +34,16 @@ export function parseReview(text) {
   const start = trimmed.indexOf("{");
   const end = trimmed.lastIndexOf("}");
   if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
+  let lastError = new Error("response was not parseable JSON");
   for (const candidate of candidates) {
     try {
       return reviewShape(JSON.parse(candidate));
-    } catch {
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
       // Try the next bounded representation.
     }
   }
-  throw new Error("Kimi returned no valid review JSON");
+  throw new Error(`Kimi returned invalid review JSON: ${lastError.message}`);
 }
 
 export function parseCredential(raw) {
@@ -127,7 +129,13 @@ export async function requestReview({ prompt, credential, fetchImpl = fetch, env
       messages: [
         {
           role: "system",
-          content: "Perform a read-only pull-request review from the supplied context. Do not request tools or external data. Return only the required JSON review object.",
+          content: [
+            "Perform a read-only pull-request review from the supplied context.",
+            "Do not request tools or external data.",
+            "Return only one JSON object with exactly these fields:",
+            '{"approved":boolean,"summary":string,"blocking_findings":string[],"non_blocking_notes":string[]}.',
+            "Set approved to false whenever blocking_findings is non-empty.",
+          ].join(" "),
         },
         { role: "user", content: prompt },
       ],

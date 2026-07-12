@@ -29,6 +29,17 @@ test("blocking findings always force a failed normalized verdict", () => {
   assert.deepEqual(review.blocking_findings, ["unsafe"]);
 });
 
+test("invalid review shapes report the missing contract without echoing model content", () => {
+  assert.throws(
+    () => parseReview('{"verdict":"approved","private":"do not echo"}'),
+    (error) => {
+      assert.match(error.message, /review\.approved must be boolean/);
+      assert.doesNotMatch(error.message, /do not echo/);
+      return true;
+    },
+  );
+});
+
 test("takeover dispatch uses only the trusted automation exit code", () => {
   assert.equal(shouldTakeOver(42), true);
   assert.equal(shouldTakeOver(0), false);
@@ -221,6 +232,8 @@ test("uses the review API without placing credentials in model input", async () 
   assert.equal(request.init.headers.authorization, "Bearer top-secret");
   assert.doesNotMatch(request.init.body, /top-secret/);
   assert.match(request.init.body, /review this diff/);
+  assert.match(request.init.body, /blocking_findings/);
+  assert.match(request.init.body, /non_blocking_notes/);
   assert.equal(JSON.parse(request.init.body).temperature, 1);
 });
 
