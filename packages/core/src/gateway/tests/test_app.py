@@ -16,6 +16,21 @@ from llm_gateway.main import app
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENTS_HOME", str(tmp_path / ".agents"))
+    status_path = tmp_path / "inferctl-engines.yaml"
+    status_path.write_text(
+        "schema_version: inferctl-local-engines-v1\nengines:\n"
+        + "".join(
+            f"  {model}: {{status: healthy, api_base: 'http://127.0.0.1:{port}/v1'}}\n"
+            for model, port in [
+                ("qwen3-8b", 8001),
+                ("coder-32b-awq", 8002),
+                ("qwen2.5-7b-q4", 8003),
+                ("conv-7b-1m", 8004),
+                ("conv-14b-1m", 8005),
+            ]
+        )
+    )
+    monkeypatch.setenv("GATEWAY_INFERCTL_STATUS_PATH", str(status_path))
     with TestClient(app) as c:
         yield c
 

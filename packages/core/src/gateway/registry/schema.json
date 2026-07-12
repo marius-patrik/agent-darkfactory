@@ -10,7 +10,7 @@
       "minProperties": 1,
       "additionalProperties": {
         "type": "object",
-        "required": ["id", "provider", "model", "api_base", "role", "context_length", "enabled"],
+        "required": ["id", "provider", "model", "role", "context_length", "enabled"],
         "properties": {
           "id": {"type": "string", "minLength": 1},
           "name": {"type": "string"},
@@ -23,6 +23,11 @@
           "gpu": {"type": ["string", "null"]},
           "tensor_parallel": {"type": ["integer", "null"], "minimum": 1},
           "enabled": {"type": "boolean"}
+          ,"extra": {
+            "type": "object",
+            "properties": {"inferctl_managed": {"type": "boolean"}},
+            "additionalProperties": false
+          }
         },
         "additionalProperties": false
       }

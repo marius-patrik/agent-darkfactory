@@ -21,6 +21,56 @@ def tmp_registry():
 
 
 class TestModelRegistry:
+    def test_inferctl_overlay_is_runtime_only_and_refreshes_changed_ports(self, tmp_registry):
+        reg_path, schema_path, td = tmp_registry
+        schema_path.write_text(json.dumps({"type": "object"}))
+        definition = {
+            "id": "managed",
+            "provider": "local",
+            "model": "managed",
+            "role": "general",
+            "context_length": 1024,
+            "enabled": True,
+            "extra": {"inferctl_managed": True},
+        }
+        reg_path.write_text(yaml.safe_dump({"schema_version": "gateway-registry-v1", "models": {"managed": definition}}))
+        status_path = Path(td) / "inferctl.yaml"
+        status_path.write_text(
+            yaml.safe_dump({"schema_version": "inferctl-local-engines-v1", "engines": {"managed": {"status": "healthy", "api_base": "http://127.0.0.1:9101/v1"}}})
+        )
+        reg = ModelRegistry(reg_path, schema_path, status_path)
+        assert reg.get("managed").api_base == "http://127.0.0.1:9101/v1"
+        assert "api_base" not in reg._definitions["managed"]
+
+        status_path.write_text(
+            yaml.safe_dump({"schema_version": "inferctl-local-engines-v1", "engines": {"managed": {"healthy": True, "api_base": "http://127.0.0.1:9202/v1"}}})
+        )
+        assert reg.get("managed").api_base == "http://127.0.0.1:9202/v1"
+        assert "inferctl" not in reg._definitions["managed"]["extra"]
+
+    def test_inferctl_missing_and_unhealthy_engines_are_unavailable(self, tmp_registry):
+        reg_path, schema_path, td = tmp_registry
+        schema_path.write_text(json.dumps({"type": "object"}))
+        definition = {
+            "id": "managed",
+            "provider": "local",
+            "model": "managed",
+            "role": "general",
+            "context_length": 1024,
+            "enabled": True,
+            "extra": {"inferctl_managed": True},
+        }
+        reg_path.write_text(yaml.safe_dump({"schema_version": "gateway-registry-v1", "models": {"managed": definition}}))
+        status_path = Path(td) / "inferctl.yaml"
+        reg = ModelRegistry(reg_path, schema_path, status_path)
+        assert reg.list_enabled() == []
+
+        status_path.write_text(
+            yaml.safe_dump({"schema_version": "inferctl-local-engines-v1", "engines": {"managed": {"status": "unhealthy", "api_base": "http://127.0.0.1:9101/v1"}}})
+        )
+        assert reg.list_enabled() == []
+        assert reg.get("managed").extra["inferctl"]["status"] == "unhealthy"
+
     def test_load_valid_registry(self, tmp_registry):
         reg_path, schema_path, _ = tmp_registry
         schema = {
@@ -125,20 +175,20 @@ class TestModelRegistry:
             "conv-14b-1m",
         }
 
-        # Every shipped model is enabled, local, and bound to a fixed endpoint.
-        for m in reg.list_enabled():
+        # Static templates have no live endpoint until inferctl reports one.
+        assert reg.list_enabled() == []
+        for m in reg.list_all():
             assert m.provider == "local"
-            assert m.enabled is True
-            assert m.api_base is not None
-            assert m.api_base.startswith("http://127.0.0.1:")
-            assert m.api_base.endswith("/v1")
+            assert m.enabled is False
+            assert m.api_base is None
+            assert m.inferctl_managed is True
 
         # Every public role alias is served by the immutable source registry.
         general = {m.id for m in reg.list_by_role("general")}
         coding = {m.id for m in reg.list_by_role("coding")}
         conversation = {m.id for m in reg.list_by_role("conversation")}
         judge = {m.id for m in reg.list_by_role("judge")}
-        assert general == {"qwen3-8b", "qwen2.5-7b-q4"}
-        assert coding == {"coder-32b-awq"}
-        assert conversation == {"conv-7b-1m"}
-        assert judge == {"conv-14b-1m"}
+        assert general == set()
+        assert coding == set()
+        assert conversation == set()
+        assert judge == set()

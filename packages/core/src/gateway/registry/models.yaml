@@ -5,62 +5,62 @@ models:
     name: Qwen3 8B
     provider: local
     model: qwen3-8b
-    api_base: http://127.0.0.1:8001/v1
     role: general
     context_length: 32768
     quant: deployment-selected
     gpu: local
     tensor_parallel: 1
     enabled: true
+    extra: {inferctl_managed: true}
 
   coder-32b-awq:
     id: coder-32b-awq
     name: Coder 32B AWQ
     provider: local
     model: coder-32b-awq
-    api_base: http://127.0.0.1:8002/v1
     role: coding
     context_length: 32768
     quant: AWQ
     gpu: local
     tensor_parallel: 1
     enabled: true
+    extra: {inferctl_managed: true}
 
   qwen2.5-7b-q4:
     id: qwen2.5-7b-q4
     name: Qwen2.5 7B Q4
     provider: local
     model: qwen2.5-7b-q4
-    api_base: http://127.0.0.1:8003/v1
     role: general
     context_length: 32768
     quant: Q4
     gpu: local
     tensor_parallel: 1
     enabled: true
+    extra: {inferctl_managed: true}
 
   conv-7b-1m:
     id: conv-7b-1m
     name: Conversation 7B 1M
     provider: local
     model: conv-7b-1m
-    api_base: http://127.0.0.1:8004/v1
     role: conversation
     context_length: 1048576
     quant: deployment-selected
     gpu: local
     tensor_parallel: 1
     enabled: true
+    extra: {inferctl_managed: true}
 
   conv-14b-1m:
     id: conv-14b-1m
     name: Conversation 14B 1M
     provider: local
     model: conv-14b-1m
-    api_base: http://127.0.0.1:8005/v1
     role: judge
     context_length: 1048576
     quant: deployment-selected
     gpu: local
     tensor_parallel: 1
     enabled: true
+    extra: {inferctl_managed: true}

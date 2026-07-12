@@ -9,7 +9,14 @@ from llm_gateway.task_routing import TaskRouter, TaskRoutingError
 from llm_gateway.trace import TraceLogger
 
 
-def test_resolves_first_available_candidate():
+def test_resolves_first_available_candidate(monkeypatch, tmp_path):
+    status_path = tmp_path / "inferctl.yaml"
+    status_path.write_text(
+        "schema_version: inferctl-local-engines-v1\nengines:\n"
+        "  qwen3-8b: {status: healthy, api_base: 'http://127.0.0.1:8001/v1'}\n"
+        "  coder-32b-awq: {status: healthy, api_base: 'http://127.0.0.1:8002/v1'}\n"
+    )
+    monkeypatch.setenv("GATEWAY_INFERCTL_STATUS_PATH", str(status_path))
     registry = ModelRegistry()
     router = TaskRouter(registry)
 
