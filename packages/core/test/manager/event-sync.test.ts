@@ -456,6 +456,30 @@ describe("encrypted cross-machine event exchange", () => {
         exportEventBundle(alphabeticOrchestrator, path.join(root, "alphabetic-orchestrator.bundle.json")),
       ).rejects.toThrow("secret-like");
 
+      const slashSecret = await exchangeState(path.join(root, "slash-secret"));
+      await rememberMemory(slashSecret, {
+        scope: "project",
+        subject: "Andromeda",
+        predicate: "opaque-value",
+        value: "aaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        evidence,
+      });
+      await expect(exportEventBundle(slashSecret, path.join(root, "slash-secret.bundle.json"))).rejects.toThrow(
+        "secret-like",
+      );
+
+      const urlPathSecret = await exchangeState(path.join(root, "url-path-secret"));
+      await rememberMemory(urlPathSecret, {
+        scope: "project",
+        subject: "Andromeda",
+        predicate: "opaque-value",
+        value: "https://example.invalid/dQwErTyUiOpAsDfGhJkLzXcVbNmQwErTyUiOpAsD",
+        evidence,
+      });
+      await expect(exportEventBundle(urlPathSecret, path.join(root, "url-path-secret.bundle.json"))).rejects.toThrow(
+        "secret-like",
+      );
+
       const structuralSecret = await exchangeState(path.join(root, "structural-secret"));
       await createSession(structuralSecret, {
         sessionId: "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
@@ -517,8 +541,15 @@ describe("encrypted cross-machine event exchange", () => {
         value: "canonical machine 906f1326-7ced-41f3-97d5-69df9dd6ad2f",
         evidence,
       });
+      await rememberMemory(source, {
+        scope: "project",
+        subject: "repository",
+        predicate: "canonical-slug",
+        value: "marius.patrik/andromeda.platform-long-repository-name",
+        evidence,
+      });
       const exported = await exportEventBundle(source, path.join(root, "safe-identifiers.bundle.json"));
-      expect(exported.entries).toBe(5);
+      expect(exported.entries).toBe(6);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -287,7 +287,6 @@ async def session_websocket(websocket: WebSocket, session_id: str) -> None:
                 return
             field = frame.frame.field
             value = frame.frame.value
-            exclude_sender = client_id
             if field == "user_input":
                 user_input = cast(UserInput, value)
                 outgoing = ServerFrame(frame=Oneof("status", Status(state="input", detail=user_input.text, run_status=RunStatus.RUNNING)))  # type: ignore[arg-type]
@@ -297,11 +296,12 @@ async def session_websocket(websocket: WebSocket, session_id: str) -> None:
                     state = switcher_store.set(switch.axis, switch.value, SwitcherScope.SESSION, session_id)
                     event = SessionEvent(kind=SessionEventKind.SWITCH, payload=Oneof("switch", SwitchState(state=state)))  # type: ignore[arg-type]
                     outgoing = ServerFrame(frame=Oneof("session_event", event))  # type: ignore[arg-type]
-                except ConnectError as exc:
-                    exclude_sender = ""
-                    outgoing = ServerFrame(
+                except (ConnectError, ValueError) as exc:
+                    error_frame = ServerFrame(
                         frame=Oneof("status", Status(state="switch_error", detail=str(exc), run_status=RunStatus.FAILED))  # type: ignore[arg-type]
                     )
+                    await websocket.send_bytes(error_frame.to_binary())
+                    continue
             elif field == "interrupt":
                 outgoing = ServerFrame(frame=Oneof("status", Status(state="interrupted", run_status=RunStatus.PAUSED)))  # type: ignore[arg-type]
             elif field == "approval_response":
@@ -313,7 +313,7 @@ async def session_websocket(websocket: WebSocket, session_id: str) -> None:
             else:
                 await websocket.close(code=1003, reason="unsupported client frame")
                 return
-            await session_hub.publish(record, outgoing, exclude=exclude_sender)
+            await session_hub.publish(record, outgoing, exclude=client_id)
     except WebSocketDisconnect:
         pass
     finally:
