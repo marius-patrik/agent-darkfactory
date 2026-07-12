@@ -106,10 +106,11 @@ export async function writeTextExclusive(filePath: string, content: string, mode
 }
 
 export async function writeTextIfChanged(filePath: string, content: string, mode = 0o600): Promise<boolean> {
-  if (await exists(filePath)) {
-    const current = await readFile(filePath, "utf8");
-    if (current === content) return false;
+  if (!(await exists(filePath))) {
+    if (await writeTextExclusive(filePath, content, mode)) return true;
   }
+  const current = await readFile(filePath, "utf8");
+  if (current === content) return false;
   await writeTextAtomic(filePath, content, mode);
   return true;
 }

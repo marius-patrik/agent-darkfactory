@@ -1,11 +1,72 @@
 import { describe, expect, test } from "bun:test";
+import { commandInvocation } from "../../src/manager/process-command";
 import path from "node:path";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { adapterEnv, adapterHome, adapters, doctorAdapter, pinAdapter } from "../../src/manager/adapters";
 import { sharedState, sharedStateAt } from "../../src/manager/state";
 
 describe("CLI adapters", () => {
+  test("builds platform-safe command invocations", () => {
+    expect(commandInvocation("C:\\tools\\provider.ps1", ["--version"], {}, "win32")).toEqual([
+      "powershell.exe",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "C:\\tools\\provider.ps1",
+      "--version",
+    ]);
+    expect(commandInvocation("C:\\tools\\provider.exe", ["--version"], {}, "win32")).toEqual([
+      "C:\\tools\\provider.exe",
+      "--version",
+    ]);
+    expect(commandInvocation("missing-provider", ["--version"], { PATH: "" }, "linux")).toEqual([
+      "missing-provider",
+      "--version",
+    ]);
+    expect(() => commandInvocation("C:\\tools\\provider.cmd", ["unsafe&arg"], {}, "win32")).toThrow(
+      /batch command wrappers are not safe/,
+    );
+  });
+
+  test("PowerShell wrappers preserve arbitrary arguments literally", async () => {
+    if (process.platform !== "win32") return;
+
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-powershell-args-"));
+    const wrapper = path.join(root, "provider.ps1");
+    const expected = [
+      "space value",
+      'quote"value',
+      "%PATH%",
+      "bang!value",
+      "amp&pipe|less<than>greater^caret",
+    ];
+
+    try {
+      await writeFile(
+        wrapper,
+        "[Console]::OutputEncoding = [Text.UTF8Encoding]::new()\n[Console]::Out.Write(($args | ConvertTo-Json -Compress))\n",
+        "utf8",
+      );
+      const child = Bun.spawn(commandInvocation(wrapper, expected), {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+
+      expect(stderr).toBe("");
+      expect(exitCode).toBe(0);
+      expect(JSON.parse(stdout)).toEqual(expected);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   test("codex, claude, kimi, and agy expose rooted homes", () => {
     const state = sharedState(path.join("repo"));
 

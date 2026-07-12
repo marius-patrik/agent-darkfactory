@@ -36,8 +36,8 @@ The following are failures:
 
 - `AGENTS_HOME/state/`;
 - a second writable state root;
-- top-level `~/.codex`, `~/.claude`, `~/.kimi-code`, or `~/.gemini` paths,
-  including links;
+- top-level provider paths that Agent OS reads as authority, any bridge link,
+  or any standalone provider path without a matching canonical CLI home;
 - a historical root variable used as a locator;
 - a mutable Git machine snapshot presented as restore-capable exchange.
 
@@ -63,6 +63,13 @@ Raw provider transcripts are local evidence by default because filenames
 cannot classify secrets embedded in content. Provider databases/WALs,
 credentials, models, caches, logs, temporary files, locks, and process state
 are never normal exchange payloads.
+
+On Windows, the Codex and Claude desktop applications may require physical
+top-level `.codex` and `.claude` runtime directories. The doctor reports these
+as `app-owned` only when a distinct canonical CLI home exists under
+`AGENTS_HOME/clis`; Agent OS never reads the app-owned directories as memory,
+session, credential, or orchestration authority. Links and standalone-only
+roots still fail closed.
 
 Provider-root migration is an offline semantic operation with source and
 destination hashes, tool versions, timestamps, outcome, and rollback evidence.

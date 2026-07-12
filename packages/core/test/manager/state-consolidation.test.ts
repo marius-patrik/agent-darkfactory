@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdtemp, rm, symlink, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  classifyProviderRootLocation,
   formatToolStatus,
   readToolStatus,
   toolCanonicalPath,
@@ -61,12 +62,47 @@ describe("single-root provider state", () => {
       expect(linked.location).toBe("split");
       expect(linked.forbiddenLinkTarget).toBe(canonical);
 
-      await rm(forbidden);
+      await unlink(forbidden);
       await Bun.write(path.join(forbidden, "config.toml"), "");
-      expect((await readToolStatus("codex", homeDir, agentsHome)).location).toBe("split");
+      expect((await readToolStatus("codex", homeDir, agentsHome, "linux")).location).toBe("split");
     } finally {
       await rm(homeDir, { recursive: true, force: true });
     }
+  });
+
+  test("accepts declared physical desktop roots as app-owned without making them authority", async () => {
+    const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
+    try {
+      const agentsHome = path.join(homeDir, ".agents");
+      await Bun.write(path.join(toolCanonicalPath("codex", agentsHome), "bin", "codex.exe"), "binary");
+      await Bun.write(path.join(toolForbiddenPath("codex", homeDir), "state.db"), "app cache");
+
+      const status = await readToolStatus("codex", homeDir, agentsHome, "win32");
+      expect(status.location).toBe("app-owned");
+      expect(status.forbiddenLinkTarget).toBeNull();
+      expect(formatToolStatus([status])).toContain("app-owned");
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  test("never treats a bridge or standalone-only root as app-owned", () => {
+    expect(
+      classifyProviderRootLocation({
+        canonicalExists: true,
+        standaloneExists: true,
+        standaloneLinkTarget: "C:/canonical",
+        appOwnedAllowed: true,
+      }),
+    ).toBe("split");
+    expect(
+      classifyProviderRootLocation({
+        canonicalExists: false,
+        standaloneExists: true,
+        standaloneLinkTarget: null,
+        appOwnedAllowed: true,
+      }),
+    ).toBe("forbidden");
   });
 
   test("Agent OS itself has exactly one canonical root", async () => {

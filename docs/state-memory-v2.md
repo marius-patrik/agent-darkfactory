@@ -130,11 +130,14 @@ An isolated provider `HOME` must not leak into general tool subprocesses.
 Provider-native directories are opaque runtime state. They may contain session
 evidence and caches, but they are never memory authority.
 
-Standalone locations `~/.codex`, `~/.claude`, `~/.kimi-code`, and `~/.gemini` must
-be absent in the final state. A physical directory or link at any of those
-paths is a failure. Existing content requires an offline semantic merge into
-the matching canonical CLI home followed by verified removal of the standalone
-path. Auth files must never be reconciled with a blind last-write-wins copy.
+Standalone locations `~/.kimi-code` and `~/.gemini`, bridge links, and any
+provider path used as Agent OS authority must be absent in the final state.
+Windows Codex and Claude desktop applications may retain physical `.codex` and
+`.claude` runtime directories beside distinct canonical CLI homes. Those paths
+are classified `app-owned`, remain local-only execution surfaces, and are never
+loaded by Agent OS. Existing authoritative content still requires an offline
+semantic merge; auth files must never be reconciled with blind
+last-write-wins copying.
 
 The former Codex desktop/Chrome surface required a separate `~/.codex` state
 model for Browser, Chrome, Computer Use, enrollment, and plugin data. Those
@@ -274,9 +277,11 @@ start/end timestamps, result, and rollback instructions under
 
 ## Acceptance criteria
 
-- `agents state doctor --json` reports one absolute `AGENTS_HOME`, no standalone
-  provider path, no writable duplicate root, no active retired loader, and
-  no secret or symlink in sync candidates.
+- `agents state doctor --json` reports one absolute `AGENTS_HOME`, no provider
+  authority outside it, no writable duplicate/bridge root, no active retired
+  loader, and no secret or symlink in sync candidates. Declared Windows
+  desktop roots are reported separately as non-authoritative `app-owned`
+  surfaces.
 - State bootstrap and migration are idempotent; rerunning them changes nothing.
 - Codex, Claude, Kimi, and Agy authenticate and write only to their declared
   roots. Any desktop surface that recreates an external root is excluded.
@@ -296,7 +301,9 @@ start/end timestamps, result, and rollback instructions under
 
 1. Real-user-home and Agent OS root resolution are centralized and test-isolated.
 2. `.agents/clis/<provider>` is the only provider-home target.
-3. Status terms are `forbidden`, `canonical`, `split`, and `missing`.
+3. Status terms are `forbidden`, `canonical`, `app-owned`, `split`, and
+   `missing`; `app-owned` is a narrow Windows desktop coexistence state, never
+   an authority state.
 4. The v2 manifest, private directories, generated environment, and read-only
    doctor are live.
 5. Installed provider invocation forms are tested; executables are pinned by
@@ -315,6 +322,7 @@ start/end timestamps, result, and rollback instructions under
     checksum-registered, atomically installed, and injected with the one Rommie
     identity into every managed provider turn.
 11. The master director thread is imported as the first canonical orchestrator
-    session, and the installed boundary contains one regular `agents` launcher.
+    session, and the installed boundary contains one platform-native `agents`
+    launcher (`agents` on POSIX, `agents.ps1` on Windows).
 12. Exact Recovery parity was verified before removing the live `global`,
     `shared`, and multi-agent trees; the doctor rejects their reappearance.

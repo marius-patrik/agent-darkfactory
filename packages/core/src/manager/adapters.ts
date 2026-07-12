@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import { systemDataPath, type SharedState } from "./state";
 import { providerBinarySafetyReason } from "./session-adapters";
 import { canonicalChildEnvironment } from "./runtime-paths";
+import { commandInvocation } from "./process-command";
 import {
   inspectProviderExecutable,
   readProviderRegistry,
@@ -114,7 +115,9 @@ async function exists(file: string): Promise<boolean> {
 async function findBinary(state: SharedState, id: CliId, names: string[]): Promise<string | null> {
   const canonicalBin = path.join(adapterHome(state, id), "bin");
   // Windows spawning requires the real extension; extensionless PE files are not runnable.
-  const candidates = names.flatMap((name) => (process.platform === "win32" ? [`${name}.exe`, name] : [name]));
+  const candidates = names.flatMap((name) =>
+    process.platform === "win32" ? [`${name}.exe`, `${name}.ps1`, name] : [name],
+  );
   for (const name of candidates) {
     const candidate = path.join(canonicalBin, name);
     if (fs.existsSync(candidate) && !providerBinarySafetyReason(candidate)) return candidate;
@@ -163,9 +166,10 @@ export async function pinAdapter(
   const unsafeReason = providerBinarySafetyReason(binary);
   if (unsafeReason) throw new Error(`cannot pin ${id}: ${unsafeReason}`);
 
-  const child = Bun.spawn([binary, "--version"], {
+  const env = { ...canonicalChildEnvironment(), ...adapterEnv(state, id) };
+  const child = Bun.spawn(commandInvocation(binary, ["--version"], env), {
     cwd: state.root,
-    env: { ...canonicalChildEnvironment(), ...adapterEnv(state, id) },
+    env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",

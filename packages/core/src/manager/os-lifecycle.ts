@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import path from "node:path";
+import { commandInvocation } from "./process-command";
 import crypto from "node:crypto";
 import { createServer } from "node:net";
 import { mkdir, rm, stat } from "node:fs/promises";
@@ -51,7 +52,7 @@ export async function runDocker(
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   if (injectedDockerRunner) return injectedDockerRunner(args, options);
   const bin = dockerBin(options.env);
-  const proc = Bun.spawn([bin, ...args], {
+  const proc = Bun.spawn(commandInvocation(bin, args, options.env), {
     cwd: options.cwd,
     env: options.env,
     stdout: "pipe",
@@ -76,7 +77,7 @@ export async function runDockerRaw(
     return result.code;
   }
   const bin = dockerBin(options.env);
-  const proc = Bun.spawn([bin, ...args], {
+  const proc = Bun.spawn(commandInvocation(bin, args, options.env), {
     cwd: options.cwd,
     env: options.env,
     stdin: "inherit",

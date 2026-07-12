@@ -3,9 +3,41 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { ensureSharedState, sharedStateAt } from "../../src/manager/state";
-import { readStateManifest, stateV2Paths } from "../../src/manager/state-v2";
+import { readStateManifest, stateV2Paths, writeTextExclusive } from "../../src/manager/state-v2";
 
 describe("Agent OS state v2 bootstrap", () => {
+  test("exclusive seeds become visible only after their complete content is durable", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-v2-exclusive-"));
+    const destination = path.join(root, "seed.txt");
+    const content = `${"complete-seed-content\n".repeat(200_000)}done\n`;
+    const observed = new Set<string>();
+    let writerDone = false;
+
+    try {
+      const writer = writeTextExclusive(destination, content).finally(() => {
+        writerDone = true;
+      });
+      while (!writerDone) {
+        try {
+          observed.add(await readFile(destination, "utf8"));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      }
+      expect(await writer).toBe(true);
+      observed.add(await readFile(destination, "utf8"));
+      expect([...observed]).toEqual([content]);
+
+      const contenders = await Promise.all(
+        Array.from({ length: 16 }, () => writeTextExclusive(destination, "replacement\n")),
+      );
+      expect(contenders.every((published) => !published)).toBe(true);
+      expect(await readFile(destination, "utf8")).toBe(content);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("creates one stable Rommie manifest and canonical bootstrap paths", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-v2-"));
     try {

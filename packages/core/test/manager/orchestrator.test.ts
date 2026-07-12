@@ -297,7 +297,9 @@ describe("orchestrator state helpers", () => {
         "orchestrator baton is held by session-1",
       );
       expect((await readOrchestratorEvents(state)).filter((event) => event.type === "ledger.appended")).toHaveLength(8);
-      expect((await stat(renewableLockDatabasePath(state))).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") {
+        expect((await stat(renewableLockDatabasePath(state))).mode & 0o777).toBe(0o600);
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

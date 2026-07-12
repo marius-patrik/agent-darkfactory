@@ -8,6 +8,7 @@ export interface ToolStateSpec {
   id: ToolStateId;
   displayName: string;
   forbiddenHomeName: string | null;
+  appOwnedPlatforms: NodeJS.Platform[];
 }
 
 export interface ToolStatus {
@@ -15,17 +16,29 @@ export interface ToolStatus {
   displayName: string;
   forbidden: string | null;
   canonical: string;
-  location: "forbidden" | "canonical" | "split" | "missing";
+  location: "forbidden" | "canonical" | "app-owned" | "split" | "missing";
   forbiddenLinkTarget: string | null;
 }
 
 export const toolStateSpecs: ToolStateSpec[] = [
-  { id: "claude", displayName: "Claude", forbiddenHomeName: ".claude" },
-  { id: "codex", displayName: "Codex", forbiddenHomeName: ".codex" },
-  { id: "kimi", displayName: "Kimi", forbiddenHomeName: ".kimi-code" },
-  { id: "agy", displayName: "Agy", forbiddenHomeName: ".gemini" },
-  { id: "agents", displayName: "Agent OS", forbiddenHomeName: null },
+  { id: "claude", displayName: "Claude", forbiddenHomeName: ".claude", appOwnedPlatforms: ["win32"] },
+  { id: "codex", displayName: "Codex", forbiddenHomeName: ".codex", appOwnedPlatforms: ["win32"] },
+  { id: "kimi", displayName: "Kimi", forbiddenHomeName: ".kimi-code", appOwnedPlatforms: [] },
+  { id: "agy", displayName: "Agy", forbiddenHomeName: ".gemini", appOwnedPlatforms: [] },
+  { id: "agents", displayName: "Agent OS", forbiddenHomeName: null, appOwnedPlatforms: [] },
 ];
+
+export function classifyProviderRootLocation(input: {
+  canonicalExists: boolean;
+  standaloneExists: boolean;
+  standaloneLinkTarget: string | null;
+  appOwnedAllowed: boolean;
+}): ToolStatus["location"] {
+  if (!input.standaloneExists) return input.canonicalExists ? "canonical" : "missing";
+  if (!input.canonicalExists) return "forbidden";
+  if (input.appOwnedAllowed && input.standaloneLinkTarget === null) return "app-owned";
+  return "split";
+}
 
 function toolStateSpec(id: ToolStateId): ToolStateSpec {
   const spec = toolStateSpecs.find((candidate) => candidate.id === id);
@@ -63,6 +76,7 @@ export async function readToolStatus(
   id: ToolStateId,
   homeDir = resolveUserHome(),
   agentsHome = defaultAgentsHome(),
+  platform: NodeJS.Platform = process.platform,
 ): Promise<ToolStatus> {
   const spec = toolStateSpec(id);
   const canonical = toolCanonicalPath(id, agentsHome);
@@ -81,14 +95,12 @@ export async function readToolStatus(
 
   const forbidden = toolForbiddenPath(id, homeDir);
   const forbiddenInfo = await pathInfo(forbidden);
-  const location: ToolStatus["location"] =
-    forbiddenInfo.exists && canonicalInfo.exists
-      ? "split"
-      : forbiddenInfo.exists
-        ? "forbidden"
-        : canonicalInfo.exists
-          ? "canonical"
-          : "missing";
+  const location = classifyProviderRootLocation({
+    canonicalExists: canonicalInfo.exists,
+    standaloneExists: forbiddenInfo.exists,
+    standaloneLinkTarget: forbiddenInfo.linkTarget,
+    appOwnedAllowed: spec.appOwnedPlatforms.includes(platform),
+  });
 
   return {
     id,

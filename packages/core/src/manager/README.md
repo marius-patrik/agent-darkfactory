@@ -60,7 +60,8 @@ The complete authority and migration contract is
 
 - `agents state doctor` is read-only.
 - `agents state status` classifies provider roots as `forbidden`, `canonical`,
-  `split`, or `missing`.
+  `app-owned`, `split`, or `missing`. `app-owned` is limited to declared
+  Windows desktop roots and never changes Agent OS authority.
 - Retired move-and-link adoption and Git snapshot-sync commands do not exist.
 - Cross-machine exchange stays disabled until tombstones, encrypted transport,
   deterministic merge, recovery, and secret/symlink rejection are proven.

@@ -427,7 +427,9 @@ describe("session runtime", () => {
 
       await Promise.all([first, second]);
       expect(order).toEqual(["first:entered", "first:leaving", "second:entered"]);
-      expect((await stat(renewableLockDatabasePath(state))).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") {
+        expect((await stat(renewableLockDatabasePath(state))).mode & 0o777).toBe(0o600);
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

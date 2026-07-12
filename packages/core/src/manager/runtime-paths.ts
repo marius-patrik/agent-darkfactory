@@ -52,7 +52,7 @@ export function resolveUserHome(
   const agentsIndex = parts.lastIndexOf(".agents");
   if (agentsIndex >= 0 && parts[agentsIndex + 1] === "clis" && parts[agentsIndex + 2]) {
     const prefix = parts.slice(0, agentsIndex).join(path.sep);
-    return prefix || path.parse(normalized).root;
+    return prefix ? path.resolve(prefix) : path.parse(normalized).root;
   }
 
   return path.resolve(platformHome);

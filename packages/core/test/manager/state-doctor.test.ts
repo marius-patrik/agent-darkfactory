@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import os from "node:os";
 import path from "node:path";
 import { ensureSharedState, sharedStateAt, systemDataPath } from "../../src/manager/state";
-import { doctorState, formatStateDoctor } from "../../src/manager/state-doctor";
+import { doctorState, formatStateDoctor, launcherNameForPlatform } from "../../src/manager/state-doctor";
 import { readStateManifest, stateV2Paths } from "../../src/manager/state-v2";
 import { toolCanonicalPath, toolForbiddenPath } from "../../src/manager/state-consolidation";
 import { rebuildMemoryProjections, rememberMemory, type MemoryEvent } from "../../src/manager/memory";
@@ -43,10 +43,14 @@ async function ensureDoctorProduct(state: ReturnType<typeof tempState>): Promise
   await activateIdentityBundle(state, path.join(repoRoot, "capabilities", "identity"), { replace: true });
   const bin = path.join(state.stateDir, "bin");
   await mkdir(bin, { recursive: true, mode: 0o700 });
-  const launcher = path.join(bin, "agents");
+  const launcher = path.join(bin, launcherNameForPlatform(process.platform));
+  const launcherContent =
+    process.platform === "win32"
+      ? `$env:AGENTS_HOME = '${state.stateDir.replaceAll("'", "''")}'\n$env:AGENTS_USER_HOME = '${state.userHome.replaceAll("'", "''")}'\n$env:AGENTS_ROOT = '${state.root.replaceAll("'", "''")}'\n$env:AGENTS_WORKSPACE = '${state.workspaceDir.replaceAll("'", "''")}'\n$env:AGENTS_SYSTEM_DATA_ROOT = '${systemDataPath(state.root).replaceAll("'", "''")}'\n$env:AGENTS_ENTRYPOINT = '${path.join(state.root, "packages", "core", "src", "manager", "cli.ts").replaceAll("'", "''")}'\n& bun $env:AGENTS_ENTRYPOINT @args\n`
+      : `#!/usr/bin/env bash\nexport AGENTS_HOME=${shellQuote(state.stateDir)}\nexport AGENTS_USER_HOME=${shellQuote(state.userHome)}\nexport AGENTS_ROOT=${shellQuote(state.root)}\nexport AGENTS_WORKSPACE=${shellQuote(state.workspaceDir)}\nexport AGENTS_SYSTEM_DATA_ROOT=${shellQuote(systemDataPath(state.root))}\nexport AGENTS_ENTRYPOINT=${shellQuote(path.join(state.root, "packages", "core", "src", "manager", "cli.ts"))}\nexec bun "$AGENTS_ENTRYPOINT" "$@"\n`;
   await writeFile(
     launcher,
-    `#!/usr/bin/env bash\nexport AGENTS_HOME=${shellQuote(state.stateDir)}\nexport AGENTS_USER_HOME=${shellQuote(state.userHome)}\nexport AGENTS_ROOT=${shellQuote(state.root)}\nexport AGENTS_WORKSPACE=${shellQuote(state.workspaceDir)}\nexport AGENTS_SYSTEM_DATA_ROOT=${shellQuote(systemDataPath(state.root))}\nexport AGENTS_ENTRYPOINT=${shellQuote(path.join(state.root, "packages", "core", "src", "manager", "cli.ts"))}\nexec bun "$AGENTS_ENTRYPOINT" "$@"\n`,
+    launcherContent,
     { mode: 0o700 },
   );
   if (process.platform !== "win32") {
@@ -57,6 +61,11 @@ async function ensureDoctorProduct(state: ReturnType<typeof tempState>): Promise
 }
 
 describe("read-only Agent OS state doctor", () => {
+  test("selects one platform-native launcher name", () => {
+    expect(launcherNameForPlatform("win32")).toBe("agents.ps1");
+    expect(launcherNameForPlatform("darwin")).toBe("agents");
+    expect(launcherNameForPlatform("linux")).toBe("agents");
+  });
   test("does not initialize or create files while diagnosing missing state", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-doctor-empty-"));
     try {
@@ -111,12 +120,12 @@ describe("read-only Agent OS state doctor", () => {
     try {
       const state = tempState(root);
       await ensureDoctorProduct(state);
-      await mkdir(toolCanonicalPath("codex", state.stateDir), { recursive: true, mode: 0o700 });
-      await mkdir(toolForbiddenPath("codex", state.userHome), { recursive: true, mode: 0o700 });
+      await mkdir(toolCanonicalPath("kimi", state.stateDir), { recursive: true, mode: 0o700 });
+      await mkdir(toolForbiddenPath("kimi", state.userHome), { recursive: true, mode: 0o700 });
 
       const report = await doctorState(state);
       expect(report.ok).toBe(false);
-      expect(report.tools.find((tool) => tool.id === "codex")?.location).toBe("split");
+      expect(report.tools.find((tool) => tool.id === "kimi")?.location).toBe("split");
       expect(report.checks.find((check) => check.id === "tool_roots")?.ok).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -178,12 +178,12 @@ describe("harness CLI", () => {
         "clis",
         "codex",
         "bin",
-        process.platform === "win32" ? "codex.cmd" : "codex",
+        process.platform === "win32" ? "codex.ps1" : "codex",
       );
       if (process.platform === "win32") {
         await Bun.write(
           codex,
-          `@echo off\r\nif "%1"=="--version" (echo codex-test 1.0.0& exit /b 0)\r\necho CODEX_HOME=%CODEX_HOME% > "${output}"\r\necho args=%* >> "${output}"\r\n`,
+          `if ($args[0] -eq '--version') { Write-Output 'codex-test 1.0.0'; exit 0 }\n@("CODEX_HOME=$env:CODEX_HOME", "args=$($args -join ' ')") | Set-Content -LiteralPath '${output.replaceAll("'", "''")}'\n`,
         );
       } else {
         await Bun.write(

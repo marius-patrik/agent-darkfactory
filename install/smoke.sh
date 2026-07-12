@@ -50,10 +50,23 @@ within_sandbox "$AGENTS_USER_HOME" || die "AGENTS_USER_HOME escapes the disposab
 within_sandbox "$AGENTS_ROOT" || die "AGENTS_ROOT escapes the disposable smoke sandbox"
 [ "$AGENTS_HOME" != "/Users/user/.agents" ] || die "refusing to smoke-test against live personal state"
 
-launcher="$AGENTS_HOME/bin/agents"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) launcher="$AGENTS_HOME/bin/agents.ps1" ;;
+  *) launcher="$AGENTS_HOME/bin/agents" ;;
+esac
+
+invoke_launcher() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$(cygpath -w "$launcher")" "$@" ;;
+    *) "$launcher" "$@" ;;
+  esac
+}
 [ -f "$launcher" ] || die "agents launcher is missing: $launcher"
 [ ! -L "$launcher" ] || die "agents launcher must be a regular file, not a symlink"
-[ -x "$launcher" ] || die "agents launcher is not executable"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) ;;
+  *) [ -x "$launcher" ] || die "agents launcher is not executable" ;;
+esac
 
 entry_count="$(find "$AGENTS_HOME/bin" -mindepth 1 -maxdepth 1 -print | wc -l | tr -d '[:space:]')"
 [ "$entry_count" = "1" ] || die "AGENTS_HOME/bin must contain only the agents launcher"
@@ -78,17 +91,21 @@ mkdir -p "$hostile_home"
 
 (
   cd "$AGENTS_ROOT"
-  env \
-    HOME="$hostile_home" \
-    AGENTS_HOME="$wrong_state" \
-    AGENTS_USER_HOME="$wrong_user" \
-    AGENTS_ROOT="$wrong_root" \
-    "$launcher" state init
-  "$launcher" state doctor --json >/dev/null
-  "$launcher" list --json >/dev/null
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      env HOME="$hostile_home" AGENTS_HOME="$wrong_state" AGENTS_USER_HOME="$wrong_user" AGENTS_ROOT="$wrong_root" \
+        powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$(cygpath -w "$launcher")" state init
+      ;;
+    *)
+      env HOME="$hostile_home" AGENTS_HOME="$wrong_state" AGENTS_USER_HOME="$wrong_user" AGENTS_ROOT="$wrong_root" \
+        "$launcher" state init
+      ;;
+  esac
+  invoke_launcher state doctor --json >/dev/null
+  invoke_launcher list --json >/dev/null
   for provider in codex claude kimi agy; do
     if find "$AGENTS_HOME/clis/$provider/bin" -mindepth 1 -maxdepth 1 -type f -perm -u+x -print -quit 2>/dev/null | grep -q .; then
-      "$launcher" cli doctor "$provider" >/dev/null
+      invoke_launcher cli doctor "$provider" >/dev/null
     fi
   done
 )

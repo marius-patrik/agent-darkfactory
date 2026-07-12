@@ -12,6 +12,7 @@ import { FakeProviderAdapter, renderTranscriptForCli } from "../harness/session-
 import { canonicalChildEnvironment, resolvePersonalAgentsHome, resolveUserHome } from "./runtime-paths";
 import { sharedStateAt } from "./state";
 import { rebuildMemoryProjections } from "./memory";
+import { commandInvocation } from "./process-command";
 
 export interface CliAdapterOptions {
   id: string;
@@ -75,7 +76,7 @@ export class CliProviderAdapter implements ProviderAdapter {
     const args = this.options.buildArgs(request, effectiveTranscript, descriptor);
     const cwd = this.options.cwd ?? descriptor.workdir;
     const env = { ...canonicalChildEnvironment(), ...canonicalProviderEnv(this.id, descriptor), ...this.options.env };
-    const proc = Bun.spawn([this.options.binary, ...args], {
+    const proc = Bun.spawn(commandInvocation(this.options.binary, args, env), {
       cwd,
       env,
       stdin: "inherit",
@@ -177,7 +178,10 @@ function assertSafeProviderBinary(candidate: string): void {
 function findBinary(names: string[], provider?: CliSessionProvider): string | null {
   if (provider) {
     const canonicalBin = path.join(resolvePersonalAgentsHome(), "clis", provider, "bin");
-    for (const name of names) {
+    const candidates = names.flatMap((name) =>
+      process.platform === "win32" ? [`${name}.exe`, `${name}.ps1`, name] : [name],
+    );
+    for (const name of candidates) {
       const candidate = path.join(canonicalBin, name);
       if (fs.existsSync(candidate) && !providerBinarySafetyReason(candidate)) return candidate;
     }
