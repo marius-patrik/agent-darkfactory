@@ -149,33 +149,20 @@ if [ -n "${PROMPT_EXPORT}" ]; then
   cp "${PROMPT_FILE}" "${PROMPT_EXPORT}"
 fi
 
-AUTOMATION_FAILED=0
-if ! codex exec \
+CODEX_EXIT=0
+codex exec \
   --cd /workspace \
   --sandbox read-only \
   --ephemeral \
   --output-schema "${SCHEMA_PATH}" \
   --output-last-message "${REVIEW_OUTPUT}" \
-  - < "${PROMPT_FILE}"; then
-  write_blocked_review \
-    "Codex autoreview command failed before producing a valid review." \
-    "Inspect the Codex Review workflow logs and fix the automation before allowing automerge."
-  AUTOMATION_FAILED=1
-fi
+  - < "${PROMPT_FILE}" || CODEX_EXIT=$?
 
-if ! node -e "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))" "${REVIEW_OUTPUT}"; then
-  RAW_REVIEW="$(cat "${REVIEW_OUTPUT}" || true)"
-  REVIEW_SUMMARY="Codex autoreview produced non-JSON output." \
-  REVIEW_FINDING="${RAW_REVIEW:-Codex review output was empty or invalid.}" \
-  REVIEW_OUTPUT="${REVIEW_OUTPUT}" node <<'NODE'
-const fs = require("node:fs");
-fs.writeFileSync(process.env.REVIEW_OUTPUT, `${JSON.stringify({
-  approved: false,
-  summary: process.env.REVIEW_SUMMARY,
-  blocking_findings: [process.env.REVIEW_FINDING],
-  non_blocking_notes: [],
-}, null, 2)}\n`);
-NODE
+AUTOMATION_FAILED=0
+if ! node -e "const r=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8')); if(typeof r.approved!=='boolean'||typeof r.summary!=='string'||!Array.isArray(r.blocking_findings)||r.blocking_findings.some(x=>typeof x!=='string')||!Array.isArray(r.non_blocking_notes)||r.non_blocking_notes.some(x=>typeof x!=='string')) process.exit(1)" "${REVIEW_OUTPUT}"; then
+  write_blocked_review \
+    "Codex autoreview command exited ${CODEX_EXIT} without producing a valid review." \
+    "Inspect the Codex Review workflow logs and fix the automation before allowing automerge."
   AUTOMATION_FAILED=1
 fi
 
