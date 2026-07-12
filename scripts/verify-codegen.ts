@@ -41,6 +41,13 @@ function filesUnder(directory: string): string[] {
   return files.sort();
 }
 
+function normalizedGeneratedText(file: string): string {
+  // Git may materialize generated text as CRLF on Windows while the pinned
+  // generators emit LF. Codegen freshness is a content invariant, so compare
+  // one canonical newline representation without weakening any other byte.
+  return readFileSync(file, "utf8").replaceAll("\r\n", "\n");
+}
+
 function assertTreesEqual(expected: string, actual: string, label: string): void {
   const expectedFiles = filesUnder(expected);
   const actualFiles = filesUnder(actual);
@@ -50,7 +57,7 @@ function assertTreesEqual(expected: string, actual: string, label: string): void
     throw new Error(`${label} file set differs; missing after generation: ${missing.join(", ") || "none"}; stale in checkout: ${stale.join(", ") || "none"}`);
   }
   for (const file of expectedFiles) {
-    if (!readFileSync(join(expected, file)).equals(readFileSync(join(actual, file)))) {
+    if (normalizedGeneratedText(join(expected, file)) !== normalizedGeneratedText(join(actual, file))) {
       throw new Error(`${label} differs from clean generation: ${file}`);
     }
   }

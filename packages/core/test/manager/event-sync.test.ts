@@ -513,7 +513,8 @@ describe("encrypted cross-machine event exchange", () => {
         scope: "project",
         subject: "Andromeda",
         predicate: "canonical-remote",
-        value: "https://github.com/marius-patrik/andromeda-platform (renamed from marius-patrik/agents-manager-platform)",
+        value:
+          "https://github.com/marius-patrik/Andromeda (renamed from agents-mono/agents-manager/agents-os); released v0.2.0; dev=main",
         evidence,
       });
       const original = await rememberMemory(source, {
