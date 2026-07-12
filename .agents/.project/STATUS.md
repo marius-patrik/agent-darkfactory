@@ -15,10 +15,10 @@
 - `data/agent-os/context/TASK.md` is the canonical owner-facing task list. It
   contains three ordered Planned rows and one final Parked row; the completed
   memory backlog is removed.
-- Fable/Codex memory consolidation and Dream/Codex hygiene are complete: 26
-  immutable events replay to 26 verified records, with 20 active startup facts,
-  six explicit supersessions, zero disputes/retractions/secrets, and projection
-  hash `4afbecaefeb816928b9e7c1ace4a7eae2a10e0041ca6fb4bae44e5763fa67d8e`.
+- Fable/Codex memory consolidation and Dream/Codex hygiene are complete: 27
+  immutable events replay to 27 verified records, with 20 active startup facts,
+  seven explicit supersessions, zero disputes/retractions/secrets, and projection
+  hash `86d1a15e55c1c3f679661c0c0dd03e73ecaeccb65c31ece49924dbe69333cc5f`.
 - Shared runtime identity, memory, sessions, orchestration, and providers live
   under `.agents`. Provider-local memories and transcripts are cache or
   hash-addressed rollback evidence only.
