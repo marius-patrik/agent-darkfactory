@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { PassThrough } from "node:stream";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { parseCredential, parseReview, requestReview, shouldTakeOver } from "./run-kimi-review.mjs";
+import { parseCredential, parseReview, persistRefreshedCredential, requestReview, shouldTakeOver } from "./run-kimi-review.mjs";
 
 const validReview = {
   approved: true,
@@ -28,6 +34,70 @@ test("takeover dispatch uses only the trusted automation exit code", () => {
   assert.equal(shouldTakeOver(0), false);
   assert.equal(shouldTakeOver(1), false);
   assert.equal(shouldTakeOver("42"), true);
+});
+
+test("persists rotated credentials through an in-memory gh stdin pipe", async () => {
+  let invocation;
+  let piped = "";
+  const spawnImpl = (command, args, options) => {
+    invocation = { command, args, options };
+    const child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stderr = new PassThrough();
+    child.stdin.setEncoding("utf8");
+    child.stdin.on("data", (chunk) => {
+      piped += chunk;
+    });
+    child.stdin.on("finish", () => queueMicrotask(() => child.emit("close", 0)));
+    return child;
+  };
+  const credential = { access_token: "fresh", refresh_token: "rotated" };
+  await persistRefreshedCredential(credential, { GH_TOKEN: "app-token", GITHUB_REPOSITORY: "owner/repo" }, spawnImpl);
+  assert.equal(invocation.command, "gh");
+  assert.deepEqual(invocation.args, ["secret", "set", "KIMI_AUTH_JSON", "--repo", "owner/repo"]);
+  assert.deepEqual(JSON.parse(piped), credential);
+});
+
+test("a valid primary changes-required review wins despite nonzero Codex exit", { skip: process.platform === "win32" }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-review-primary-"));
+  const bin = path.join(root, "bin");
+  const home = path.join(root, "codex-home");
+  const context = path.join(root, "context");
+  const output = path.join(root, "review.json");
+  await Promise.all([mkdir(bin), mkdir(home), mkdir(context)]);
+  await writeFile(path.join(home, "auth.json"), "{}\n");
+  await writeFile(path.join(context, "AGENTS.md"), "rules\n");
+  await writeFile(path.join(context, "linked-issues.md"), "issue\n");
+  await writeFile(
+    path.join(bin, "codex"),
+    "#!/usr/bin/env bash\nwhile [ $# -gt 0 ]; do if [ \"$1\" = \"--output-last-message\" ]; then shift; out=$1; fi; shift; done\nprintf '%s\\n' '{\"approved\":false,\"summary\":\"real finding\",\"blocking_findings\":[\"block\"],\"non_blocking_notes\":[]}' > \"$out\"\nexit 1\n",
+    { mode: 0o755 },
+  );
+  try {
+    const result = spawnSync("bash", [".github/scripts/run-codex-review.sh"], {
+      cwd: path.resolve("."),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        HOME: root,
+        CODEX_HOME: home,
+        REVIEW_CONTEXT_DIR: context,
+        REVIEW_OUTPUT: output,
+        BASE_BRANCH: "dev",
+        BASE_REF: "dev",
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(await readFile(output, "utf8")), {
+      approved: false,
+      summary: "real finding",
+      blocking_findings: ["block"],
+      non_blocking_notes: [],
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("rejects malformed credential envelopes", () => {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const DEFAULT_API_BASE = "https://api.kimi.com/coding/v1";
@@ -80,6 +81,29 @@ export function shouldTakeOver(exitCode) {
   return Number(exitCode) === 42;
 }
 
+export async function persistRefreshedCredential(credential, env = process.env, spawnImpl = spawn) {
+  if (!env.GH_TOKEN) throw new Error("GH_TOKEN is required to persist rotated Kimi OAuth credentials");
+  if (!env.GITHUB_REPOSITORY) throw new Error("GITHUB_REPOSITORY is required to persist rotated Kimi OAuth credentials");
+  const child = spawnImpl("gh", ["secret", "set", "KIMI_AUTH_JSON", "--repo", env.GITHUB_REPOSITORY], {
+    env,
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+  let stderr = "";
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  const completed = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`GitHub secret rotation failed${stderr.trim() ? `: ${stderr.trim()}` : ` with exit ${code}`}`));
+    });
+  });
+  child.stdin.end(`${JSON.stringify(credential)}\n`);
+  await completed;
+}
+
 export async function requestReview({ prompt, credential, fetchImpl = fetch, env = process.env, onCredentialRefresh }) {
   let active = credential;
   if (Number(active.expires_at || 0) <= Math.floor(Date.now() / 1000) + 60) {
@@ -135,13 +159,7 @@ export async function main(env = process.env) {
       prompt,
       credential,
       env,
-      onCredentialRefresh: async (refreshed) => {
-        if (!env.KIMI_REFRESHED_AUTH_OUTPUT) return;
-        fs.writeFileSync(env.KIMI_REFRESHED_AUTH_OUTPUT, `${JSON.stringify(refreshed, null, 2)}\n`, {
-          encoding: "utf8",
-          mode: 0o600,
-        });
-      },
+      onCredentialRefresh: (refreshed) => persistRefreshedCredential(refreshed, env),
     });
     fs.writeFileSync(output, `${JSON.stringify(review, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   } catch (error) {

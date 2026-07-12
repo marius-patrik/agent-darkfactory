@@ -164,19 +164,12 @@ jobs:
             if [ -n "${KIMI_AUTH_JSON:-}" ]; then
               KIMI_REVIEW_PROMPT="${REVIEW_OUTPUT_DIR}/review-prompt.txt" \
               KIMI_REVIEW_OUTPUT="${PWD}/codex-review.json" \
-              KIMI_REFRESHED_AUTH_OUTPUT="${RUNNER_TEMP}/kimi-auth-refreshed.json" \
               node .github/scripts/run-kimi-review.mjs
             fi
           elif [ "${REVIEW_EXIT_CODE}" -ne 0 ]; then
             node -e "const fs=require('fs'); fs.writeFileSync('codex-review.json', JSON.stringify({approved:false,summary:'The primary review container failed outside the provider-takeover contract.',blocking_findings:['Inspect the Codex Review workflow infrastructure before allowing merge.'],non_blocking_notes:[]},null,2)+'\\n')"
           fi
 
-          if [ -s "${RUNNER_TEMP}/kimi-auth-refreshed.json" ]; then
-            if ! gh secret set KIMI_AUTH_JSON --repo "${GITHUB_REPOSITORY}" < "${RUNNER_TEMP}/kimi-auth-refreshed.json"; then
-              node -e "const fs=require('fs'); fs.writeFileSync('codex-review.json', JSON.stringify({approved:false,summary:'Kimi reviewed the PR but its rotated OAuth credential could not be persisted.',blocking_findings:['Repair the GitHub App secrets:write permission before relying on quota takeover.'],non_blocking_notes:[]},null,2)+'\\n')"
-            fi
-            rm -f "${RUNNER_TEMP}/kimi-auth-refreshed.json"
-          fi
 
       - name: Comment review
         if: always()
