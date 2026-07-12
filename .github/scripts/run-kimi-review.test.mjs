@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -137,6 +137,7 @@ test("missing Codex auth exports the immutable prompt before requesting takeover
     });
     assert.equal(result.status, 42, result.stderr);
     assert.match(await readFile(prompt, "utf8"), /Managed repository agent context:\nrules/);
+    assert.equal((await stat(prompt)).mode & 0o777, 0o644);
     assert.equal(JSON.parse(await readFile(output, "utf8")).approved, false);
   } finally {
     await rm(root, { recursive: true, force: true });

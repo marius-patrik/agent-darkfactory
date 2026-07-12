@@ -140,6 +140,9 @@ fi
 
 if [ -n "${PROMPT_EXPORT}" ]; then
   cp "${PROMPT_FILE}" "${PROMPT_EXPORT}"
+  # The review container runs as root while the provider-isolated takeover runs
+  # as the host runner. The prompt contains repository context, not credentials.
+  chmod 0644 "${PROMPT_EXPORT}"
 fi
 PROMPT_DIGEST="$(sha256sum "${PROMPT_FILE}" | awk '{print $1}')"
 
