@@ -1,6 +1,6 @@
 import express, { type Router } from "express";
 import { convertToModelMessages, type UIMessage } from "ai";
-import { streamChat, type KnowledgeBase, type ProviderName } from "@okf-agent/core";
+import { streamChat, type KnowledgeBase, type ProviderName } from "@understory/core";
 
 interface ChatBody {
   messages: UIMessage[];

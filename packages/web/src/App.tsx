@@ -74,7 +74,7 @@ export default function App() {
       <aside className="flex w-72 shrink-0 flex-col border-r border-zinc-800">
         <div className="border-b border-zinc-800 p-3">
           <div className="flex items-center gap-2">
-            <h1 className="text-sm font-bold tracking-wide text-cyan-300">OKF Knowledge Agent</h1>
+            <h1 className="text-sm font-bold tracking-wide text-cyan-300">understory 🌱</h1>
             {report && (
               <span
                 title={`${report.conceptCount} concepts, ${report.issues.length} issues`}

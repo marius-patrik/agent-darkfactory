@@ -50,7 +50,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.0
         version: 1.29.0(zod@3.25.76)
-      '@okf-agent/core':
+      '@understory/core':
         specifier: workspace:*
         version: link:../core
       ai:

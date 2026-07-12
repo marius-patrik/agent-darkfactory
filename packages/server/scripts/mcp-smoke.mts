@@ -3,7 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const transport = new StdioClientTransport({
   command: "node",
-  args: ["/Users/anirbankar/Claude/projects/okf-agent/packages/server/dist/mcp/stdio.js"],
+  args: [new URL("../dist/mcp/stdio.js", import.meta.url).pathname],
   env: {
     ...process.env,
     BUNDLE_ROOT: process.env.SMOKE_BUNDLE!,

@@ -1,6 +1,10 @@
-# OKF Knowledge Agent
+# understory 🌱
 
-An LLM-managed knowledge base following the [Open Knowledge Format (OKF) v0.1 spec](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) — a bundle of plain markdown files with YAML frontmatter, readable by humans, diffable in git, managed by an agent.
+**Memory that grows.**
+
+The layer beneath your agents: a self-wiring, plain-markdown memory. Every fact your agents learn is filed as a markdown concept, cross-linked into a living knowledge graph, and kept healthy by the agent itself — searchable, diffable, and entirely yours. Runs great on local models.
+
+Bundles follow the [Open Knowledge Format (OKF) v0.1 spec](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) — plain markdown files with YAML frontmatter, readable by humans, diffable in git, portable across tools.
 
 **Three ways in, one agent:**
 
@@ -18,7 +22,7 @@ pnpm monorepo:
 | Package | What |
 |---|---|
 | `packages/core` | OKF bundle layer (zero LLM) + agent (Vercel AI SDK tool loop: search/read/list/write/patch/delete) + provider registry |
-| `packages/server` | Fastify: MCP streamable-HTTP at `/mcp`, stdio bin, REST browse API at `/api/*`, streaming chat at `/api/chat`, serves the web build |
+| `packages/server` | Express: MCP streamable-HTTP at `/mcp`, stdio bin, REST browse API at `/api/*`, streaming chat at `/api/chat`, serves the web build |
 | `packages/web` | Vite + React + TS + Tailwind: bundle browser + agent chat (`useChat`) |
 
 Providers (env-selected, swappable per chat): **Anthropic** (default), **OpenRouter**, **llamacpp** (llama.cpp `llama-server` / llama-swap — model auto-discovered from `/v1/models`, loaded model preferred), **local** (any other OpenAI-compatible endpoint).
@@ -50,17 +54,17 @@ BUNDLE_ROOT=./sample-bundle ANTHROPIC_API_KEY=sk-... node packages/server/dist/i
 Dev mode (server on :3800, Vite HMR on :5180 with proxy):
 
 ```bash
-BUNDLE_ROOT=./sample-bundle pnpm --filter @okf-agent/server dev
-pnpm --filter @okf-agent/web dev
+BUNDLE_ROOT=./sample-bundle pnpm --filter @understory/server dev
+pnpm --filter @understory/web dev
 ```
 
 ## MCP registration (Claude Code / Desktop)
 
 ```bash
-claude mcp add okf-kb \
+claude mcp add ustory \
   -e BUNDLE_ROOT=/path/to/your/bundle \
   -e ANTHROPIC_API_KEY=sk-... \
-  -- node /path/to/okf-agent/packages/server/dist/mcp/stdio.js
+  -- node /path/to/understory/packages/server/dist/mcp/stdio.js
 ```
 
 Or point an HTTP MCP client at `http://host:3800/mcp`.
@@ -93,8 +97,8 @@ docker compose up --build
 ## Tests
 
 ```bash
-pnpm test                                  # core: 15 tests (spec §5/§6/§7/§9, sandbox, search, concurrency)
-pnpm --filter @okf-agent/server exec tsx scripts/mcp-smoke.mts   # MCP stdio round-trip (needs SMOKE_BUNDLE + an API key)
+pnpm test                                  # core: 18 tests (spec §5/§6/§7/§9, sandbox, search, concurrency)
+pnpm --filter @understory/server exec tsx scripts/mcp-smoke.mts   # MCP stdio round-trip (needs SMOKE_BUNDLE + an API key)
 ```
 
 ## Environment

@@ -108,7 +108,7 @@ export class TraceStore {
       await this.prune();
     } catch (err) {
       // Tracing is telemetry — never fail the run over it.
-      console.error(`[okf] trace save failed: ${(err as Error).message}`);
+      console.error(`[understory] trace save failed: ${(err as Error).message}`);
     }
   }
 

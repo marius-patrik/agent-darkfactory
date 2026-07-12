@@ -1,7 +1,7 @@
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Request, Response, Router } from "express";
 import express from "express";
-import type { KnowledgeBase } from "@okf-agent/core";
+import type { KnowledgeBase } from "@understory/core";
 import { buildMcpServer } from "./server.js";
 
 /**

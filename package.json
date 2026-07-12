@@ -1,5 +1,5 @@
 {
-  "name": "okf-agent",
+  "name": "understory",
   "version": "0.1.0",
   "private": true,
   "description": "LLM-managed knowledge base following the OKF spec — MCP server + web UI",
@@ -7,8 +7,8 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "dev": "pnpm --parallel -r dev",
-    "agent:query": "pnpm --filter @okf-agent/core agent:query",
-    "agent:mutate": "pnpm --filter @okf-agent/core agent:mutate"
+    "agent:query": "pnpm --filter @understory/core agent:query",
+    "agent:mutate": "pnpm --filter @understory/core agent:mutate"
   },
   "engines": {
     "node": ">=20"

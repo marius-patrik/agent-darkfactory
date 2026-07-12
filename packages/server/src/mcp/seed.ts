@@ -1,5 +1,5 @@
-import type { KnowledgeBase } from "@okf-agent/core";
-import type { TreeNode } from "@okf-agent/core";
+import type { KnowledgeBase } from "@understory/core";
+import type { TreeNode } from "@understory/core";
 
 const MAX_SEED_CHARS = 3000;
 const MAX_DESCRIPTIONS_PER_SEGMENT = 10;

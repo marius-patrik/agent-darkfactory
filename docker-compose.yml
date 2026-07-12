@@ -1,5 +1,5 @@
 services:
-  okf-agent:
+  understory:
     build: .
     ports:
       - "3800:3800"

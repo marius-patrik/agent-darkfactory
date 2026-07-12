@@ -2,8 +2,8 @@
 # Point Portainer at this file (Stacks → Add stack → Repository) and set
 # the LLM env vars in the stack's environment variables UI.
 services:
-  okf-agent:
-    image: ghcr.io/thecodacus/okf-agent:latest
+  understory:
+    image: ghcr.io/thecodacus/understory:latest
     ports:
       - "3800:3800"
     volumes:

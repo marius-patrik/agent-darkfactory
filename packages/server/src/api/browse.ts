@@ -1,6 +1,6 @@
 import express, { type Router } from "express";
-import { BundleError, TraceStore, type KnowledgeBase } from "@okf-agent/core";
-import { availableProviders, loadProviderConfig } from "@okf-agent/core";
+import { BundleError, TraceStore, type KnowledgeBase } from "@understory/core";
+import { availableProviders, loadProviderConfig } from "@understory/core";
 
 /** Deterministic browse API — no LLM involved, browsing never costs tokens. */
 export function browseRouter(kb: KnowledgeBase): Router {

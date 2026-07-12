@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
-import { KnowledgeBase } from "@okf-agent/core";
+import { KnowledgeBase } from "@understory/core";
 import { mcpRouter } from "./mcp/http.js";
 import { browseRouter } from "./api/browse.js";
 import { chatRouter } from "./api/chat.js";
@@ -54,5 +54,5 @@ if (existsSync(webDist)) {
 
 const port = Number(process.env.PORT ?? 3800);
 app.listen(port, "0.0.0.0", () => {
-  console.log(`okf-agent serving bundle ${bundleRoot} on :${port} (web + /api + /mcp)`);
+  console.log(`understory serving bundle ${bundleRoot} on :${port} (web + /api + /mcp)`);
 });
