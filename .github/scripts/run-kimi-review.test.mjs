@@ -85,7 +85,7 @@ test("a valid primary changes-required review wins despite nonzero Codex exit", 
         REVIEW_CONTEXT_DIR: context,
         REVIEW_OUTPUT: output,
         BASE_BRANCH: "dev",
-        BASE_REF: "dev",
+        BASE_REF: "HEAD",
       },
     });
     assert.equal(result.status, 0, result.stderr);
