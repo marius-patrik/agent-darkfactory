@@ -1,13 +1,21 @@
 # Handoff
 
-The 2026-07-12 Andromeda convergence is complete. Recover current state from:
+Resume planning from `data/agent-os/context/TASK.md`. Do not recreate completed rows from stale Fable, Claude, Codex, or Dream task stores.
 
-1. `data/agent-os/context/TASK.md`
-2. `agents memory list`
-3. canonical session `0mrhj5217-fa0cd9fd9845`
-4. GitHub issues #129, #130, #97, and #99
+PR #169 and the PR #170 back-sync are merged. PR #172 is the dedicated `dev`-to-`main` v0.2.2 release. After it merges, tag its merge commit, install that exact `main` commit on Windows and Mac, run the explicit-root doctor commands below, and repeat the encrypted two-way exchange idempotently.
 
-Do not restore the retired provider-local authorities or the legacy takeover
-ledger. Rollback backups are evidence only. New implementation must start from
-an open issue, use a feature branch into `dev`, pass CI/review, and propagate a
-tested release from `dev` to `main` through a dedicated release PR.
+```powershell
+$env:AGENTS_HOME = "$HOME\.agents"
+$env:AGENTS_USER_HOME = "$HOME"
+$env:AGENTS_ROOT = "$HOME\marius-patrik\Andromeda"
+& "$env:AGENTS_HOME\bin\agents.ps1" state doctor --json
+```
+
+```sh
+AGENTS_HOME="$HOME/.agents" \
+AGENTS_USER_HOME="$HOME" \
+AGENTS_ROOT="$HOME/marius-patrik/Andromeda" \
+  "$HOME/.agents/bin/agents" state doctor --json
+```
+
+After acceptance, update this handoff to the released commit and verified exchange hashes. Backlog items remain deferred; Parked items remain frozen until Patrik explicitly reopens them.
