@@ -46,8 +46,14 @@ interface GitResult {
   code: number;
 }
 
-async function git(state: SharedState, args: string[], allowFailure = false): Promise<GitResult> {
+async function git(
+  state: SharedState,
+  args: string[],
+  allowFailure = false,
+  env: Record<string, string | undefined> = process.env,
+): Promise<GitResult> {
   const child = Bun.spawn(["git", "-C", state.stateDir, ...args], {
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -218,7 +224,21 @@ export async function backupStateRepository(state: SharedState): Promise<StateRe
   const staged = await git(state, ["diff", "--cached", "--quiet"], true);
   let committed = false;
   if (staged.code === 1) {
-    await git(state, ["commit", "-m", `state: backup ${id} ${exported.payloadHash.slice(0, 12)}`]);
+    await git(state, [
+      "-c",
+      "user.name=Agent OS State",
+      "-c",
+      "user.email=state@andromeda.invalid",
+      "commit",
+      "-m",
+      `state: backup ${id} ${exported.payloadHash.slice(0, 12)}`,
+    ], false, {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Agent OS State",
+      GIT_AUTHOR_EMAIL: "state@andromeda.invalid",
+      GIT_COMMITTER_NAME: "Agent OS State",
+      GIT_COMMITTER_EMAIL: "state@andromeda.invalid",
+    });
     committed = true;
   } else if (staged.code !== 0) {
     throw new Error(staged.stderr || "unable to inspect staged state backup");

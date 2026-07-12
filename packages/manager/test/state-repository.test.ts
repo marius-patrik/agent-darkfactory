@@ -30,7 +30,7 @@ async function git(root: string, args: string[]): Promise<string> {
   return stdout.trim();
 }
 
-async function repositoryState(root: string) {
+async function repositoryState(root: string, options: { keepGitIdentity?: boolean } = {}) {
   const stateDir = path.join(root, ".agents");
   await mkdir(stateDir, { recursive: true });
   await git(stateDir, ["init", "-q", "-b", "main"]);
@@ -53,6 +53,10 @@ async function repositoryState(root: string) {
   await writeFile(path.join(stateDir, "scripts", "validate.mjs"), "// fixture\n");
   await git(stateDir, ["add", ".gitignore", "README.md", "agent.package.json", "scripts/validate.mjs"]);
   await git(stateDir, ["commit", "-q", "-m", "fixture"]);
+  if (options.keepGitIdentity === false) {
+    await git(stateDir, ["config", "--unset", "user.name"]);
+    await git(stateDir, ["config", "--unset", "user.email"]);
+  }
   const state = sharedStateAt(path.join(root, "source"), stateDir, root);
   await ensureSharedState(state);
   await enableEventSync(state, true);
@@ -171,6 +175,43 @@ describe("Andromeda-data state repository", () => {
       expect(repositoryCheck?.ok).toBe(false);
       expect((repositoryCheck?.details?.issues as string[]).some((issue) => issue.includes("invalid event exchange envelope"))).toBe(true);
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("backup uses a controlled identity without local or global Git identity", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-repository-identity-"));
+    const previousGlobal = process.env.GIT_CONFIG_GLOBAL;
+    const previousIdentity = Object.fromEntries(
+      ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"].map((name) => [name, process.env[name]]),
+    );
+    try {
+      const state = await repositoryState(root, { keepGitIdentity: false });
+      process.env.GIT_CONFIG_GLOBAL = path.join(root, "missing-global-gitconfig");
+      process.env.GIT_AUTHOR_NAME = "Conflicting Author";
+      process.env.GIT_AUTHOR_EMAIL = "conflicting-author@example.invalid";
+      process.env.GIT_COMMITTER_NAME = "Conflicting Committer";
+      process.env.GIT_COMMITTER_EMAIL = "conflicting-committer@example.invalid";
+      await rememberMemory(state, {
+        scope: "global",
+        subject: "agent-os",
+        predicate: "backup-identity",
+        value: "controlled",
+        sensitivity: "internal",
+        evidence,
+      });
+      const backup = await backupStateRepository(state);
+      expect(backup.committed).toBe(true);
+      expect(await git(state.stateDir, ["log", "-1", "--format=%an <%ae>"])).toBe(
+        "Agent OS State <state@andromeda.invalid>",
+      );
+    } finally {
+      if (previousGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = previousGlobal;
+      for (const [name, value] of Object.entries(previousIdentity)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
       await rm(root, { recursive: true, force: true });
     }
   });
