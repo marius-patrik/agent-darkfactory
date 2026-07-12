@@ -1,8 +1,0 @@
-{
-  "name": "sample-plugin",
-  "version": "0.1.0",
-  "description": "A minimal sample plugin that bundles a command.",
-  "bundled": {
-    "commands": ["sample-echo"]
-  }
-}

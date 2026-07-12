@@ -1,4 +1,4 @@
-"""Permission gate seam for VS2."""
+"""Permission gate for worker tool calls."""
 
 from __future__ import annotations
 
@@ -6,17 +6,25 @@ from enum import Enum
 
 
 class PermissionMode(str, Enum):
-    """Loop permission modes."""
+    """Canonical ``agent_os.v1.PermissionMode`` names used by the loop."""
 
-    auto = "auto"
+    plan = "plan"
     ask = "ask"
+    auto_accept_edits = "auto_accept_edits"
+    full_auto = "full_auto"
 
 
 def approve(mode: PermissionMode, tool_name: str, args: dict[str, object]) -> bool:
     """Return True when a tool call is approved.
 
-    VS2 locks full-auto/bypass behavior. ``ask`` is present as the VS4 seam.
+    Read-only tools remain available in plan mode. Ask mode fails closed until
+    an owning harness supplies approval. Auto-accept-edits permits reads and
+    file edits, while full-auto permits every registered local tool.
     """
-    if mode == PermissionMode.auto:
+    if mode == PermissionMode.full_auto:
         return True
+    if mode == PermissionMode.auto_accept_edits:
+        return tool_name in {"read_file", "ls", "write_file", "edit_file"}
+    if mode == PermissionMode.plan:
+        return tool_name in {"read_file", "ls"}
     return False

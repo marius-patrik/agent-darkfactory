@@ -1,115 +1,73 @@
-# State Sync Runbook
+# Event Exchange Safety Runbook
 
-This guide activates the `agents state status/adopt/sync` workflow so session and orchestrator state lives under `~/.agents` and syncs across machines (Windows + Mac) through the private `agents-data` repository.
+Status: cross-machine exchange is disabled. No snapshot-sync or provider-root
+adoption engine remains in the product.
 
-## What gets synced
+Agent OS has one authoritative state root, `AGENTS_HOME` (normally
+`~/.agents`). Local memory and session authority is immutable events plus
+deterministic projections; a Git copy of mutable machine state is not a sync
+protocol and is not exposed by the CLI.
 
-`agents state sync` copies files from `~/.agents` into `~/.agents/state-repo/machines/<hostname>/` and pushes to the configured remote. The default allowlist covers:
-
-- `skills/**`
-- `bin/**`
-- `state/**`
-- `sessions/**` — session state and transcripts
-- `orchestrator/**` — orchestrator ledger and heartbeat (`STATE.md`)
-- `clis/**/config.*` and `clis/**/settings.*`
-- `data-repos.json`, `packages.json`, `installs.json`, `environments.json`
-
-The following are **always denied** regardless of the allowlist:
-
-- `.git`, `node_modules`
-- paths containing `auth`, `token`, `secret`, `credential`, `key`, `cookie`
-- paths containing `cache`, `log`, `transcript` (as a directory), `history`
-
-Denials are reported by `agents state sync --dry-run`.
-
-## 1. Check current state
+## Available inspection
 
 ```sh
-agents state status
+agents state doctor --json
 agents state status --json
+agents memory status
+agents sessions list --json
 ```
 
-This shows whether each tool state is `in-place`, `adopted`, `missing`, or in `conflict`, and whether the state repo is configured.
+`state doctor` is read-only. `state status` reports canonical, forbidden,
+split, or missing provider roots. There is no command that moves a provider
+home, creates a bridge, exports mutable state, commits a machine snapshot, or
+pushes state to a remote.
 
-## 2. Adopt tool state (one-time per machine)
+## Path contract
 
-Adopting moves a tool's state directory from its original location into `~/.agents/state/<tool>` and leaves a junction (Windows) or symlink (Mac) behind.
+- `AGENTS_HOME` is the only state root.
+- Provider homes are `AGENTS_HOME/clis/<provider>`.
+- Exchange configuration and future transport state live below
+  `AGENTS_HOME/sync/`.
+- Roaming authority consists of immutable records/events, not projections.
+- Migration evidence lives below `AGENTS_HOME/provenance/migrations/` and in
+  the separately protected Recovery archive.
 
-```sh
-# Adopt Claude, Codex, or Kimi state
-agents state adopt kimi
-agents state adopt claude
-agents state adopt codex
-```
+The following are failures:
 
-Windows notes:
+- `AGENTS_HOME/state/`;
+- a second writable state root;
+- top-level `~/.codex`, `~/.claude`, `~/.kimi-code`, or `~/.gemini` paths,
+  including links;
+- a historical root variable used as a locator;
+- a mutable Git machine snapshot presented as restore-capable exchange.
 
-- The junction is created with `mklink /J` and requires no elevated privileges.
-- Close the target CLI before adopting; the directory must not be locked.
+## Preconditions for future exchange
 
-Mac notes:
+Before transport can be enabled, the implementation must:
 
-- A symlink is created with `ln -s`.
-- macOS may ask for Finder/Terminal permissions the first time the symlink is followed.
+1. exchange append-only, machine-partitioned memory, session, and orchestrator
+   events;
+2. authenticate and encrypt transport without placing credentials in roaming
+   payloads;
+3. merge deterministically, import idempotently, and support deletion
+   tombstones;
+4. reject symbolic links, path escapes, planted secrets, and mutable provider
+   databases;
+5. distinguish roaming, reproducible, per-machine, local-only, and secret
+   classes;
+6. journal imports and prove interruption recovery;
+7. converge two machines to identical projection hashes under adversarial
+   replay and reordering tests.
 
-Verify adoption:
+Raw provider transcripts are local evidence by default because filenames
+cannot classify secrets embedded in content. Provider databases/WALs,
+credentials, models, caches, logs, temporary files, locks, and process state
+are never normal exchange payloads.
 
-```sh
-agents state status
-```
+Provider-root migration is an offline semantic operation with source and
+destination hashes, tool versions, timestamps, outcome, and rollback evidence.
+After verification, the old live path is removed. No link, loader, dry-run
+adoption command, or compatibility mode remains.
 
-You should see `adopted` with a link target pointing into `~/.agents/state/`.
-
-## 3. Activate sync
-
-The first sync clones the private `agents-data` repository into `~/.agents/state-repo`, copies allowed state into `machines/<hostname>/`, commits, and pushes.
-
-```sh
-agents state sync --dry-run
-agents state sync
-```
-
-The dry-run lists every file that would be synced or skipped and why.
-
-## 4. On a second machine
-
-1. Install the `agents` CLI and run `agents state init`.
-2. Adopt the same tool states if desired.
-3. Run `agents state sync`.
-4. The other machine's state appears under:
-
-```
-~/.agents/state-repo/machines/<other-hostname>/
-```
-
-Session and orchestrator ledgers are visible immediately because they are covered by the allowlist.
-
-## 5. Conflict behavior
-
-`agents state sync` uses `git pull --rebase` before pushing. This keeps the machine-specific `machines/<hostname>/` directories linear and avoids merge commits. If the same machine syncs from two locations simultaneously, the second sync rebases its local commit on top of the remote copy.
-
-To avoid conflicts:
-
-- Sync from one location per hostname at a time.
-- Run `agents state sync --dry-run` before making large changes.
-- Do not edit files directly inside `~/.agents/state-repo`; change them in `~/.agents` and sync.
-
-## 6. Customize the allowlist
-
-Edit `~/.agents/state-sync.json`:
-
-```json
-{
-  "schemaVersion": 1,
-  "include": [
-    "skills/**",
-    "sessions/**",
-    "orchestrator/**"
-  ],
-  "exclude": [
-    "sessions/**/private/**"
-  ]
-}
-```
-
-Run `agents state sync --dry-run` to confirm the change before syncing.
+See [Canonical State and Memory v2](state-memory-v2.md) for the complete
+authority and acceptance contract.

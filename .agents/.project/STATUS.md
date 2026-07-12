@@ -1,6 +1,16 @@
 # Status
 
-- Branch policy: use PRs into `dev`.
-- CI: `.github/workflows/ci.yml` runs `bun run ci` directly; the TypeScript CLI and tests live in `packages/core/src/manager` and `packages/core/test/manager`, so no submodule init step remains for the root validation path.
-- Managed enforcement: DarkFactory baseline files are installed at the root.
-- Workspace topology (#13): PR #26 adds `os/agents-workspace` as the global workspace and wires `AGENTS_DATA`/`AGENTS_WORKSPACE` into `agents-manager`; depends on agents-manager PR #17.
+- Active reconciliation branch: `reconcile/single-state-memory`, tracking
+  `origin/dev`.
+- Canonical v2 root resolution, manifest, doctor, provider pinning, memory, and
+  managed startup injection are implemented.
+- The live personal doctor is green with four canonical checksum-pinned
+  providers and no standalone provider roots.
+- The installer converges to one source checkout and one regular
+  `$AGENTS_HOME/bin/agents` launcher; its isolated release smoke passes.
+- Retired machine/runtime state is protected under
+  `/Users/user/Recovery/agent-os-reconcile-2026-07-10` with a fully verified
+  checksum manifest.
+- Remaining branch work: session/orchestrator event authority, semantic
+  capability migration, Go harness retirement, full CI, installed boundary,
+  and PR publication.

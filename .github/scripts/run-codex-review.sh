@@ -9,8 +9,6 @@ SCHEMA_PATH="${SCHEMA_PATH:-/opt/codex-review/schema.json}"
 REVIEW_CONTEXT_DIR="${REVIEW_CONTEXT_DIR:-/review-context}"
 PR_TITLE="${PR_TITLE:-}"
 PR_BODY="${PR_BODY:-}"
-CODEX_REVIEW_MODEL="${CODEX_REVIEW_MODEL:-gpt-5.5}"
-CODEX_REVIEW_EFFORT="${CODEX_REVIEW_EFFORT:-low}"
 MAX_PROMPT_BYTES="${MAX_PROMPT_BYTES:-700000}"
 
 write_blocked_review() {
@@ -76,7 +74,6 @@ DIFF_EXCLUDES=(
   ':!coverage/**'
   ':!node_modules/**'
   ':!packages/web/dist/**'
-  ':!.codex-plugin/runtime/modules/**'
 )
 git diff --stat "${BASE_REF}...HEAD" -- . "${DIFF_EXCLUDES[@]}" > "${DIFF_FILE}"
 printf '\n--- FULL DIFF ---\n' >> "${DIFF_FILE}"
@@ -88,7 +85,7 @@ You are reviewing a pull request for a DarkFactory-managed repository.
 
 Review the PR against the linked issue/spec, the managed repository agent context, and the diff below.
 
-The generated review diff intentionally excludes common generated output directories such as dist/**, build/**, coverage/**, node_modules/**, packages/web/dist/**, and .codex-plugin/runtime/modules/**. Review source generators and validation logic for generated payloads instead; CI must validate generated payloads directly.
+The generated review diff intentionally excludes common generated output directories such as dist/**, build/**, coverage/**, node_modules/**, and packages/web/dist/**. Review source generators and validation logic for generated payloads instead; CI must validate generated payloads directly.
 
 Return only JSON that matches the provided schema.
 
@@ -144,8 +141,6 @@ fi
 
 if ! codex exec \
   --cd /workspace \
-  --model "${CODEX_REVIEW_MODEL}" \
-  -c "model_reasoning_effort=\"${CODEX_REVIEW_EFFORT}\"" \
   --sandbox read-only \
   --ephemeral \
   --output-schema "${SCHEMA_PATH}" \

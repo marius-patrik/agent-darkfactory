@@ -47,9 +47,9 @@ ledger, re-subscribe to worker heartbeat subjects, re-arm watchdogs.
 
 ## 3. The contract surface
 
-The full, typed Python contract is implemented by the sibling inference-engine
-package at `../inference-engine/python-agent/agent/conductor/lifecycle.py` as
-`WorkerLifecycle` (a `typing.Protocol`).  This document is the agents-core
+The full, typed Python contract is implemented by the in-repository inference
+package at `../inference/python-agent/agent/conductor/lifecycle.py` as
+`WorkerLifecycle` (a `typing.Protocol`).  This document is the Agent OS core
 semantic contract; the Python file is the implementation shape.
 
 ### 3.1 Types
@@ -246,7 +246,7 @@ reference, not through thought.
 ### What stays fixed (the contract)
 
 When the conductor moves from an in-process Python component
-(`../inference-engine/python-agent/agent/conductor/`) to a standalone Go service,
+(`../inference/python-agent/agent/conductor/`) to a standalone Go service,
 the following must not change:
 
 - The `WorkerLifecycle` Protocol signature (all method names, parameter types,
@@ -284,10 +284,10 @@ a thin NATS-RPC adapter; no caller changes.
 
 | Path | Content |
 |---|---|
-| `../inference-engine/python-agent/agent/conductor/__init__.py` | Package init; re-exports all public names. |
-| `../inference-engine/python-agent/agent/conductor/lifecycle.py` | Typed contract: all types + `WorkerLifecycle` Protocol. |
+| `../inference/python-agent/agent/conductor/__init__.py` | Package init; re-exports all public names. |
+| `../inference/python-agent/agent/conductor/lifecycle.py` | Typed contract: all types + `WorkerLifecycle` Protocol. |
 | `docs/contracts/worker-lifecycle.md` | This document. |
 
 Implementation files (VS0 stub, later Go adapter) live under
-`../inference-engine/python-agent/agent/conductor/` and are **not** part of this
+`../inference/python-agent/agent/conductor/` and are **not** part of this
 contract repo.

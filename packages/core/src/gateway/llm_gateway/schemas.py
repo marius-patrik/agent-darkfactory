@@ -24,10 +24,6 @@ class ChatCompletionRequest(BaseModel):
     frequency_penalty: float | None = Field(default=0.0, ge=-2.0, le=2.0)
     tools: list[dict[str, Any]] | None = None
     tool_choice: str | dict[str, Any] | None = None
-    # Rommie extension: explicit cloud opt-in. Defaults to False — the
-    # never-meter guard (router.resolve_model) rejects cloud models unless a
-    # request opts in. In VS1 no cloud model is reachable (all disabled).
-    allow_cloud: bool = Field(default=False, description="Allow routing to cloud models")
     task_class: str | None = Field(default=None, description="Optional task class for route accounting")
 
 
@@ -52,7 +48,9 @@ class ModelInfo(BaseModel):
     id: str
     object: str = "model"
     created: int = 0
-    owned_by: str = "rommie"
+    owned_by: str = "agent-os"
+    role: Literal["general", "coding", "conversation", "judge"]
+    context_length: int = Field(ge=1)
 
 
 class ModelListResponse(BaseModel):
@@ -64,60 +62,13 @@ class HealthResponse(BaseModel):
     status: Literal["healthy", "degraded", "unhealthy"]
     version: str
     git_sha: str = ""
-    image_tag: str = ""
     build_time: str = ""
     node_id: str = ""
     uptime_seconds: float
     models_registered: int
     models_healthy: int
-    roles_configured: int
+    roles_available: int
     details: dict[str, bool] = {}
-
-
-class RoleSelectRequest(BaseModel):
-    role: Literal["general", "coding", "conversation", "judge"]
-    model_id: str
-
-
-class RoleSelectResponse(BaseModel):
-    role: str
-    model_id: str
-    previous_model_id: str | None
-
-
-# --- Switcher surface (design §06; REST over the registry — VS1) -------------
-# The two-axis switcher (host + fabric/provider/model). VS1 exposes a REST form
-# over the registry; the Connect/protobuf SwitcherService (proto/rommie/v1/
-# switchers.proto) is the VS2 alignment — see docs/gateway.md.
-
-SwitcherAxis = Literal["host", "fabric", "provider", "model"]
-
-
-class SwitcherOption(BaseModel):
-    value: str
-    label: str = ""
-    available: bool = True
-    unavailable_reason: str | None = None
-
-
-class SwitcherOptionsResponse(BaseModel):
-    axis: SwitcherAxis
-    options: list[SwitcherOption]
-
-
-class SwitcherStateResponse(BaseModel):
-    # The fully-resolved selection. VS1 resolves the global default only
-    # (session/project scope is VS2). ``scope_source`` records which layer
-    # supplied the value (always "global" in VS1).
-    host: str | None = None
-    fabric: str | None = None
-    provider: str | None = None
-    model: str | None = None
-    scope_source: str = "global"
-
-
-class SwitcherSetRequest(BaseModel):
-    value: str
 
 
 class TraceEvent(BaseModel):
@@ -135,22 +86,17 @@ class TraceEvent(BaseModel):
     backend_node_id: str | None = None
     served_model: str | None = None
     resource_class: str | None = None
-    allow_cloud: bool | None = None
-    cloud: bool | None = None
     response_status: str | None = None
     http_status: int | None = None
     duration_ms: float | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
-    fallback_used: bool = False
-    fallback_to: str | None = None
     error: str | None = None
     request_id: str | None = None
 
 
 class RouteResolveRequest(BaseModel):
     task_class: str = Field(description="Task class, for example mechanical or standard-impl")
-    allow_cloud: bool = Field(default=False, description="Allow enabled cloud candidates")
 
 
 class RouteCandidateInfo(BaseModel):

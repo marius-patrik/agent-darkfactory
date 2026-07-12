@@ -1,24 +1,15 @@
-# Agents Manager Commands
+# Agent OS Manager Commands
 
 Run from the repository root:
 
-```powershell
-bun install
+```sh
 bun run check
-bun run test
+bun test packages/core/test/manager/*.test.ts
 bun run ci
+bun run agents -- state doctor --json
+bun run agents -- memory status
 ```
 
-`bun run ci` must remain equivalent to `bun run check && bun run test`.
-
-## Agent state consolidation
-
-```powershell
-agents state status [--json]
-agents state adopt <claude|codex|kimi> [--dry-run]
-agents state sync [--dry-run]
-```
-
-- `status` reports whether each known tool state dir is `in-place`, `adopted`, `missing`, or `conflict`, plus the state-repo state.
-- `adopt` moves the original tool state dir to `~/.agents/state/<tool>` and leaves a junction at the original path. Idempotent; refuses locked or conflicting dirs.
-- `sync` clones the private `agents-data` repo into `~/.agents/state-repo`, copies the allowlisted shareable subset into `machines/<hostname>/`, commits, rebases, and pushes.
+Tests that touch state must use explicit disposable `AGENTS_HOME`,
+`AGENTS_USER_HOME`, and `AGENTS_ROOT` values. The personal root is only for
+intentional read-only or installed-boundary validation.

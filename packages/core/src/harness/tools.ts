@@ -1,14 +1,15 @@
 import type {
   ProviderAdapter,
   SessionDescriptor,
-  SessionState,
   SessionStateRoot,
   SessionTranscript,
   ToolCall,
   TurnRequest,
   TurnResult,
 } from "./session";
-import { loadSessionState, loadTranscript, saveSessionState, saveTranscript } from "./session";
+import {
+  withSessionWriteTransaction,
+} from "./session";
 
 export interface AgentToolParameter {
   type: string;
@@ -46,7 +47,7 @@ export interface AgentToolContext {
 export interface RunWithToolsOptions {
   tools: AgentTool[];
   ctx: AgentToolContext;
-  resolveAdapter: (descriptor: SessionDescriptor) => ProviderAdapter;
+  resolveAdapter: (descriptor: SessionDescriptor) => ProviderAdapter | Promise<ProviderAdapter>;
   maxRounds?: number;
 }
 
@@ -131,7 +132,8 @@ export function createTuiTools(): AgentTool[] {
         const providers = await ctx.listProviders();
         const provider = providers.find((p) => p.id === providerId);
         if (!provider) throw new Error(`provider '${providerId}' is not configured`);
-        const model = provider.models[0] ?? "default";
+        const model = provider.models[0];
+        if (!model) throw new Error(`provider '${providerId}' has no model in canonical config`);
         await ctx.switchProvider(providerId, model);
         return { status: "ok", provider: providerId, model };
       },
@@ -199,120 +201,142 @@ export async function runSessionTurnWithTools(
   request: TurnRequest,
   options: RunWithToolsOptions,
 ): Promise<{ result: TurnResult; descriptor: SessionDescriptor }> {
-  const { tools, ctx, resolveAdapter, maxRounds = 5 } = options;
-  const transcript = (await loadTranscript(state, descriptor.sessionId)) ?? emptyTranscript(descriptor);
-  injectToolSystemPrompt(transcript, tools, request.systemPrompt);
-  transcript.messages.push({ role: "user", content: request.prompt });
-
-  let currentDescriptor = descriptor;
-  let finalResult: TurnResult | undefined;
-
-  for (let round = 0; round < maxRounds; round += 1) {
-    const adapter = resolveAdapter(currentDescriptor);
-    await adapter.startSession(currentDescriptor);
-    await adapter.continueSession(currentDescriptor, transcript);
-    const result = await adapter.runTurn(currentDescriptor, transcript, request);
-
-    if (result.error) {
-      transcript.messages.push({ role: "assistant", content: result.error, metadata: { error: true } });
-      finalResult = result;
-      break;
+  return withSessionWriteTransaction(state, descriptor.sessionId, async (transaction) => {
+    const { tools, ctx, resolveAdapter, maxRounds = 5 } = options;
+    const initial = await transaction.load();
+    if (!initial) throw new Error(`session not found: ${descriptor.sessionId}`);
+    const initialState = initial.state;
+    let transcript = initial.transcript;
+    let currentDescriptor: SessionDescriptor = {
+      sessionId: initialState.sessionId,
+      provider: initialState.provider,
+      model: initialState.model,
+      mode: initialState.mode,
+      workdir: initialState.workdir,
+      stateDir: state.stateDir,
+    };
+    ctx.descriptor = currentDescriptor;
+    const turnId = await transaction.beginTurn();
+    const systemMessage = toolSystemMessage(transcript, tools, request.systemPrompt);
+    if (systemMessage) {
+      transcript = (await transaction.appendMessage(turnId, systemMessage)).transcript;
     }
+    transcript = (
+      await transaction.appendMessage(turnId, { role: "user", content: request.prompt })
+    ).transcript;
 
-    const toolCalls = parseToolCalls(result.content);
-    if (toolCalls.length === 0) {
-      transcript.messages.push({
+    let finalResult: TurnResult | undefined;
+    try {
+      for (let round = 0; round < maxRounds; round += 1) {
+        const adapter = await resolveAdapter(currentDescriptor);
+        await adapter.startSession(currentDescriptor);
+        await adapter.continueSession(currentDescriptor, transcript);
+        const result = await adapter.runTurn(currentDescriptor, transcript, request);
+        await transaction.verify();
+
+        if (result.error) {
+          transcript = (
+            await transaction.appendMessage(turnId, {
+              role: "assistant",
+              content: result.error,
+              metadata: { error: true },
+            })
+          ).transcript;
+          finalResult = result;
+          break;
+        }
+
+        const toolCalls = parseToolCalls(result.content);
+        if (toolCalls.length === 0) {
+          transcript = (
+            await transaction.appendMessage(turnId, {
+              role: "assistant",
+              content: result.content,
+              metadata: { usage: result.usage, quota: result.quota, finishReason: result.finishReason },
+            })
+          ).transcript;
+          finalResult = result;
+          break;
+        }
+
+        const visibleContent = result.content.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "").trim();
+        transcript = (
+          await transaction.appendMessage(turnId, {
+            role: "assistant",
+            content: visibleContent,
+            toolCalls,
+            metadata: { usage: result.usage, quota: result.quota, finishReason: result.finishReason },
+          })
+        ).transcript;
+
+        const toolResults = await executeToolCalls(toolCalls, tools, ctx);
+        const desiredDescriptor = ctx.descriptor;
+        const canonical = await transaction.load();
+        if (!canonical) throw new Error(`session not found: ${descriptor.sessionId}`);
+        const canonicalState = canonical.state;
+        if (
+          canonicalState.provider !== desiredDescriptor.provider ||
+          canonicalState.model !== desiredDescriptor.model
+        ) {
+          currentDescriptor = await transaction.switchProvider(desiredDescriptor.provider, desiredDescriptor.model);
+        } else {
+          currentDescriptor = {
+            sessionId: canonicalState.sessionId,
+            provider: canonicalState.provider,
+            model: canonicalState.model,
+            mode: canonicalState.mode,
+            workdir: canonicalState.workdir,
+            stateDir: state.stateDir,
+          };
+        }
+        ctx.descriptor = currentDescriptor;
+
+        for (const toolResult of toolResults) {
+          transcript = (
+            await transaction.appendMessage(turnId, {
+              role: "tool",
+              content: toolResult.content,
+              toolCallId: toolResult.id,
+              name: toolResult.name,
+            })
+          ).transcript;
+        }
+      }
+
+      if (!finalResult) {
+        const error = "tool rounds exhausted without a final response";
+        finalResult = { content: "", role: "assistant", error };
+        await transaction.appendMessage(turnId, {
+          role: "assistant",
+          content: error,
+          metadata: { error: true },
+        });
+      }
+      await transaction.completeTurn(turnId, finalResult);
+      return { result: finalResult, descriptor: currentDescriptor };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await transaction.verify();
+      await transaction.appendMessage(turnId, {
         role: "assistant",
-        content: result.content,
-        metadata: {
-          usage: result.usage,
-          quota: result.quota,
-          finishReason: result.finishReason,
-        },
+        content: message,
+        metadata: { error: true },
       });
-      finalResult = result;
-      break;
+      await transaction.completeTurn(turnId, { error: message });
+      throw error;
     }
-
-    const visibleContent = result.content.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "").trim();
-    transcript.messages.push({
-      role: "assistant",
-      content: visibleContent,
-      toolCalls,
-      metadata: {
-        usage: result.usage,
-        quota: result.quota,
-        finishReason: result.finishReason,
-      },
-    });
-
-    const toolResults = await executeToolCalls(toolCalls, tools, ctx);
-    for (const toolResult of toolResults) {
-      transcript.messages.push({
-        role: "tool",
-        content: toolResult.content,
-        toolCallId: toolResult.id,
-        name: toolResult.name,
-      });
-    }
-
-    currentDescriptor = ctx.descriptor;
-  }
-
-  if (!finalResult) {
-    const error = "tool rounds exhausted without a final response";
-    finalResult = { content: "", role: "assistant", error };
-    transcript.messages.push({ role: "assistant", content: error, metadata: { error: true } });
-  }
-
-  const sessionState = (await loadSessionState(state, descriptor.sessionId)) ?? emptyState(descriptor);
-  sessionState.turnCount += 1;
-  const now = new Date().toISOString();
-  sessionState.lastTurnAt = now;
-  sessionState.provider = currentDescriptor.provider;
-  sessionState.model = currentDescriptor.model;
-  transcript.provider = currentDescriptor.provider;
-  transcript.model = currentDescriptor.model;
-  transcript.updatedAt = now;
-
-  await Promise.all([saveTranscript(state, transcript), saveSessionState(state, sessionState)]);
-  return { result: finalResult, descriptor: currentDescriptor };
+  });
 }
 
-function injectToolSystemPrompt(transcript: SessionTranscript, tools: AgentTool[], systemPrompt?: string): void {
+function toolSystemMessage(
+  transcript: SessionTranscript,
+  tools: AgentTool[],
+  systemPrompt?: string,
+): SessionTranscript["messages"][number] | undefined {
   const toolPrompt = renderToolsPrompt(tools);
   const parts = [systemPrompt, toolPrompt].filter((p): p is string => Boolean(p));
-  if (parts.length === 0) return;
+  if (parts.length === 0) return undefined;
   const content = parts.join("\n\n");
   const existing = transcript.messages.find((m) => m.role === "system");
-  if (!existing) {
-    transcript.messages.unshift({ role: "system", content });
-  }
-}
-
-function emptyTranscript(descriptor: SessionDescriptor): SessionTranscript {
-  const now = new Date().toISOString();
-  return {
-    schemaVersion: 1,
-    sessionId: descriptor.sessionId,
-    provider: descriptor.provider,
-    model: descriptor.model,
-    mode: descriptor.mode,
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
-  };
-}
-
-function emptyState(descriptor: SessionDescriptor): SessionState {
-  return {
-    schemaVersion: 1,
-    sessionId: descriptor.sessionId,
-    workdir: descriptor.workdir,
-    provider: descriptor.provider,
-    model: descriptor.model,
-    mode: descriptor.mode,
-    turnCount: 0,
-    metadata: {},
-  };
+  return existing ? undefined : { role: "system", content };
 }

@@ -1,18 +1,23 @@
 import { adapterIds } from "../adapters";
+import type { SessionConfig } from "../state";
+import type { SessionDescriptor } from "../../harness/session";
 
-export const defaultProviderModels: Record<string, string[]> = {
-  kimi: ["kimi-k2", "moonshot-v1-8k", "moonshot-v1-32k"],
-  claude: ["claude-sonnet-4-20250514", "claude-opus-4"],
-  codex: ["codex-latest"],
-  agy: ["gemini-2.5-pro", "gemini-2.5-flash"],
-  fake: ["test"],
-};
-
-export function configuredProviderModels(): { providers: string[]; modelsByProvider: Record<string, string[]> } {
-  const providers = adapterIds();
-  const modelsByProvider: Record<string, string[]> = {};
-  for (const provider of providers) {
-    modelsByProvider[provider] = defaultProviderModels[provider] ?? ["default"];
+export function configuredProviderModels(
+  config: SessionConfig,
+  active?: Pick<SessionDescriptor, "provider" | "model">,
+): { providers: string[]; modelsByProvider: Record<string, string[]> } {
+  const knownProviders = new Set<string>(adapterIds());
+  const modelsByProvider: Record<string, string[]> = structuredClone(config.providerModels ?? {});
+  if (config.defaultProvider && config.defaultModel) {
+    knownProviders.add(config.defaultProvider);
+    const models = modelsByProvider[config.defaultProvider] ?? [];
+    if (!models.includes(config.defaultModel)) modelsByProvider[config.defaultProvider] = [...models, config.defaultModel];
   }
+  if (active) {
+    knownProviders.add(active.provider);
+    const models = modelsByProvider[active.provider] ?? [];
+    if (!models.includes(active.model)) modelsByProvider[active.provider] = [...models, active.model];
+  }
+  const providers = [...knownProviders].filter((provider) => (modelsByProvider[provider]?.length ?? 0) > 0);
   return { providers, modelsByProvider };
 }

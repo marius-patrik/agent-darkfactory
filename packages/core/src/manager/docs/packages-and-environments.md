@@ -1,6 +1,9 @@
 # Packages and Environments Groundwork
 
-Issue #10 expands `agents-manager` from local agent package registration toward real OS/container package and named environment management. This document defines the first local contracts only. Real distro package installation, image pulls, environment switching, and workspace provisioning depend on agents-mono #8 and #9.
+This document defines the local desired-state groundwork for future real
+OS/container package and named-environment management. Image build/publication
+and named-environment switching remain gated by the current Agent OS image and
+release contracts.
 
 ## Current Boundary
 
@@ -97,7 +100,11 @@ agents os remove <name> [--prune-data] [--dry-run]
 agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
 ```
 
-`agents env list` may read local desired-state records. Mutating `agents packages` and `agents env` commands stay stubbed until agents-mono #8 defines the architecture/data contracts and agents-mono #9 defines the base image and release pipeline. `agents os` commands are scaffolded with dry-run plans and will invoke Docker when not run with `--dry-run`.
+`agents env list` may read local desired-state records. Unsupported mutating
+`agents packages` and `agents env` commands fail explicitly until the image,
+release, and environment contracts have real implementations. `agents os`
+commands expose dry-run plans and may invoke Docker only on implemented
+non-dry-run paths.
 
 ## Integration Rules
 

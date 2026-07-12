@@ -8,8 +8,9 @@ import { ensureSharedState, sharedStateFromEnv } from "./state";
 import type { DataRepoRegistration } from "./data-repos";
 import { readDataRepos } from "./data-repos";
 import type { ContainerPackageRecord, OsContainerRecord } from "./environments";
-import { readPackagesAndEnvironmentsState, writePackagesAndEnvironmentsState } from "./environments";
+import { readPackagesAndEnvironmentsState, updatePackagesAndEnvironmentsState } from "./environments";
 import { listSecrets } from "./secrets";
+import { canonicalChildEnvironment } from "./runtime-paths";
 
 export interface DockerMount {
   host: string;
@@ -95,7 +96,6 @@ export function containerEnv(dataRepos: DataRepoRegistration[]): Record<string, 
   const env: Record<string, string> = {
     AGENTS_ROOT: "/opt/agents-os",
     AGENTS_HOME: "/agents/state",
-    AGENTS_DATA: "/agents/data",
     AGENTS_WORKSPACE: "/workspace/agents",
     AGENTS_DATA_REPOS: "/agents/state/data-repos.json",
     AGENTS_PACKAGES: "/agents/state/packages.json",
@@ -103,11 +103,14 @@ export function containerEnv(dataRepos: DataRepoRegistration[]): Record<string, 
     AGENTS_SECRETS: "/agents/state/secrets",
     AGENTS_CLIS: "/agents/state/clis",
     AGENTS_HARNESSES: "/agents/state/harnesses",
+    AGENTS_IDENTITY: "/agents/state/identity",
+    AGENTS_MEMORY: "/agents/state/memory",
+    AGENTS_SESSIONS: "/agents/state/sessions",
+    AGENTS_ORCHESTRATOR: "/agents/state/orchestrator",
     AGENTS_SKILLS: "/agents/state/skills",
     AGENTS_PLUGINS: "/agents/state/plugins",
     AGENTS_HOOKS: "/agents/state/hooks",
     AGENTS_TEMPLATES: "/agents/state/templates",
-    AGENTOS_DATA_ROOT: "/agents/data/agentos",
   };
   for (const repo of dataRepos) {
     const key = repo.env ?? `${repo.id.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_ROOT`;
@@ -117,13 +120,12 @@ export function containerEnv(dataRepos: DataRepoRegistration[]): Record<string, 
 }
 
 export function containerDataRepoPath(repo: DataRepoRegistration): string {
-  if (repo.id === "agentos-data") return "/agents/data/agentos";
-  if (repo.id === "darkfactory-data") return "/agents/data/darkfactory-data";
+  if (repo.id === "agent-os-data") return "/agents/data/agent-os";
   return `/agents/data/${repo.id}`;
 }
 
 async function runtimeEmptyDir(state: SharedState): Promise<string> {
-  const dir = path.join(state.root, ".agents-runtime-empty");
+  const dir = path.join(state.stateDir, "runtime", "empty-secrets");
   await mkdir(dir, { recursive: true });
   return dir;
 }
@@ -138,11 +140,8 @@ export async function containerMounts(
 
   const mounts: DockerMount[] = [
     { host: toPosixPath(state.stateDir), container: "/agents/state", mode: trusted ? "rw" : "ro" },
-    { host: toPosixPath(state.dataDir), container: "/agents/data", mode: "rw" },
     { host: toPosixPath(state.workspaceDir), container: "/workspace/agents", mode: "rw" },
   ];
-  const darkfactoryWorkspace = path.join(state.root, "workspaces", "darkfactory-workspace");
-  mounts.push({ host: toPosixPath(darkfactoryWorkspace), container: "/workspace/darkfactory", mode: "rw" });
   for (const repo of dataRepos) {
     const containerPath = containerDataRepoPath(repo);
     if (mounts.some((m) => m.container === containerPath)) continue;
@@ -232,10 +231,10 @@ export async function writeOsState(
   state: SharedState,
   osState: { images: ContainerPackageRecord[]; containers: OsContainerRecord[] },
 ): Promise<void> {
-  const pe = await readPackagesAndEnvironmentsState(state);
-  pe.containerPackages = osState.images;
-  pe.containers = osState.containers;
-  await writePackagesAndEnvironmentsState(state, pe);
+  await updatePackagesAndEnvironmentsState(state, (current) => {
+    current.containerPackages = osState.images;
+    current.containers = osState.containers;
+  });
 }
 
 export async function findContainer(state: SharedState, name: string): Promise<OsContainerRecord | undefined> {
@@ -247,12 +246,12 @@ export async function ensureContainerRecord(
   state: SharedState,
   record: Omit<OsContainerRecord, "createdAt">,
 ): Promise<OsContainerRecord> {
-  const osState = await readOsState(state);
   const full: OsContainerRecord = { ...record, createdAt: new Date().toISOString() };
-  const index = osState.containers.findIndex((c) => c.name === record.name);
-  if (index === -1) osState.containers.push(full);
-  else osState.containers[index] = { ...osState.containers[index], ...full };
-  await writeOsState(state, osState);
+  await updatePackagesAndEnvironmentsState(state, (current) => {
+    const index = current.containers.findIndex((item) => item.name === record.name);
+    if (index === -1) current.containers.push(full);
+    else current.containers[index] = { ...current.containers[index], ...full };
+  });
   return full;
 }
 
@@ -261,18 +260,16 @@ export async function updateContainerStatus(
   name: string,
   status: OsContainerRecord["status"],
 ): Promise<void> {
-  const osState = await readOsState(state);
-  const container = osState.containers.find((c) => c.name === name);
-  if (container) {
-    container.status = status;
-    await writeOsState(state, osState);
-  }
+  await updatePackagesAndEnvironmentsState(state, (current) => {
+    const container = current.containers.find((item) => item.name === name);
+    if (container) container.status = status;
+  });
 }
 
 export async function removeContainerRecord(state: SharedState, name: string): Promise<void> {
-  const osState = await readOsState(state);
-  osState.containers = osState.containers.filter((c) => c.name !== name);
-  await writeOsState(state, osState);
+  await updatePackagesAndEnvironmentsState(state, (current) => {
+    current.containers = current.containers.filter((item) => item.name !== name);
+  });
 }
 
 export async function recordImage(
@@ -280,7 +277,6 @@ export async function recordImage(
   image: string,
   options: { channel?: string; digest?: string; tags?: string[]; runtime?: "docker" | "podman" },
 ): Promise<ContainerPackageRecord> {
-  const osState = await readOsState(state);
   const record: ContainerPackageRecord = {
     id: image,
     image,
@@ -288,10 +284,11 @@ export async function recordImage(
     tags: options.tags ?? [options.channel || "dev"],
     runtime: options.runtime ?? "docker",
   };
-  const index = osState.images.findIndex((i) => i.id === image);
-  if (index === -1) osState.images.push(record);
-  else osState.images[index] = { ...osState.images[index], ...record };
-  await writeOsState(state, osState);
+  await updatePackagesAndEnvironmentsState(state, (current) => {
+    const index = current.containerPackages.findIndex((item) => item.id === image);
+    if (index === -1) current.containerPackages.push(record);
+    else current.containerPackages[index] = { ...current.containerPackages[index], ...record };
+  });
   return record;
 }
 
@@ -356,9 +353,7 @@ async function isDirectory(file: string): Promise<boolean> {
 async function collectPathSharingPaths(state: SharedState): Promise<Array<{ host: string; container: string }>> {
   const paths: Array<{ host: string; container: string }> = [
     { host: state.stateDir, container: "/agents/state" },
-    { host: state.dataDir, container: "/agents/data" },
     { host: state.workspaceDir, container: "/workspace/agents" },
-    { host: path.join(state.root, "workspaces", "darkfactory-workspace"), container: "/workspace/darkfactory" },
   ];
   for (const repo of await readDataRepos(state)) {
     const containerPath = containerDataRepoPath(repo);
@@ -395,7 +390,7 @@ export async function checkPathSharing(
       await Bun.write(path.join(host, pathSentinel), "ok");
       const sentinelContainerPath = `${container}/${pathSentinel}`;
       const args = ["run", "--rm", "--entrypoint", "cat", "-v", `${toPosixPath(host)}:${container}:ro`, image, sentinelContainerPath];
-      const result = await runner(args, { cwd: state.root, env: process.env });
+      const result = await runner(args, { cwd: state.root, env: canonicalChildEnvironment() });
       const ok = result.code === 0;
       details.push({ host, container, ok });
       if (!ok) {
@@ -434,7 +429,7 @@ export interface ProfilePreflightResult {
 
 async function readSharedEnv(state: SharedState): Promise<Record<string, string>> {
   const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
+  for (const [key, value] of Object.entries(canonicalChildEnvironment())) {
     if (value !== undefined) env[key] = value;
   }
   try {
@@ -579,7 +574,7 @@ export async function osCommand(rawArgs: string[]): Promise<void> {
   const [subcommand, action] = values;
   const state = sharedStateFromEnv(process.cwd());
   await ensureSharedState(state);
-  const runnerOptions: DockerRunnerOptions = { cwd: state.root, env: process.env };
+  const runnerOptions: DockerRunnerOptions = { cwd: state.root, env: canonicalChildEnvironment() };
 
   if (!subcommand || subcommand === "doctor") {
     return osDoctor(state, flags);
@@ -607,7 +602,7 @@ export async function osCommand(rawArgs: string[]): Promise<void> {
 
 async function osDoctor(state: SharedState, flags: Record<string, string | boolean>): Promise<void> {
   const stateIssues: string[] = [];
-  const docker = await runDocker(["--version"], { cwd: state.root, env: process.env });
+  const docker = await runDocker(["--version"], { cwd: state.root, env: canonicalChildEnvironment() });
   if (docker.code !== 0) stateIssues.push("docker not available; install Docker Desktop or Docker Engine");
 
   for (const file of [state.envFile, state.packagesFile, state.dataReposFile, state.environmentsFile]) {
@@ -615,8 +610,8 @@ async function osDoctor(state: SharedState, flags: Record<string, string | boole
   }
 
   const dataRepos = await readDataRepos(state);
-  for (const id of ["agentos-data", "darkfactory-data"]) {
-    if (!dataRepos.find((r) => r.id === id)) stateIssues.push(`missing data repo registration: ${id}`);
+  for (const repo of dataRepos) {
+    if (!(await exists(repo.path))) stateIssues.push(`missing data repo checkout: ${repo.id} at ${repo.path}`);
   }
 
   const osState = await readOsState(state);
@@ -906,22 +901,22 @@ export interface ProfileConfig {
 }
 
 const profileConfigs: Record<string, ProfileConfig> = {
-  harness: { ports: [], requires: { env: ["AGENTS_HOME", "AGENTS_DATA", "AGENTS_WORKSPACE"], dataRepos: ["agentos-data"] } },
-  "inference-engine": {
+  harness: { ports: [], requires: { env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"] } },
+  "agent-os-inference": {
     ports: [{ name: "http", container: 8080, host: 8080 }],
-    requires: { env: ["AGENTS_HOME", "AGENTS_DATA", "AGENTS_WORKSPACE"], dataRepos: ["agentos-data"] },
+    requires: { env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"] },
   },
-  "llm-gateway": {
+  "agent-os-gateway": {
     ports: [{ name: "http", container: 8787, host: 8787 }],
     requires: {
-      env: ["AGENTS_HOME", "AGENTS_DATA", "AGENTS_WORKSPACE", "AGENTS_CREDITS"],
-      dataRepos: ["agentos-data"],
+      env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT", "AGENTS_CREDITS"],
+      dataRepos: ["agent-os-data"],
       secrets: ["openai", "github"],
     },
   },
   darkfactory: {
     ports: [],
-    requires: { env: ["AGENTS_HOME", "AGENTS_DATA", "AGENTS_WORKSPACE"], dataRepos: ["agentos-data", "darkfactory-data"], secrets: ["github"] },
+    requires: { env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"], secrets: ["github"] },
   },
   "full-system": {
     ports: [
@@ -929,8 +924,8 @@ const profileConfigs: Record<string, ProfileConfig> = {
       { name: "gateway", container: 8787, host: 8787 },
     ],
     requires: {
-      env: ["AGENTS_HOME", "AGENTS_DATA", "AGENTS_WORKSPACE", "AGENTS_CREDITS"],
-      dataRepos: ["agentos-data", "darkfactory-data"],
+      env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT", "AGENTS_CREDITS"],
+      dataRepos: ["agent-os-data"],
       secrets: ["openai", "github"],
     },
   },

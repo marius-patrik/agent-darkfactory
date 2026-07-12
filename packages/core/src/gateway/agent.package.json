@@ -1,8 +1,13 @@
 {
   "schemaVersion": 1,
-  "id": "llm-gateway",
-  "name": "LLM Gateway",
-  "kind": "agent",
-  "description": "OpenAI-format LLM gateway with registry routing, fallback, switchers, quota, OAuth dispatch seams, and gateway tests.",
-  "provides": ["llm-gateway", "model-routing", "switchers"]
+  "id": "agent-os-gateway",
+  "name": "Agent OS Gateway",
+  "kind": "package",
+  "description": "Local OpenAI-format model gateway with source-owned routing, health, quota windows, and private traces.",
+  "entry": "uv run agent-os-gateway serve",
+  "workingDirectory": ".",
+  "requires": {
+    "state": ["runtime/gateway"]
+  },
+  "provides": ["agent-os-gateway", "model-routing"]
 }

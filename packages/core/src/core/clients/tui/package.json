@@ -1,7 +1,7 @@
 {
-  "name": "@agentos/tui",
+  "name": "@agent-os/tui",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p ../../tsconfig.json --noEmit"

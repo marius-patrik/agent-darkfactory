@@ -1,5 +1,0 @@
-interface:
-  display_name: "Memory"
-  short_description: "Use Rommie's layered memory system."
-  default_prompt: "Use Rommie memory for this session."
-

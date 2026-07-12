@@ -3,14 +3,74 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@marius-patrik/agents-mono",
+      "name": "@marius-patrik/agents-manager",
       "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "^5.5.0",
+        "@bufbuild/buf": "1.71.0",
+        "@types/bun": "1.3.14",
+        "typescript": "5.9.3",
       },
+    },
+    "packages/core": {
+      "name": "@marius-patrik/agents-manager-core",
+      "version": "0.1.0",
+      "bin": {
+        "agents": "./src/manager/cli.ts",
+      },
+      "dependencies": {
+        "@bufbuild/protobuf": "2.12.1",
+        "@connectrpc/connect": "2.1.2",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "typescript": "5.9.3",
+      },
+    },
+    "packages/core/src/core/clients/shared-ts": {
+      "name": "@agent-os/shared-ts",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bufbuild/protobuf": "2.12.1",
+        "@connectrpc/connect": "2.1.2",
+      },
+    },
+    "packages/core/src/core/clients/tui": {
+      "name": "@agent-os/tui",
+      "version": "0.1.0",
+    },
+    "packages/core/src/core/clients/web": {
+      "name": "@agent-os/web",
+      "version": "0.1.0",
     },
   },
   "packages": {
+    "@agent-os/shared-ts": ["@agent-os/shared-ts@workspace:packages/core/src/core/clients/shared-ts"],
+
+    "@agent-os/tui": ["@agent-os/tui@workspace:packages/core/src/core/clients/tui"],
+
+    "@agent-os/web": ["@agent-os/web@workspace:packages/core/src/core/clients/web"],
+
+    "@bufbuild/buf": ["@bufbuild/buf@1.71.0", "", { "optionalDependencies": { "@bufbuild/buf-darwin-arm64": "1.71.0", "@bufbuild/buf-darwin-x64": "1.71.0", "@bufbuild/buf-linux-aarch64": "1.71.0", "@bufbuild/buf-linux-armv7": "1.71.0", "@bufbuild/buf-linux-x64": "1.71.0", "@bufbuild/buf-win32-arm64": "1.71.0", "@bufbuild/buf-win32-x64": "1.71.0" }, "bin": { "buf": "bin/buf", "protoc-gen-buf-breaking": "bin/protoc-gen-buf-breaking", "protoc-gen-buf-lint": "bin/protoc-gen-buf-lint" } }, "sha512-GDcjBCwLgHT/4nX4YSnYatZ7sDZDpHV6dxQvoT2/P6gKvV23O6hl8NryzLIRKmeau0FRXpQKHVy1dMfnBSpy+w=="],
+
+    "@bufbuild/buf-darwin-arm64": ["@bufbuild/buf-darwin-arm64@1.71.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-qZ7xZQyen/jOKFPVs3dlN9pMA56PI4YEo3r4/9ixtiH9gyFgfowR31axsocUgXGThjiN8mvOA8WfpG2tvaSvsw=="],
+
+    "@bufbuild/buf-darwin-x64": ["@bufbuild/buf-darwin-x64@1.71.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-2w95pc3X+z06/J66i6uNzA8QPuVOpbPrwyb6tkK0AcJFNvKPVYr4BxVC2koyImrQ3rxY1n9q8qviWMjSvq9fOA=="],
+
+    "@bufbuild/buf-linux-aarch64": ["@bufbuild/buf-linux-aarch64@1.71.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-dwxErryMI3MRwtP/IgfdrqEjiAmVpttGhmO3xihiJIV2EAXt9J5yjzHhEDvnSgQ6nmNjEvO5QczcIaQjZEwF6A=="],
+
+    "@bufbuild/buf-linux-armv7": ["@bufbuild/buf-linux-armv7@1.71.0", "", { "os": "linux", "cpu": "arm" }, "sha512-pfc+Qexm5C59VeRUjVmEvxkCXT5QbMR1R/CUtcSlk+spOFVwna0bSpkqIsky3kkHfzxiNSOsz3iki9/pAVX+CA=="],
+
+    "@bufbuild/buf-linux-x64": ["@bufbuild/buf-linux-x64@1.71.0", "", { "os": "linux", "cpu": "x64" }, "sha512-Y7jLxr3wpMkpQSqZU/MrDmDSCkF4GxvhIL7wnNdSRpkhYAY6TPRHN+5nNgV7jp6mQ0zQSYh0MGxBeMgt/UVdmQ=="],
+
+    "@bufbuild/buf-win32-arm64": ["@bufbuild/buf-win32-arm64@1.71.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-UrxtD99zLE1qImtQC/W3a9cuj0/kB53B1bK38kmCMRFow939FhdZtqTRjbnZWauRi/pzAsjDyPCvnTa2XKT8Cg=="],
+
+    "@bufbuild/buf-win32-x64": ["@bufbuild/buf-win32-x64@1.71.0", "", { "os": "win32", "cpu": "x64" }, "sha512-+npiOimJ7ggeLul3KFwSlOjZnAZYwt3el64dJ3nJQMnui0avyvsRmU02o1bZI5yUnBvhcnTWdEbfRXUnkkVtgQ=="],
+
+    "@bufbuild/protobuf": ["@bufbuild/protobuf@2.12.1", "", {}, "sha512-BvAMfS6LrgZiryOAZ4pBYucu4wG/Ei/9o9DZ9akbREnMLbPJiom2i8b9C8IsKErQoiKqVhrerzt3kOT/RrzLHg=="],
+
+    "@connectrpc/connect": ["@connectrpc/connect@2.1.2", "", { "peerDependencies": { "@bufbuild/protobuf": "^2.7.0" } }, "sha512-MXkBijtcX09R10Eb6sFeIetc6w6746eio6xtfuyVOH7oQAacT1X0GzMIQFux6Qy8cq3W/T5qX5Bei8YbFtmRGA=="],
+
+    "@marius-patrik/agents-manager-core": ["@marius-patrik/agents-manager-core@workspace:packages/core"],
+
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
     "@types/node": ["@types/node@26.1.0", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-O0A1G3xPGy4w7AgQdAQYUlQ+BKk2Oovw8eRpofyp5KdBZULnbe+WqaOVNrm705SHphCiG4XHsACrSmPu1f+Kgw=="],

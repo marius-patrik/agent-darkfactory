@@ -12,8 +12,9 @@ import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any, Callable, Iterable, Match, Pattern
+
+from agent.state import redaction_secrets_dir
 
 logger = logging.getLogger(__name__)
 
@@ -209,8 +210,8 @@ class Redactor:
 
         Args:
             secret_values: Exact secret values to redact before pattern rules.
-            min_value_len: Back-compatible parameter; exact-value redaction
-                now uses the fixed four-character floor documented above.
+            min_value_len: Retained constructor parameter; exact-value
+                redaction uses the fixed four-character floor documented above.
             extra_patterns: Additional ``(type, regex)`` whole-match rules.
         """
         self._min_value_len = min_value_len
@@ -229,11 +230,10 @@ class Redactor:
         self._rules = self._compile_rules(extra_patterns or [])
 
     @classmethod
-    def from_secrets_dir(cls, root: str | Path = "~/.rommie/secrets", **kw: Any) -> "Redactor":
+    def from_secrets_dir(cls, **kw: Any) -> "Redactor":
         """Create a redactor from materialized secret files.
 
         Args:
-            root: Directory containing materialized secret files.
             **kw: Additional ``Redactor`` initializer arguments.
 
         Returns:
@@ -241,7 +241,7 @@ class Redactor:
             contents. Missing or unreadable directories produce an empty
             known-value set while pattern redaction remains active.
         """
-        path = Path(root).expanduser()
+        path = redaction_secrets_dir()
         values: list[str] = []
         try:
             candidates = path.rglob("*")
@@ -287,7 +287,10 @@ class Redactor:
         redacted = text
         for rule in self._rules:
             replacement = rule.replacement or _whole_match
-            redacted = rule.pattern.sub(lambda match, r=rule: replacement(match, r.type), redacted)
+            def replace_match(match: re.Match[str]) -> str:
+                return replacement(match, rule.type)
+
+            redacted = rule.pattern.sub(replace_match, redacted)
         return redacted
 
     def redact_obj(self, obj: Any, *, _force: bool = False) -> Any:
@@ -362,7 +365,10 @@ class Redactor:
             if matches:
                 counts[rule.type] = counts.get(rule.type, 0) + len(matches)
                 replacement = rule.replacement or _whole_match
-                scan_text = rule.pattern.sub(lambda match, r=rule: replacement(match, r.type), scan_text)
+                def replace_match(match: re.Match[str]) -> str:
+                    return replacement(match, rule.type)
+
+                scan_text = rule.pattern.sub(replace_match, scan_text)
         return [Finding(type=secret_type, count=count) for secret_type, count in counts.items()]
 
     def _compile_rules(self, extra_patterns: list[tuple[str, str]]) -> tuple[_PatternRule, ...]:

@@ -1,5 +1,8 @@
-# Agents Manager Status
+# Agent OS Manager Status
 
-- Primary branch for active work: `dev`.
-- Pull requests target `dev` unless an issue explicitly says otherwise.
-- Package validation is Bun-based through `bun run ci`.
+- Active work: strict single-state reconciliation on
+  `reconcile/single-state-memory`.
+- Pull requests target `dev`.
+- Root and package validation use `bun run ci`.
+- Canonical root, provider, memory, and installer slices are implemented;
+  session event authority and final installed activation remain in progress.

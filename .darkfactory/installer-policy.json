@@ -3,8 +3,8 @@
   "installer": {
     "required": true,
     "paths": ["install/install.sh"],
-    "postInstallChecks": ["state-init", "list"],
-    "notes": "This root remains developer/source-install only for now. install/install.sh provides a supported source install path (clone dev branch, submodule init, dependencies, bun link, fast CLI smoke). Release-backed binary installers, a Windows PowerShell installer, and an automatic updater are deferred to follow-up issue #24."
+    "postInstallChecks": ["state-init", "doctor"],
+    "notes": "install/install.sh performs the canonical source install: pinned dev checkout, recursive pinned components, dependencies, one launcher, capability activation, provider pinning, and a strict state doctor."
   },
   "autoUpdater": {
     "centralized": true,

@@ -69,17 +69,6 @@ function verifyManagedFiles() {
     if (!existsSync(file)) fail("Missing DarkFactory managed file.", file);
   }
 
-  if (!existsSync(".agents/.global/VERSION")) {
-    fail("Missing managed agent version.", ".agents/.global/VERSION");
-  } else {
-    const version = readFileSync(".agents/.global/VERSION", "utf8").trim();
-    if (!version.startsWith("agent-darkfactory@")) {
-      fail(`Unexpected managed agent version '${version}'.`, ".agents/.global/VERSION");
-    } else {
-      console.log(`Managed agent version: ${version}`);
-    }
-  }
-
   return process.exitCode !== 1;
 }
 

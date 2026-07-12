@@ -1,5 +1,10 @@
-# Agents Manager Project
+# Agent OS Manager Project
 
-`agents-manager` is the standalone Bun TypeScript package for the `agents` CLI. It manages agents-mono package registrations, shared `.agents` runtime state, provider CLI adapters, harness execution, installs, data repositories, secrets, and credits.
+This directory implements the `agents` CLI and the one-root Agent OS manager.
+It owns v2 bootstrap/doctor, canonical memory, provider pinning and managed
+sessions, registries, orchestration, package/capability surfaces, and lifecycle
+planning. It has no compatibility state root, credential copier, raw provider
+execution, or mutable snapshot-sync engine.
 
-This repo must remain independently runnable with Bun and must not depend on parent monorepo package metadata for package-local validation.
+Package-local work remains Bun/TypeScript and is validated from the repository
+root.

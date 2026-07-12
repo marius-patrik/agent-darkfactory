@@ -1,11 +1,7 @@
-"""Run record + persistence seam.
-
-The Postgres-backed store (``run_status`` table via asyncpg) and CRDT-log
-emission are wired in S3.3.  This module provides the in-memory
-implementation used by tests and the single-node default.
+"""Run records and the in-process status store.
 
 Verdict history is append-only: superseding verdicts append, never overwrite
-(D6 §8 audit immutability).
+to preserve audit history.
 """
 
 from __future__ import annotations

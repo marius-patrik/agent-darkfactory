@@ -17,22 +17,22 @@ describe("package manifests", () => {
           kind: "harness",
           requires: { clis: ["codex", "claude", "kimi", "agy"], state: ["skills", "plugins", "hooks", "credits"] },
           dataRepo: {
-            id: "darkfactory-workspace",
-            repo: "marius-patrik/agents-data",
-            path: "data/workspace",
-            env: "DARK_FACTORY_WORKSPACE_ROOT",
+            id: "project-data",
+            repo: "marius-patrik/project-data",
+            path: "data/project",
+            env: "PROJECT_DATA_ROOT",
           },
-          entry: "go run ./cmd/rommie",
-          workingDirectory: "services/cli",
+          entry: "bun run harness.ts",
+          workingDirectory: "runtime",
         }),
       );
 
       const manifest = await readPackageManifest(dir);
       expect(manifest?.id).toBe("agents-harness");
       expect(manifest?.kind).toBe("harness");
-      expect(manifest?.workingDirectory).toBe("services/cli");
+      expect(manifest?.workingDirectory).toBe("runtime");
       expect(manifest?.requires?.clis).toContain("codex");
-      expect(manifest?.dataRepo?.repo).toBe("marius-patrik/agents-data");
+      expect(manifest?.dataRepo?.repo).toBe("marius-patrik/project-data");
       expect(manifest?.dataRepo?.managedPath).toBeUndefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -55,5 +55,3 @@ describe("package manifests", () => {
     }
   });
 });
-
-

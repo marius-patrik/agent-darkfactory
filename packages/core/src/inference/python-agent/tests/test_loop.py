@@ -6,17 +6,34 @@ from pathlib import Path
 
 import httpx
 import pytest
+import agent.gen  # noqa: F401
+from agent_os.v1 import common_pb2
 
-from agent.exec_lane.contract import LANE_DAEMON_INLINE, ExecLane, ExecSpec, get_lane
-from agent.loop import exec_lane_inline  # noqa: F401
 from agent.loop.acceptance_gate import evaluate
 from agent.loop.context_assembler import ContextAssembler
 from agent.loop.gateway_client import GatewayClient, LoopError
-from agent.loop.persistence import append_event, write_cascade_file
+from agent.loop.persistence import write_cascade_file
+from agent.loop.permissions import PermissionMode, approve
 from agent.loop.session import Session, SessionConfig, run_session
 from agent.loop.tools.inline import bash, edit_file, ls, read_file, write_file
 from agent.redaction import Redactor
 from agent.status import InMemoryStatusStore, RunRecord, StatusValue, Trigger, create_run, transition
+
+
+def test_permission_modes_match_canonical_policy() -> None:
+    for mode in PermissionMode:
+        assert getattr(common_pb2, f"PERMISSION_MODE_{mode.value.upper()}") > 0
+    assert approve(PermissionMode.plan, "read_file", {})
+    assert not approve(PermissionMode.plan, "write_file", {})
+    assert not approve(PermissionMode.ask, "read_file", {})
+    assert approve(PermissionMode.auto_accept_edits, "edit_file", {})
+    assert not approve(PermissionMode.auto_accept_edits, "bash", {})
+    assert approve(PermissionMode.full_auto, "bash", {})
+
+
+def test_gateway_client_defaults_to_canonical_gateway_port(monkeypatch) -> None:
+    monkeypatch.delenv("AGENTS_GATEWAY_URL", raising=False)
+    assert GatewayClient().base_url == "http://127.0.0.1:8787"
 
 
 class FakeGatewayClient:
@@ -54,19 +71,18 @@ def _tool_response(name: str, args: dict[str, object]) -> dict[str, object]:
 def _session(tmp_path: Path) -> Session:
     cfg = SessionConfig(
         session_id="unit",
-        agent_id="rommie",
+        agent_id="agent-os-worker",
         goal="goal",
         task="task",
         acceptance_type="generic",
         declared_outputs=[],
         workdir=tmp_path,
-        sessions_root=tmp_path / "sessions",
     )
     record = RunRecord("unit", None, "generic", create_run(), "created")
     session = Session(
         config=cfg,
         gateway_client=FakeGatewayClient(),
-        redactor=Redactor.from_secrets_dir(tmp_path / "missing-secrets"),
+        redactor=Redactor.from_secrets_dir(),
         status_store=InMemoryStatusStore(),
         run_record=record,
         context_window=120,
@@ -116,15 +132,6 @@ def test_inline_tools_happy_and_error_paths(tmp_path):
     assert bash({"command": "sleep 2", "timeout": 0.01, "_cwd": tmp_path})["is_error"] is True
 
 
-def test_daemon_inline_lane_round_trip(tmp_path):
-    lane = get_lane(LANE_DAEMON_INLINE)
-    assert isinstance(lane, ExecLane)
-    handle = lane.submit(ExecSpec(command=["write_file", json.dumps({"path": "x.txt", "content": "x"})], working_dir=str(tmp_path)))
-    assert lane.status(handle).status == "succeeded"
-    assert json.loads("\n".join(lane.logs(handle)))["is_error"] is False
-    assert (tmp_path / "x.txt").read_text() == "x"
-
-
 @pytest.mark.asyncio
 async def test_redaction_at_tool_message_and_event_boundary(monkeypatch, tmp_path):
     secret = "sk-ant-abcdefghijklmnopqrstuvwxyz"
@@ -142,17 +149,16 @@ async def test_redaction_at_tool_message_and_event_boundary(monkeypatch, tmp_pat
     await run_session(
         SessionConfig(
             session_id="redact",
-            agent_id="rommie",
+            agent_id="agent-os-worker",
             goal="do secret test",
             task="run bash",
             acceptance_type="generic",
             declared_outputs=[],
             workdir=tmp_path,
-            sessions_root=tmp_path / "sessions",
             max_turns=3,
         )
     )
-    root = tmp_path / "sessions" / "redact"
+    root = tmp_path / ".agents" / "runtime" / "inference" / "runs" / "redact"
     event_text = (root / "events.ndjson").read_text()
     assert secret not in event_text
     assert "SuperSecret123ABC" not in event_text
@@ -180,13 +186,12 @@ async def test_tool_call_arguments_secret_is_redacted_before_gateway_replay(monk
     await run_session(
         SessionConfig(
             session_id="tool-arg-redact",
-            agent_id="rommie",
+            agent_id="agent-os-worker",
             goal="do secret test",
             task="run bash",
             acceptance_type="generic",
             declared_outputs=[],
             workdir=tmp_path,
-            sessions_root=tmp_path / "sessions",
             max_turns=3,
         )
     )
@@ -203,13 +208,12 @@ async def test_no_false_green_and_success(monkeypatch, tmp_path):
     outcome = await run_session(
         SessionConfig(
             session_id="nfg",
-            agent_id="rommie",
+            agent_id="agent-os-worker",
             goal="produce file",
             task="run true",
             acceptance_type="generic",
             declared_outputs=[str(missing)],
             workdir=tmp_path,
-            sessions_root=tmp_path / "sessions",
             max_turns=3,
         )
     )
@@ -225,13 +229,12 @@ async def test_no_false_green_and_success(monkeypatch, tmp_path):
     outcome = await run_session(
         SessionConfig(
             session_id="green",
-            agent_id="rommie",
+            agent_id="agent-os-worker",
             goal="produce file",
             task="write file",
             acceptance_type="generic",
             declared_outputs=[str(produced)],
             workdir=tmp_path,
-            sessions_root=tmp_path / "sessions",
             max_turns=3,
         )
     )
@@ -247,13 +250,12 @@ async def test_code_change_session_requires_build_and_test_evidence(monkeypatch,
     missing = await run_session(
         SessionConfig(
             session_id="code-missing-evidence",
-            agent_id="rommie",
+            agent_id="agent-os-worker",
             goal="validate code",
             task="done",
             acceptance_type="code-change",
             declared_outputs=[str(produced)],
             workdir=tmp_path,
-            sessions_root=tmp_path / "sessions",
             max_turns=1,
         )
     )
@@ -264,7 +266,7 @@ async def test_code_change_session_requires_build_and_test_evidence(monkeypatch,
     passed = await run_session(
         SessionConfig(
             session_id="code-with-evidence",
-            agent_id="rommie",
+            agent_id="agent-os-worker",
             goal="validate code",
             task="done",
             acceptance_type="code-change",
@@ -272,7 +274,6 @@ async def test_code_change_session_requires_build_and_test_evidence(monkeypatch,
             build_cmd=["true"],
             test_cmd=["true"],
             workdir=tmp_path,
-            sessions_root=tmp_path / "sessions",
             max_turns=1,
         )
     )
@@ -292,13 +293,12 @@ async def test_loop_error_terminalizes_failed_run(monkeypatch, tmp_path):
     outcome = await run_session(
         SessionConfig(
             session_id="loop-error",
-            agent_id="rommie",
+            agent_id="agent-os-worker",
             goal="fail",
             task="fail",
             acceptance_type="generic",
             declared_outputs=[],
             workdir=tmp_path,
-            sessions_root=tmp_path / "sessions",
             max_turns=1,
         )
     )
@@ -321,24 +321,23 @@ def test_acceptance_gate_and_max_turn_transition(tmp_path):
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_live_gateway_fib(tmp_path):
-    base = os.environ.get("ROMMIE_GATEWAY_URL") or "http://localhost:8800"
+    base = os.environ.get("AGENTS_GATEWAY_URL") or "http://127.0.0.1:8787"
     try:
         async with httpx.AsyncClient(timeout=2) as client:
             await client.get(f"{base}/v1/models")
     except Exception:
-        pytest.skip("ROMMIE_GATEWAY_URL/local gateway is not reachable")
+        pytest.skip("AGENTS_GATEWAY_URL/local gateway is not reachable")
     output = tmp_path / "fib_s33.json"
     outcome = await run_session(
         SessionConfig(
             session_id="s33-live-test",
-            agent_id="rommie",
+            agent_id="agent-os-worker",
             model="qwen3-8b",
             goal=f"Write the first 10 Fibonacci numbers as a JSON array to {output}",
             task=f"Use write_file to create {output} containing [0,1,1,2,3,5,8,13,21,34], then read it back to verify",
             acceptance_type="generic",
             declared_outputs=[str(output)],
             workdir=tmp_path,
-            sessions_root=tmp_path / "sessions",
             max_turns=8,
         )
     )

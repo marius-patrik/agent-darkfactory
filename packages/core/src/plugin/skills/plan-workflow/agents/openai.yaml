@@ -1,5 +1,0 @@
-interface:
-  display_name: "Plan Workflow"
-  short_description: "Plan large tasks for subagent orchestration."
-  default_prompt: "Use $plan-workflow to turn this into an orchestration-ready execution plan."
-

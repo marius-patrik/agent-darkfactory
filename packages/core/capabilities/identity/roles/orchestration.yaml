@@ -1,0 +1,4 @@
+# Standard role: orchestration
+name: orchestration
+scope: worker
+type: on-demand

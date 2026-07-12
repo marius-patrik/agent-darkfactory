@@ -15,13 +15,28 @@ describe("status-bar state reducer", () => {
   };
   const providers = ["kimi", "claude", "codex"];
 
-  test("creates state with default provider and model", () => {
+  test("success: creates state with the first concrete provider and model", () => {
     const state = createStatusBarState({ providers, modelsByProvider });
     expect(currentProvider(state)).toBe("kimi");
     expect(currentModel(state)).toBe("kimi-k2");
     expect(state.mode).toBe("default");
     expect(state.tokensIn).toBe(0);
     expect(state.tokensOut).toBe(0);
+  });
+
+  test("edge input: rejects a provider with no concrete model list", () => {
+    expect(() => createStatusBarState({ providers: ["codex"], modelsByProvider: {} })).toThrow(
+      "provider codex has no model in canonical config",
+    );
+  });
+
+  test("denied failure: rejects unknown provider and model selections", () => {
+    expect(() => createStatusBarState({ providers, modelsByProvider, provider: "unknown" })).toThrow(
+      "provider unknown is not in canonical config",
+    );
+    expect(() => createStatusBarState({ providers, modelsByProvider, provider: "codex", model: "unknown" })).toThrow(
+      "model unknown is not configured for provider codex",
+    );
   });
 
   test("cycles provider and resets model to first for the new provider", () => {

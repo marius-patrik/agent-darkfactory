@@ -1,0 +1,4 @@
+# Standard role: reasoning
+name: reasoning
+scope: worker
+type: on-demand

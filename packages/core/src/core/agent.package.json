@@ -1,9 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "agents-core",
-  "name": "Agentos Core",
+  "id": "agent-os-core",
+  "name": "Agent OS Core",
   "kind": "package",
-  "description": "Shared Agentos wire contracts and generated client packages for Go, TypeScript, and Python consumers.",
+  "description": "Shared Agent OS wire contracts and generated client packages for Go, TypeScript, and Python consumers.",
   "provides": ["wire-contracts", "shared-types", "schemas", "go-contracts", "ts-shared", "python-stubs"]
 }
-

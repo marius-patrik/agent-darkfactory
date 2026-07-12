@@ -8,7 +8,8 @@ import { doctorAdapter, type CliId } from "../adapters";
 import { createStatusBarState, currentModel, currentProvider, statusBarLabel, statusBarReducer } from "./reducer";
 import type { KeyAction } from "./input";
 import { ANSI, moveCursor, padOrTruncate, restoreScreen, saveScreen, visibleLength, wrapText } from "./ansi";
-import { configuredProviderModels } from "./providers";
+import { updateSessionConfig } from "../state";
+import type { OrchestratorHeartbeatController } from "../orchestrator";
 
 export interface TuiAppOptions {
   state: SharedState;
@@ -16,6 +17,7 @@ export interface TuiAppOptions {
   providers?: string[];
   modelsByProvider?: Record<string, string[]>;
   systemPrompt?: string;
+  orchestrator?: OrchestratorHeartbeatController | null;
 }
 
 interface Dimensions {
@@ -38,14 +40,18 @@ export class TuiApp {
   private stderr: NodeJS.WriteStream;
   private onResize: () => void;
   private onKeypress: (str: string, key: readline.Key) => void;
+  private onSigint: () => void;
+  private onSigterm: () => void;
   private resolveExit?: () => void;
   private tools = createTuiTools();
   private systemPrompt?: string;
+  private orchestrator?: OrchestratorHeartbeatController | null;
 
   constructor(options: TuiAppOptions) {
     this.state = options.state;
     this.descriptor = options.descriptor;
     this.systemPrompt = options.systemPrompt;
+    this.orchestrator = options.orchestrator;
     this.stdout = process.stdout;
     this.stderr = process.stderr;
 
@@ -64,6 +70,8 @@ export class TuiApp {
 
     this.onResize = () => this.handleResize();
     this.onKeypress = (str, key) => this.handleKeypress(str, key);
+    this.onSigint = () => this.stop();
+    this.onSigterm = () => this.stop();
   }
 
   async start(): Promise<void> {
@@ -105,15 +113,15 @@ export class TuiApp {
     readline.emitKeypressEvents(process.stdin);
     process.stdin.on("keypress", this.onKeypress);
     process.stdout.on("resize", this.onResize);
-    process.on("SIGINT", () => this.stop());
-    process.on("SIGTERM", () => this.stop());
+    process.on("SIGINT", this.onSigint);
+    process.on("SIGTERM", this.onSigterm);
   }
 
   private teardownInput(): void {
     process.stdin.removeListener("keypress", this.onKeypress);
     process.stdout.removeListener("resize", this.onResize);
-    process.removeListener("SIGINT", () => this.stop());
-    process.removeListener("SIGTERM", () => this.stop());
+    process.removeListener("SIGINT", this.onSigint);
+    process.removeListener("SIGTERM", this.onSigterm);
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
     }
@@ -199,6 +207,8 @@ export class TuiApp {
     if (provider === this.descriptor.provider && model === this.descriptor.model) return;
     try {
       this.descriptor = await switchSessionProvider(this.state, this.descriptor.sessionId, provider, model);
+      await this.orchestrator?.update({ provider, model });
+      await updateSessionConfig(this.state, (config) => ({ ...config, defaultProvider: provider, defaultModel: model }));
     } catch (error) {
       this.statusState = statusBarReducer(this.statusState, {
         type: "set-status",
@@ -249,29 +259,25 @@ export class TuiApp {
         this.render();
       },
       listProviders: async () => {
-        const { providers, modelsByProvider } = configuredProviderModels();
         const listings: ProviderListing[] = [];
-        for (const id of providers) {
+        for (const id of this.statusState.providers) {
           const result = await doctorAdapter(this.state, id as CliId);
           listings.push({
             id,
             displayName: result.id,
             available: result.ok,
-            models: modelsByProvider[id] ?? [],
+            models: this.statusState.modelsByProvider[id] ?? [],
             notes: result.notes,
           });
         }
         return listings;
       },
       switchProvider: async (provider, model) => {
-        const switched = await switchSessionProvider(
-          this.state,
-          this.descriptor.sessionId,
-          provider,
-          model ?? "default",
-        );
-        this.descriptor = switched;
-        ctx.descriptor = switched;
+        const configuredModel = model ?? this.statusState.modelsByProvider[provider]?.[0];
+        if (!configuredModel) throw new Error(`provider ${provider} has no model in canonical config`);
+        const desired = { ...ctx.descriptor, provider, model: configuredModel };
+        this.descriptor = desired;
+        ctx.descriptor = desired;
       },
     };
     return ctx;
@@ -282,9 +288,24 @@ export class TuiApp {
     const { result } = await runSessionTurnWithTools(this.state, this.descriptor, { prompt, systemPrompt: this.systemPrompt }, {
       tools: this.tools,
       ctx,
-      resolveAdapter: (descriptor) => providerSessionAdapter(descriptor.provider),
+      resolveAdapter: async (descriptor) => {
+        if (descriptor.provider === "fake") return providerSessionAdapter("fake");
+        const result = await doctorAdapter(this.state, descriptor.provider as CliId);
+        if (!result.binary) {
+          throw new Error(
+            `provider ${descriptor.provider} is not ready: ${result.notes.join("; ") || "no verified pinned binary"}`,
+          );
+        }
+        return providerSessionAdapter(descriptor.provider, result.binary);
+      },
     });
     this.descriptor = ctx.descriptor;
+    await this.orchestrator?.update({ provider: this.descriptor.provider, model: this.descriptor.model });
+    await updateSessionConfig(this.state, (config) => ({
+      ...config,
+      defaultProvider: this.descriptor.provider,
+      defaultModel: this.descriptor.model,
+    }));
     this.statusState = statusBarReducer(this.statusState, { type: "set-provider", provider: this.descriptor.provider });
     this.statusState = statusBarReducer(this.statusState, { type: "set-model", model: this.descriptor.model });
     if (result.usage) {

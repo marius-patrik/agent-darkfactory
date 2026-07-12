@@ -1,0 +1,104 @@
+// Session lifecycle control plane (design §01 G2, §05 L1, §04, D4 §8). Sessions
+// are server-side CRDT logs that keep running after detach; clients create /
+// list / attach / fork them over Connect, then stream the live frames over the
+// WebSocket (see session_frames.proto). Attach redirects to the session's
+// owning node (session affinity, §01 G5) — handled by the gateway edge; the
+// AttachInfo carries the endpoint to dial.
+syntax = "proto3";
+
+package agent_os.v1;
+
+import "agent_os/v1/common.proto";
+
+// SessionService — create/list/attach/fork server-side sessions.
+service SessionService {
+  // Create a new server-side session (optionally seeded with a Task and an
+  // initial switcher selection).
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  // List sessions (live + recent), for the resume surface (D4 §8).
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // Resolve how to attach a session: the owning node's WS endpoint to dial
+  // (§01 G5). The actual duplex stream then runs over WebSocket, not Connect.
+  rpc AttachSession(AttachSessionRequest) returns (AttachSessionResponse);
+  // Fork a session's CRDT log into a new session id at a branch point
+  // (rewind = fork-only in 4.0, D-029 TUI bullet; §04).
+  rpc ForkSession(ForkSessionRequest) returns (ForkSessionResponse);
+}
+
+// A session summary record (design §05 L1 + D4 §8.2 columns).
+message Session {
+  string id = 1;
+  string title = 2;
+  // Active agent persona (rommie/claude/kimi/codex/agy/...).
+  string agent = 3;
+  // Owning server node (session affinity, §01 G5).
+  string owner_node = 4;
+  // Lifecycle/run status (anti-false-green vocab, §15 OR2).
+  RunStatus status = 5;
+  // True while the loop is live server-side (running or detached-but-live).
+  bool live = 6;
+  // Other clients currently attached (e.g. web co-attach, D4 §8.2).
+  int32 attached_clients = 7;
+  // Active worker count (the brain, §05 L5).
+  int32 worker_count = 8;
+  Timestamps timestamps = 9;
+}
+
+message CreateSessionRequest {
+  // Agent persona to start under (defaults to the configured default agent).
+  string agent = 1;
+  string title = 2;
+  // Optional seed task (§07 D5b) for headless/domain or pre-filled sessions.
+  Task task = 3;
+  // Optional initial switcher selection (session-scope override).
+  SwitcherState switcher = 4;
+}
+
+message CreateSessionResponse {
+  Session session = 1;
+  // Where to attach for the live stream (§01 G5).
+  AttachInfo attach = 2;
+}
+
+message ListSessionsRequest {
+  // Optional substring/agent filter (D4 §8.2 filter box). Empty = all.
+  string filter = 1;
+  // When true, only sessions still live server-side.
+  bool live_only = 2;
+}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message AttachSessionRequest {
+  string session_id = 1;
+}
+
+// How a client reaches a session's live duplex stream (design §01 G5).
+message AttachInfo {
+  string session_id = 1;
+  // The owning node's WebSocket URL the client should dial for the session
+  // frame stream.
+  string ws_url = 2;
+  // Owning server node id (informational; matches Session.owner_node).
+  string owner_node = 3;
+}
+
+message AttachSessionResponse {
+  AttachInfo attach = 1;
+}
+
+message ForkSessionRequest {
+  string session_id = 1;
+  // Branch point: empty = latest; otherwise a turn/checkpoint id in the CRDT
+  // log to fork at (D4 §8.2 "latest / pick a turn").
+  string at_turn_id = 2;
+  // Title for the forked session.
+  string title = 3;
+}
+
+message ForkSessionResponse {
+  Session session = 1;
+  AttachInfo attach = 2;
+}

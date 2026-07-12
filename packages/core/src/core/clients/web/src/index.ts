@@ -1,1 +1,1 @@
-export const name = "@agentos/web";
+export const name = "@agent-os/web";

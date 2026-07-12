@@ -1,145 +1,147 @@
 # Andromeda
 
-Andromeda is the root aggregator workspace for the agents topology. It
-exposes the `agents` CLI for managing agent packages, apps, templates, private
-workspace state, shared skills/plugins, CLI data, and a common credit store.
+Andromeda is one personal agent identity and one authoritative state and memory
+system across models, provider CLIs, harnesses, machines, and execution
+surfaces. This repository contains the implementation, and
+`agents` is its management and runtime CLI.
+
+The accepted state contract is documented in
+[Canonical State and Memory v2](docs/state-memory-v2.md). Bootstrap, doctor,
+provider pinning, canonical memory, and managed sessions implement that
+contract directly; retired adoption and snapshot-sync commands do not exist.
 
 ## Installation
 
-### Local development
+Requirements: Bun 1.1 or newer and Git. Provider CLIs (`codex`, `claude`,
+`kimi`, and `agy`) are optional unless their adapters are being used.
 
 ```sh
-bun install
-bun link
-agents doctor
+curl -fsSL https://raw.githubusercontent.com/marius-patrik/agents-manager/dev/install/install.sh | bash
+export PATH="$HOME/.agents/bin:$PATH"
 ```
 
-### Source install (current supported path)
+The installer maintains one checkout at
+`$AGENTS_USER_HOME/Projects/agents-manager` (or an explicit absolute
+`AGENTS_ROOT`), one state root at `$AGENTS_USER_HOME/.agents` (or an explicit
+absolute `AGENTS_HOME`), and one regular launcher file at
+`$AGENTS_HOME/bin/agents`. It does not use Bun global linking. Because
+`AGENTS_HOME/bin` is owned by Agent OS, installation removes every other entry
+from that directory; provider executables remain under
+`$AGENTS_HOME/clis/<provider>/bin` and are pinned when present.
 
-This root is intentionally developer/source-install only until release-backed
-binaries are available. The supported install path is:
+Re-running the same command performs a fast-forward-only update of the `dev`
+branch, validates and content-addresses the bundled 11-skill/six-worker-role
+floor, activates the one Rommie identity, and revalidates canonical state. A
+checkout with a different origin or branch fails closed.
+
+## Development setup
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/marius-patrik/agents-mono/dev/install/install.sh | bash
-```
-
-The install script clones the repo into `~/.agents-mono`, installs dependencies,
-links the `agents` CLI, and smoke-tests with fast commands (`agents state init`
-and `agents list`). It does not initialize every git submodule, so `agents doctor`
-may report missing checkouts until you run `agents sync`.
-
-### Updating
-
-```sh
-cd ~/.agents-mono
-git pull
+git clone --branch dev https://github.com/marius-patrik/agents-manager.git "$HOME/Projects/agents-manager"
+cd "$HOME/Projects/agents-manager"
 bun install --frozen-lockfile
-bun link
-agents list
+AGENTS_HOME="$HOME/.agents" AGENTS_USER_HOME="$HOME" AGENTS_ROOT="$PWD" \
+  bun run agents -- state init
 ```
 
-Run `agents sync` and then `agents doctor` when you want to initialize and
-validate all submodule packages.
+The repository remains source-installed until release-backed installers are
+ready. Do not use an old product checkout or installer as an update source.
 
-Release-backed binary installers, a Windows PowerShell installer, and an
-automatic updater are out of scope for this slice and tracked in the follow-up
-issue.
+## Product naming
 
-## Usage
+- **Agent OS** is the final product.
+- **agents-manager** is this repository and package surface.
+- **agents** is the CLI.
+- `packages/core` is the consolidated implementation package containing the
+  manager, contracts, harness, gateway, inference, and plugin domains.
+
+Older product and topology names are migration evidence only. They are not
+aliases, compatibility surfaces, install roots, or names for new work.
+
+## One state authority
+
+`AGENTS_HOME` is the only state-root locator. A personal installation uses
+`/Users/user/.agents`; other installations use an equivalent absolute
+`~/.agents` path. `AGENTS_USER_HOME` identifies the real OS account home, and
+`AGENTS_ROOT` may identify the active code/distribution checkout, but neither
+is another state root.
+
+Provider-native homes are derived below `AGENTS_HOME/clis/`. Legacy
+product-specific root variables are not accepted as state locators. The final
+installation has no `~/.agents/state`, no top-level `~/.codex`, `~/.claude`,
+`~/.kimi-code`, or `~/.gemini` directory or link, and no writable duplicate of
+canonical state.
+
+Important canonical paths include:
+
+- `identity/` for agent identity and persona;
+- `clis/<provider>/` for opaque provider-native state;
+- `sessions/` and `orchestrator/` for canonical event streams and projections;
+- `memory/` for provenance-backed records and generated views;
+- `skills/`, `plugins/`, `hooks/`, and `templates/` for capabilities;
+- `secrets/` for local secret metadata/materialization;
+- `runtime/` for locks, process state, temporary data, caches, and logs;
+- `sync/` for the future event-exchange implementation;
+- `provenance/` for migration and source evidence.
+
+Provider histories and generated memories are evidence, not Agent OS memory
+authority. See the v2 specification for the complete schema, authority order,
+sync classes, and migration acceptance criteria.
+
+## Common commands
 
 ```sh
-agents list
 agents state init
-agents state env
+agents state doctor --json
+agents state status --json
+
+agents cli list
 agents cli doctor
-agents packages register packages/core/src/harness
-agents harness doctor harness
-agents data repo list
+agents cli pin all
+agents cli env codex
+
+agents run --mode orchestrator --provider codex "Review active work"
+agents tui --provider codex --mode orchestrator
+agents sessions list --json
+
+agents memory status
+agents memory list
+agents installs --json
+agents identity activate <source-directory> --replace
 agents doctor
 ```
 
-## Layout
+Cross-machine event exchange remains disabled until tombstones, encrypted
+transport, deterministic merge, and secret/symlink rejection satisfy the v2
+contract. There is no older snapshot-sync or provider-adoption command to fall
+back to.
 
-- `packages/core` is the consolidated core package containing all domain trees under `src/<domain>/`:
-  - `src/core/` — shared proto contracts, generated clients, schemas, and contract docs.
-  - `src/manager/` — the `agents` CLI source and tests.
-  - `src/harness/` — the managed Agents runtime harness.
-  - `src/gateway/` — the OpenAI-format LLM gateway, model registry routing, fallback, switchers, quota, OAuth seams, and tests.
-  - `src/inference/` — the Python agent loop, Go runtime services, engine work, deploy assets, and inference architecture.
-  - `src/plugin/` — the Rommie Codex plugin tree.
-  - `src/dream/` — the Dream plugin tree.
-- `packages/darkfactory`, `packages/life-support`, and `packages/skyblock-agent` are managed agent submodules.
-- `packages/singularity` contains the managed Singularity app.
-- `data` is the consolidated private DarkFactory + AgentOS data submodule.
+## Repository layout
 
-## Naming contract
+- `packages/core/src/manager/` — `agents` CLI and Agent OS state/runtime logic.
+- `packages/core/src/core/` — shared contracts, schemas, and generated clients.
+- `packages/core/src/harness/` — managed runtime harness.
+- `packages/core/src/gateway/` — model gateway and provider routing.
+- `packages/core/src/inference/` — agent loop and inference runtime.
+- `packages/darkfactory/`, `packages/life-support/`,
+  `packages/skyblock-agent/`, and `packages/singularity/` — managed packages.
+- `data/agent-os/` — the sole managed Agent OS data checkout, not an alternate runtime-state root.
 
-This repository uses the following names consistently. Legacy names are retained
-only where they identify an existing repo, env var, or historical concept.
+## Shared capability contract
 
-- `agents-mono` — the root aggregator repository and workspace (this repo).
-- `agents` — the unified management CLI implemented in `packages/core/src/manager`.
-- `packages/core` — consolidated core package; legacy `packages/agents-*` names are retained only where they identify an existing repo, env var, or historical concept.
-- `agentos-data` — retained compatibility name for the default git-backed data repository and its env var (`AGENTOS_DATA_ROOT`).
-- `Agentos`, `Andromeda`, `Rommie`, and similar legacy names are intentionally scoped; new docs and metadata use the current names above.
+User-installed capabilities live only under their canonical paths in
+`AGENTS_HOME`: `skills/<name>/`, `plugins/<name>/`, `hooks/<name>/`, and
+`templates/<name>/`. Package-owned capabilities remain inside their package.
+Do not recreate an obsolete root-level `skills/` directory or provider-specific
+copies that can drift from the canonical installation.
 
-## Naming contract
+## Validation
 
-This repository uses the following names consistently. Legacy names are retained
-only where they identify an existing repo, env var, or historical concept.
+```sh
+bun run check
+bun run test
+bun run ci
+```
 
-- `agents-mono` — the root aggregator repository and workspace (this repo).
-- `agents` — the unified management CLI implemented in `os/agents-manager`.
-- `os/agents-*` — OS/platform packages (`agents-core`, `agents-manager`, `agents-harness`).
-- `agentos-data` — retained compatibility name for the default git-backed data repository and its env var (`AGENTOS_DATA_ROOT`).
-- `Agentos`, `Andromeda`, `Rommie`, and similar legacy names are intentionally scoped; new docs and metadata use the current names above.
-
-## Commands
-
-- `agents list [--json]` lists registered packages from `.gitmodules`.
-- `agents info <name-or-path> [--json]` shows package metadata.
-- `agents add <name> <git-url> [--kind agent|app|data|package|template|workspace|harness|cli|plugin] [--branch main]` adds a git-backed package.
-- `agents remove <name-or-path>` removes a package submodule.
-- `agents sync` syncs and initializes submodules.
-- `agents state init` initializes shared runtime state.
-- `agents cli list|doctor|env|exec|materialize-creds` manages Codex, Claude, Kimi, and Agy through one adapter layer.
-- `agents packages register <path>` registers a local package manifest.
-- `agents data repo list|set|path|env` manages git-backed data repositories.
-- `agents harness list|doctor|run` manages runtime harnesses such as Agents Harness.
-- `agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-url>` installs shared capabilities.
-- `agents credits` shows the shared credit store.
-- `agents doctor` checks package registration and shared state.
-
-## Shared State
-
-All managed CLIs must use the root `.agents` directory as the single source of
-runtime state. The `.agents/env` export also surfaces `AGENTS_ROOT`,
-`AGENTS_DATA`, and `AGENTS_WORKSPACE` so every CLI sees the same package root,
-data parent, and global workspace paths:
-
-- `.agents/clis/` stores CLI-specific data and adapter metadata.
-- `.agents/harnesses/` stores harness runtime roots.
-- `.agents/skills/` stores user-installed shared skills.
-- `.agents/plugins/` stores user-installed shared plugins.
-- `.agents/hooks/` stores user-installed shared hooks.
-- `.agents/templates/` stores templates.
-- `.agents/secrets/` stores local secret values managed by `agents secrets`.
-- `.agents/credits.json` stores the shared credit ledger.
-- `.agents/data-repos.json` stores managed data repository mappings.
-- `.agents/packages.json` stores registered package manifests.
-- `.agents/env` exports the paths every CLI should consume.
-
-See [PRD.md](PRD.md).
-
-## Skills contract
-
-The root `skills/` directory is obsolete and has been removed. Do not repopulate
-it; a top-level `skills/` source directory would collide with the shared-state
-contract.
-
-Skills belong in one of these places:
-
-- `.agents/skills/<name>/` — user-installed shared skills (`agents install skill ...`).
-- `.agents/plugins/<name>/` — installed plugins, which may bundle plugin-specific skills or hooks.
-- `.agents/.global/skills/<name>/` — project-level managed skills that are part of the DarkFactory baseline.
-- Package-owned skills inside the agent, app, or template submodule they ship with.
+Root validation covers the TypeScript manager surface under
+`packages/core/src/manager` and its tests under `packages/core/test/manager`.

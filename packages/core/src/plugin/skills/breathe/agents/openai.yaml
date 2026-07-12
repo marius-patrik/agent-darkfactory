@@ -1,5 +1,0 @@
-interface:
-  display_name: "Breathe"
-  short_description: "Reflect, refresh memory, and continue unfinished work"
-  default_prompt: "Use $breathe to refresh memory, reflect on the response, and keep going until the work is truly done."
-

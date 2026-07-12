@@ -1,0 +1,4 @@
+# Standard role: review
+name: review
+scope: worker
+type: on-demand

@@ -1,23 +1,22 @@
-# Python codegen for the inference-engine consumer.
+# Python codegen for the in-repository Agent OS inference consumer.
 #
-# Run this only from the agents-mono/os/agents-core worktree when you are also
-# intentionally updating the sibling inference-engine repo:
+# Run from packages/core/src/core when intentionally refreshing the Python
+# protobuf types consumed by ../inference/python-agent:
 #
 #   buf generate proto --template buf.gen.python.yaml
 #
-# The default buf.gen.yaml is intentionally limited to in-repo Go and TS
-# outputs so a normal agents-core codegen freshness check cannot mutate another
-# repository.
+# The default buf.gen.yaml remains limited to Go and TypeScript outputs; this
+# explicit template refreshes the Python consumer in the same product tree.
 version: v2
 
 managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/marius-patrik/agentos/agentos-core/contracts-go/gen
+      value: github.com/marius-patrik/agents-manager/packages/core/src/core/contracts-go/gen
 
 plugins:
   - remote: buf.build/protocolbuffers/python:v35.0
-    out: ../inference-engine/python-agent/agent/gen
+    out: ../inference/python-agent/agent/gen
   - remote: buf.build/protocolbuffers/pyi:v35.0
-    out: ../inference-engine/python-agent/agent/gen
+    out: ../inference/python-agent/agent/gen

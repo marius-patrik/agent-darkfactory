@@ -1,15 +1,8 @@
-"""Deterministic host-bound VS2 loop tools.
-
-The file tools are intentionally unconfined in VS2: the bash tool already
-provides full host access under auto permission mode, so path containment would
-not create a real security boundary here. Add workdir containment when VS4
-permission modes gate bash access.
-"""
+"""Deterministic host-bound inference worker tools."""
 
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -68,7 +61,7 @@ def bash(args: dict[str, Any]) -> ToolResult:
     try:
         timeout = float(args.get("timeout", 120))
         result = subprocess.run(
-            [_bash_executable(), "-lc", str(args["command"])],
+            ["bash", "-lc", str(args["command"])],
             cwd=str(_cwd(args)),
             capture_output=True,
             text=True,
@@ -82,20 +75,6 @@ def bash(args: dict[str, Any]) -> ToolResult:
         return {"output": f"timeout after {args.get('timeout', 120)}s", "is_error": True}
     except Exception as exc:
         return {"output": str(exc), "is_error": True}
-
-
-def _bash_executable() -> str:
-    override = os.environ.get("AGENTOS_BASH")
-    if override:
-        return override
-    if os.name == "nt":
-        for candidate in (
-            r"C:\Program Files\Git\bin\bash.exe",
-            r"C:\Program Files\Git\usr\bin\bash.exe",
-        ):
-            if Path(candidate).is_file():
-                return candidate
-    return shutil.which("bash") or "bash"
 
 
 def _cwd(args: dict[str, Any]) -> Path:

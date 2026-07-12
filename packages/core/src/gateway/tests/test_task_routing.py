@@ -3,16 +3,13 @@ from __future__ import annotations
 import json
 
 from llm_gateway.quota import QuotaTracker
-from llm_gateway.registry import ActiveRoleManager, ModelRegistry
+from llm_gateway.registry import ModelRegistry
 from llm_gateway.router import Router
 from llm_gateway.task_routing import TaskRouter, TaskRoutingError
 from llm_gateway.trace import TraceLogger
 
 
-def test_resolves_first_available_candidate(monkeypatch, tmp_path):
-    credits = tmp_path / "credits.json"
-    monkeypatch.setenv("AGENTS_CREDITS", str(credits))
-
+def test_resolves_first_available_candidate():
     registry = ModelRegistry()
     router = TaskRouter(registry)
 
@@ -22,16 +19,7 @@ def test_resolves_first_available_candidate(monkeypatch, tmp_path):
     assert route.provider == "local"
     assert route.model_id == "coder-32b-awq"
     assert route.params["model_reasoning_effort"] == "high"
-    assert route.fallback_model_ids == ["codex-subscription"]
-
-    store = json.loads(credits.read_text(encoding="utf-8"))
-    ledger = store["ledger"][0]
-    assert ledger["action"] == "route.resolve"
-    assert ledger["consumer"] == "llm.gateway"
-    assert ledger["taskClass"] == "hard-impl"
-    assert ledger["modelId"] == "coder-32b-awq"
-    assert store["providers"]["local"]["classes"]["hard-impl"]["resolutions"] == 1
-
+    assert route.fallback_model_ids == []
 
 def test_unknown_task_class_is_rejected():
     router = TaskRouter(ModelRegistry())
@@ -45,12 +33,8 @@ def test_unknown_task_class_is_rejected():
 
 
 def test_chat_usage_records_task_class(monkeypatch, tmp_path):
-    credits = tmp_path / "credits.json"
-    monkeypatch.setenv("AGENTS_CREDITS", str(credits))
-
     registry_path = tmp_path / "models.yaml"
     schema_path = tmp_path / "schema.json"
-    active_path = tmp_path / "active.yaml"
     schema_path.write_text(json.dumps({"type": "object", "properties": {"models": {"type": "object"}}}), encoding="utf-8")
     registry_path.write_text(
         """
@@ -64,14 +48,12 @@ models:
     role: general
     context_length: 1000
     enabled: true
-    cloud: false
 """,
         encoding="utf-8",
     )
     registry = ModelRegistry(registry_path=registry_path, schema_path=schema_path)
-    active = ActiveRoleManager(active_path=active_path)
     tracer = TraceLogger(trace_dir=tmp_path / "traces")
-    router = Router(registry, active, tracer, quota=QuotaTracker(now=lambda: 1.0))
+    router = Router(registry, tracer, quota=QuotaTracker(now=lambda: 1.0))
 
     async def fake_via_http(**kwargs):
         return {
@@ -92,12 +74,7 @@ models:
         tracer.close()
 
     assert result["llm_gateway"]["task_class"] == "mechanical"
-    store = json.loads(credits.read_text(encoding="utf-8"))
-    ledger = store["ledger"][0]
-    assert ledger["action"] == "usage"
-    assert ledger["taskClass"] == "mechanical"
-    assert ledger["modelId"] == "local-small"
-    assert store["providers"]["local"]["classes"]["mechanical"]["requests"] == 1
+    assert router.quota.snapshot()["local"]["requests"] == 1
 
 
 def run_async(coro):

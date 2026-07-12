@@ -2,11 +2,11 @@
 
 This test is invoked by ``scripts/python-smoke.mjs``. The test runner sets
 ``PYTHONPATH`` to the directory that contains the ``agent`` package, mirroring
-the sibling ``inference-engine/python-agent`` consumer layout.
+the in-repository inference Python consumer layout.
 """
 
 import agent.gen
-from rommie.v1 import common_pb2, registry_pb2, session_frames_pb2
+from agent_os.v1 import common_pb2, registry_pb2, session_frames_pb2
 
 
 def main() -> None:
@@ -14,21 +14,21 @@ def main() -> None:
     assert host.id == "smoke", "protobuf message construction failed"
 
     req = registry_pb2.ListModelsRequest()
-    assert req.DESCRIPTOR.full_name == "rommie.v1.ListModelsRequest", (
+    assert req.DESCRIPTOR.full_name == "agent_os.v1.ListModelsRequest", (
         f"unexpected message descriptor: {req.DESCRIPTOR.full_name}"
     )
 
     registry_service = registry_pb2.DESCRIPTOR.services_by_name["RegistryService"]
-    assert registry_service.full_name == "rommie.v1.RegistryService", (
+    assert registry_service.full_name == "agent_os.v1.RegistryService", (
         "unexpected service descriptor"
     )
 
     frame = session_frames_pb2.ServerFrame()
-    assert frame.DESCRIPTOR.full_name == "rommie.v1.ServerFrame", (
+    assert frame.DESCRIPTOR.full_name == "agent_os.v1.ServerFrame", (
         "unexpected frame descriptor"
     )
 
-    print("agents-core Python import smoke test passed")
+    print("Agent OS core Python import smoke test passed")
 
 
 if __name__ == "__main__":

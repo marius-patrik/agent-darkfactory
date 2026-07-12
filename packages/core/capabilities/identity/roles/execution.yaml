@@ -1,0 +1,4 @@
+# Standard role: execution
+name: execution
+scope: worker
+type: on-demand

@@ -23,6 +23,12 @@ export type StatusBarAction =
   | { type: "set-status"; status: "idle" | "running" | "error"; message?: string }
   | { type: "reset-usage" };
 
+function configuredModels(modelsByProvider: Record<string, string[]>, provider: string): string[] {
+  const models = modelsByProvider[provider];
+  if (!models || models.length === 0) throw new Error(`provider ${provider} has no model in canonical config`);
+  return models;
+}
+
 export function createStatusBarState(options: {
   providers: string[];
   modelsByProvider: Record<string, string[]>;
@@ -30,20 +36,20 @@ export function createStatusBarState(options: {
   model?: string;
   mode?: SessionMode;
 }): StatusBarState {
-  const providers = options.providers.length > 0 ? options.providers : ["fake"];
-  const modelsByProvider = Object.keys(options.modelsByProvider).length > 0 ? options.modelsByProvider : { fake: ["test"] };
-  const providerIndex = Math.max(
-    0,
-    providers.findIndex((p) => p === (options.provider ?? providers[0])),
-  );
-  const models = modelsByProvider[providers[providerIndex]] ?? ["default"];
-  const modelIndex = Math.max(
-    0,
-    models.findIndex((m) => m === (options.model ?? models[0])),
-  );
+  const providers = options.providers;
+  if (providers.length === 0 || new Set(providers).size !== providers.length) {
+    throw new Error("status bar requires a non-empty unique provider list");
+  }
+  const selectedProvider = options.provider ?? providers[0];
+  const providerIndex = providers.indexOf(selectedProvider);
+  if (providerIndex === -1) throw new Error(`provider ${selectedProvider} is not in canonical config`);
+  const models = configuredModels(options.modelsByProvider, selectedProvider);
+  const selectedModel = options.model ?? models[0];
+  const modelIndex = models.indexOf(selectedModel);
+  if (modelIndex === -1) throw new Error(`model ${selectedModel} is not configured for provider ${selectedProvider}`);
   return {
     providers,
-    modelsByProvider,
+    modelsByProvider: options.modelsByProvider,
     providerIndex,
     modelIndex,
     mode: options.mode ?? "default",
@@ -59,7 +65,7 @@ export function statusBarReducer(state: StatusBarState, action: StatusBarAction)
     case "cycle-provider": {
       const nextProviderIndex = (state.providerIndex + 1) % state.providers.length;
       const nextProvider = state.providers[nextProviderIndex];
-      const nextModels = state.modelsByProvider[nextProvider] ?? ["default"];
+      configuredModels(state.modelsByProvider, nextProvider);
       return {
         ...state,
         providerIndex: nextProviderIndex,
@@ -68,7 +74,7 @@ export function statusBarReducer(state: StatusBarState, action: StatusBarAction)
     }
     case "cycle-model": {
       const provider = state.providers[state.providerIndex];
-      const models = state.modelsByProvider[provider] ?? ["default"];
+      const models = configuredModels(state.modelsByProvider, provider);
       return {
         ...state,
         modelIndex: (state.modelIndex + 1) % models.length,
@@ -77,7 +83,7 @@ export function statusBarReducer(state: StatusBarState, action: StatusBarAction)
     case "set-provider": {
       const providerIndex = state.providers.indexOf(action.provider);
       if (providerIndex === -1) return state;
-      const models = state.modelsByProvider[action.provider] ?? ["default"];
+      configuredModels(state.modelsByProvider, action.provider);
       return {
         ...state,
         providerIndex,
@@ -86,7 +92,7 @@ export function statusBarReducer(state: StatusBarState, action: StatusBarAction)
     }
     case "set-model": {
       const provider = state.providers[state.providerIndex];
-      const models = state.modelsByProvider[provider] ?? ["default"];
+      const models = configuredModels(state.modelsByProvider, provider);
       const modelIndex = models.indexOf(action.model);
       if (modelIndex === -1) return state;
       return {
@@ -117,13 +123,16 @@ export function statusBarReducer(state: StatusBarState, action: StatusBarAction)
 }
 
 export function currentProvider(state: StatusBarState): string {
-  return state.providers[state.providerIndex] ?? "unknown";
+  const provider = state.providers[state.providerIndex];
+  if (!provider) throw new Error("status bar provider selection is invalid");
+  return provider;
 }
 
 export function currentModel(state: StatusBarState): string {
   const provider = currentProvider(state);
-  const models = state.modelsByProvider[provider] ?? ["default"];
-  return models[state.modelIndex] ?? "default";
+  const model = configuredModels(state.modelsByProvider, provider)[state.modelIndex];
+  if (!model) throw new Error(`status bar model selection is invalid for provider ${provider}`);
+  return model;
 }
 
 export function statusBarLabel(state: StatusBarState): string {

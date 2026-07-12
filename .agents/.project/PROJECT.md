@@ -1,15 +1,16 @@
 # Project
 
-`agents-mono` is the root repository and aggregator for the agents-mono topology.
-The root package exposes the `agents` CLI and validates the `packages/core`
-TypeScript test surface.
+Agent OS is one personal-agent product. This `agents-manager` repository owns
+the implementation; `agents` is the only operator/runtime CLI and
+`/Users/user/.agents` is the personal installation's only state root.
 
-## Naming contract
+`packages/core` contains the consolidated manager, contracts, harness, gateway,
+inference, and bundled plugin domains. Other package directories and `data/`
+are Git submodules. Their names identify packages, not alternate Agent OS
+products or state authorities.
 
-- `agents-mono` — the root aggregator repository and workspace.
-- `agents` — the unified management CLI implemented in `packages/core/src/manager`.
-- `packages/core` — consolidated core package; legacy `packages/agents-*` names are retained only where they identify an existing repo, env var, or historical concept.
-- `agentos-data` — retained as the compatibility name for the default git-backed data repository and its env var (`AGENTOS_DATA_ROOT`).
-- `Agentos`, `Andromeda`, `Rommie`, and other legacy names are intentionally retained only where they identify an existing repo, env var, or historical concept; new docs use the current names above.
+Historical product names, provider-home paths, launchers, and variables are
+recovery evidence only. Do not add aliases, bridges, forwarding shims, or
+fallback loaders.
 
-Most child directories are submodules. Avoid recursive submodule mutation for root-only workflow and policy changes.
+Branch policy: active work uses a feature branch and a PR into `dev`.

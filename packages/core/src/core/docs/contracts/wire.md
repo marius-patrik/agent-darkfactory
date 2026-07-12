@@ -1,8 +1,8 @@
-# Wire Contract [S3.0] — the canonical Rommie/Agentos protocol
+# Wire Contract [S3.0] — the canonical Agent OS protocol
 
 > **The single most load-bearing artifact in the system.** Everything — gateway,
 > agent loop, TUI, web — builds against this. Source of truth = the protobuf
-> module under [`proto/rommie/v1/`](../../proto/rommie/v1); this doc is its map.
+> module under [`proto/agent_os/v1/`](../../proto/agent_os/v1); this doc is its map.
 >
 > **Transport (design §00 S3, LOCKED):** two layers, **one** protobuf schema:
 > 1. **Control plane = Connect (protobuf)** — unary RPCs, generated typed
@@ -27,7 +27,7 @@
 | `health.proto` | `HealthService` — `GetHealth` (cluster/fabric/PG snapshot + `paused`). |
 | `session_frames.proto` | The **WebSocket** session frames: `ServerFrame` + `ClientFrame` envelopes (§01 G2). |
 
-All in package `rommie.v1`.
+All in package `agent_os.v1`.
 
 ---
 
@@ -135,43 +135,41 @@ Default outputs (all committable, all in this repo):
 | **Go** | `contracts-go/gen` | `protocolbuffers/go` + `connectrpc/go` | `connectrpc.com/connect`, `google.golang.org/protobuf` (`go mod tidy`) |
 | **TS** | `clients/shared-ts/src/gen` | `bufbuild/es` (protobuf-es v2) | `@bufbuild/protobuf`, `@connectrpc/connect` (`bun install`) |
 
-- **Go:** Connect service stubs land in `gen/rommie/v1/rommiev1connect`; messages
-  in `gen/rommie/v1`. `go_package` is injected by buf managed mode.
+- **Go:** Connect service stubs land in `gen/agent_os/v1/agent_osv1connect`; messages
+  in `gen/agent_os/v1`. `go_package` is injected by buf managed mode.
 - **TS:** protobuf-es v2 emits the Connect-compatible service descriptors inside
   the `*_pb.ts` files; `@connectrpc/connect` v2 builds typed clients from them
   via `createClient(RegistryService, transport)` — so **no separate connect-es
-  codegen** is needed. Re-exported from `@agentos/shared-ts/gen`.
-- **Python:** plain protobuf `*_pb2.py` + `*_pb2.pyi` for the sibling
-  inference-engine consumer are generated with the opt-in template:
+  codegen** is needed. Re-exported from `@agent-os/shared-ts/gen`.
+- **Python:** plain protobuf `*_pb2.py` + `*_pb2.pyi` for the in-repository
+  Agent OS inference consumer are generated with the opt-in template:
   ```sh
   bunx --bun @bufbuild/buf generate proto --template buf.gen.python.yaml
   ```
-  That writes to `../inference-engine/python-agent/agent/gen` and should only be
-  run when the sibling repo is in scope for the same change. Import as:
+  That writes to `../inference/python-agent/agent/gen` and is run whenever the
+  in-repository Python consumer changes. Import as:
   ```python
   import agent.gen                      # puts the gen root on sys.path
-  from rommie.v1 import session_frames_pb2, registry_pb2
+  from agent_os.v1 import session_frames_pb2, registry_pb2
   ```
 
 **Regenerate after any `.proto` edit** and commit the stubs alongside the proto.
 
-### Hand-authored shims that survive regen (do not clean)
+### Package markers and generated outputs
 
-`buf generate proto` / `protoc` only emits the files listed below. A small set
-of **hand-authored** companion files live alongside the generated stubs and
-**must be preserved**. Do **NOT** wipe / `--clean` the output directories
-before regenerating — buf does not delete files it did not create, but a
-manual `rm -rf` or a `--clean` flag would destroy these shims.
+`buf generate proto` / `protoc` emits the generated files listed below. Python
+package markers and the TypeScript export barrel are source files and are
+validated separately from generated output.
 
 | File | Kind | Purpose |
 |------|------|---------|
-| `../inference-engine/python-agent/agent/gen/__init__.py` | hand-authored | `sys.path` bootstrap so `from rommie.v1 import ...` resolves; without it `import agent.gen` breaks |
-| `../inference-engine/python-agent/agent/gen/rommie/__init__.py` | hand-authored | Python package marker for the `rommie` namespace |
-| `../inference-engine/python-agent/agent/gen/rommie/v1/__init__.py` | hand-authored | Python package marker for the `rommie.v1` namespace |
-| `clients/shared-ts/src/gen/index.ts` | hand-authored | Re-export barrel so consumers import from `@agentos/shared-ts/gen` |
-| `../inference-engine/python-agent/agent/gen/rommie/v1/*_pb2.py` | **buf-generated** | Protobuf message classes - regenerate, never hand-edit |
-| `../inference-engine/python-agent/agent/gen/rommie/v1/*_pb2.pyi` | **buf-generated** | Type stubs - regenerate, never hand-edit |
-| `clients/shared-ts/src/gen/rommie/v1/*_pb.ts` | **buf-generated** | protobuf-es v2 message + service descriptors — regenerate, never hand-edit |
+| `../inference/python-agent/agent/gen/__init__.py` | source | `sys.path` bootstrap so `from agent_os.v1 import ...` resolves after `import agent.gen` |
+| `../inference/python-agent/agent/gen/agent_os/__init__.py` | source | Python package marker for the `agent_os` namespace |
+| `../inference/python-agent/agent/gen/agent_os/v1/__init__.py` | source | Python package marker for the `agent_os.v1` namespace |
+| `clients/shared-ts/src/gen/index.ts` | hand-authored | Re-export barrel so consumers import from `@agent-os/shared-ts/gen` |
+| `../inference/python-agent/agent/gen/agent_os/v1/*_pb2.py` | **buf-generated** | Protobuf message classes - regenerate, never hand-edit |
+| `../inference/python-agent/agent/gen/agent_os/v1/*_pb2.pyi` | **buf-generated** | Type stubs - regenerate, never hand-edit |
+| `clients/shared-ts/src/gen/agent_os/v1/*_pb.ts` | **buf-generated** | protobuf-es v2 message + service descriptors — regenerate, never hand-edit |
 | `contracts-go/gen/...` | **buf-generated** | Go message + Connect stubs - regenerate, never hand-edit |
 
 ### Connect-python — deferred to VS2
@@ -223,28 +221,26 @@ Where a doc was ambiguous, the simplest doc-aligned reading was chosen:
 bun install
 bun run check
 
-# Optional, only when sibling inference-engine is in scope:
+# Refresh and validate the in-repository Python consumer:
 bunx --bun @bufbuild/buf generate proto --template buf.gen.python.yaml
-(cd ../inference-engine/python-agent && uv sync && uv run python -c "import agent.gen; from rommie.v1 import session_frames_pb2")
+(cd ../inference/python-agent && uv sync && uv run python -c "import agent.gen; from agent_os.v1 import session_frames_pb2")
 ```
 
 ---
 
 ## 8. Package surface and downstream consumers
 
-`agents-core` is a **contracts / shared-client package**, not a CLI. The canonical
-protobuf module in `proto/rommie/v1/` is published as generated stubs for three
+`agent-os-core` is a **contracts / shared-client package**, not a CLI. The canonical
+protobuf module in `proto/agent_os/v1/` is published as generated stubs for three
 consumer languages:
 
 | Language | Package / module | Import example | Downstream consumer |
 |----------|------------------|----------------|---------------------|
-| **Go** | `github.com/marius-patrik/agentos/agentos-core/contracts-go` | `rommiev1 "github.com/marius-patrik/agentos/agentos-core/contracts-go/gen/rommie/v1"` | `inference-engine` Go services (see `../inference-engine/go.work`) |
-| **Go Connect** | `.../gen/rommie/v1/rommiev1connect` | `import "github.com/marius-patrik/agentos/agentos-core/contracts-go/gen/rommie/v1/rommiev1connect"` | Go services that speak the Connect control plane |
-| **TypeScript** | `@agentos/shared-ts` | `import { RegistryService } from "@agentos/shared-ts/gen"` | `clients/tui`, `clients/web`, and external TS apps |
-| **Python** | `agent.gen` bootstrap + `rommie.v1` | `import agent.gen; from rommie.v1 import session_frames_pb2, registry_pb2` | `inference-engine/python-agent` |
+| **Go** | `github.com/marius-patrik/agents-manager/packages/core/src/core/contracts-go` | `agent_osv1 "github.com/marius-patrik/agents-manager/packages/core/src/core/contracts-go/gen/agent_os/v1"` | Go services under `../inference/` |
+| **Go Connect** | `.../gen/agent_os/v1/agent_osv1connect` | `import "github.com/marius-patrik/agents-manager/packages/core/src/core/contracts-go/gen/agent_os/v1/agent_osv1connect"` | Go services that speak the Connect control plane |
+| **TypeScript** | `@agent-os/shared-ts` | `import { RegistryService } from "@agent-os/shared-ts/gen"` | `clients/tui`, `clients/web`, and external TS apps |
+| **Python** | `agent.gen` bootstrap + `agent_os.v1` | `import agent.gen; from agent_os.v1 import session_frames_pb2, registry_pb2` | `../inference/python-agent` |
 
 `clients/tui` and `clients/web` are currently placeholder workspaces; they
-import `@agentos/shared-ts` and will host the future TUI and web applications.
+import `@agent-os/shared-ts` and will host the future TUI and web applications.
 There is no user-facing CLI or installer in this package.
-
-

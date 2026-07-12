@@ -1,12 +1,11 @@
 {
   "schemaVersion": 1,
-  "managedBy": "darkfactory-agent",
+  "managedBy": "darkfactory",
   "dataRepo": "marius-patrik/agents-data",
-  "workspacePackage": "darkfactory-workspace",
+  "workspacePackage": "agent-os-workspace",
   "requiredSecrets": ["CODEX_AUTH_JSON"],
   "requiredFiles": [
     "AGENTS.md",
-    ".agents/.global/VERSION",
     ".darkfactory/branching-policy.md",
     ".darkfactory/labels.json",
     ".darkfactory/managed-repository.json",

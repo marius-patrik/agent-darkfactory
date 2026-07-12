@@ -1,18 +1,9 @@
-"""Rommie LLM gateway (VS1-minimal).
+"""Agent OS model gateway.
 
-Salvaged + adapted from the v3 ``legacy/src-packages-gateway`` package (FastAPI +
-httpx + litellm). The single client-facing edge: OpenAI-format
-``/v1/chat/completions``, role aliases with replica round-robin, context
-fallback, ``<think>``-strip, trace metadata, and a config-driven model
-registry.
-
-VS1-minimal scope (the rest lands VS2, see ``docs/gateway.md``):
-- LOCAL engines only — generic-HTTP backends routing to OpenAI-compatible
-  ``api_base``s. Cloud entries are removed / ``enabled: false`` and
-  ``allow_cloud`` defaults to ``False``.
-- The never-meter guardrail (``allow_cloud`` gating in :mod:`llm_gateway.router`)
-  STAYS enforced regardless of fabric.
-- Re-namespaced from the v3 ``agents`` package namespace → ``llm_gateway``.
+The gateway exposes OpenAI-format chat and model APIs, task-class routing,
+health, quotas, and trace metadata for local inference engines.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+__version__ = version("agent-os-gateway")

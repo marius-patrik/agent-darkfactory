@@ -1,22 +1,22 @@
 import { create } from "@bufbuild/protobuf";
-import { name as sharedName } from "@agentos/shared-ts";
-import { name as tuiName } from "@agentos/tui";
-import { name as webName } from "@agentos/web";
+import { name as sharedName } from "@agent-os/shared-ts";
+import { name as tuiName } from "@agent-os/tui";
+import { name as webName } from "@agent-os/web";
 import {
   ListModelsRequestSchema,
   RegistryService,
-  file_rommie_v1_common,
-} from "@agentos/shared-ts/gen";
+  file_agent_os_v1_common,
+} from "@agent-os/shared-ts/gen";
 
 const request = create(ListModelsRequestSchema, {});
 
 if (
-  sharedName !== "@agentos/shared-ts" ||
-  tuiName !== "@agentos/tui" ||
-  webName !== "@agentos/web" ||
-  request.$typeName !== "rommie.v1.ListModelsRequest" ||
-  file_rommie_v1_common.name !== "rommie/v1/common.proto" ||
-  RegistryService.typeName !== "rommie.v1.RegistryService"
+  sharedName !== "@agent-os/shared-ts" ||
+  tuiName !== "@agent-os/tui" ||
+  webName !== "@agent-os/web" ||
+  request.$typeName !== "agent_os.v1.ListModelsRequest" ||
+  file_agent_os_v1_common.name !== "agent_os/v1/common" ||
+  RegistryService.typeName !== "agent_os.v1.RegistryService"
 ) {
-  throw new Error("agents-core TypeScript import smoke test failed");
+  throw new Error("Agent OS core TypeScript import smoke test failed");
 }

@@ -1,19 +1,11 @@
-"""Status vocabulary + proto/PostgreSQL alignment.
+"""Canonical Agent OS result-status vocabulary and protobuf alignment.
 
 This module defines the canonical eight *result* states for runs, tasks and
-rolled-up parents.  It intentionally excludes the two *liveness* states
-(``RUN_STATUS_RUNNING`` / ``RUN_STATUS_PAUSED``) from the wire enum: the
-vocabulary is about **result**, not heartbeat or claim liveness
-(see ``.plans/design/drafts/D6-status-machine.md`` §3.1).
+rolled-up parents. It intentionally excludes the two liveness states
+(``RUN_STATUS_RUNNING`` / ``RUN_STATUS_PAUSED``): this vocabulary represents
+results, not heartbeat or claim liveness.
 
-PostgreSQL reconciliation (issue #1276)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The Postgres ``run_status_value`` enum and the ``StatusValue`` enum below
-share the exact same string names.  ``PG_RUN_STATUS_VALUES`` documents and
-locks that ordering so drift is caught by tests.
-
-The protobuf ``RunStatus`` enum (``proto/rommie/v1/common.proto``) has ten
+The protobuf ``RunStatus`` enum (``proto/agent_os/v1/common.proto``) has ten
 members.  Values ``1..8`` map to the eight result states below.  Values
 ``0`` (``RUN_STATUS_UNSPECIFIED``), ``9`` (``RUN_STATUS_RUNNING``) and
 ``10`` (``RUN_STATUS_PAUSED``) are rejected by ``from_proto`` because they
@@ -23,6 +15,9 @@ are either unspecified or liveness states, not result states.
 from __future__ import annotations
 
 from enum import Enum
+
+import agent.gen  # noqa: F401  # installs the generated agent_os namespace
+from agent_os.v1 import common_pb2
 
 
 class StatusValue(str, Enum):
@@ -86,31 +81,16 @@ _STATE_CLASS: dict[StatusValue, str] = {
     StatusValue.expired: "terminal-neg",
 }
 
-# PostgreSQL enum ``run_status_value`` literal names, in proto order.
-# This constant guards issue #1276: the PG enum string values must match
-# ``StatusValue.value`` exactly.
-PG_RUN_STATUS_VALUES: list[str] = [
-    "useful_result",
-    "no_artifact",
-    "missing_evidence",
-    "unresolved",
-    "blocked",
-    "failed",
-    "released",
-    "expired",
-]
-
-# Proto value (1..8) for each StatusValue, in the order defined by
-# ``proto/rommie/v1/common.proto``.
+# Generated protobuf values from the canonical ``agent_os.v1`` contract.
 _PROTO_VALUE: dict[StatusValue, int] = {
-    StatusValue.useful_result: 1,
-    StatusValue.no_artifact: 2,
-    StatusValue.missing_evidence: 3,
-    StatusValue.unresolved: 4,
-    StatusValue.blocked: 5,
-    StatusValue.failed: 6,
-    StatusValue.released: 7,
-    StatusValue.expired: 8,
+    StatusValue.useful_result: common_pb2.RUN_STATUS_USEFUL_RESULT,
+    StatusValue.no_artifact: common_pb2.RUN_STATUS_NO_ARTIFACT,
+    StatusValue.missing_evidence: common_pb2.RUN_STATUS_MISSING_EVIDENCE,
+    StatusValue.unresolved: common_pb2.RUN_STATUS_UNRESOLVED,
+    StatusValue.blocked: common_pb2.RUN_STATUS_BLOCKED,
+    StatusValue.failed: common_pb2.RUN_STATUS_FAILED,
+    StatusValue.released: common_pb2.RUN_STATUS_RELEASED,
+    StatusValue.expired: common_pb2.RUN_STATUS_EXPIRED,
 }
 
 _STATUS_BY_PROTO: dict[int, StatusValue] = {v: k for k, v in _PROTO_VALUE.items()}
@@ -147,11 +127,11 @@ def from_proto(value: int) -> StatusValue:
         ValueError: If ``value`` is 0 (unspecified), 9 (running) or 10 (paused).
             Those values are not result states.
     """
-    if value == 0:
+    if value == common_pb2.RUN_STATUS_UNSPECIFIED:
         raise ValueError("proto value 0 (RUN_STATUS_UNSPECIFIED) is not a result state")
-    if value == 9:
+    if value == common_pb2.RUN_STATUS_RUNNING:
         raise ValueError("proto value 9 (RUN_STATUS_RUNNING) is a liveness state, not a result state")
-    if value == 10:
+    if value == common_pb2.RUN_STATUS_PAUSED:
         raise ValueError("proto value 10 (RUN_STATUS_PAUSED) is a liveness state, not a result state")
     try:
         return _STATUS_BY_PROTO[value]

@@ -8,21 +8,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-DEFAULT_TRACE_DIR = Path(
-    os.environ.get("GATEWAY_TRACE_DIR", Path(__file__).resolve().parent.parent / "traces")
-)
+from llm_gateway.state import gateway_runtime_dir
 
 
 class TraceLogger:
     def __init__(self, trace_dir: Path | None = None) -> None:
-        self.trace_dir = trace_dir or DEFAULT_TRACE_DIR
-        self.trace_dir.mkdir(parents=True, exist_ok=True)
+        self.trace_dir = trace_dir or gateway_runtime_dir() / "traces"
+        self.trace_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(self.trace_dir, 0o700)
         self._file = self._open_file()
 
     def _open_file(self) -> Any:
         date_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         path = self.trace_dir / f"gateway-{date_stamp}.jsonl"
-        return open(path, "a", encoding="utf-8", buffering=1)
+        handle = open(path, "a", encoding="utf-8", buffering=1)
+        os.chmod(path, 0o600)
+        return handle
 
     def log(
         self,
@@ -33,8 +34,6 @@ class TraceLogger:
         duration_ms: float | None = None,
         tokens_in: int | None = None,
         tokens_out: int | None = None,
-        fallback_used: bool = False,
-        fallback_to: str | None = None,
         error: str | None = None,
         request_id: str | None = None,
         requested_model: str | None = None,
@@ -46,8 +45,6 @@ class TraceLogger:
         backend_node_id: str | None = None,
         served_model: str | None = None,
         resource_class: str | None = None,
-        allow_cloud: bool | None = None,
-        cloud: bool | None = None,
         response_status: str | None = None,
         http_status: int | None = None,
         extra: dict[str, Any] | None = None,
@@ -67,15 +64,11 @@ class TraceLogger:
             "backend_node_id": backend_node_id,
             "served_model": served_model,
             "resource_class": resource_class,
-            "allow_cloud": allow_cloud,
-            "cloud": cloud,
             "response_status": response_status,
             "http_status": http_status,
             "duration_ms": round(duration_ms, 2) if duration_ms is not None else None,
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
-            "fallback_used": fallback_used,
-            "fallback_to": fallback_to,
             "error": error,
             "request_id": request_id,
             "extra": extra or {},

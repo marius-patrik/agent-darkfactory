@@ -1,4 +1,4 @@
-"""Tool registry and OpenAI tool schemas for the VS2 loop."""
+"""Tool registry and OpenAI tool schemas for the inference worker."""
 
 from __future__ import annotations
 

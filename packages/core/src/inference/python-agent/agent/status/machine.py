@@ -1,8 +1,7 @@
 """Status state-machine + legal transitions.
 
-The transition table is the authority.  All legal transitions are encoded in
-``TRANSITIONS``; ``transition`` enforces the invariants from
-``.plans/design/drafts/D6-status-machine.md`` §3.3:
+The transition table is the runtime implementation of the canonical
+``agent_os.v1.RunStatus`` result invariants:
 
 * ``useful_result`` is produced ONLY by ``Trigger.check_pass``.
 * Terminal states (``failed``, ``released``, ``expired``) have no outgoing

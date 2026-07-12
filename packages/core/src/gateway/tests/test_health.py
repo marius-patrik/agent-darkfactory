@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_gateway.registry import ModelRegistry, ActiveRoleManager
+from llm_gateway.registry import ModelRegistry
 from llm_gateway.health import HealthChecker
 
 
@@ -16,7 +16,6 @@ from llm_gateway.health import HealthChecker
 def health_fixture():
     with tempfile.TemporaryDirectory() as td:
         reg_path = Path(td) / "models.yaml"
-        active_path = Path(td) / "active.yaml"
         schema_path = Path(td) / "schema.json"
         schema_path.write_text(json.dumps({
             "type": "object",
@@ -31,41 +30,49 @@ def health_fixture():
                 "offline": {
                     "id": "offline",
                     "provider": "local",
+                    "model": "offline",
                     "api_base": "http://localhost:59999/v1",
                     "role": "general",
                     "context_length": 100,
                     "enabled": True,
-                    "cloud": False,
                 },
             },
         }))
         reg = ModelRegistry(registry_path=reg_path, schema_path=schema_path)
-        active = ActiveRoleManager(active_path=active_path)
-        checker = HealthChecker(reg, active, started_at=0.0)
-        yield checker, reg, active
+        checker = HealthChecker(reg, started_at=0.0)
+        yield checker, reg
 
 
 class TestHealthCheck:
     async def test_returns_report(self, health_fixture):
-        checker, _, _ = health_fixture
+        checker, _ = health_fixture
         report = await checker.check()
         assert "status" in report
         assert "git_sha" in report
-        assert "image_tag" in report
         assert "build_time" in report
         assert "node_id" in report
         assert "models_registered" in report
         assert report["models_registered"] == 1
 
     async def test_unhealthy_when_all_down(self, health_fixture):
-        checker, _, _ = health_fixture
+        checker, _ = health_fixture
         report = await checker.check()
         # The offline model will fail the probe
         assert report["status"] == "unhealthy"
         assert report["models_healthy"] == 0
 
-    async def test_roles_configured(self, health_fixture):
-        checker, _, active = health_fixture
-        active.set("general", "offline")
+    async def test_roles_available(self, health_fixture):
+        checker, _ = health_fixture
         report = await checker.check()
-        assert report["roles_configured"] == 1
+        assert report["roles_available"] == 1
+
+    async def test_uses_package_version_and_reads_build_environment(self, health_fixture, monkeypatch):
+        checker, _ = health_fixture
+        monkeypatch.setenv("AGENTS_GIT_SHA", "abc123")
+        monkeypatch.setenv("AGENTS_BUILD_TIME", "2026-07-10T12:00:00Z")
+        monkeypatch.setenv("AGENTS_NODE_ID", "node-test")
+        report = await checker.check()
+        assert report["version"] == "0.1.0"
+        assert report["git_sha"] == "abc123"
+        assert report["build_time"] == "2026-07-10T12:00:00Z"
+        assert report["node_id"] == "node-test"

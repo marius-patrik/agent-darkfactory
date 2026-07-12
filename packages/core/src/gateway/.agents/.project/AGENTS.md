@@ -1,3 +1,5 @@
-# llm-gateway Agent Notes
+# Agent OS Gateway Notes
 
-This repository is the LLM Gateway service. Keep managed repository enforcement files in place and preserve the Python uv validation path as the CI validate job.
+This directory is the Agent OS LLM gateway component inside `agents-manager`.
+Preserve the Python uv validation path. Runtime work must use an explicit
+absolute `AGENTS_HOME`; cloud provider execution remains outside this package.

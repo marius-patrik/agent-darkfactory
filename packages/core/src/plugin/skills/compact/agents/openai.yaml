@@ -1,5 +1,0 @@
-interface:
-  display_name: "Compact"
-  short_description: "Write compact-ready handoff and memory state"
-  default_prompt: "Use $compact to prepare a compaction-safe handoff that preserves the current work state."
-

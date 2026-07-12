@@ -1,19 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { sharedState } from "../../src/manager/state";
+import { ensureSharedState, sharedState } from "../../src/manager/state";
 import {
   createSession,
+  inspectSessionIntegrity,
   listSessions,
+  loadSessionEvents,
   loadSessionState,
   loadTranscript,
   runSessionTurn,
+  sessionPaths,
   streamSessionTurn,
   switchSessionProvider,
+  withSessionWriteLock,
+  withSessionWriteTransaction,
+  type ProviderAdapter,
+  type SessionDescriptor,
+  type SessionTranscript,
+  type TurnRequest,
+  type TurnResult,
 } from "../../src/harness/session";
 import { FakeProviderAdapter } from "../../src/harness/session-adapters";
 import { providerSessionAdapter } from "../../src/manager/session-adapters";
+import { renewableLockDatabasePath } from "../../src/manager/state-lock";
 
 const repoRoot = path.resolve(import.meta.dir, "../..");
 const cliPath = path.join(repoRoot, "src", "manager", "cli.ts");
@@ -51,7 +62,7 @@ describe("session runtime", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const descriptor = await createSession(state, { provider: "fake", model: "test", mode: "chat" });
       expect(descriptor.provider).toBe("fake");
       expect(descriptor.model).toBe("test");
@@ -75,7 +86,7 @@ describe("session runtime", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const descriptor = await createSession(state, { provider: "fake", model: "test" });
       const adapter = new FakeProviderAdapter();
       const result = await runSessionTurn(state, adapter, descriptor, { prompt: "hello" });
@@ -101,7 +112,7 @@ describe("session runtime", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const descriptor = await createSession(state, { provider: "fake", model: "test" });
       const adapter = new FakeProviderAdapter();
       await runSessionTurn(state, adapter, descriptor, { prompt: "a", systemPrompt: "be helpful" });
@@ -118,7 +129,7 @@ describe("session runtime", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const descriptor = await createSession(state, { provider: "fake", model: "test" });
       const adapter = new FakeProviderAdapter();
       const chunks: string[] = [];
@@ -139,7 +150,7 @@ describe("session runtime", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const descriptor = await createSession(state, { provider: "fake", model: "a" });
       const adapter = new FakeProviderAdapter();
       await runSessionTurn(state, adapter, descriptor, { prompt: "hello" });
@@ -166,13 +177,294 @@ describe("session runtime", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const first = await createSession(state, { provider: "fake", model: "m1", sessionId: "session-1" });
       const second = await createSession(state, { provider: "fake", model: "m2", sessionId: "session-2" });
       const sessions = await listSessions(state);
       expect(sessions.map((s) => s.sessionId)).toEqual(["session-1", "session-2"]);
       expect(sessions.find((s) => s.sessionId === first.sessionId)?.model).toBe("m1");
       expect(sessions.find((s) => s.sessionId === second.sessionId)?.model).toBe("m2");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("immutable events deterministically rebuild tampered or missing projections", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-replay-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      const descriptor = await createSession(state, {
+        provider: "fake",
+        model: "test",
+        sessionId: "replay-session",
+      });
+      await runSessionTurn(state, new FakeProviderAdapter(), descriptor, { prompt: "canonical" });
+      const expectedState = await loadSessionState(state, descriptor.sessionId);
+      const expectedTranscript = await loadTranscript(state, descriptor.sessionId);
+      const paths = sessionPaths(state, descriptor.sessionId);
+
+      await Bun.write(paths.stateFile, '{"schemaVersion":1,"sessionId":"tampered","turnCount":999}\n');
+      await Bun.write(paths.transcriptFile, '{"schemaVersion":1,"sessionId":"tampered","messages":[]}\n');
+      expect(await loadSessionState(state, descriptor.sessionId)).toEqual(expectedState);
+      expect(await loadTranscript(state, descriptor.sessionId)).toEqual(expectedTranscript);
+
+      await rm(paths.stateFile, { force: true });
+      await rm(paths.transcriptFile, { force: true });
+      expect(await loadSessionState(state, descriptor.sessionId)).toEqual(expectedState);
+      expect(await loadTranscript(state, descriptor.sessionId)).toEqual(expectedTranscript);
+
+      const events = await loadSessionEvents(state, descriptor.sessionId);
+      expect(events.map((event) => event.type)).toEqual([
+        "session.created",
+        "turn.started",
+        "message.appended",
+        "message.appended",
+        "turn.completed",
+      ]);
+      const completed = events.find((event) => event.type === "turn.completed");
+      expect(completed?.type === "turn.completed" ? completed.data.usage : undefined).toEqual({
+        tokensIn: 24,
+        tokensOut: 15,
+      });
+
+      if (process.platform !== "win32") {
+        const manifest = JSON.parse(await readFile(path.join(state.stateDir, "manifest.json"), "utf8")) as {
+          machineId: string;
+        };
+        const machineDirectory = path.join(paths.eventsDir, manifest.machineId);
+        const eventFiles = await readdir(machineDirectory);
+        expect((await stat(paths.dir)).mode & 0o777).toBe(0o700);
+        expect((await stat(paths.eventsDir)).mode & 0o777).toBe(0o700);
+        expect((await stat(machineDirectory)).mode & 0o777).toBe(0o700);
+        expect((await stat(paths.stateFile)).mode & 0o777).toBe(0o600);
+        expect((await stat(paths.transcriptFile)).mode & 0o777).toBe(0o600);
+        for (const eventFile of eventFiles) {
+          expect((await stat(path.join(machineDirectory, eventFile))).mode & 0o777).toBe(0o600);
+        }
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("event integrity failures are rejected instead of trusting projections", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-integrity-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      const descriptor = await createSession(state, { provider: "fake", model: "test", sessionId: "integrity" });
+      await runSessionTurn(state, new FakeProviderAdapter(), descriptor, { prompt: "hello" });
+      const paths = sessionPaths(state, descriptor.sessionId);
+      const manifest = JSON.parse(await readFile(path.join(state.stateDir, "manifest.json"), "utf8")) as {
+        machineId: string;
+      };
+      const machineDirectory = path.join(paths.eventsDir, manifest.machineId);
+      const eventFile = path.join(machineDirectory, (await readdir(machineDirectory)).sort()[1]);
+      const event = JSON.parse(await readFile(eventFile, "utf8")) as { eventHash: string };
+      event.eventHash = "0".repeat(64);
+      await Bun.write(eventFile, `${JSON.stringify(event, null, 2)}\n`);
+
+      expect(loadTranscript(state, descriptor.sessionId)).rejects.toThrow("session event hash mismatch");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("read-only integrity inspection distinguishes projection drift from event tampering", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-inspection-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      const descriptor = await createSession(state, { provider: "fake", model: "test", sessionId: "inspection" });
+      await runSessionTurn(state, new FakeProviderAdapter(), descriptor, { prompt: "canonical" });
+      expect((await inspectSessionIntegrity(state)).ok).toBe(true);
+
+      const paths = sessionPaths(state, descriptor.sessionId);
+      await Bun.write(paths.transcriptFile, "forged\n");
+      const drift = await inspectSessionIntegrity(state);
+      expect(drift.eventIntegrity).toBe(true);
+      expect(drift.projectionIntegrity).toBe(false);
+      expect(await Bun.file(paths.transcriptFile).text()).toBe("forged\n");
+
+      await loadTranscript(state, descriptor.sessionId);
+      const manifest = JSON.parse(await readFile(path.join(state.stateDir, "manifest.json"), "utf8")) as { machineId: string };
+      const eventFile = path.join(paths.eventsDir, manifest.machineId, (await readdir(path.join(paths.eventsDir, manifest.machineId))).sort()[0]);
+      const event = JSON.parse(await readFile(eventFile, "utf8")) as { eventHash: string };
+      event.eventHash = "0".repeat(64);
+      await Bun.write(eventFile, `${JSON.stringify(event, null, 2)}\n`);
+      const tampered = await inspectSessionIntegrity(state);
+      expect(tampered.eventIntegrity).toBe(false);
+      expect(tampered.issues.join("\n")).toContain("hash mismatch");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects the retired default model sentinel at creation and switch boundaries", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-model-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await expect(createSession(state, { provider: "fake", model: "default" })).rejects.toThrow(
+        "retired default model sentinel",
+      );
+      const descriptor = await createSession(state, { provider: "fake", model: "test" });
+      await expect(switchSessionProvider(state, descriptor.sessionId, "fake", "default")).rejects.toThrow(
+        "retired default model sentinel",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects session id collisions and projection-only retired sessions", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-collision-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await createSession(state, { provider: "fake", model: "test", sessionId: "same-id" });
+      expect(createSession(state, { provider: "fake", model: "test", sessionId: "same-id" })).rejects.toThrow(
+        "session id collision",
+      );
+
+      const retired = sessionPaths(state, "retired-session");
+      await mkdir(retired.dir, { recursive: true, mode: 0o700 });
+      await Bun.write(retired.stateFile, '{"schemaVersion":1,"sessionId":"retired-session"}\n');
+      await Bun.write(retired.transcriptFile, '{"schemaVersion":1,"sessionId":"retired-session","messages":[]}\n');
+      expect(loadSessionState(state, "retired-session")).rejects.toThrow("retired projections are not loadable");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("concurrent turns serialize without truncating messages or usage", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-concurrent-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      const descriptor = await createSession(state, {
+        provider: "concurrent",
+        model: "test",
+        sessionId: "concurrent-session",
+      });
+      const adapter = new (class implements ProviderAdapter {
+        readonly id = "concurrent";
+        readonly displayName = "Concurrent";
+        readonly supportsStreaming = false;
+        async startSession(): Promise<void> {}
+        async continueSession(_descriptor: SessionDescriptor, _transcript: SessionTranscript): Promise<void> {}
+        async runTurn(
+          _descriptor: SessionDescriptor,
+          _transcript: SessionTranscript,
+          request: TurnRequest,
+        ): Promise<TurnResult> {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return {
+            role: "assistant",
+            content: `reply:${request.prompt}`,
+            usage: { tokensIn: request.prompt.length, tokensOut: request.prompt.length + 6 },
+          };
+        }
+      })();
+
+      await Promise.all([
+        runSessionTurn(state, adapter, descriptor, { prompt: "alpha" }),
+        runSessionTurn(state, adapter, descriptor, { prompt: "beta" }),
+      ]);
+      const sessionState = await loadSessionState(state, descriptor.sessionId);
+      const transcript = await loadTranscript(state, descriptor.sessionId);
+      expect(sessionState?.turnCount).toBe(2);
+      expect(transcript?.messages).toHaveLength(4);
+      expect(transcript?.messages.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+      ]);
+      expect(
+        transcript?.messages.filter((message) => message.role === "user").map((message) => message.content).sort(),
+      ).toEqual(["alpha", "beta"]);
+      expect((await loadSessionEvents(state, descriptor.sessionId)).filter((event) => event.type === "turn.completed")).toHaveLength(2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("session lock heartbeat prevents reclaim during a provider-length operation", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-heartbeat-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      const descriptor = await createSession(state, {
+        provider: "fake",
+        model: "test",
+        sessionId: "heartbeat-session",
+      });
+      const options = { leaseMs: 120, heartbeatMs: 20, waitMs: 1_000 };
+      const order: string[] = [];
+
+      const first = withSessionWriteLock(
+        state,
+        descriptor.sessionId,
+        async (lock) => {
+          order.push("first:entered");
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          await lock.verify();
+          order.push("first:leaving");
+        },
+        options,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      const second = withSessionWriteLock(
+        state,
+        descriptor.sessionId,
+        async () => {
+          order.push("second:entered");
+        },
+        options,
+      );
+
+      await Promise.all([first, second]);
+      expect(order).toEqual(["first:entered", "first:leaving", "second:entered"]);
+      expect((await stat(renewableLockDatabasePath(state))).mode & 0o777).toBe(0o600);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("lost session ownership fails closed before a provider response is persisted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-lock-loss-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      const descriptor = await createSession(state, {
+        provider: "fake",
+        model: "test",
+        sessionId: "lost-provider-boundary",
+      });
+
+      await expect(
+        withSessionWriteTransaction(
+          state,
+          descriptor.sessionId,
+          async (transaction) => {
+            const turnId = await transaction.beginTurn();
+            await transaction.appendMessage(turnId, { role: "user", content: "before-provider" });
+            Bun.sleepSync(120);
+            await transaction.verify();
+            await transaction.appendMessage(turnId, { role: "assistant", content: "must-not-persist" });
+            await transaction.completeTurn(turnId);
+          },
+          { leaseMs: 80, heartbeatMs: 20, waitMs: 1_000 },
+        ),
+      ).rejects.toThrow("ownership was lost");
+
+      const events = await loadSessionEvents(state, descriptor.sessionId);
+      expect(events.filter((event) => event.type === "message.appended").map((event) => event.data)).toEqual([
+        { turnId: expect.any(String), message: { role: "user", content: "before-provider" } },
+      ]);
+      expect(events.some((event) => event.type === "turn.completed")).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -261,7 +553,7 @@ describe("agents run / sessions CLI", () => {
       await mkdir(path.dirname(configPath), { recursive: true });
       await Bun.write(
         configPath,
-        JSON.stringify({ defaultProvider: "fake", defaultModel: "from-config", defaultMode: "orchestrator" }),
+        JSON.stringify({ schemaVersion: 1, defaultProvider: "fake", defaultModel: "from-config", defaultMode: "orchestrator" }),
       );
 
       const run = await runAgents(root, ["run", "configured"]);
@@ -320,14 +612,16 @@ describe("real adapter smoke test", () => {
       expect(true).toBe(true);
       return;
     }
+    const model = process.env.AGENTS_SESSION_SMOKE_MODEL;
+    if (!model) throw new Error("AGENTS_SESSION_SMOKE_MODEL is required with AGENTS_SESSION_SMOKE_PROVIDER");
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-smoke-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const adapter = providerSessionAdapter(provider, process.env.AGENTS_SESSION_SMOKE_BINARY);
       const descriptor = await createSession(state, {
         provider: adapter.id,
-        model: process.env.AGENTS_SESSION_SMOKE_MODEL ?? "default",
+        model,
       });
       const result = await runSessionTurn(state, adapter, descriptor, {
         prompt: "Reply with the single word 'ok' and nothing else.",

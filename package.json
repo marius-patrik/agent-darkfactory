@@ -1,23 +1,29 @@
 {
-  "name": "@marius-patrik/agents-mono",
+  "name": "@marius-patrik/agents-manager",
   "version": "0.1.0",
-  "description": "Root aggregator workspace for the agents-mono topology. Exposes the `agents` CLI and validates the `packages/core` TypeScript test surface.",
+  "description": "Agent OS manager and unified `agents` CLI for canonical state, memory, providers, sessions, orchestration, packages, and harnesses.",
   "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/core/src/core/clients/*"
+  ],
   "bin": {
     "agents": "./packages/core/src/manager/cli.ts"
   },
   "scripts": {
+    "agents": "bun packages/core/src/manager/cli.ts",
     "check": "bunx tsc --noEmit",
     "test": "bun test packages/core/test/manager/*.test.ts",
     "ci": "bun run check && bun run test",
     "smoke:release": "bash install/smoke-release.sh"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.5.0"
+    "@bufbuild/buf": "1.71.0",
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
   },
   "engines": {
-    "bun": ">=1.1.0"
+    "bun": "1.3.14"
   },
   "license": "MIT"
 }

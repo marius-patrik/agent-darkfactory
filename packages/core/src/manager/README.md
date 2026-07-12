@@ -1,106 +1,93 @@
-# agents-manager
+# Agent OS manager
 
-`agents-manager` provides the `agents` CLI for local agents-mono operations. It manages package checkouts, shared `.agents` runtime state, provider CLI homes, harness execution, installs, data repositories, secrets, and credits.
+`agents-manager` implements the `agents` CLI: the single management and runtime
+surface for Agent OS. It manages canonical state and memory, provider CLI
+homes, sessions, orchestration, package checkouts, harness execution,
+capabilities, data repositories, environments, secrets, and credits.
 
-## Agents OS Distro Notes
-
-`agents` is the entry point for the `agents-os` container distribution. Inside
-the distro image, the CLI is exposed on `PATH` as `agents` and consumes the
-container environment contract defined in `docs/agents-os/DATA-CONTRACTS.md`:
-
-- `AGENTS_ROOT` may point to the read-only distro root (`/opt/agents-os`) while
-  `AGENTS_HOME` points to the mounted shared state (`/agents/state`).
-- `sharedStateFromEnv` honors an explicit `AGENTS_ROOT` and falls back to the
-  parent directory of `AGENTS_HOME` for host-native usage.
-- `AGENTS_DATA` and `AGENTS_WORKSPACE` override the default `data/agentos` and
-  `data/workspace` directories used by shared state.
-
-## Requirements
+## Requirements and setup
 
 - Bun 1.1 or newer
 - Git
-- GitHub CLI for commands that sync GitHub secrets
-- Optional provider CLIs on `PATH`: `codex`, `claude`, `kimi`, `agy` or `gemini`
+- GitHub CLI only for explicit GitHub-secret synchronization
+- Optional provider CLIs installed below `AGENTS_HOME/clis/<provider>/bin`:
+  `codex`, `claude`, `kimi`, and `agy`
 
-## Install
+From the repository root:
 
-For a package-local install from this repository:
-
-```powershell
-bun install
-bun link
-```
-
-After linking, `agents` resolves to `src/cli.ts` through the package `bin` entry.
-
-For the current agents-mono workspace install surface, the parent repository can also expose this CLI through its own package metadata. Use the package-local install above when working directly in this standalone repository; use the parent workspace when operating the full one-system checkout.
-
-## Update
-
-```powershell
-git pull --ff-only
+```sh
 bun install
 bun run ci
+AGENTS_HOME="$HOME/.agents" AGENTS_USER_HOME="$HOME" AGENTS_ROOT="$PWD" \
+  bun run agents -- state init
 ```
 
-The package-local update strategy is source checkout plus Bun link. Release and autoupdate automation are separate managed-repository work and are not required for this package to validate or run locally.
+The package is currently source-installed. Old product checkouts and installers
+are not supported update sources.
 
-## Validation
+## State contract
 
-```powershell
-bun run check
-bun run test
-bun run ci
-```
+`AGENTS_HOME` is the only runtime state root. For the personal installation it
+is `/Users/user/.agents`; otherwise it is an absolute `~/.agents` path.
+`AGENTS_USER_HOME` identifies the real OS user home. `AGENTS_ROOT` may identify
+the active code/distribution checkout, but it is not state.
 
-The scripts run TypeScript with this repo's `tsconfig.json` and the test suite under `test/`.
+The canonical layout includes:
 
-## State Layout
+- `identity/` — agent identity, persona, and user model;
+- `clis/<provider>/` — opaque provider-native runtime state;
+- `sessions/` — canonical session events, provider handles, and projections;
+- `memory/` — provenance-backed records, events, indexes, and generated views;
+- `orchestrator/` — orchestrator events, lease, and projected state;
+- `skills/`, `plugins/`, `hooks/`, and `templates/` — shared capabilities;
+- `secrets/` — local secret registry and explicit materializations;
+- `runtime/` — locks, process state, temporary data, caches, and logs;
+- `sync/` — future v2 event exchange;
+- `provenance/` — source and migration evidence;
+- `harnesses/<id>/runtime/` — harness-local runtime data;
+- top-level canonical registries such as `installs.json`, `packages.json`,
+  `data-repos.json`, `environments.json`, and `providers.json`.
 
-By default, runtime state is created under `.agents` in the current working tree. Set `AGENTS_HOME` to place the shared state elsewhere.
+No `~/.agents/state` tree exists in the final layout. No physical directory or
+link at `~/.codex`, `~/.claude`, `~/.kimi-code`, or `~/.gemini` is supported.
+Legacy product-specific root variables are not state locators. Provider-native
+environment variables are derived projections into `AGENTS_HOME/clis/`.
 
-Important paths:
+The complete authority and migration contract is
+[`docs/state-memory-v2.md`](../../../../docs/state-memory-v2.md).
 
-- `.agents/env` stores generated environment variables.
-- `.agents/clis` contains managed provider CLI homes.
-- `.agents/harnesses` contains installed harness runtimes.
-- `.agents/skills`, `.agents/plugins`, `.agents/hooks`, and `.agents/templates` hold installed agent assets.
-- `.agents/secrets` stores local secret files.
-- `.agents/credits.json` stores the shared credit ledger.
-- `.agents/data-repos.json` records managed data repositories.
-- `.agents/installs.json` records installed skills, plugins, hooks, templates, CLIs, and harnesses.
-- `.agents/packages.json` records package registrations.
-- `.agents/environments.json` records future OS/container package and environment desired state.
+## Root and exchange safety
 
-Harness runtime data lives under `.agents/harnesses/<id>/runtime`; this repo does not use a separate `.agents/harness-runtimes` directory.
+- `agents state doctor` is read-only.
+- `agents state status` classifies provider roots as `forbidden`, `canonical`,
+  `split`, or `missing`.
+- Retired move-and-link adoption and Git snapshot-sync commands do not exist.
+- Cross-machine exchange stays disabled until tombstones, encrypted transport,
+  deterministic merge, recovery, and secret/symlink rejection are proven.
 
-## Agent State Consolidation and Cross-Machine Sync
+There is no compatibility mode or alternate loader to bypass.
 
-The `agents state` subcommands consolidate provider CLI state under the shared `~/.agents` directory and sync a shareable subset to the private `agents-data` repository.
-
-- `agents state status` shows whether each known tool state directory (`claude`, `codex`, `kimi`, `agents`) is in its original location, already adopted under `~/.agents/state/<tool>`, missing, or in conflict. It also reports the state repo configuration and cleanliness.
-- `agents state adopt <claude|codex|kimi>` moves the original state directory to `~/.agents/state/<tool>` and leaves a Windows directory junction (or symlink on other platforms) at the original path. It is idempotent and refuses to run if the directory is locked or would overwrite existing data. Use `--dry-run` to preview the plan.
-- `agents state sync` clones `https://github.com/marius-patrik/agents-data.git` into `~/.agents/state-repo`, copies the shareable subset of `~/.agents` into `machines/<hostname>/`, and commits, rebases, and pushes. Use `--dry-run` to list what would be synced.
-
-Sync rules are allowlist-driven from `~/.agents/state-sync.json` (created with sensible defaults on first sync). The hard denylist can never be overridden and always excludes files or directories matching secrets, credentials, tokens, keys, cookies, caches, logs, transcripts/history, and `node_modules`.
-
-## Command Surface
+## Command surface
 
 ```text
+agents run [--mode orchestrator|default] [--provider <id>] [--model <model>] [--tui] <prompt>
+agents tui [--provider <id>] [--model <model>] [--mode <mode>]
+agents sessions list [--json]
+agents sessions resume <id> <prompt>
 agents list [--json]
 agents info <name-or-path> [--json]
-agents add <name> <git-url> [--kind agent|app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
+agents add <name> <git-url> [--kind app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
 agents remove <name-or-path>
 agents sync
 agents state init
 agents state env
+agents state doctor [--json]
 agents state status [--json]
-agents state adopt <claude|codex|kimi> [--dry-run]
-agents state sync [--dry-run]
+agents memory <remember|list|status|supersede|retract|render> [options]
+agents identity activate <source-directory> [--replace]
 agents cli list|doctor
+agents cli pin [codex|claude|kimi|agy|all]
 agents cli env <codex|claude|kimi|agy>
-agents cli materialize-creds <codex|claude|kimi|agy>
-agents cli exec <codex|claude|kimi|agy> -- <args...>
 agents packages register <path>
 agents packages list [--json]
 agents packages run <name-or-path> -- <args...>
@@ -117,7 +104,10 @@ agents data repo env <id>
 agents harness list [--json]
 agents harness doctor <name>
 agents harness run <name> -- <args...>
-agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-url>
+agents session run --provider <id> --model <model> [--mode chat|task] [--session <id>] [--stream] <prompt>
+agents session list [--json]
+agents session show <id> [--json]
+agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-git-url> [--replace]
 agents installs [--json]
 agents secrets list [--json]
 agents secrets set <NAME> [--from-file path]
@@ -144,38 +134,19 @@ agents os remove <name> [--prune-data] [--dry-run]
 agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
 ```
 
-## Credits
+Memory mutations require `--source`, `--hash`, `--source-class`, and
+`--confidence`. Secret commands never print secret values. A live
+`agents secrets github sync` is an external mutation and requires an explicit
+repository or owner target; use `--dry-run` to validate command construction.
 
-The shared credit store is `.agents/credits.json`. It keeps provider counters, consumer balances, and an append-only ledger of credit, debit, and usage events.
+## Validation
 
-Examples:
-
-```powershell
-agents credits provider codex --balance 100 --soft-limit 80 --window-seconds 3600
-agents credits credit codex stream-worker 25 --note seed
-agents credits debit codex stream-worker 5
-agents credits usage codex stream-worker --amount 2.5 --tokens-in 100 --tokens-out 40
-agents credits --json
+```sh
+bun run check
+bun run test
+bun run ci
 ```
 
-Provider and consumer names must be simple identifiers made from letters, numbers, `.`, `_`, or `-`. Mutation commands never print secrets; `--json` prints only the updated credit store.
-
-## Provider Notes
-
-`agents cli doctor` checks whether provider binaries and credential sources are available. Missing Codex, Claude, Kimi, or Agy/Gemini binaries are environment setup issues, not package validation failures. `agents cli exec` launches the provider with shared `AGENTS_*` environment variables and the provider-specific managed home.
-
-`agents secrets github sync` mutates GitHub repository secrets through `gh secret set`. Prefer tests and dry runs around command construction; reserve live sync for explicit operational use.
-
-Secret sync requires an explicit target. Use `--repo owner/name` for a single repository, or `--owner owner` when intentionally syncing to that owner's non-archived repositories. Add `--dry-run` to validate the local secret and target mapping without calling `gh secret set`.
-
-## Roadmap Mandates
-
-The current CLI surface is intentionally local and file-backed. The next roadmap slices are:
-
-- TUI and OS launcher work from #8: expose the same management surface through an operator-friendly launcher without creating a separate control plane.
-- Single management surface from #7: keep packages, environments, secrets, providers, harnesses, and launcher operations under `agents` rather than sidecar tools.
-- Real OS/container packages and environments from #10: add distro package, container image, and named environment management after the agents-mono architecture and base-image contracts land.
-
-Until the #10 implementation lands, `agents packages` remains the local package registration and runnable manifest surface. It does not yet install OS packages, pull container images, or switch environments.
-
-The #10 groundwork state and command skeletons are documented in `docs/packages-and-environments.md`.
+These scripts typecheck the repository and run the manager tests. Provider
+authentication and future two-machine exchange still require explicit
+integration proofs at their real boundaries.

@@ -1,4 +1,4 @@
-module github.com/marius-patrik/agentos/agentos-core/contracts-go
+module github.com/marius-patrik/agents-manager/packages/core/src/core/contracts-go
 
 go 1.26
 

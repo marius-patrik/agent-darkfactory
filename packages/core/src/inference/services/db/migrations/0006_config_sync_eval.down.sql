@@ -1,9 +1,0 @@
-DROP TABLE IF EXISTS canary_state;
-DROP TYPE IF EXISTS canary_stage;
-DROP TABLE IF EXISTS eval_results;
-DROP TABLE IF EXISTS eval_runs;
-DROP TYPE IF EXISTS eval_status;
-DROP TABLE IF EXISTS consolidation_runs;
-DROP TABLE IF EXISTS sync_manifests;
-DROP TABLE IF EXISTS config_projection;
-DROP TYPE IF EXISTS config_layer;

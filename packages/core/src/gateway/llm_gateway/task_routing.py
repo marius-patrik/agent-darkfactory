@@ -8,7 +8,6 @@ callers that want to inspect why a candidate was skipped.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,12 +18,7 @@ from llm_gateway.quota import QuotaTracker
 from llm_gateway.registry import ModelEntry, ModelRegistry, generate_request_id
 from llm_gateway.trace import TraceLogger
 
-DEFAULT_ROUTING_POLICY_PATH = Path(
-    os.environ.get(
-        "GATEWAY_ROUTING_POLICY_PATH",
-        Path(__file__).resolve().parent.parent / "registry" / "routing.yaml",
-    )
-)
+DEFAULT_ROUTING_POLICY_PATH = Path(__file__).resolve().parent.parent / "registry" / "routing.yaml"
 
 
 class TaskRoutingError(Exception):
@@ -146,13 +140,13 @@ class TaskRouter:
         self.quota = quota or QuotaTracker()
         self.tracer = tracer
 
-    def resolve(self, task_class: str, allow_cloud: bool = False) -> RouteResolution:
+    def resolve(self, task_class: str) -> RouteResolution:
         candidates = self.policy.candidates_for(task_class)
         inspected: list[dict[str, Any]] = []
         selected: tuple[RouteCandidate, ModelEntry] | None = None
         for candidate in candidates:
             entry = self.registry.get(candidate.model_id)
-            status = self._candidate_status(candidate, entry, allow_cloud)
+            status = self._candidate_status(candidate, entry)
             inspected.append(
                 {
                     "provider": candidate.provider,
@@ -180,7 +174,6 @@ class TaskRouter:
                     role=entry.role,
                     provider=resolution.provider,
                     resolved_model_id=resolution.model_id,
-                    cloud=entry.cloud,
                     extra={
                         "task_class": task_class,
                         "params": resolution.params,
@@ -191,15 +184,13 @@ class TaskRouter:
         raise TaskRoutingError(f"No available model route for task class '{task_class}'")
 
     @staticmethod
-    def _candidate_status(candidate: RouteCandidate, entry: ModelEntry | None, allow_cloud: bool) -> str | None:
+    def _candidate_status(candidate: RouteCandidate, entry: ModelEntry | None) -> str | None:
         if entry is None:
             return "model_not_found"
         if entry.provider != candidate.provider:
             return f"provider_mismatch:{entry.provider}"
         if not entry.enabled:
             return "model_disabled"
-        if entry.cloud and not allow_cloud:
-            return "cloud_not_allowed"
         return None
 
     @staticmethod

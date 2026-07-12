@@ -1,14 +1,11 @@
-"""In-memory provider quota tracking for never-meter cloud degradation."""
+"""In-memory request and token quota windows for local model providers."""
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 
@@ -34,24 +31,12 @@ class QuotaTracker:
         self._prune(provider, now)
         self._requests[provider].append(now)
         self._tokens[provider].append((now, clean_in + clean_out))
-        self._record_agents_credit(
-            provider,
-            clean_in,
-            clean_out,
-            action="usage",
-            task_class=task_class,
-            model_id=model_id,
-        )
 
     def record_route_resolution(self, provider: str, task_class: str, model_id: str) -> None:
-        self._record_agents_credit(
-            provider,
-            0,
-            0,
-            action="route.resolve",
-            task_class=task_class,
-            model_id=model_id,
-        )
+        # The gateway keeps only its in-process quota window. Canonical provider
+        # accounting is owned by the Agent OS harness and must not be mutated by
+        # a second process with a different locking or schema contract.
+        return None
 
     def is_exhausted(self, provider: str) -> bool:
         now = self._now()
@@ -95,72 +80,6 @@ class QuotaTracker:
         if value is None or value.strip() == "":
             return None
         return int(value)
-
-    def _record_agents_credit(
-        self,
-        provider: str,
-        tokens_in: int,
-        tokens_out: int,
-        action: str,
-        task_class: str | None = None,
-        model_id: str | None = None,
-    ) -> None:
-        path = os.environ.get("AGENTS_CREDITS", "").strip()
-        if not path:
-            return
-        credit_path = Path(path)
-        try:
-            credit_path.parent.mkdir(parents=True, exist_ok=True)
-            store = _read_credit_store(credit_path)
-            now = datetime.now(timezone.utc).isoformat()
-            provider_state = store.setdefault("providers", {}).setdefault(provider, {})
-            if action == "usage":
-                provider_state["requests"] = int(provider_state.get("requests", 0)) + 1
-            provider_state["tokensIn"] = int(provider_state.get("tokensIn", 0)) + tokens_in
-            provider_state["tokensOut"] = int(provider_state.get("tokensOut", 0)) + tokens_out
-            entry = {
-                "provider": provider,
-                "consumer": "llm.gateway",
-                "action": action,
-                "tokensIn": tokens_in,
-                "tokensOut": tokens_out,
-                "at": now,
-            }
-            if task_class:
-                provider_classes = provider_state.setdefault("classes", {})
-                class_state = provider_classes.setdefault(task_class, {})
-                if action == "usage":
-                    class_state["requests"] = int(class_state.get("requests", 0)) + 1
-                else:
-                    class_state["resolutions"] = int(class_state.get("resolutions", 0)) + 1
-                class_state["tokensIn"] = int(class_state.get("tokensIn", 0)) + tokens_in
-                class_state["tokensOut"] = int(class_state.get("tokensOut", 0)) + tokens_out
-                entry["taskClass"] = task_class
-            if model_id:
-                entry["modelId"] = model_id
-            store.setdefault("ledger", []).append(entry)
-            store["updatedAt"] = now
-            tmp_path = credit_path.with_suffix(credit_path.suffix + ".tmp")
-            tmp_path.write_text(json.dumps(store, indent=2) + "\n", encoding="utf-8")
-            os.replace(tmp_path, credit_path)
-        except OSError:
-            return
-        except json.JSONDecodeError:
-            return
-
-
-def _read_credit_store(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {"schemaVersion": 1, "balances": {}, "providers": {}, "ledger": [], "updatedAt": ""}
-    store = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(store, dict):
-        return {"schemaVersion": 1, "balances": {}, "providers": {}, "ledger": [], "updatedAt": ""}
-    store.setdefault("schemaVersion", 1)
-    store.setdefault("balances", {})
-    store.setdefault("providers", {})
-    store.setdefault("ledger", [])
-    return store
-
 
 def _env_provider(provider: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in provider).upper()

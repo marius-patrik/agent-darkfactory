@@ -1,82 +1,32 @@
 schema_version: gateway-routing-v1
-# Ordered task-class routing policy for DarkFactory workers, harnesses, and
-# agents-manager. Disabled cloud/subscription candidates stay visible as future
-# fallbacks; the resolver skips them until they are enabled and callers opt in.
 classes:
   mechanical:
     candidates:
       - provider: local
         model_id: qwen2.5-7b-q4
-        params:
-          model_reasoning_effort: low
-          temperature: 0.1
-        budget:
-          max_tokens: 200000
-
+        params: {model_reasoning_effort: low, temperature: 0.1}
+        budget: {max_tokens: 200000}
   standard-impl:
     candidates:
       - provider: local
         model_id: qwen3-8b
-        params:
-          model_reasoning_effort: medium
-          temperature: 0.2
-        budget:
-          max_tokens: 400000
-      - provider: litellm-remote
-        model_id: kimi-subscription
-        params:
-          model_reasoning_effort: medium
-          temperature: 0.2
-        budget:
-          max_tokens: 200000
-
+        params: {model_reasoning_effort: medium, temperature: 0.2}
+        budget: {max_tokens: 400000}
   hard-impl:
     candidates:
       - provider: local
         model_id: coder-32b-awq
-        params:
-          model_reasoning_effort: high
-          temperature: 0.2
-        budget:
-          max_tokens: 600000
-      - provider: litellm-remote
-        model_id: codex-subscription
-        params:
-          model_reasoning_effort: high
-          temperature: 0.2
-        budget:
-          max_tokens: 250000
-
+        params: {model_reasoning_effort: high, temperature: 0.2}
+        budget: {max_tokens: 600000}
   review:
     candidates:
       - provider: local
         model_id: qwen3-8b
-        params:
-          model_reasoning_effort: medium
-          temperature: 0.0
-        budget:
-          max_tokens: 250000
-      - provider: litellm-remote
-        model_id: claude-subscription
-        params:
-          model_reasoning_effort: medium
-          temperature: 0.0
-        budget:
-          max_tokens: 150000
-
+        params: {model_reasoning_effort: medium, temperature: 0.0}
+        budget: {max_tokens: 250000}
   judgment/orchestration:
     candidates:
       - provider: local
         model_id: conv-14b-1m
-        params:
-          model_reasoning_effort: high
-          temperature: 0.2
-        budget:
-          max_tokens: 800000
-      - provider: litellm-remote
-        model_id: agy-subscription
-        params:
-          model_reasoning_effort: high
-          temperature: 0.2
-        budget:
-          max_tokens: 250000
+        params: {model_reasoning_effort: high, temperature: 0.2}
+        budget: {max_tokens: 800000}

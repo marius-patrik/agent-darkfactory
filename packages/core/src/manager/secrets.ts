@@ -1,7 +1,9 @@
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { canonicalChildEnvironment } from "./runtime-paths";
 import { chmod, mkdir, readdir, stat } from "node:fs/promises";
 import type { SharedState } from "./state";
+import { writeTextAtomic } from "./state-v2";
 
 export interface GitHubSecretSyncOptions {
   name: string;
@@ -33,8 +35,7 @@ export async function writeSecret(state: SharedState, name: string, value: strin
   const file = secretPath(state, name);
   await mkdir(state.secretsDir, { recursive: true });
   if (process.platform !== "win32") await chmod(state.secretsDir, 0o700);
-  await Bun.write(file, value);
-  if (process.platform !== "win32") await chmod(file, 0o600);
+  await writeTextAtomic(file, value, 0o600);
   return file;
 }
 
@@ -83,7 +84,7 @@ async function listGitHubRepositories(owner: string, includeArchived: boolean): 
 async function runGh(args: string[], input?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("gh", args, {
-      env: process.env,
+      env: canonicalChildEnvironment(),
       stdio: ["pipe", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];

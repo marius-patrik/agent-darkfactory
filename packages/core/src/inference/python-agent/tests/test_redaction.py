@@ -34,11 +34,11 @@ ASSIGNMENT = f'api_key="{ASSIGNMENT_VALUE}"'
 
 
 def test_planted_secrets_redact_text_and_nested_object(tmp_path):
-    secrets_root = tmp_path / "secrets"
+    secrets_root = tmp_path / ".agents" / "secrets"
     credentials = secrets_root / "credentials"
     credentials.mkdir(parents=True)
     (credentials / "known").write_text(KNOWN_VALUE, encoding="utf-8")
-    redactor = Redactor.from_secrets_dir(secrets_root)
+    redactor = Redactor.from_secrets_dir()
     planted = [
         KNOWN_VALUE,
         ANTHROPIC,
@@ -100,12 +100,12 @@ def test_planted_secrets_redact_text_and_nested_object(tmp_path):
 
 
 def test_known_values_from_secrets_dir_and_min_length(tmp_path):
-    credentials = tmp_path / "secrets" / "credentials"
+    credentials = tmp_path / ".agents" / "secrets" / "credentials"
     credentials.mkdir(parents=True)
     (credentials / "long").write_text(KNOWN_VALUE, encoding="utf-8")
     (credentials / "short").write_text(SHORT_VALUE, encoding="utf-8")
 
-    redactor = Redactor.from_secrets_dir(tmp_path / "secrets")
+    redactor = Redactor.from_secrets_dir()
 
     redacted = redactor.redact(f"{KNOWN_VALUE} and {SHORT_VALUE}")
     assert KNOWN_VALUE not in redacted
@@ -201,11 +201,11 @@ def test_redact_obj_uses_key_context_for_unkeyed_values():
 
 
 def test_aws_and_azure_keys_redact_by_known_value_and_context(tmp_path):
-    credentials = tmp_path / "secrets" / "credentials"
+    credentials = tmp_path / ".agents" / "secrets" / "credentials"
     credentials.mkdir(parents=True)
     (credentials / "aws").write_text(AWS_SECRET_MIXED, encoding="utf-8")
     (credentials / "azure").write_text(AZURE_KEY, encoding="utf-8")
-    redactor = Redactor.from_secrets_dir(tmp_path / "secrets")
+    redactor = Redactor.from_secrets_dir()
 
     known_redacted = redactor.redact(f"{AWS_SECRET_MIXED} {AZURE_KEY}")
     assert AWS_SECRET_MIXED not in known_redacted
@@ -280,13 +280,13 @@ def test_over_redaction_guards():
     uuid = "123e4567-e89b-12d3-a456-426614174000"
     data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
     identifier_assignment = "FOO = SOME_IDENTIFIER"
-    vllm_source = Path("agent/engines/vllm.py").read_text(encoding="utf-8")
+    worker_source = Path("agent/loop/turn.py").read_text(encoding="utf-8")
 
     assert redactor.redact(git_sha) == git_sha
     assert redactor.redact(uuid) == uuid
     assert redactor.redact(data_uri) == data_uri
     assert redactor.redact(identifier_assignment) == identifier_assignment
-    assert redactor.redact(vllm_source) == vllm_source
+    assert redactor.redact(worker_source) == worker_source
 
 
 def test_redaction_perf_guards():
@@ -305,10 +305,9 @@ def test_redaction_perf_guards():
 
 
 def test_missing_secrets_dir_never_raises_and_logs_no_values(tmp_path, caplog):
-    missing = tmp_path / "missing"
     caplog.set_level(logging.DEBUG)
 
-    redactor = Redactor.from_secrets_dir(missing)
+    redactor = Redactor.from_secrets_dir()
     redacted = redactor.redact(f"safe {ANTHROPIC}")
 
     assert ANTHROPIC not in redacted

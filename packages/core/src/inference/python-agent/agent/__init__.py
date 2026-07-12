@@ -1,1 +1,1 @@
-"""Andromeda agent runtime package."""
+"""Agent OS inference runtime package."""

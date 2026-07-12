@@ -4,10 +4,10 @@
  * import smoke test (`tests/python-import-smoke.py`).
  *
  * This proves that the generated Python stubs are importable by the intended
- * consumer pattern used by the sibling `inference-engine/python-agent`:
+ * consumer pattern used by the in-repository inference Python agent:
  *
  *   import agent.gen
- *   from rommie.v1 import session_frames_pb2, registry_pb2
+ *   from agent_os.v1 import session_frames_pb2, registry_pb2
  */
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
@@ -34,8 +34,8 @@ function run(label, cmd, args, options = {}) {
 }
 
 function findPython() {
-  for (const candidate of ["python", "python3"]) {
-    const result = spawnSync(candidate, ["-c", "import sys; print(sys.executable)"], {
+  for (const candidate of ["python3.14", "python3.13", "python3.12", "python3", "python"]) {
+    const result = spawnSync(candidate, ["-c", "import sys; assert sys.version_info >= (3, 12); print(sys.executable)"], {
       shell: false,
       encoding: "utf8",
     });
@@ -44,12 +44,12 @@ function findPython() {
     }
   }
   throw new Error(
-    "No python/python3 interpreter found. Install Python to run the Python smoke test.",
+    "Python 3.12 or newer is required for the generated Agent OS contract smoke test.",
   );
 }
 
 const pythonCmd = findPython();
-const tmp = await mkdtemp(join(tmpdir(), "agents-core-py-smoke-"));
+const tmp = await mkdtemp(join(tmpdir(), "agent-os-core-py-smoke-"));
 
 try {
   // Generate Python stubs into the temp directory using the smoke template.
@@ -70,10 +70,10 @@ try {
     { cwd: repoRoot },
   );
 
-  // Replicate the intended consumer layout: agent/gen/rommie/v1/...
+  // Replicate the intended consumer layout: agent/gen/agent_os/v1/...
   const agentGen = join(tmp, "agent", "gen");
   await mkdir(agentGen, { recursive: true });
-  await rename(join(tmp, "rommie"), join(agentGen, "rommie"));
+  await rename(join(tmp, "agent_os"), join(agentGen, "agent_os"));
   await writeFile(join(tmp, "agent", "__init__.py"), "");
   await writeFile(
     join(agentGen, "__init__.py"),
@@ -82,8 +82,8 @@ try {
       "if _gen_root not in _sys.path:\n" +
       "    _sys.path.insert(0, _gen_root)\n",
   );
-  await writeFile(join(agentGen, "rommie", "__init__.py"), "");
-  await writeFile(join(agentGen, "rommie", "v1", "__init__.py"), "");
+  await writeFile(join(agentGen, "agent_os", "__init__.py"), "");
+  await writeFile(join(agentGen, "agent_os", "v1", "__init__.py"), "");
 
   // Create a temporary venv with the protobuf runtime.
   const venvDir = join(tmp, ".venv");
@@ -91,7 +91,7 @@ try {
   const binDir = process.platform === "win32" ? "Scripts" : "bin";
   const venvPython = join(venvDir, binDir, process.platform === "win32" ? "python.exe" : "python");
   const venvPip = join(venvDir, binDir, process.platform === "win32" ? "pip.exe" : "pip");
-  run("protobuf install", venvPip, ["install", "protobuf>=7.35.0"]);
+  run("protobuf install", venvPip, ["install", "protobuf==7.35.0"]);
 
   // Run the consumer import smoke test with the temp agent package on PYTHONPATH.
   const env = { ...process.env, PYTHONPATH: tmp };

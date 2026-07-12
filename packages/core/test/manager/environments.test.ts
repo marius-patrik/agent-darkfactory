@@ -11,7 +11,12 @@ const cliPath = path.join(repoRoot, "src", "manager", "cli.ts");
 async function runAgents(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn([process.execPath, cliPath, ...args], {
     cwd,
-    env: process.env,
+    env: {
+      ...process.env,
+      AGENTS_HOME: path.join(cwd, ".agents"),
+      AGENTS_USER_HOME: cwd,
+      AGENTS_ROOT: cwd,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -54,8 +59,7 @@ describe("packages and environments groundwork", () => {
       const distro = await runAgents(root, ["packages", "distro", "install", "curl"]);
       expect(distro.code).toBe(1);
       expect(distro.stderr).toContain("not yet implemented");
-      expect(distro.stderr).toContain("agents-mono#8");
-      expect(distro.stderr).toContain("agents-mono#9");
+      expect(distro.stderr).toContain("Agent OS image and release contracts");
 
       const create = await runAgents(root, ["env", "create", "host"]);
       expect(create.code).toBe(1);

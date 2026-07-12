@@ -1,32 +1,8 @@
-# Build artifacts and dependencies
-node_modules
-.agents
-bun.lockb
-
-# Git metadata (keep .gitmodules for package discovery)
-.git
-
-# OS packages not required for the base image
-os/agents-core
-os/agents-harness
-os/inference-engine
-os/llm-gateway
-
-# Managed workspace, data, and package categories are mounted at runtime
-agents
-apps
-data
-plugins
-skills
-templates
-workspaces
-
-# Repository automation and docs are not baked into the image
-.github
-docs
-
-# IDE / OS noise
-*.md
-!os/agents-os/README.md
-.DS_Store
-Thumbs.db
+# The root Docker context is used only for the isolated Codex review worker.
+# Keep that build input exact; product runtimes build from their component roots.
+**
+!.github/
+!.github/scripts/
+!.github/scripts/run-codex-review.sh
+!.github/codex-review.schema.json
+!.github/codex-review.Dockerfile

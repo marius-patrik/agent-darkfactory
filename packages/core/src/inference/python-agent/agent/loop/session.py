@@ -1,4 +1,4 @@
-"""Session orchestration for the VS2 single-worker loop."""
+"""Run orchestration for the single inference worker loop."""
 
 from __future__ import annotations
 
@@ -8,19 +8,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import agent.loop.exec_lane_inline as _exec_lane_inline  # noqa: F401
 from agent.loop.acceptance_gate import evaluate
 from agent.loop.gateway_client import GatewayClient, LoopError
 from agent.loop.permissions import PermissionMode
 from agent.loop.persistence import append_event, write_cascade_file
 from agent.loop.turn import run_turn
 from agent.redaction import Redactor
+from agent.state import ensure_private_dir, inference_runs_dir
 from agent.status import InMemoryStatusStore, RunRecord, StatusValue, Trigger, create_run, transition
 
 
 @dataclass
 class SessionConfig:
-    """Configuration for one VS2 loop session."""
+    """Configuration for one worker run."""
 
     session_id: str
     agent_id: str
@@ -34,8 +34,7 @@ class SessionConfig:
     max_turns: int = 12
     workdir: Path = field(default_factory=Path.cwd)
     gateway_url: str | None = None
-    permission_mode: PermissionMode = PermissionMode.auto
-    sessions_root: Path = field(default_factory=lambda: Path("~/.rommie/shared/sessions").expanduser())
+    permission_mode: PermissionMode = PermissionMode.full_auto
 
 
 @dataclass
@@ -77,7 +76,7 @@ class Session:
 
     @property
     def root(self) -> Path:
-        return self.config.sessions_root / self.config.session_id
+        return inference_runs_dir() / self.config.session_id
 
     @property
     def context_dir(self) -> Path:
@@ -98,7 +97,7 @@ class Session:
 
 
 async def run_session(config: SessionConfig) -> LoopOutcome:
-    """Create and run a VS2 session to acceptance."""
+    """Create and run one worker to acceptance."""
     session = await _start_session(config)
     stopped = False
     try:
@@ -174,12 +173,14 @@ def _fail_session(session: Session, reason: str) -> LoopOutcome:
 
 async def _start_session(config: SessionConfig) -> Session:
     config.workdir = Path(config.workdir).expanduser().resolve()
+    if Path(config.session_id).name != config.session_id or config.session_id in {"", ".", ".."}:
+        raise ValueError("session_id contains unsafe path characters")
     gateway_client = GatewayClient(config.gateway_url)
     context_window = await _context_window(gateway_client, config.model)
     output_reserve = min(max(int(context_window * 0.25), 4096), 32768)
     context_budget = max(context_window - output_reserve - 512, 1024)
-    root = config.sessions_root / config.session_id
-    (root / "context").mkdir(parents=True, exist_ok=True)
+    root = inference_runs_dir() / config.session_id
+    ensure_private_dir(root / "context")
     status = create_run()
     record = RunRecord(
         run_id=config.session_id,

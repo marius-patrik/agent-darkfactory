@@ -1,4 +1,4 @@
-"""HTTP client for the VS2 agent loop gateway boundary."""
+"""HTTP client for the inference worker's gateway boundary."""
 
 from __future__ import annotations
 
@@ -15,12 +15,12 @@ class LoopError(RuntimeError):
 class GatewayClient:
     """Async OpenAI-compatible gateway client.
 
-    The VS2 loop intentionally uses non-streaming chat completions so native
+    The worker uses non-streaming chat completions so native
     ``tool_calls`` arrive as one complete message.
     """
 
     def __init__(self, base_url: str | None = None, timeout: float = 120.0) -> None:
-        self.base_url = (base_url or os.environ.get("ROMMIE_GATEWAY_URL") or "http://localhost:8800").rstrip("/")
+        self.base_url = (base_url or os.environ.get("AGENTS_GATEWAY_URL") or "http://127.0.0.1:8787").rstrip("/")
         self.timeout = timeout
 
     async def chat_completion(
@@ -80,21 +80,11 @@ class GatewayClient:
 def estimate_tokens(text: str | list[dict[str, Any]]) -> int:
     """Estimate tokens with the gateway heuristic without importing gateway code."""
     messages = text if isinstance(text, list) else [{"content": text}]
-    try:
-        import tiktoken
-
-        enc = tiktoken.get_encoding("cl100k_base")
-        total = 0
-        for msg in messages:
-            total += len(enc.encode(str(msg.get("content") or "")))
-            total += 4
-        return total + 2
-    except Exception:
-        total = 0
-        for msg in messages:
-            content = str(msg.get("content") or "")
-            total += len(content) // 4 + 1
-        return total + len(messages) * 4
+    total = 0
+    for msg in messages:
+        content = str(msg.get("content") or "")
+        total += len(content) // 4 + 1
+    return total + len(messages) * 4
 
 
 def _safe_error_detail(response: httpx.Response) -> str:

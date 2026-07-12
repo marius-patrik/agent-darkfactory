@@ -1,3 +1,5 @@
 # Status
 
-Managed DarkFactory enforcement baseline is installed on the `df/enforcement-baseline` branch for PR into `dev`.
+Inference is consolidated into the Agent OS monorepo. Component validation is
+owned by `scripts/validate.mjs`; repository enforcement remains at the
+monorepo root.

@@ -12,30 +12,37 @@ describe("data repos", () => {
       const state = sharedState(root);
       await ensureSharedState(state);
       const initial = await readDataRepos(state);
-      expect(initial[0].id).toBe("agentos-data");
+      expect(initial[0].id).toBe("agent-os-data");
       expect(initial[0].repo).toBe("marius-patrik/agents-data");
-      expect(dataRepoManagedRoot(initial[0])).toBe(path.join(root, "data", "agentos"));
+      expect(dataRepoManagedRoot(initial[0])).toBe(path.join(root, "data", "agent-os"));
 
       const repo = await upsertDataRepo(state, {
-        id: "darkfactory-workspace",
-        repo: "marius-patrik/agents-data",
-        path: "data/agentos",
+        id: "project-data",
+        repo: "marius-patrik/project-data",
+        path: "data/project",
         branch: "main",
         managedPath: "managed-repository",
-        env: "DARK_FACTORY_WORKSPACE_ROOT",
+        env: "PROJECT_DATA_ROOT",
       });
 
-      expect(repo.path).toBe(path.join(root, "data", "agentos"));
-      expect(dataRepoManagedRoot(repo)).toBe(path.join(root, "data", "agentos", "managed-repository"));
+      expect(repo.path).toBe(path.join(root, "data", "project"));
+      expect(dataRepoManagedRoot(repo)).toBe(path.join(root, "data", "project", "managed-repository"));
 
       const repos = await readDataRepos(state);
       expect(repos).toHaveLength(2);
-      expect(repos[1].id).toBe("darkfactory-workspace");
-      expect(repos[1].repo).toBe("marius-patrik/agents-data");
+      expect(repos[1].id).toBe("project-data");
+      expect(repos[1].repo).toBe("marius-patrik/project-data");
+
+      await expect(
+        upsertDataRepo(state, {
+          id: "system-data-alias",
+          repo: "marius-patrik/agents-data",
+          path: "data/system-data-alias",
+          branch: "main",
+        }),
+      ).rejects.toThrow("aliases the canonical agent-os-data authority");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 });
-
-

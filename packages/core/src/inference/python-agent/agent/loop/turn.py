@@ -1,4 +1,4 @@
-"""One VS2 agent turn."""
+"""One inference worker turn."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from agent.exec_lane.contract import LANE_DAEMON_INLINE, ExecSpec, get_lane
 from agent.loop.context_assembler import ContextAssembler
 from agent.loop.gateway_client import LoopError
 from agent.loop.permissions import approve
 from agent.loop.persistence import append_event, append_short
-from agent.loop.tools import tool_schemas
+from agent.loop.tools import TOOLS, tool_schemas
 
 
 @dataclass(frozen=True)
@@ -61,11 +60,14 @@ async def _run_tool_call(session: Any, call: dict[str, Any]) -> None:
         "tool_call",
         {"tool_call": {"call_id": call_id, "name": name, "args": args, "host": "local", "worker_id": session.config.agent_id}},
     )
-    spec = ExecSpec(command=[name, json.dumps(args)], working_dir=str(session.config.workdir), timeout=float(args.get("timeout", 120)))
-    lane = get_lane(LANE_DAEMON_INLINE)
-    handle = lane.submit(spec)
-    raw = "\n".join(lane.logs(handle))
-    result = json.loads(raw)
+    if name not in TOOLS:
+        raise LoopError(f"Unknown tool: {name}")
+    tool_args = dict(args)
+    tool_args["_cwd"] = str(session.config.workdir)
+    try:
+        result = TOOLS[name](tool_args)
+    except Exception as exc:
+        result = {"output": str(exc), "is_error": True}
     redacted = session.redactor.redact_obj(result)
     tool_message = {
         "role": "tool",
@@ -83,7 +85,7 @@ async def _run_tool_call(session: Any, call: dict[str, Any]) -> None:
                 "call_id": call_id,
                 "output": str(redacted.get("output", "")),
                 "is_error": bool(redacted.get("is_error")),
-                "status": "RUN_STATUS_UNSPECIFIED",
+                "status": "RUN_STATUS_FAILED" if bool(redacted.get("is_error")) else "RUN_STATUS_UNRESOLVED",
                 "artifact_ref": _artifact_ref(name, args),
             }
         },

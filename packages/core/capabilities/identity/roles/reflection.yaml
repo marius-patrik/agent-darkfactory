@@ -1,0 +1,4 @@
+# Standard role: reflection
+name: reflection
+scope: worker
+type: background

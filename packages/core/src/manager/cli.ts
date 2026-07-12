@@ -1,23 +1,24 @@
 #!/usr/bin/env bun
 import path from "node:path";
-import { cp, mkdir, stat } from "node:fs/promises";
-import { adapter, adapterEnv, adapterIds, doctorAdapter, materializeCredentials, type CliId } from "./adapters";
+import { stat } from "node:fs/promises";
+import { adapter, adapterEnv, adapterIds, doctorAdapter, pinAdapter, type CliId } from "./adapters";
 import { dataRepoManagedRoot, readDataRepos, upsertDataRepo } from "./data-repos";
 import { readGitmodules, writeGitmodules } from "./gitmodules";
 import { notImplementedPackagesAndEnvironments, readPackagesAndEnvironmentsState } from "./environments";
 import {
   ensureSharedState,
-  readCreditStore,
   readInstalls,
   readSessionConfig,
   sharedState,
   sharedStateFromEnv,
-  writeCreditStore,
+  updateCreditStore,
+  SYSTEM_DATA_RELATIVE_PATH,
+  SYSTEM_DATA_REPO_ID,
   type CreditStore,
-  writeInstalls,
-  type InstallKind,
   type SharedState,
 } from "./state";
+import { activateIdentityBundle, installCapability, type CapabilityKind } from "./capabilities";
+import { canonicalChildEnvironment } from "./runtime-paths";
 import {
   readPackageManifest,
   readPackageRegistrations,
@@ -27,20 +28,10 @@ import {
 import { listSecrets, secretPath, syncGitHubSecret, writeSecret } from "./secrets";
 import { osCommand } from "./os-lifecycle";
 import { TuiApp, configuredProviderModels } from "./tui";
-import {
-  defaultAgentsHome,
-  ensureSyncConfig,
-  executeAdopt,
-  executeSync,
-  formatStatus,
-  loadSyncConfig,
-  planAdopt,
-  readStateRepoStatus,
-  readToolStatus,
-  stateRepoPath,
-  toolStateSpecs,
-  type ToolStateId,
-} from "./state-consolidation";
+import { formatToolStatus, readToolStatus, toolStateSpecs } from "./state-consolidation";
+import { doctorState, formatStateDoctor } from "./state-doctor";
+import { memoryCommand } from "./memory";
+import { recordSourceInstall } from "./source-install";
 import {
   createSession,
   describeSession,
@@ -49,15 +40,15 @@ import {
   loadTranscript,
   runSessionTurn,
   switchSessionProvider,
+  type ProviderAdapter,
   type SessionDescriptor,
   type SessionMode,
 } from "../harness/session";
 import { providerSessionAdapter } from "./session-adapters";
 import {
-  ensureOrchestratorState,
-  initializeOrchestratorState,
   orchestratorSystemPrompt,
-  writeOrchestratorHeartbeat,
+  startOrchestratorHeartbeat,
+  type OrchestratorHeartbeatController,
 } from "./orchestrator";
 
 const root = process.cwd();
@@ -67,19 +58,18 @@ function systemPromptForMode(mode: SessionMode): string | undefined {
   return mode === "orchestrator" ? orchestratorSystemPrompt() : undefined;
 }
 
-async function prepareOrchestratorSession(state: SharedState, descriptor: SessionDescriptor): Promise<void> {
-  if (descriptor.mode !== "orchestrator") return;
-  await ensureOrchestratorState(state);
-  await initializeOrchestratorState(state, descriptor.sessionId, descriptor.provider, descriptor.model);
-  await writeOrchestratorHeartbeat(state, descriptor.sessionId, {
+async function prepareOrchestratorSession(
+  state: SharedState,
+  descriptor: SessionDescriptor,
+): Promise<OrchestratorHeartbeatController | null> {
+  if (descriptor.mode !== "orchestrator") return null;
+  return startOrchestratorHeartbeat(state, descriptor.sessionId, {
     provider: descriptor.provider,
     model: descriptor.model,
   });
 }
 const runModes = new Set<SessionMode>(["orchestrator", "default", "chat", "task"]);
-const defaultDataPath = path.join("data", "data-agentos");
 const packageKinds = new Map([
-  ["agent", "agents"],
   ["app", "apps"],
   ["data", "data"],
   ["package", "os"],
@@ -104,18 +94,20 @@ Usage:
   agents sessions resume <id> <prompt>
   agents list [--json]
   agents info <name-or-path> [--json]
-  agents add <name> <git-url> [--kind agent|app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
+  agents add <name> <git-url> [--kind app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
   agents remove <name-or-path>
   agents sync
   agents state init
   agents state env
+  agents state doctor [--json]
+  agents state record-install
   agents state status [--json]
-  agents state adopt <claude|codex|kimi> [--dry-run]
-  agents state sync [--dry-run]
+  agents memory <remember|list|status|supersede|retract|render> [options]
+    mutations require --source <uri> --hash <sha256> --source-class <verified|inferred> --confidence <0..1>
+  agents identity activate <source-directory> [--replace]
   agents cli list|doctor
+  agents cli pin [codex|claude|kimi|agy|all]
   agents cli env <codex|claude|kimi|agy>
-  agents cli materialize-creds <codex|claude|kimi|agy>
-  agents cli exec <codex|claude|kimi|agy> -- <args...>
   agents packages register <path>
   agents packages list [--json]
   agents packages run <name-or-path> -- <args...>
@@ -135,7 +127,7 @@ Usage:
   agents session run --provider <id> --model <model> [--mode chat|task] [--session <id>] [--stream] <prompt>
   agents session list [--json]
   agents session show <id> [--json]
-  agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-url>
+  agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-git-url> [--replace]
   agents installs [--json]
   agents secrets list [--json]
   agents secrets set <NAME> [--from-file path]
@@ -198,7 +190,6 @@ async function exists(file: string): Promise<boolean> {
 function inferKind(packagePath: string): string {
   const first = packagePath.split(/[\\/]/)[0];
   const base = path.basename(packagePath);
-  if (first === "agents") return "agent";
   if (first === "apps") return "app";
   if (first === "data") return "data";
   if (first === "harnesses") return "harness";
@@ -250,7 +241,7 @@ async function info(query: string | undefined, flags: Record<string, string | bo
 async function add(values: string[], flags: Record<string, string | boolean>): Promise<void> {
   const [name, url] = values;
   if (!name || !url) throw new Error("add requires a package name and git URL");
-  const kind = String(flags.kind ?? "agent");
+  const kind = String(flags.kind ?? "package");
   const base = packageKinds.get(kind);
   if (!base) throw new Error(`unsupported package kind: ${kind}`);
   const packagePath = String(flags.path ?? path.posix.join(base, name));
@@ -283,62 +274,38 @@ async function sync(): Promise<void> {
 
 async function stateCommand(values: string[], flags: Record<string, string | boolean>): Promise<void> {
   const state = runtimeState();
-  await ensureSharedState(state);
   const action = values[0];
   if (!action || action === "init") {
+    await ensureSharedState(state);
     console.log(`initialized ${path.relative(root, state.stateDir)}`);
     return;
   }
   if (action === "env") {
+    if (!(await exists(state.envFile))) throw new Error(`state is not initialized: ${state.stateDir}`);
     console.log(await Bun.file(state.envFile).text());
     return;
   }
+  if (action === "doctor") {
+    const report = await doctorState(state);
+    console.log(flags.json ? JSON.stringify(report, null, 2) : formatStateDoctor(report));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
+  if (action === "record-install") {
+    await ensureSharedState(state);
+    const record = await recordSourceInstall(state);
+    console.log(`${record.branch} ${record.commit}`);
+    return;
+  }
   if (action === "status") {
-    const agentsHome = defaultAgentsHome();
-    const tools = await Promise.all(toolStateSpecs.map((spec) => readToolStatus(spec.id)));
-    const repo = await readStateRepoStatus(stateRepoPath(agentsHome));
-    const config = await loadSyncConfig(path.join(agentsHome, "state-sync.json"));
+    const tools = await Promise.all(
+      toolStateSpecs.map((spec) => readToolStatus(spec.id, state.userHome, state.stateDir)),
+    );
     if (flags.json) {
-      console.log(JSON.stringify({ tools, repo, includes: config.include }, null, 2));
+      console.log(JSON.stringify({ tools }, null, 2));
       return;
     }
-    console.log(formatStatus(tools, repo, config));
-    return;
-  }
-  if (action === "adopt") {
-    const tool = values[1] as ToolStateId | undefined;
-    if (!tool || !toolStateSpecs.some((spec) => spec.id === tool)) {
-      throw new Error("adopt requires a tool: claude, codex, or kimi");
-    }
-    const dryRun = Boolean(flags["dry-run"]);
-    if (dryRun) {
-      const plan = planAdopt(tool);
-      console.log(`plan: ${plan.action}`);
-      console.log(`  move ${plan.original}`);
-      console.log(`    to ${plan.adopted}`);
-      console.log(`  create junction ${plan.original} -> ${plan.adopted}`);
-      return;
-    }
-    const result = await executeAdopt(tool);
-    if (result.alreadyAdopted) console.log(`${tool} is already adopted`);
-    else console.log(`adopted ${tool}: ${result.original} -> ${result.adopted}`);
-    return;
-  }
-  if (action === "sync") {
-    const dryRun = Boolean(flags["dry-run"]);
-    const result = await executeSync({ dryRun });
-    if (dryRun) {
-      const allowed = result.candidates.filter((c) => !c.denied);
-      const denied = result.candidates.filter((c) => c.denied);
-      console.log(`would sync ${allowed.length} file(s) to machines/${require("node:os").hostname()}`);
-      for (const c of allowed) console.log(`  + ${c.relPath}`);
-      if (denied.length > 0) {
-        console.log(`would skip ${denied.length} file(s)`);
-        for (const c of denied) console.log(`  - ${c.relPath} (${c.denyReason})`);
-      }
-      return;
-    }
-    console.log(result.message);
+    console.log(formatToolStatus(tools));
     return;
   }
   throw new Error(`unknown state action: ${action}`);
@@ -349,9 +316,8 @@ function printEnv(env: Record<string, string>): void {
 }
 
 async function cliCommand(args: string[]): Promise<void> {
-  const [action, rawId, ...rest] = args;
+  const [action, rawId] = args;
   const state = runtimeState();
-  await ensureSharedState(state);
   if (!action || action === "list") {
     for (const id of adapterIds()) {
       const spec = adapter(id);
@@ -371,38 +337,23 @@ async function cliCommand(args: string[]): Promise<void> {
     if (failed) process.exitCode = 1;
     return;
   }
+  if (action === "pin") {
+    await ensureSharedState(state);
+    const ids = !rawId || rawId === "all" ? adapterIds() : [rawId as CliId];
+    for (const id of ids) {
+      adapter(id);
+      const registration = await pinAdapter(state, id);
+      console.log(`${id} ${registration.version} ${registration.executable} sha256=${registration.sha256}`);
+    }
+    return;
+  }
   if (!rawId) throw new Error(`cli ${action} requires an adapter id`);
   const id = rawId as CliId;
   if (action === "env") {
     printEnv(adapterEnv(state, id));
     return;
   }
-  if (action === "materialize-creds") {
-    const copied = await materializeCredentials(state, id);
-    console.log(`materialized ${copied.length} credential file(s) for ${id}`);
-    return;
-  }
-  if (action === "exec") {
-    const separator = rest.indexOf("--");
-    const execArgs = separator === -1 ? rest : rest.slice(separator + 1);
-    await execAdapter(state, id, execArgs);
-    return;
-  }
   throw new Error(`unknown cli action: ${action}`);
-}
-
-async function execAdapter(state: SharedState, id: CliId, args: string[]): Promise<void> {
-  const result = await doctorAdapter(state, id);
-  if (!result.binary) throw new Error(`cannot execute ${id}: binary not found`);
-  const child = Bun.spawn([result.binary, ...args], {
-    cwd: root,
-    env: { ...process.env, ...adapterEnv(state, id) },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const code = await child.exited;
-  if (code !== 0) process.exitCode = code;
 }
 
 async function packageCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
@@ -512,7 +463,7 @@ async function runPackage(
   const cwd = item.manifest.workingDirectory ? path.join(item.path, item.manifest.workingDirectory) : item.path;
   const child = Bun.spawn([...command, ...args], {
     cwd,
-    env: { ...process.env, ...sharedPackageEnv(state), ...(await dataRepoEnv(state)) },
+    env: { ...canonicalChildEnvironment(), ...sharedPackageEnv(state), ...(await dataRepoEnv(state)) },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -580,7 +531,7 @@ async function sessionCommand(args: string[], flags: Record<string, string | boo
       model: sessionState.model,
       mode: sessionState.mode,
       workdir: sessionState.workdir,
-      stateDir: state.sessionsDir,
+      stateDir: state.stateDir,
     }));
     console.log(`turns: ${sessionState.turnCount}`);
     for (const message of transcript.messages) {
@@ -616,32 +567,37 @@ async function sessionCommand(args: string[], flags: Record<string, string | boo
           model: existing.model,
           mode: existing.mode,
           workdir: existing.workdir,
-          stateDir: state.sessionsDir,
+          stateDir: state.stateDir,
         };
       }
     } else {
       descriptor = await createSession(state, { provider: provider!, model: model!, mode });
     }
 
-    await prepareOrchestratorSession(state, descriptor);
+    const orchestrator = await prepareOrchestratorSession(state, descriptor);
     const systemPrompt = systemPromptForMode(descriptor.mode);
-    const activeProvider = descriptor.provider;
-    const adapter = providerSessionAdapter(activeProvider);
+    try {
+      const activeProvider = descriptor.provider;
+      const adapter = await managedSessionAdapter(state, activeProvider);
 
-    if (stream && adapter.streamTurn) {
-      for await (const chunk of await import("../harness/session").then((m) => m.streamSessionTurn(state, adapter, descriptor, { prompt, stream, systemPrompt }))) {
-        if (chunk.type === "text" && chunk.delta) process.stdout.write(chunk.delta);
-        if (chunk.type === "error") console.error(chunk.error);
-      }
-      console.log();
-    } else {
-      const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
-      if (result.error) {
-        console.error(result.error);
-        process.exitCode = 1;
+      if (stream && adapter.streamTurn) {
+        for await (const chunk of await import("../harness/session").then((m) => m.streamSessionTurn(state, adapter, descriptor, { prompt, stream, systemPrompt }))) {
+          if (chunk.type === "text" && chunk.delta) process.stdout.write(chunk.delta);
+          if (chunk.type === "error") console.error(chunk.error);
+        }
+        console.log();
       } else {
-        console.log(result.content);
+        const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+        if (result.error) {
+          console.error(result.error);
+          process.exitCode = 1;
+        } else {
+          console.log(result.content);
+        }
       }
+      orchestrator?.assertHealthy();
+    } finally {
+      await orchestrator?.stop();
     }
 
     console.error(`session: ${descriptor.sessionId}`);
@@ -666,9 +622,25 @@ async function resolveSessionDefaults(
   return { provider, model, mode };
 }
 
-async function launchTui(state: SharedState, descriptor: SessionDescriptor, systemPrompt?: string): Promise<void> {
-  const { providers, modelsByProvider } = configuredProviderModels();
-  const app = new TuiApp({ state, descriptor, providers, modelsByProvider, systemPrompt });
+async function managedSessionAdapter(state: SharedState, provider: string): Promise<ProviderAdapter> {
+  if (provider === "fake") return providerSessionAdapter(provider);
+  adapter(provider);
+  const result = await doctorAdapter(state, provider as CliId);
+  if (!result.binary) {
+    throw new Error(`provider ${provider} is not ready: ${result.notes.join("; ") || "no verified pinned binary"}`);
+  }
+  return providerSessionAdapter(provider, result.binary);
+}
+
+async function launchTui(
+  state: SharedState,
+  descriptor: SessionDescriptor,
+  systemPrompt?: string,
+  orchestrator?: OrchestratorHeartbeatController | null,
+): Promise<void> {
+  const config = await readSessionConfig(state);
+  const { providers, modelsByProvider } = configuredProviderModels(config, descriptor);
+  const app = new TuiApp({ state, descriptor, providers, modelsByProvider, systemPrompt, orchestrator });
   await app.start();
   console.error(`session: ${descriptor.sessionId}`);
 }
@@ -678,8 +650,13 @@ async function tuiCommand(args: string[], flags: Record<string, string | boolean
   await ensureSharedState(state);
   const { provider, model, mode } = await resolveSessionDefaults(state, flags);
   const descriptor = await createSession(state, { provider, model, mode });
-  await prepareOrchestratorSession(state, descriptor);
-  await launchTui(state, descriptor, systemPromptForMode(mode));
+  const orchestrator = await prepareOrchestratorSession(state, descriptor);
+  try {
+    await launchTui(state, descriptor, systemPromptForMode(mode), orchestrator);
+    orchestrator?.assertHealthy();
+  } finally {
+    await orchestrator?.stop();
+  }
 }
 
 async function runCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
@@ -692,26 +669,32 @@ async function runCommand(args: string[], flags: Record<string, string | boolean
   const { provider, model, mode } = await resolveSessionDefaults(state, flags);
 
   const descriptor = await createSession(state, { provider, model, mode });
-  await prepareOrchestratorSession(state, descriptor);
+  const orchestrator = await prepareOrchestratorSession(state, descriptor);
   const systemPrompt = systemPromptForMode(mode);
 
-  if (useTui) {
-    if (prompt) {
-      const adapter = providerSessionAdapter(descriptor.provider);
-      await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+  try {
+    if (useTui) {
+      if (prompt) {
+        const adapter = await managedSessionAdapter(state, descriptor.provider);
+        await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+      }
+      await launchTui(state, descriptor, undefined, orchestrator);
+      orchestrator?.assertHealthy();
+      return;
     }
-    await launchTui(state, descriptor);
-    return;
-  }
 
-  const adapter = providerSessionAdapter(descriptor.provider);
-  const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+    const adapter = await managedSessionAdapter(state, descriptor.provider);
+    const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
 
-  if (result.error) {
-    console.error(result.error);
-    process.exitCode = 1;
-  } else {
-    console.log(result.content);
+    if (result.error) {
+      console.error(result.error);
+      process.exitCode = 1;
+    } else {
+      console.log(result.content);
+    }
+    orchestrator?.assertHealthy();
+  } finally {
+    await orchestrator?.stop();
   }
   console.error(`session: ${descriptor.sessionId}`);
 }
@@ -782,20 +765,25 @@ async function sessionsCommand(args: string[], flags: Record<string, string | bo
         model: existing.model,
         mode: existing.mode,
         workdir: existing.workdir,
-        stateDir: state.sessionsDir,
+        stateDir: state.stateDir,
       };
     }
 
-    await prepareOrchestratorSession(state, descriptor);
+    const orchestrator = await prepareOrchestratorSession(state, descriptor);
     const systemPrompt = systemPromptForMode(descriptor.mode);
 
-    const adapter = providerSessionAdapter(descriptor.provider);
-    const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
-    if (result.error) {
-      console.error(result.error);
-      process.exitCode = 1;
-    } else {
-      console.log(result.content);
+    try {
+      const adapter = await managedSessionAdapter(state, descriptor.provider);
+      const result = await runSessionTurn(state, adapter, descriptor, { prompt, systemPrompt });
+      if (result.error) {
+        console.error(result.error);
+        process.exitCode = 1;
+      } else {
+        console.log(result.content);
+      }
+      orchestrator?.assertHealthy();
+    } finally {
+      await orchestrator?.stop();
     }
     console.error(`session: ${descriptor.sessionId}`);
     return;
@@ -838,7 +826,7 @@ async function runHarness(
   const cwd = harness.manifest.workingDirectory ? path.join(harness.path, harness.manifest.workingDirectory) : harness.path;
   const child = Bun.spawn([...command, ...args], {
     cwd,
-    env: { ...process.env, ...sharedHarnessEnv(state, harness), ...(await dataRepoEnv(state)) },
+    env: { ...canonicalChildEnvironment(), ...sharedHarnessEnv(state, harness), ...(await dataRepoEnv(state)) },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -853,7 +841,6 @@ function sharedHarnessEnv(state: SharedState, harness: { id: string }): Record<s
     AGENTS_BIN_SCRIPT: Bun.argv[1] ? path.resolve(Bun.argv[1]) : "",
     AGENTS_HOME: state.stateDir,
     AGENTS_ROOT: state.root,
-    AGENTS_DATA: state.dataDir,
     AGENTS_WORKSPACE: state.workspaceDir,
     AGENTS_CLIS: state.clisDir,
     AGENTS_HARNESSES: state.harnessesDir,
@@ -866,8 +853,7 @@ function sharedHarnessEnv(state: SharedState, harness: { id: string }): Record<s
     AGENTS_CREDITS: state.creditsFile,
     AGENTS_DATA_REPOS: state.dataReposFile,
     AGENTS_ENVIRONMENTS: state.environmentsFile,
-    AGENTOS_DATA_ROOT: path.join(state.root, defaultDataPath),
-    ROMMIE_HOME: path.join(state.harnessesDir, harness.id, "runtime"),
+    AGENTS_HARNESS_HOME: path.join(state.harnessesDir, harness.id, "runtime"),
   };
 }
 
@@ -877,7 +863,6 @@ function sharedPackageEnv(state: SharedState): Record<string, string> {
     AGENTS_BIN_SCRIPT: Bun.argv[1] ? path.resolve(Bun.argv[1]) : "",
     AGENTS_HOME: state.stateDir,
     AGENTS_ROOT: state.root,
-    AGENTS_DATA: state.dataDir,
     AGENTS_WORKSPACE: state.workspaceDir,
     AGENTS_CLIS: state.clisDir,
     AGENTS_HARNESSES: state.harnessesDir,
@@ -890,7 +875,6 @@ function sharedPackageEnv(state: SharedState): Record<string, string> {
     AGENTS_CREDITS: state.creditsFile,
     AGENTS_DATA_REPOS: state.dataReposFile,
     AGENTS_ENVIRONMENTS: state.environmentsFile,
-    AGENTOS_DATA_ROOT: path.join(state.root, defaultDataPath),
   };
 }
 
@@ -921,7 +905,7 @@ async function dataCommand(args: string[], flags: Record<string, string | boolea
     const registration = await upsertDataRepo(state, {
       id,
       repo,
-      path: String(flags.path ?? (id === "agentos-data" ? path.join("data", "agentos") : path.join("data", id))),
+      path: String(flags.path ?? (id === SYSTEM_DATA_REPO_ID ? SYSTEM_DATA_RELATIVE_PATH : path.join("data", id))),
       branch: typeof flags.branch === "string" ? flags.branch : "main",
       managedPath: typeof flags["managed-path"] === "string" ? flags["managed-path"] : undefined,
       env: typeof flags.env === "string" ? flags.env : undefined,
@@ -950,8 +934,8 @@ async function dataCommand(args: string[], flags: Record<string, string | boolea
   throw new Error(`unknown data repo action: ${action}`);
 }
 
-async function install(values: string[]): Promise<void> {
-  const [kind, name, source] = values as [InstallKind | undefined, string | undefined, string | undefined];
+async function install(values: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const [kind, name, source] = values as [CapabilityKind | undefined, string | undefined, string | undefined];
   if (!kind || !["skill", "plugin", "hook", "template", "cli", "harness"].includes(kind)) {
     throw new Error("install kind must be skill, plugin, hook, template, cli, or harness");
   }
@@ -959,41 +943,9 @@ async function install(values: string[]): Promise<void> {
 
   const state = runtimeState();
   await ensureSharedState(state);
-  const targetBase =
-    kind === "skill"
-      ? state.skillsDir
-      : kind === "plugin"
-        ? state.pluginsDir
-        : kind === "hook"
-          ? state.hooksDir
-          : kind === "template"
-            ? state.templatesDir
-            : kind === "harness"
-              ? state.harnessesDir
-              : state.clisDir;
-  const target = path.join(targetBase, name);
-  if (await exists(target)) throw new Error(`install target already exists: ${target}`);
-
-  if (source.startsWith("http") || source.endsWith(".git")) await Bun.$`git clone ${source} ${target}`;
-  else {
-    await mkdir(target, { recursive: true });
-    await cp(source, target, { recursive: true });
-  }
-
-  const installs = await readInstalls(state);
-  installs.push({ name, kind, source, path: target, installedAt: new Date().toISOString() });
-  await writeInstalls(state, installs);
-  const packageManifest = await readPackageManifest(target);
-  if (packageManifest) {
-    await upsertPackageRegistration(state, {
-      id: packageManifest.id,
-      kind: packageManifest.kind,
-      source,
-      path: target,
-      manifestPath: path.join(target, "agent.package.json"),
-    });
-  }
-  console.log(`installed ${kind} ${name}`);
+  const result = await installCapability(state, { kind, name, source, replace: Boolean(flags.replace) });
+  const action = result.changed ? (result.replaced ? "replaced" : "installed") : "verified";
+  console.log(`${action} ${kind} ${name} sha256=${result.record.sha256}`);
 }
 
 async function installs(flags: Record<string, string | boolean>): Promise<void> {
@@ -1002,6 +954,16 @@ async function installs(flags: Record<string, string | boolean>): Promise<void> 
   const records = await readInstalls(state);
   if (flags.json) console.log(JSON.stringify(records, null, 2));
   else for (const record of records) console.log(`${record.kind.padEnd(8)} ${record.name.padEnd(24)} ${record.path}`);
+}
+
+async function identityCommand(values: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const [action, source] = values;
+  if (action !== "activate") throw new Error(`unknown identity action: ${action ?? "(missing)"}`);
+  if (!source) throw new Error("identity activate requires a source directory");
+  const state = runtimeState();
+  await ensureSharedState(state);
+  const result = await activateIdentityBundle(state, source, { replace: Boolean(flags.replace) });
+  console.log(`${result.changed ? "activated" : "verified"} identity rommie sha256=${result.sha256}`);
 }
 
 function requireCreditId(kind: string, value: string | undefined): string {
@@ -1051,56 +1013,63 @@ async function credits(args: string[], flags: Record<string, string | boolean>):
     return;
   }
 
-  const store = await readCreditStore(state);
   const now = new Date().toISOString();
   const provider = requireCreditId("provider", rawProvider);
 
   if (action === "provider") {
-    const record = ensureProvider(store, provider);
     const balance = optionalPositiveNumber("balance", flags.balance);
     const softLimit = optionalPositiveNumber("soft-limit", flags["soft-limit"]);
     const windowSeconds = optionalNonNegativeInteger("window-seconds", flags["window-seconds"]);
-    if (balance !== undefined) record.balance = balance;
-    if (softLimit !== undefined) record.softLimit = softLimit;
-    if (windowSeconds !== undefined) record.windowSeconds = windowSeconds;
-    if (typeof flags["window-started-at"] === "string") record.windowStartedAt = flags["window-started-at"];
-    store.updatedAt = now;
-    await writeCreditStore(state, store);
+    const windowStartedAt = typeof flags["window-started-at"] === "string" ? flags["window-started-at"] : undefined;
+    if (windowStartedAt !== undefined && (!Number.isFinite(Date.parse(windowStartedAt)) || new Date(windowStartedAt).toISOString() !== windowStartedAt)) {
+      throw new Error("window-started-at must be a normalized ISO timestamp");
+    }
+    const store = await updateCreditStore(state, (current) => {
+      const record = ensureProvider(current, provider);
+      if (balance !== undefined) record.balance = balance;
+      if (softLimit !== undefined) record.softLimit = softLimit;
+      if (windowSeconds !== undefined) record.windowSeconds = windowSeconds;
+      if (windowStartedAt !== undefined) record.windowStartedAt = windowStartedAt;
+      current.updatedAt = now;
+      return structuredClone(current);
+    });
     if (flags.json) console.log(JSON.stringify(store, null, 2));
     else console.log(`updated provider ${provider}`);
     return;
   }
 
   const consumer = requireCreditId("consumer", rawConsumer);
-  const providerRecord = ensureProvider(store, provider);
-
-  if (action === "credit" || action === "debit") {
-    const amount = parsePositiveNumber("amount", rawAmount);
-    const sign = action === "credit" ? 1 : -1;
-    store.balances[consumer] = (store.balances[consumer] ?? 0) + sign * amount;
-    providerRecord.balance = (providerRecord.balance ?? 0) - sign * amount;
-    store.ledger.push({ provider, consumer, action, amount, at: now, note: noteFlag(flags) });
-  } else if (action === "usage") {
-    const amount = optionalPositiveNumber("amount", flags.amount);
-    const tokensIn = optionalNonNegativeInteger("tokens-in", flags["tokens-in"]);
-    const tokensOut = optionalNonNegativeInteger("tokens-out", flags["tokens-out"]);
-    if (amount === undefined && tokensIn === undefined && tokensOut === undefined) {
-      throw new Error("usage requires --amount, --tokens-in, or --tokens-out");
-    }
-    providerRecord.requests = (providerRecord.requests ?? 0) + 1;
-    providerRecord.tokensIn = (providerRecord.tokensIn ?? 0) + (tokensIn ?? 0);
-    providerRecord.tokensOut = (providerRecord.tokensOut ?? 0) + (tokensOut ?? 0);
-    if (amount !== undefined) {
-      store.balances[consumer] = (store.balances[consumer] ?? 0) - amount;
-      providerRecord.balance = (providerRecord.balance ?? 0) - amount;
-    }
-    store.ledger.push({ provider, consumer, action, amount, tokensIn, tokensOut, at: now, note: noteFlag(flags) });
-  } else {
+  const amount = action === "credit" || action === "debit"
+    ? parsePositiveNumber("amount", rawAmount)
+    : optionalPositiveNumber("amount", flags.amount);
+  const tokensIn = action === "usage" ? optionalNonNegativeInteger("tokens-in", flags["tokens-in"]) : undefined;
+  const tokensOut = action === "usage" ? optionalNonNegativeInteger("tokens-out", flags["tokens-out"]) : undefined;
+  if (action === "usage" && amount === undefined && tokensIn === undefined && tokensOut === undefined) {
+    throw new Error("usage requires --amount, --tokens-in, or --tokens-out");
+  }
+  if (action !== "credit" && action !== "debit" && action !== "usage") {
     throw new Error(`unknown credits action: ${action}`);
   }
-
-  store.updatedAt = now;
-  await writeCreditStore(state, store);
+  const store = await updateCreditStore(state, (current) => {
+    const providerRecord = ensureProvider(current, provider);
+    if (action === "credit" || action === "debit") {
+      const sign = action === "credit" ? 1 : -1;
+      current.balances[consumer] = (current.balances[consumer] ?? 0) + sign * (amount as number);
+      providerRecord.balance = (providerRecord.balance ?? 0) - sign * (amount as number);
+      current.ledger.push({ provider, consumer, action, amount, at: now, note: noteFlag(flags) });
+    } else {
+      providerRecord.requests = (providerRecord.requests ?? 0) + 1;
+      providerRecord.tokensIn = (providerRecord.tokensIn ?? 0) + (tokensIn ?? 0);
+      providerRecord.tokensOut = (providerRecord.tokensOut ?? 0) + (tokensOut ?? 0);
+      if (amount !== undefined) {
+        current.balances[consumer] = (current.balances[consumer] ?? 0) - amount;
+        providerRecord.balance = (providerRecord.balance ?? 0) - amount;
+      }
+      current.ledger.push({ provider, consumer, action, amount, tokensIn, tokensOut, at: now, note: noteFlag(flags) });
+    }
+    current.updatedAt = now;
+    return structuredClone(current);
+  });
   if (flags.json) console.log(JSON.stringify(store, null, 2));
   else console.log(`recorded ${action} for ${consumer} on ${provider}`);
 }
@@ -1181,13 +1150,15 @@ async function main(): Promise<void> {
   if (command === "remove") return remove(values[0]);
   if (command === "sync") return sync();
   if (command === "state") return stateCommand(values, flags);
+  if (command === "memory") return memoryCommand(runtimeState(), values, flags);
+  if (command === "identity") return identityCommand(values, flags);
   if (command === "cli") return cliCommand(rest);
   if (command === "packages") return packageCommand(values, flags);
   if (command === "env") return envCommand(values, flags);
   if (command === "data") return dataCommand(values, flags);
   if (command === "harness") return harnessCommand(values, flags);
   if (command === "session") return sessionCommand(values, flags);
-  if (command === "install") return install(values);
+  if (command === "install") return install(values, flags);
   if (command === "installs") return installs(flags);
   if (command === "secrets") return secretsCommand(values, flags);
   if (command === "credits") return credits(values, flags);
@@ -1200,8 +1171,3 @@ main().catch((error) => {
   console.error(`agents: ${error.message}`);
   process.exitCode = 1;
 });
-
-
-
-
-

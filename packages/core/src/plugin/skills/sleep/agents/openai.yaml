@@ -1,5 +1,0 @@
-interface:
-  display_name: "Sleep"
-  short_description: "Consolidate stale Rommie memory."
-  default_prompt: "Use $sleep to run a long-term memory hygiene pass."
-

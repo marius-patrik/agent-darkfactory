@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { sharedState } from "../../src/manager/state";
-import { createSession, loadTranscript } from "../../src/harness/session";
+import { ensureSharedState, sharedState } from "../../src/manager/state";
+import { createSession, loadSessionEvents, loadTranscript } from "../../src/harness/session";
 import {
   createTuiTools,
   executeToolCalls,
@@ -127,7 +127,7 @@ describe("agent-controlled TUI tools", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-tui-tools-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const descriptor = await createSession(state, { provider: "fake", model: "test", mode: "chat" });
 
       const adapter = new (class implements ProviderAdapter {
@@ -172,7 +172,7 @@ describe("agent-controlled TUI tools", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-tui-failover-"));
     try {
       const state = sharedState(root);
-      await mkdir(state.sessionsDir, { recursive: true });
+      await ensureSharedState(state);
       const descriptor = await createSession(state, { provider: "primary", model: "p1", mode: "chat" });
 
       class PrimaryAdapter implements ProviderAdapter {
@@ -196,7 +196,12 @@ describe("agent-controlled TUI tools", () => {
         async startSession(): Promise<void> {}
         async continueSession(): Promise<void> {}
         async runTurn(_descriptor: SessionDescriptor, _transcript: unknown, request: TurnRequest): Promise<TurnResult> {
-          return { content: `secondary: ${request.prompt}`, role: "assistant", finishReason: "stop" };
+          return {
+            content: `secondary: ${request.prompt}`,
+            role: "assistant",
+            finishReason: "stop",
+            usage: { tokensIn: 3, tokensOut: 4 },
+          };
         }
       }
 
@@ -222,6 +227,23 @@ describe("agent-controlled TUI tools", () => {
       expect(transcript?.messages.some((m) => m.role === "assistant" && m.toolCalls?.some((c) => c.function.name === "switch_provider"))).toBe(true);
       expect(transcript?.messages.some((m) => m.role === "tool")).toBe(true);
       expect(transcript?.messages.some((m) => m.role === "assistant" && m.content === "secondary: hello")).toBe(true);
+      const events = await loadSessionEvents(state, descriptor.sessionId);
+      expect(events.map((event) => event.type)).toEqual([
+        "session.created",
+        "turn.started",
+        "message.appended",
+        "message.appended",
+        "message.appended",
+        "provider.switched",
+        "message.appended",
+        "message.appended",
+        "turn.completed",
+      ]);
+      const completed = events.at(-1);
+      expect(completed?.type === "turn.completed" ? completed.data.usage : undefined).toEqual({
+        tokensIn: 3,
+        tokensOut: 4,
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

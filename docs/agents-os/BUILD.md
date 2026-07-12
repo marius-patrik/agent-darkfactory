@@ -1,80 +1,33 @@
-# Agents OS Build And Release
+# Agent OS Image Build and Release
 
-This document describes how to build, smoke-test, and release the `agents-os`
-container image. It implements the build pipeline shape defined in
-`ARCHITECTURE.md` for agents-mono #9.
+Status: not implemented. This repository currently has no Agent OS Dockerfile,
+no `image:build` or `image:smoke` package script, and no image-release workflow.
+The lifecycle CLI may render plans, but it must fail rather than claim that a
+missing image pipeline ran.
 
-## Local Build
+## Required implementation
 
-Build the dev image from the repository root:
+Before local image build is supported, add and validate:
 
-```sh
-bun run image:build
-```
+- a root-owned Dockerfile and pinned toolchain inputs;
+- a deterministic build context that excludes live state, Recovery data,
+  provider homes, credentials, caches, and unrelated worktrees;
+- a disposable-state smoke that runs the installed `agents` launcher and
+  `agents state doctor` inside the image;
+- package/profile health checks that require no live secrets;
+- image metadata labels for version, channel, commit, build time, and digest;
+- CI that builds the exact release commit before any publication step.
 
-Equivalent Docker command:
+Before registry publication is supported, also add an explicit workflow that
+uses the repository release ref, authenticates only for the push step, publishes
+an immutable version tag and digest, and attaches validation evidence. Moving
+channel tags may point to that digest only after the immutable push succeeds.
 
-```sh
-docker build -f os/agents-os/Dockerfile -t agents-os:dev --build-arg AGENTS_OS_CHANNEL=dev .
-```
+## Safety gate
 
-The build:
+Secrets and mutable operational state are runtime mounts, never image input.
+No command, document, or test may treat a dry-run plan or a locally fabricated
+metadata record as proof of an image build, pull, or release.
 
-1. Starts from an Ubuntu 24.04 base.
-2. Installs CA certificates, git, OpenSSH client, curl, unzip, bash, and `tini`.
-3. Installs pinned Bun, Node.js, Go, and uv toolchains.
-4. Copies the repository root into `/opt/agents-os`.
-5. Runs `bun install --frozen-lockfile`.
-6. Filters `.gitmodules` to only the submodule entries present in the image.
-7. Exposes `agents` on `PATH` and declares the shared-state mount contract.
-
-## Local Smoke Test
-
-Run a self-contained smoke test that exercises the image with a throwaway
-shared-state directory:
-
-```sh
-bun run image:smoke
-```
-
-The smoke test mounts the temporary directories into the container and runs:
-
-```sh
-agents state init
-agents doctor
-```
-
-No host `.agents` directory is modified.
-
-## Release Pipeline
-
-`.github/workflows/release-agents-os.yml` publishes the image on release or
-manual workflow dispatch:
-
-1. Checks out the repository.
-2. Logs in to GitHub Container Registry with `GITHUB_TOKEN`.
-3. Builds `os/agents-os/Dockerfile`.
-4. Tags and pushes:
-   - `ghcr.io/marius-patrik/agents-os:<version>`
-   - `ghcr.io/marius-patrik/agents-os:<channel>` (e.g. `dev`, `latest`)
-5. Records build metadata in image labels.
-
-## Image Naming
-
-- Local image: `agents-os:<version>` and `agents-os:dev`
-- Registry image: `ghcr.io/marius-patrik/agents-os:<version>`
-- Channels: `dev`, `latest`, and optional prerelease tags such as `edge`
-
-Image labels (`docker inspect ghcr.io/marius-patrik/agents-os:<version>`):
-
-- `io.agents.os.version`
-- `io.agents.os.channel`
-- `io.agents.os.commit`
-- `io.agents.os.built-at`
-
-## Secrets Safety
-
-Secrets, credentials, and mutable operational data are never baked into the
-image. The Dockerfile copies only the root package files, `os/agents-manager`,
-and `os/agents-os` tooling. Runtime mounts provide `.agents`, `data/`, and
-`workspaces/` from the host.
+The current supported install boundary is the source installer in
+`install/install.sh`, validated by `bun run smoke:release`.

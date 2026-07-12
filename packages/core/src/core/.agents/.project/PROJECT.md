@@ -1,6 +1,6 @@
 # Agents Core
 
-Agents Core is a shared contracts package for Agentos protocol definitions and generated clients.
+Agents Core is a shared contracts package for Agent OS protocol definitions and generated clients.
 
 Primary surfaces:
 - protobuf sources in `proto/`

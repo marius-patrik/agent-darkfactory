@@ -1,0 +1,4 @@
+# Standard role: planning
+name: planning
+scope: worker
+type: on-demand

@@ -1,19 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { sharedState } from "../../src/manager/state";
+import { ensureSharedState, sharedState } from "../../src/manager/state";
 import {
   appendOrchestratorLedger,
   ensureOrchestratorState,
   initializeOrchestratorState,
+  inspectOrchestratorIntegrity,
   orchestratorStateDir,
   orchestratorStateMarkdown,
   orchestratorSystemPrompt,
   parseStateMarkdown,
+  readOrchestratorEvents,
   readOrchestratorState,
+  startOrchestratorHeartbeat,
   writeOrchestratorHeartbeat,
 } from "../../src/manager/orchestrator";
+import { renewableLockDatabasePath } from "../../src/manager/state-lock";
 import { loadTranscript } from "../../src/harness/session";
 
 const repoRoot = path.resolve(import.meta.dir, "../..");
@@ -74,10 +78,11 @@ describe("orchestrator state helpers", () => {
     }
   });
 
-  test("initializeOrchestratorState writes STATE.md with baton and heartbeat", async () => {
+  test("initializeOrchestratorState projects the event-derived baton and heartbeat", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-init-"));
     try {
       const state = sharedState(root);
+      await ensureSharedState(state);
       await initializeOrchestratorState(state, "session-1", "fake", "test");
       const doc = await readOrchestratorState(state);
       expect(doc).not.toBeNull();
@@ -96,6 +101,7 @@ describe("orchestrator state helpers", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-beat-"));
     try {
       const state = sharedState(root);
+      await ensureSharedState(state);
       await initializeOrchestratorState(state, "session-1", "fake", "test");
       await writeOrchestratorHeartbeat(state, "session-1", { provider: "codex", model: "latest" });
       const doc = await readOrchestratorState(state);
@@ -111,10 +117,58 @@ describe("orchestrator state helpers", () => {
     }
   });
 
-  test("appendOrchestratorLedger appends to STATE.md", async () => {
+  test("lifetime heartbeat renews ownership and records a clean release", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-lifetime-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      const controller = await startOrchestratorHeartbeat(
+        state,
+        "session-1",
+        { provider: "fake", model: "test" },
+        { intervalMs: 20 },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      controller.assertHealthy();
+      await controller.update({ provider: "codex", model: "gpt-test" });
+      await controller.stop();
+
+      const events = await readOrchestratorEvents(state);
+      expect(events.filter((event) => event.type === "heartbeat.recorded").length).toBeGreaterThanOrEqual(2);
+      expect(events.at(-1)?.type).toBe("baton.released");
+      const document = await readOrchestratorState(state);
+      expect(document?.baton.active).toBe(false);
+      expect(document?.baton.holder).toBe("session-1");
+      expect(document?.heartbeat).toMatchObject({ provider: "codex", model: "gpt-test" });
+      expect(await inspectOrchestratorIntegrity(state)).toMatchObject({ ok: true, authority: "released" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("integrity inspection fails an expired active authority without changing projections", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-expired-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await initializeOrchestratorState(state, "session-1", "fake", "test");
+      const statePath = path.join(state.orchestratorDir, "state.json");
+      const before = await readFile(statePath, "utf8");
+      const inspection = await inspectOrchestratorIntegrity(state, new Date("2100-01-01T00:00:00.000Z"));
+      expect(inspection.ok).toBe(false);
+      expect(inspection.authority).toBe("expired");
+      expect(inspection.issues.join("\n")).toContain("active orchestrator baton expired");
+      expect(await readFile(statePath, "utf8")).toBe(before);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("appendOrchestratorLedger appends an event and updates the projection", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-ledger-"));
     try {
       const state = sharedState(root);
+      await ensureSharedState(state);
       await initializeOrchestratorState(state, "session-1", "fake", "test");
       await appendOrchestratorLedger(state, "session-1", {
         action: "dispatch",
@@ -134,19 +188,119 @@ describe("orchestrator state helpers", () => {
 
   test("orchestrator state markdown round-trips", () => {
     const doc = {
-      baton: { holder: "s1", since: "2026-01-01T00:00:00.000Z", provider: "fake", model: "m1" },
+      baton: {
+        active: true,
+        holder: "s1",
+        since: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2026-01-01T00:05:00.000Z",
+        provider: "fake",
+        model: "m1",
+      },
       heartbeat: { lastBeatAt: "2026-01-01T00:01:00.000Z", nextCheckAt: "2026-01-01T00:02:00.000Z", provider: "fake", model: "m1" },
       ledger: [{ at: "2026-01-01T00:01:00.000Z", action: "observe", repo: "owner/repo", issue: 7, note: "ok" }],
     };
     const md = orchestratorStateMarkdown(doc);
     expect(md).toContain("# Orchestrator State");
+    expect(md).toContain("- active: true");
     expect(md).toContain("- holder: s1");
+    expect(md).toContain("- expiresAt: 2026-01-01T00:05:00.000Z");
     expect(md).toContain("| 2026-01-01T00:01:00.000Z | observe | owner/repo | 7 | ok |");
 
     const parsed = parseStateMarkdown(md);
     expect(parsed.baton).toEqual(doc.baton);
     expect(parsed.heartbeat).toEqual(doc.heartbeat);
     expect(parsed.ledger).toEqual(doc.ledger);
+  });
+
+  test("immutable events rebuild tampered orchestrator projections with private modes", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-replay-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await initializeOrchestratorState(state, "session-1", "fake", "test");
+      await writeOrchestratorHeartbeat(state, "session-1", { provider: "codex", model: "latest" });
+      await appendOrchestratorLedger(state, "session-1", { action: "observe", note: "healthy" });
+      const expected = await readOrchestratorState(state);
+      const events = await readOrchestratorEvents(state);
+      expect(events.map((event) => event.type)).toEqual([
+        "orchestrator.initialized",
+        "heartbeat.recorded",
+        "ledger.appended",
+      ]);
+
+      const stateFile = path.join(state.orchestratorDir, "state.json");
+      const markdownFile = path.join(state.orchestratorDir, "STATE.md");
+      await Bun.write(stateFile, '{"baton":{"holder":"tampered"}}\n');
+      await Bun.write(markdownFile, "# tampered\n");
+      expect(await readOrchestratorState(state)).toEqual(expected);
+      expect(await Bun.file(markdownFile).text()).toContain("Generated projection from immutable orchestrator events");
+      expect(await Bun.file(markdownFile).text()).toContain("- holder: session-1");
+
+      if (process.platform !== "win32") {
+        const manifest = JSON.parse(await readFile(path.join(state.stateDir, "manifest.json"), "utf8")) as {
+          machineId: string;
+        };
+        const eventsDirectory = path.join(state.orchestratorDir, "events");
+        const machineDirectory = path.join(eventsDirectory, manifest.machineId);
+        expect((await stat(state.orchestratorDir)).mode & 0o777).toBe(0o700);
+        expect((await stat(eventsDirectory)).mode & 0o777).toBe(0o700);
+        expect((await stat(machineDirectory)).mode & 0o777).toBe(0o700);
+        expect((await stat(stateFile)).mode & 0o777).toBe(0o600);
+        expect((await stat(markdownFile)).mode & 0o777).toBe(0o600);
+        for (const eventFile of await readdir(machineDirectory)) {
+          expect((await stat(path.join(machineDirectory, eventFile))).mode & 0o777).toBe(0o600);
+        }
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("orchestrator event integrity failures are rejected", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-integrity-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await initializeOrchestratorState(state, "session-1", "fake", "test");
+      await writeOrchestratorHeartbeat(state, "session-1", { provider: "fake", model: "test" });
+      const manifest = JSON.parse(await readFile(path.join(state.stateDir, "manifest.json"), "utf8")) as {
+        machineId: string;
+      };
+      const machineDirectory = path.join(state.orchestratorDir, "events", manifest.machineId);
+      const eventFile = path.join(machineDirectory, (await readdir(machineDirectory)).sort()[1]);
+      const event = JSON.parse(await readFile(eventFile, "utf8")) as { eventHash: string };
+      event.eventHash = "0".repeat(64);
+      await Bun.write(eventFile, `${JSON.stringify(event, null, 2)}\n`);
+      expect(readOrchestratorState(state)).rejects.toThrow("orchestrator event hash mismatch");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("concurrent ledger writers serialize and an unexpired baton rejects takeover", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-concurrent-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await initializeOrchestratorState(state, "session-1", "fake", "test");
+      await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          appendOrchestratorLedger(state, "session-1", { action: "observe", note: `entry-${index}` }),
+        ),
+      );
+      const document = await readOrchestratorState(state);
+      expect(document?.ledger).toHaveLength(8);
+      expect(document?.ledger.map((entry) => entry.note).sort()).toEqual(
+        Array.from({ length: 8 }, (_, index) => `entry-${index}`).sort(),
+      );
+      expect(initializeOrchestratorState(state, "session-2", "claude", "latest")).rejects.toThrow(
+        "orchestrator baton is held by session-1",
+      );
+      expect((await readOrchestratorEvents(state)).filter((event) => event.type === "ledger.appended")).toHaveLength(8);
+      expect((await stat(renewableLockDatabasePath(state))).mode & 0o777).toBe(0o600);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -182,6 +336,7 @@ describe("agents run --mode orchestrator", () => {
       expect(text).toContain("## Heartbeat");
       expect(text).toContain("## Ledger");
       expect(text).toContain("- provider: fake/test");
+      expect(text).toContain("- active: false");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -209,7 +364,9 @@ describe("agents run --mode orchestrator", () => {
   test("orchestrator system prompt is available and non-empty", () => {
     const prompt = orchestratorSystemPrompt();
     expect(prompt.length).toBeGreaterThan(100);
-    expect(prompt).toContain("DarkFactory");
+    expect(prompt).toContain("one personal-agent identity");
+    expect(prompt).toContain("Delegate bounded independent work");
     expect(prompt).toContain(".agents/orchestrator/");
+    expect(prompt).toContain("Never edit STATE.md or state.json directly");
   });
 });

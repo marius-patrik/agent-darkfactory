@@ -1,7 +1,7 @@
-# Canonical codegen for the Rommie/Agentos wire contract [S3.0].
+# Canonical codegen for the Agent OS wire contract [S3.0].
 #
 # One proto module (proto/) -> three language stubs, via buf REMOTE plugins
-# (no local protoc/plugin install needed). Run from agentos-core:
+# (no local protoc/plugin install needed). Run from agent-os-core:
 #
 #   buf generate proto
 #
@@ -10,8 +10,8 @@
 #   * TS  -> clients/shared-ts/src/gen   (protobuf-es v2; carries the Connect
 #                                         service descriptors consumed by
 #                                         @connectrpc/connect v2 at runtime)
-# Python stubs are generated for the sibling inference-engine repo with
-# buf.gen.python.yaml so this default template never mutates another checkout.
+# Python stubs are generated for the in-repository inference consumer with the
+# explicit buf.gen.python.yaml template.
 #
 # Connect-python is intentionally NOT generated for VS0 (plain protobuf py is
 # sufficient; the Connect-python decision is deferred to VS2 — see
@@ -25,7 +25,7 @@ managed:
   override:
     # Root the Go import path at the contracts-go module's gen package.
     - file_option: go_package_prefix
-      value: github.com/marius-patrik/agentos/agentos-core/contracts-go/gen
+      value: github.com/marius-patrik/agents-manager/packages/core/src/core/contracts-go/gen
 
 plugins:
   # ---- Go: messages + Connect service stubs --------------------------------

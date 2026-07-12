@@ -1,8 +1,13 @@
 {
   "schemaVersion": 1,
-  "id": "agentos-inferer",
-  "name": "Agentos Inferer",
-  "kind": "agent",
-  "description": "Agentos inference runtime, agent loop, execution lanes, daemon/manager services, deploy assets, and unfinished inference architecture work.",
-  "provides": ["inference-orchestration", "agent-loop", "runtime-services"]
+  "id": "agent-os-inference",
+  "name": "Agent OS Inference",
+  "kind": "package",
+  "description": "Canonical Agent OS gateway-backed inference worker loop.",
+  "entry": "uv run agent-os-inference",
+  "workingDirectory": "python-agent",
+  "requires": {
+    "state": ["runtime/inference"]
+  },
+  "provides": ["agent-loop"]
 }

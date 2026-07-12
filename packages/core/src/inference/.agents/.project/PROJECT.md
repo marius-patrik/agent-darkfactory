@@ -1,7 +1,5 @@
-# Inference Engine
+# Inference Runtime
 
-Inference Engine contains:
+The inference package contains:
 - `python-agent/` for the Python agent runtime and tests
-- `engine-go/` and `services/*` for Go services
-- `deploy-package/` for deployment and release assets
-- `scripts/validate-fast.mjs` for the standard fast validation path
+- `scripts/validate.mjs` for the authoritative validation path

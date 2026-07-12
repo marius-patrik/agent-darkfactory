@@ -24,6 +24,7 @@ async function runAgents(
     env: {
       ...cleanEnv(),
       AGENTS_HOME: path.join(cwd, ".agents"),
+      AGENTS_USER_HOME: cwd,
       AGENTS_ROOT: cwd,
       ...env,
     },
@@ -66,8 +67,8 @@ describe("harness CLI", () => {
           "  AGENTS_CLIS: process.env.AGENTS_CLIS,",
           "  AGENTS_CREDITS: process.env.AGENTS_CREDITS,",
           "  AGENTS_DATA_REPOS: process.env.AGENTS_DATA_REPOS,",
-          "  AGENTOS_DATA_ROOT: process.env.AGENTOS_DATA_ROOT,",
-          "  ROMMIE_HOME: process.env.ROMMIE_HOME,",
+          "  AGENTS_SYSTEM_DATA_ROOT: process.env.AGENTS_SYSTEM_DATA_ROOT,",
+          "  AGENTS_HARNESS_HOME: process.env.AGENTS_HARNESS_HOME,",
           "  passthrough,",
           "}));",
         ].join("\n"),
@@ -85,20 +86,20 @@ describe("harness CLI", () => {
       expect(env.AGENTS_BIN_SCRIPT).toBe(cliPath);
       expect(env.AGENTS_HOME).toBe(path.join(root, ".agents"));
       expect(env.AGENTS_ROOT).toBe(root);
-      expect(env.AGENTS_DATA).toBe(path.join(root, "data"));
-      expect(env.AGENTS_WORKSPACE).toBe(path.join(root, "data", "workspace"));
+      expect(env.AGENTS_DATA).toBeUndefined();
+      expect(env.AGENTS_WORKSPACE).toBe(path.join(root, ".agents", "runtime", "workspaces"));
       expect(env.AGENTS_CLIS).toBe(path.join(root, ".agents", "clis"));
       expect(env.AGENTS_CREDITS).toBe(path.join(root, ".agents", "credits.json"));
       expect(env.AGENTS_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
-      expect(env.AGENTOS_DATA_ROOT).toBe(path.join(root, "data", "agentos"));
-      expect(env.ROMMIE_HOME).toBe(path.join(root, ".agents", "harnesses", "probe", "runtime"));
+      expect(env.AGENTS_SYSTEM_DATA_ROOT).toBe(path.join(root, "data", "agent-os"));
+      expect(env.AGENTS_HARNESS_HOME).toBe(path.join(root, ".agents", "harnesses", "probe", "runtime"));
       expect(JSON.stringify(env.passthrough)).toBe(JSON.stringify(["--probe"]));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test("runs packages with shared Agentos environment", async () => {
+  test("runs packages with the shared Agent OS environment", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-package-run-"));
     try {
       const pkg = path.join(root, "probe-package");
@@ -108,7 +109,7 @@ describe("harness CLI", () => {
         JSON.stringify({
           schemaVersion: 1,
           id: "probe-package",
-          kind: "agent",
+          kind: "package",
           entry: `${process.execPath} cli.ts`,
           requires: { state: ["secrets", "credits"] },
         }),
@@ -124,8 +125,8 @@ describe("harness CLI", () => {
           "  AGENTS_WORKSPACE: process.env.AGENTS_WORKSPACE,",
           "  AGENTS_SECRETS: process.env.AGENTS_SECRETS,",
           "  AGENTS_DATA_REPOS: process.env.AGENTS_DATA_REPOS,",
-          "  AGENTOS_DATA_ROOT: process.env.AGENTOS_DATA_ROOT,",
-          "  DARK_FACTORY_WORKSPACE_ROOT: process.env.DARK_FACTORY_WORKSPACE_ROOT,",
+          "  AGENTS_SYSTEM_DATA_ROOT: process.env.AGENTS_SYSTEM_DATA_ROOT,",
+          "  PROJECT_DATA_ROOT: process.env.PROJECT_DATA_ROOT,",
           "  args: Bun.argv.slice(3),",
           "}));",
         ].join("\n"),
@@ -137,12 +138,12 @@ describe("harness CLI", () => {
         "data",
         "repo",
         "set",
-        "darkfactory-workspace",
-        "marius-patrik/agents-data",
+        "project-data",
+        "marius-patrik/project-data",
         "--path",
-        "data/workspace",
+        "data/project",
         "--env",
-        "DARK_FACTORY_WORKSPACE_ROOT",
+        "PROJECT_DATA_ROOT",
       ]);
       expect(dataRepo.code).toBe(0);
 
@@ -153,56 +154,64 @@ describe("harness CLI", () => {
       const env = JSON.parse(await Bun.file(output).text()) as Record<string, unknown>;
       expect(env.AGENTS_HOME).toBe(path.join(root, ".agents"));
       expect(env.AGENTS_ROOT).toBe(root);
-      expect(env.AGENTS_DATA).toBe(path.join(root, "data"));
-      expect(env.AGENTS_WORKSPACE).toBe(path.join(root, "data", "workspace"));
+      expect(env.AGENTS_DATA).toBeUndefined();
+      expect(env.AGENTS_WORKSPACE).toBe(path.join(root, ".agents", "runtime", "workspaces"));
       expect(env.AGENTS_SECRETS).toBe(path.join(root, ".agents", "secrets"));
       expect(env.AGENTS_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
-      expect(env.AGENTOS_DATA_ROOT).toBe(path.join(root, "data", "agentos"));
-      expect(env.DARK_FACTORY_WORKSPACE_ROOT).toBe(path.join(root, "data", "workspace"));
+      expect(env.AGENTS_SYSTEM_DATA_ROOT).toBe(path.join(root, "data", "agent-os"));
+      expect(env.PROJECT_DATA_ROOT).toBe(path.join(root, "data", "project"));
       expect(JSON.stringify(env.args)).toBe(JSON.stringify(["--probe"]));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test("cli exec honors inherited AGENTS_HOME from non-root cwd", async () => {
+  test("cli pin uses only the canonical provider home and exposes no raw exec escape", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-cli-env-"));
     try {
       const subdir = path.join(root, "nested", "cwd");
-      const binDir = path.join(root, "bin");
       await mkdir(subdir, { recursive: true });
-      await mkdir(binDir, { recursive: true });
       const output = path.join(root, "codex-env.json");
-      const codex = path.join(binDir, process.platform === "win32" ? "codex.cmd" : "codex");
+      const stateHome = path.join(root, ".agents");
+      const codex = path.join(
+        stateHome,
+        "clis",
+        "codex",
+        "bin",
+        process.platform === "win32" ? "codex.cmd" : "codex",
+      );
       if (process.platform === "win32") {
-        await Bun.write(codex, `@echo off\r\necho CODEX_HOME=%CODEX_HOME% > "${output}"\r\necho args=%* >> "${output}"\r\n`);
+        await Bun.write(
+          codex,
+          `@echo off\r\nif "%1"=="--version" (echo codex-test 1.0.0& exit /b 0)\r\necho CODEX_HOME=%CODEX_HOME% > "${output}"\r\necho args=%* >> "${output}"\r\n`,
+        );
       } else {
-        await Bun.write(codex, `#!/bin/sh\nprintf 'CODEX_HOME=%s\\nargs=%s\\n' "$CODEX_HOME" "$*" > "${output}"\n`);
+        await Bun.write(
+          codex,
+          `#!/bin/sh\nif [ "$1" = "--version" ]; then printf 'codex-test 1.0.0\\n'; exit 0; fi\nprintf 'CODEX_HOME=%s\\nargs=%s\\n' "$CODEX_HOME" "$*" > "${output}"\n`,
+        );
         await Bun.$`chmod +x ${codex}`;
       }
 
-      const stateHome = path.join(root, ".agents");
-      const run = await runAgents(subdir, ["cli", "exec", "codex", "--", "--probe"], {
-        AGENTS_HOME: stateHome,
-        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-      });
-      expect(run.code).toBe(0);
+      const pin = await runAgents(subdir, ["cli", "pin", "codex"], { AGENTS_HOME: stateHome });
+      expect(pin.code).toBe(0);
+      const registry = JSON.parse(await Bun.file(path.join(stateHome, "providers.json")).text()) as {
+        providers: { codex: { executable: string } };
+      };
+      expect(registry.providers.codex.executable).toBe(codex);
 
-      const seen = Object.fromEntries(
-        (await Bun.file(output).text())
-          .trim()
-          .split(/\r?\n/)
-          .map((line) => {
-            const [key, value = ""] = line.split("=", 2);
-            return [key, value.trim()];
-          }),
-      ) as Record<string, string>;
-      expect(seen.CODEX_HOME).toBe(path.join(stateHome, "clis", "codex"));
-      expect(seen.args).toBe("--probe");
+      const doctor = await runAgents(subdir, ["cli", "doctor", "codex"], { AGENTS_HOME: stateHome });
+      expect(doctor.code).toBe(0);
+      expect(doctor.stdout).toContain(`binary=${codex}`);
+
+      const rawExec = await runAgents(subdir, ["cli", "exec", "codex", "--", "--probe"], {
+        AGENTS_HOME: stateHome,
+      });
+      expect(rawExec.code).toBe(1);
+      expect(rawExec.stderr).toContain("unknown cli action: exec");
+      expect(await Bun.file(output).exists()).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 });
-
-

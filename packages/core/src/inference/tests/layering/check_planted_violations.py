@@ -11,9 +11,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "check_layering.py"
 FIXTURES = {
-    "go": REPO / "tests" / "layering" / "fixtures" / "go",
     "python": REPO / "tests" / "layering" / "fixtures" / "python",
-    "ts": REPO / "tests" / "layering" / "fixtures" / "ts",
 }
 
 

@@ -1,244 +1,273 @@
-# agents-mono / Agents Manager PRD
+# Agent OS / agents-manager PRD
 
 ## Overview
 
-`agents-mono` is a workspace for managing agent packages. Its `agents` CLI is a Bun TypeScript package manager that installs and tracks agent repos, app repos, templates, private workspace state, CLI adapters, skills, plugins, and shared runtime state so every managed CLI sees the same installed capabilities and credit store.
+Agent OS is a single personal agent system that can execute through multiple
+models, provider CLIs, harnesses, and machines without creating competing
+identity, memory, session, or configuration authorities. The
+`agents-manager` repository implements the system, and its `agents` CLI is the
+single management and runtime surface.
 
-## Naming contract
+[Canonical State and Memory v2](docs/state-memory-v2.md) is the authoritative
+state specification. This PRD defines the product boundary and required CLI
+capabilities around it.
 
-Root docs and metadata use the following names. Legacy names are retained only
-where they identify an existing repo, env var, or historical concept.
+## Naming and authority
 
-- `agents-mono` — the root aggregator repository and workspace.
-- `agents` — the unified management CLI implemented in `packages/core/src/manager`.
-- `packages/core` — consolidated core package; legacy `packages/agents-*` names are retained only where they identify an existing repo, env var, or historical concept.
-- `agentos-data` — retained compatibility name for the default git-backed data repository and its env var (`AGENTOS_DATA_ROOT`).
-- `Agentos`, `Andromeda`, `Rommie`, and similar legacy names are intentionally scoped; new docs and metadata use the current names above.
+- **Agent OS** — final product name.
+- **agents-manager** — repository and package surface.
+- **agents** — CLI command.
+- **`~/.agents` / `AGENTS_HOME`** — only authoritative runtime state root.
+- **`packages/core`** — consolidated code package; its domain folders are not
+  separate products.
+
+Historical product, repository, and layout names are evidence to migrate and
+retire. They are not supported aliases or compatibility contracts.
 
 ## Goals
 
-- Manage git-backed agent packages from one workspace.
-- Keep CLI-specific metadata under `.agents/clis`.
-- Keep user-installed skills and plugins under `.agents/skills` and `.agents/plugins`.
-- Keep harness packages under `packages/core/src/harness` and launch them with shared state.
-- Configure git-backed data repositories such as `agentos-data`; workspace packages such as `workspace-darkfactory` can point at those data repos.
-- Expose one shared state root to every CLI through `.agents/env`.
-- Maintain a shared credit store at `.agents/credits.json`.
-- Provide one adapter abstraction for Codex, Claude, Kimi, and Agy.
-- Support CI for typecheck and tests.
+- Give one agent identity access to Codex, Claude, Kimi, Agy, future
+  providers, and managed harnesses.
+- Maintain one versioned state and memory authority with explicit provenance,
+  supersession, deterministic projections, and bounded startup context.
+- Root all provider-native state below `AGENTS_HOME/clis/<provider>`.
+- Preserve ordered canonical session and orchestration events across provider
+  switches while retaining native resume handles where supported.
+- Manage packages, data repositories, environments, skills, plugins, hooks,
+  templates, secrets, and credits through `agents`.
+- Provide journalled, idempotent, reversible migration from inventoried retired
+  data into the final layout, then remove every superseded live path.
+- Provide safe cross-machine event exchange with deterministic replay,
+  tombstones, locking, and secret/symlink rejection.
+- Validate the real installed provider invocation and filesystem-write
+  contracts, not only mocked adapters.
 
-## Non-Goals
+## Non-goals
 
-- Replace package managers like npm, Bun, or uv.
-- Implement billing provider integrations in the first version.
-- Solve cross-machine state sync beyond git-backed packages and exportable state files.
+- Preserve old product names, state roots, top-level provider links, or a
+  permanent compatibility layer.
+- Treat provider transcripts, provider-generated memory, old handoff files, or
+  recovery archives as current truth.
+- Blindly merge provider credentials or databases by timestamp.
+- Sync mutable provider databases, raw transcripts, secrets, models, caches,
+  logs, locks, or process state.
+- Replace language/package managers such as Bun, npm, or uv.
 
 ## Users
 
-- Agent developers who maintain several local agent repos.
-- CLI users who want all agent CLIs to share skills, plugins, memory hooks, and credits.
-- Automation that needs deterministic installation and environment discovery.
+- A person operating one long-lived agent identity across multiple models and
+  interfaces.
+- Agent developers managing packages, harnesses, and runtime capabilities.
+- Automation that needs deterministic state discovery and auditable changes.
 
-## Core Concepts
+## Core concepts
 
-- Package: a git submodule or local package managed by `agents`.
-- Harness: a managed runtime package, such as Agents Harness, launched by `agents`.
-- Data repo: a git-backed managed data package with an optional managed root and exported env var.
-- CLI adapter: the shared rooting and credential contract for a vendor CLI.
-- Shared state: the root `.agents` directory.
-- Core domain: shared contracts and generated clients under `packages/core/src/core`.
-- Gateway domain: OpenAI-format model gateway and registry routing under `packages/core/src/gateway`.
-- Inferer domain: agent loop, runtime services, engine work, and deploy assets under `packages/core/src/inference`.
-- Manager domain: the CLI implementation and tests under `packages/core/src/manager`.
-- Managed checkout: a git-backed package under `packages/<name>`. Agents, apps, harnesses, templates, data repositories, and workspace repositories are organized under a single `packages/` root.
-- Data submodule: consolidated DarkFactory workspace and AgentOS data under `data`.
-- CLI metadata: per-CLI data under `.agents/clis/<name>`.
-- Skill install: files installed under `.agents/skills/<name>`.
-- Plugin install: files installed under `.agents/plugins/<name>`.
-- Credit store: shared JSON ledger under `.agents/credits.json`.
+- **Canonical state:** the sole writable authority below `AGENTS_HOME`.
+- **Provider home:** opaque provider-native state below `clis/<provider>`;
+  evidence and runtime storage, never memory authority.
+- **Memory record:** immutable, provenance-backed fact with lifecycle status
+  and explicit supersession.
+- **Projection:** generated state (for example Markdown memory views or mutable
+  session manifests) rebuilt from canonical records/events.
+- **Session:** stable Agent OS id plus ordered canonical events and provider
+  resume handles.
+- **Orchestrator:** a session mode whose baton is a lease and whose durable
+  state is reconstructed from events.
+- **Capability:** an installed skill, plugin, hook, template, CLI, or harness.
+- **Package:** a registered local or git-backed Agent OS component.
+- **Data repository:** a managed data checkout recorded in canonical registry
+  state; it is not another Agent OS state root.
 
-## Functional Requirements
+## Functional requirements
 
-- `agents list` lists registered git submodule packages.
-- `agents add` adds a git-backed package.
-- `agents remove` removes a package submodule.
-- `agents sync` syncs and initializes submodules.
-- `agents state init` creates shared directories and state files.
-- `agents state env` prints environment variables every CLI should consume.
-- `agents cli list|doctor|env|exec|materialize-creds` manages shared CLI adapters.
-- `agents packages register|list` manages local package registrations.
-- `agents data repo list|set|path|env` manages git-backed data repositories.
-- `agents harness list|doctor|run` manages harness packages.
-- `agents install skill|plugin|hook|template|cli|harness` installs shared capability files into `.agents`.
-- `agents installs` lists shared installs.
-- `agents credits` locates or prints the shared credit store.
-- `agents doctor` validates package checkouts and shared state.
+### State and memory
 
-## Workspace Layout
+- `agents state init` bootstraps the v2 manifest and canonical directories
+  without moving provider content.
+- `agents state env` renders the canonical environment projection.
+- `agents state doctor [--json]` detects multiple roots, forbidden standalone
+  provider paths, invalid links, unsafe exchange state, and retired artifacts.
+- `agents state status [--json]` uses the unambiguous states `forbidden`,
+  `canonical`, `split`, and `missing`.
+- Retired provider-adoption and Git snapshot-sync commands are absent; migration
+  is an offline, journalled operation rather than a runtime compatibility path.
+- Cross-machine exchange is disabled until immutable-event merge, tombstones,
+  encrypted transport, and adversarial safety proofs are complete.
+- `agents memory remember|list|status|supersede|retract|render` manages
+  provenance-backed canonical records and generated views. Mutations require
+  source URI, content hash, source class, and confidence.
+
+### Providers, sessions, and orchestration
+
+- `agents cli list|doctor|pin|env` inspects provider adapters and pins executable
+  versions/checksums. Provider execution occurs only through managed Agent OS
+  sessions, which inject canonical startup context.
+- `agents run`, `agents tui`, and `agents sessions list|resume` provide the
+  operator session surface.
+- `agents session run|list|show` provides explicit provider/model execution and
+  inspection.
+- Provider switching preserves ordered user, assistant, tool, usage, and
+  handoff events. A rendered-transcript replay is an explicitly labelled
+  fallback, not native continuation.
+- Provider processes write only to their declared canonical homes, and their
+  tool subprocesses see the real OS user home where required.
+
+### Packages and capabilities
+
+- `agents list|info|add|remove|sync` manages git-backed package checkouts.
+- `agents packages register|list|run` manages local package manifests.
+- `agents packages distro ...` and `agents packages container ...` provide the
+  typed package/image surface; unavailable mutations must fail explicitly.
+- `agents env list|create|switch|sync` manages named environment records and
+  actions, with unavailable behavior reported explicitly.
+- `agents data repo list|set|path|env` manages data-repository registry entries.
+- `agents harness list|doctor|run` manages runtime harnesses.
+- `agents install <kind> ...` and `agents installs` manage capability installs.
+- `agents secrets ...` manages secret metadata/materialization and explicit
+  GitHub-secret synchronization without printing values.
+- `agents credits ...` maintains the shared credit ledger.
+- `agents doctor` validates package registration and the integrated system.
+- `agents os ...` manages the declared Agent OS image and environment lifecycle.
+
+## Canonical state layout
 
 ```text
-  packages/
-    agents-core/
-    agents-manager/
-    agents-harness/
-    agents-plugin/
-    llm-gateway/
-    inference-engine/
-    darkfactory/
-    life-support/
-    skyblock-agent/
-    singularity/
-    fabrica/
-    dream/
-  data/
-```
-
-## State Layout
-
-```text
-.agents/
-  clis/
-  harness-runtimes/
+~/.agents/
+  manifest.json
+  env
+  config.json
+  node.yaml
+  identity/
+  clis/<provider>/
+  sessions/<session-id>/
+  memory/
+    events/<machine-id>/<event-id>.json
+    records/
+    views/
+    index.sqlite
+  orchestrator/
   skills/
   plugins/
   hooks/
   templates/
-  secrets/
-  credits.json
-  data-repos.json
+  store/sha256/
   installs.json
   packages.json
-  env
+  data-repos.json
+  environments.json
+  providers.json
+  secrets/
+  runtime/
+  sync/
+  provenance/
+  harnesses/<harness-id>/runtime/
+  models/
+  data/
 ```
 
-Every managed CLI must read `AGENTS_HOME`, `AGENTS_ROOT`, `AGENTS_DATA`, `AGENTS_WORKSPACE`, `AGENTS_CLIS`, `AGENTS_SKILLS`, `AGENTS_PLUGINS`, `AGENTS_HOOKS`, `AGENTS_TEMPLATES`, `AGENTS_SECRETS`, `AGENTS_CREDITS`, and `AGENTS_DATA_REPOS` from `.agents/env` or equivalent environment exports. Package and harness execution also exports configured data repo env vars such as `AGENTOS_DATA_ROOT` and `DARK_FACTORY_WORKSPACE_ROOT`.
+The top-level registry files shown above remain canonical; they are not
+duplicated into another registry tree. `~/.agents/state` is forbidden. The
+final installation also has no physical directory or link at `~/.codex`,
+`~/.claude`, `~/.kimi-code`, or `~/.gemini`.
 
-## Skills contract
+## Environment contract
 
-The root `skills/` directory is obsolete. It previously appeared in the layout as
-a placeholder and must not be repopulated.
+- `AGENTS_HOME` is the absolute canonical state root and the only accepted
+  state locator.
+- `AGENTS_USER_HOME` is the stable real OS account home.
+- `AGENTS_ROOT` identifies the active Agent OS code/distribution checkout; it
+  never changes state authority.
+- Provider-native variables such as `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and
+  `KIMI_CODE_HOME` are generated projections pointing below
+  `AGENTS_HOME/clis/`; they are not independently configurable roots.
+- No historical product-specific root variable is accepted as a state locator.
 
-Skills live in exactly one of these places:
+## Provider contract
 
-- **User-installed shared skills** — `.agents/skills/<name>`, installed by
-  `agents install skill <name> <source>` and shared across every managed CLI.
-- **Installed plugin assets** — `.agents/plugins/<name>/` (a plugin may bundle
-  plugin-specific skills, prompts, or hooks with its install).
-- **Project-level managed skills** — `.agents/.global/skills/<name>/`, part of
-  the DarkFactory baseline and tracked in this repo as managed files.
-- **Package-authored skills** — skills that ship with an agent, app, or template
-  live inside that package's own submodule or registered path.
+| Provider | Canonical native home | Process home |
+| --- | --- | --- |
+| Codex | `AGENTS_HOME/clis/codex` | real user home |
+| Claude | `AGENTS_HOME/clis/claude` | real user home |
+| Kimi | `AGENTS_HOME/clis/kimi` | real user home |
+| Agy | `AGENTS_HOME/clis/agy` | isolated only inside the provider process when required |
 
-Do not add a top-level `skills/` source directory; doing so would collide with
-`.agents/skills` and break the shared-state contract.
+Credential reconciliation is explicit, provider-aware, non-destructive, and
+journalled. It never uses blind last-write-wins copying and never prints secret
+values.
 
-## Harness Contract
+## Memory and projection contract
 
-Harnesses declare an `agent.package.json` manifest. The exact `entry` and
-`workingDirectory` are package-defined; the example below shows a current
-agents-harness shape rather than the legacy Andromeda command path:
+Explicit current user instruction outranks verified live facts, which outrank
+active canonical memory. Inference must be labelled; provider transcripts and
+archives are evidence only. At most one scalar record is active for a given
+agent/scope/subject/predicate tuple. Conflicts are superseded, retracted, or
+kept disputed rather than silently overwritten.
 
-```json
-{
-  "schemaVersion": 1,
-  "id": "agents-harness",
-  "kind": "harness",
-  "entry": "go run ./cmd/agents-harness",
-  "workingDirectory": ".",
-  "requires": {
-    "clis": ["codex", "claude", "kimi", "agy"],
-    "state": ["skills", "plugins", "hooks", "credits"]
-  }
-}
+Canonical events are append-only and machine-partitioned. Projection writes
+use a lease/lock, temporary file, flush, and atomic rename. Startup context is
+a bounded generated view of active facts and work with age and provenance
+labels.
+
+## Sync and migration safety
+
+Roaming state consists of non-sensitive identity/configuration plus canonical
+memory, session, and orchestrator events. Reproducible capabilities are restored
+from source/content-addressed stores. Machine facts remain per-machine. Provider
+databases, raw transcripts, secrets, models, caches, logs, locks, and process
+state remain local-only.
+
+No retired adoption or snapshot-sync engine remains. Migration is staged,
+journalled, idempotent, reversible, and verified by count/hash parity before
+any old live path is removed. Future event exchange
+rejects symlinks/path escapes and secrets, exchanges immutable events, supports
+tombstones, and produces identical projection hashes on participating machines.
+
+## Repository layout
+
+```text
+packages/core/
+  src/core/
+  src/manager/
+  src/harness/
+  src/gateway/
+  src/inference/
+packages/darkfactory/
+packages/life-support/
+packages/skyblock-agent/
+packages/singularity/
+data/
 ```
 
-`agents harness run <id>` launches the harness with `AGENTS_HOME` and shared state paths. Harness-specific runtime data may remain isolated under `.agents/harnesses/<id>/runtime`.
+No obsolete `os/` package topology is part of the final product.
 
-## Data Repo Contract
+## Installation and validation
 
-`agents state init` seeds `agentos-data` as the default managed data repo:
+The supported source install maintains one checkout of
+`marius-patrik/agents-manager`, writes one regular `AGENTS_HOME/bin/agents`
+launcher, initializes explicit canonical roots, pins installed providers, and
+runs `agents state doctor`. It uses no global package-manager link. Old product
+checkout locations and installers are not supported update paths.
 
-```json
-{
-  "id": "agentos-data",
-  "repo": "marius-patrik/agents-data",
-  "path": "data",
-  "branch": "main",
-  "env": "AGENTOS_DATA_ROOT"
-}
-```
-
-Packages may declare an additional `dataRepo` mapping in `agent.package.json`.
-When registered, `agents packages register` stores that mapping in
-`.agents/data-repos.json`, and `agents packages run` / `agents harness run`
-export its configured env var to the process.
-
-## CLI Adapter Contract
-
-Built-in adapters:
-
-- Codex: `CODEX_HOME=.agents/clis/codex`, credential source `~/.codex/auth.json`.
-- Claude: `CLAUDE_CONFIG_DIR=.agents/clis/claude`, credential source `~/.claude/.credentials.json`.
-- Kimi: `KIMI_CODE_HOME=.agents/clis/kimi`, credential source `~/.kimi-code/credentials/kimi-code.json`.
-- Agy: `HOME=.agents/clis/agy`, credential source `~/.gemini/oauth_creds.json`.
-
-Credential materialization is explicit, non-destructive, and must not print secret values.
-
-## Installation and updater
-
-Supported install paths:
-
-- **Local development** — clone the repo, run `bun install` and `bun link`, then
-  verify with `agents doctor`.
-- **Source install** — this root remains developer/source-install only until
-  release-backed binaries are available. `install/install.sh` clones the repo
-  into `~/.agents-mono`, installs dependencies, links the CLI, and smoke-tests
-  with fast commands (`agents state init` and `agents list`).
-
-Update path for source installs:
+CI runs:
 
 ```sh
-cd ~/.agents-mono
-git pull
-bun install --frozen-lockfile
-bun link
-agents list
+bun run check
+bun run test
 ```
 
-Run `agents sync` before `agents doctor` when you want to initialize and
-validate all submodule packages.
+Acceptance requires the behavioral proofs in
+[Canonical State and Memory v2](docs/state-memory-v2.md), including idempotent
+bootstrap/migration, provider write-root proofs, deterministic replay and
+projection hashes, correct supersession, two-machine tombstones, and
+secret/symlink rejection.
 
-Release automation runs `bun run smoke:release` during the DarkFactory release
-workflow. The release smoke test performs an isolated source install into a
-temporary directory and then verifies that the linked `agents` command resolves
-to `packages/core/src/manager/cli.ts` (on symlink platforms) and that fast commands
-(`agents state init` and `agents list`) succeed.
+## Delivery milestones
 
-Release-backed binary installers, a Windows PowerShell installer, and an
-automatic updater are out of scope for this slice and tracked in #24.
-
-## CI
-
-CI runs on pushes and pull requests to `main`:
-
-- install Bun
-- `bun install --frozen-lockfile`
-- `bun run check`
-- `bun test`
-
-## Milestones
-
-1. Bun TypeScript CLI scaffold.
-2. Shared state bootstrap and diagnostics.
-3. Skill/plugin/CLI install tracking.
-4. Credit store schema and update commands.
-5. Per-CLI adapter contracts for consuming shared state.
-6. Harness package install, doctor, and run commands.
-7. Agents Harness bridge through `AGENTS_HOME`.
-
-
-
-
-
-
-
+1. Non-destructive root resolution, v2 bootstrap/doctor, correct provider
+   invocation, and disabled unsafe mutations.
+2. Journalled provider-home and memory migration with verified retired-state removal.
+3. Canonical session/orchestrator event replay and native continuation proofs.
+4. Capability content-addressing and provider projections.
+5. Two-machine event exchange, tombstones, locking, and recovery proofs.
+6. Release-backed installation and daily-use activation of the reconciled Agent
+   OS.

@@ -4,7 +4,3 @@ __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
-
-# Runtime artifacts (trace logs are written here by default; see trace.py /
-# the GATEWAY_TRACE_DIR override)
-traces/

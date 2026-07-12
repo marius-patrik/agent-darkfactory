@@ -1,22 +1,26 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { chmod, copyFile, mkdir, stat } from "node:fs/promises";
-import type { SharedState } from "./state";
+import { stat } from "node:fs/promises";
+import { systemDataPath, type SharedState } from "./state";
+import { providerBinarySafetyReason } from "./session-adapters";
+import { canonicalChildEnvironment } from "./runtime-paths";
+import {
+  inspectProviderExecutable,
+  readProviderRegistry,
+  verifyProviderRegistration,
+  writeProviderRegistration,
+  type ProviderId,
+  type ProviderRegistration,
+} from "./provider-registry";
 
-export type CliId = "codex" | "claude" | "kimi" | "agy";
-
-export interface CredentialMapping {
-  source: string;
-  target: string;
-}
+export type CliId = ProviderId;
 
 export interface CliAdapter {
   id: CliId;
   displayName: string;
   binaries: string[];
   homeEnv: Record<string, string>;
-  credentials: CredentialMapping[];
+  credentialPaths: string[];
 }
 
 export interface AdapterDoctorResult {
@@ -24,10 +28,9 @@ export interface AdapterDoctorResult {
   home: string;
   binary: string | null;
   ok: boolean;
+  pinned: boolean;
   notes: string[];
 }
-
-const home = os.homedir();
 
 export const adapters: Record<CliId, CliAdapter> = {
   codex: {
@@ -35,33 +38,28 @@ export const adapters: Record<CliId, CliAdapter> = {
     displayName: "Codex",
     binaries: ["codex"],
     homeEnv: { CODEX_HOME: "codex" },
-    credentials: [{ source: path.join(home, ".codex", "auth.json"), target: "auth.json" }],
+    credentialPaths: ["auth.json"],
   },
   claude: {
     id: "claude",
     displayName: "Claude",
     binaries: ["claude"],
     homeEnv: { CLAUDE_CONFIG_DIR: "claude" },
-    credentials: [{ source: path.join(home, ".claude", ".credentials.json"), target: ".credentials.json" }],
+    credentialPaths: [".credentials.json"],
   },
   kimi: {
     id: "kimi",
     displayName: "Kimi",
-    binaries: ["kimi", "kimi-code"],
+    binaries: ["kimi"],
     homeEnv: { KIMI_CODE_HOME: "kimi" },
-    credentials: [
-      {
-        source: path.join(home, ".kimi-code", "credentials", "kimi-code.json"),
-        target: path.join("credentials", "kimi-code.json"),
-      },
-    ],
+    credentialPaths: [path.join("credentials", "kimi-code.json")],
   },
   agy: {
     id: "agy",
     displayName: "Agy",
-    binaries: ["agy", "gemini"],
+    binaries: ["agy"],
     homeEnv: { HOME: "agy" },
-    credentials: [{ source: path.join(home, ".gemini", "oauth_creds.json"), target: path.join(".gemini", "oauth_creds.json") }],
+    credentialPaths: [path.join(".gemini", "oauth_creds.json")],
   },
 };
 
@@ -83,8 +81,9 @@ export function adapterEnv(state: SharedState, id: CliId): Record<string, string
   const spec = adapter(id);
   const env: Record<string, string> = {
     AGENTS_HOME: state.stateDir,
+    AGENTS_USER_HOME: state.userHome,
     AGENTS_ROOT: state.root,
-    AGENTS_DATA: state.dataDir,
+    HOME: state.userHome,
     AGENTS_WORKSPACE: state.workspaceDir,
     AGENTS_CLIS: state.clisDir,
     AGENTS_HARNESSES: state.harnessesDir,
@@ -94,9 +93,10 @@ export function adapterEnv(state: SharedState, id: CliId): Record<string, string
     AGENTS_TEMPLATES: state.templatesDir,
     AGENTS_SECRETS: state.secretsDir,
     AGENTS_ORCHESTRATOR: state.orchestratorDir,
+    AGENTS_MEMORY: path.join(state.stateDir, "memory"),
     AGENTS_CREDITS: state.creditsFile,
     AGENTS_DATA_REPOS: state.dataReposFile,
-    AGENTOS_DATA_ROOT: path.join(state.root, defaultDataPath),
+    AGENTS_SYSTEM_DATA_ROOT: systemDataPath(state.root),
   };
   for (const [name, dir] of Object.entries(spec.homeEnv)) env[name] = path.join(state.clisDir, dir);
   return env;
@@ -111,25 +111,11 @@ async function exists(file: string): Promise<boolean> {
   }
 }
 
-async function findBinary(names: string[]): Promise<string | null> {
-  const pathValue =
-    process.platform === "win32"
-      ? [process.env.PATH, process.env.Path].filter((value): value is string => Boolean(value)).join(path.delimiter)
-      : (process.env.PATH ?? "");
-  const pathDirs = pathValue.split(path.delimiter).filter(Boolean);
-  const extensions = process.platform === "win32" ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";") : [""];
+async function findBinary(state: SharedState, id: CliId, names: string[]): Promise<string | null> {
+  const canonicalBin = path.join(adapterHome(state, id), "bin");
   for (const name of names) {
-    for (const dir of pathDirs) {
-      for (const extension of extensions) {
-        const candidate = path.join(dir, process.platform === "win32" && !path.extname(name) ? `${name}${extension.toLowerCase()}` : name);
-        if (fs.existsSync(candidate)) return candidate;
-        const upperCandidate = path.join(
-          dir,
-          process.platform === "win32" && !path.extname(name) ? `${name}${extension.toUpperCase()}` : name,
-        );
-        if (fs.existsSync(upperCandidate)) return upperCandidate;
-      }
-    }
+    const candidate = path.join(canonicalBin, name);
+    if (fs.existsSync(candidate) && !providerBinarySafetyReason(candidate)) return candidate;
   }
   return null;
 }
@@ -137,30 +123,61 @@ async function findBinary(names: string[]): Promise<string | null> {
 export async function doctorAdapter(state: SharedState, id: CliId): Promise<AdapterDoctorResult> {
   const spec = adapter(id);
   const root = adapterHome(state, id);
-  await mkdir(root, { recursive: true });
   const notes: string[] = [];
-  const binary = await findBinary(spec.binaries);
-  if (!binary) notes.push(`missing binary: ${spec.binaries.join(" or ")}`);
-  for (const cred of spec.credentials) {
-    if (!(await exists(cred.source))) notes.push(`credential source not present: ${cred.source}`);
+  const registry = await readProviderRegistry(state);
+  const registration = registry.providers[id];
+  let binary: string | null;
+  if (registration) {
+    const verification = await verifyProviderRegistration(registration);
+    notes.push(...verification.issues);
+    binary = verification.ok ? registration.executable : null;
+  } else {
+    const discovered = await findBinary(state, id, spec.binaries);
+    binary = null;
+    notes.push(
+      discovered
+        ? `canonical executable is present but not pinned: ${discovered}`
+        : "provider executable is not pinned",
+    );
   }
-  return { id, home: root, binary, ok: binary !== null, notes };
+  if (!binary) notes.push(`no verified pinned binary: ${spec.binaries.join(" or ")}`);
+  for (const credentialPath of spec.credentialPaths) {
+    const target = path.join(root, credentialPath);
+    if (!(await exists(target))) {
+      notes.push(`credential not present in canonical provider home: ${credentialPath}`);
+    }
+  }
+  return { id, home: root, binary, ok: binary !== null, pinned: Boolean(registration), notes };
 }
 
-export async function materializeCredentials(state: SharedState, id: CliId): Promise<string[]> {
+export async function pinAdapter(
+  state: SharedState,
+  id: CliId,
+  binaryOverride?: string,
+): Promise<ProviderRegistration> {
   const spec = adapter(id);
-  const root = adapterHome(state, id);
-  const copied: string[] = [];
-  for (const cred of spec.credentials) {
-    if (!(await exists(cred.source))) continue;
-    const target = path.join(root, cred.target);
-    await mkdir(path.dirname(target), { recursive: true });
-    if (process.platform !== "win32") await chmod(path.dirname(target), 0o700);
-    await copyFile(cred.source, target);
-    if (process.platform !== "win32") await chmod(target, 0o600);
-    copied.push(target);
-  }
-  return copied;
-}
-const defaultDataPath = path.join("data", "agentos");
+  const binary = binaryOverride ? path.resolve(binaryOverride) : await findBinary(state, id, spec.binaries);
+  if (!binary) throw new Error(`cannot pin ${id}: provider binary not found`);
+  const unsafeReason = providerBinarySafetyReason(binary);
+  if (unsafeReason) throw new Error(`cannot pin ${id}: ${unsafeReason}`);
 
+  const child = Bun.spawn([binary, "--version"], {
+    cwd: state.root,
+    env: { ...canonicalChildEnvironment(), ...adapterEnv(state, id) },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (code !== 0) throw new Error(`cannot pin ${id}: --version failed: ${stderr.trim() || `exit ${code}`}`);
+  const version = stdout.trim().split(/\r?\n/, 1)[0]?.trim();
+  if (!version) throw new Error(`cannot pin ${id}: --version returned no version`);
+
+  const registration = await inspectProviderExecutable(id, binary, version);
+  await writeProviderRegistration(state, registration);
+  return registration;
+}

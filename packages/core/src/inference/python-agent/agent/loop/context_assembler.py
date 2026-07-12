@@ -1,4 +1,4 @@
-"""Context assembly for the VS2 single-worker loop."""
+"""Context assembly for one inference worker run."""
 
 from __future__ import annotations
 

@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from agent.status import (
-    Artifact,
-    CheckResult,
     CodeChangeValidator,
     GenericArtifactValidator,
     IllegalTransition,
     InMemoryStatusStore,
-    PG_RUN_STATUS_VALUES,
     RunContext,
     RunRecord,
     SourceState,
@@ -35,11 +31,6 @@ from agent.status.machine import TRANSITIONS
 # ---------------------------------------------------------------------------
 # StatusValue vocabulary
 # ---------------------------------------------------------------------------
-
-
-def test_status_value_pg_enum_alignment() -> None:
-    """PG enum string values must match StatusValue .value exactly (#1276)."""
-    assert [s.value for s in StatusValue] == PG_RUN_STATUS_VALUES
 
 
 def test_status_value_helpers() -> None:
@@ -76,7 +67,7 @@ def test_proto_round_trip() -> None:
 
 def test_to_proto_raises_for_liveness_and_unspecified() -> None:
     with pytest.raises(ValueError, match="liveness state"):
-        to_proto(from_proto(9))  # noqa: cannot construct from running directly
+        to_proto(from_proto(9))
     with pytest.raises(ValueError, match="liveness state"):
         from_proto(9)
     with pytest.raises(ValueError, match="liveness state"):

@@ -1,8 +1,8 @@
 # Execution Lane Contract
 
-This document specifies the execution-lane interface contract for Agentos. This seam allows the Agentos runtime to decouple capability execution from the underlying infrastructure, facilitating detached execution on k3s Jobs + NATS + Daemon today, and enabling Knative (or other FaaS engines) to drop in later with zero runtime code changes.
+This document specifies the execution-lane interface contract for Agent OS. This seam allows the Agent OS runtime to decouple capability execution from the underlying infrastructure, facilitating detached execution on k3s Jobs + NATS + Daemon today, and enabling Knative (or other FaaS engines) to drop in later with zero runtime code changes.
 
-The canonical contract text lives in this repo. The Python implementation lives in the sibling inference-engine package at `../inference-engine/python-agent/agent/exec_lane/` (specifically `contract.py`) and should use typed Python stdlib only.
+The canonical contract text lives in this repo. The Python implementation lives in the in-repository inference package at `../inference/python-agent/agent/exec_lane/` (specifically `contract.py`) and should use typed Python stdlib only.
 
 ---
 

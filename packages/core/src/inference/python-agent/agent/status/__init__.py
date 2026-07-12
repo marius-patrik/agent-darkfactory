@@ -34,7 +34,6 @@ from agent.status.record import (
 )
 from agent.status.rollup import rollup
 from agent.status.statuses import (
-    PG_RUN_STATUS_VALUES,
     StatusValue,
     from_proto,
     to_proto,
@@ -68,5 +67,4 @@ __all__ = [
     "InMemoryStatusStore",
     "to_proto",
     "from_proto",
-    "PG_RUN_STATUS_VALUES",
 ]

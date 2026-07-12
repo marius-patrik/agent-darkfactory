@@ -6,9 +6,7 @@ START-scope validators that need no model judgment and no cluster:
 * ``GenericArtifactValidator`` — existence + optional schema/shape.
 * ``CodeChangeValidator`` — existence + build + tests.
 
-Model-judgment dimensions (``run-proof`` for code-change, cross-eval,
-research-claim support) are intentionally emitted as ``skip`` with
-``source_class='claimed'``; they layer in at S4/S5 per D6 §10.
+Undeclared checks are emitted as ``skip`` and never counted as evidence.
 
 OPEN-1 default
 ~~~~~~~~~~~~~~
@@ -31,7 +29,6 @@ from pathlib import Path
 from typing import Any, Callable, Literal, Protocol, runtime_checkable
 
 from agent.status.machine import Trigger
-from agent.status.statuses import StatusValue
 
 
 @dataclass(frozen=True)
@@ -439,8 +436,8 @@ class CodeChangeValidator:
     * ``build`` — ``acceptance['build_cmd']`` exits 0 (hard fail on error).
     * ``tests`` — ``acceptance['test_cmd']`` exits 0 (missing_evidence on error).
 
-    ``run-proof`` and model-judgment dimensions are emitted as ``skip`` with
-    ``source_class='claimed'`` and layer in at S4.
+    Optional checks that are not declared are emitted as ``skip`` rather than
+    being treated as evidence.
     """
 
     def check(self, run: RunContext, acceptance: dict[str, Any]) -> Verdict:

@@ -1,7 +1,7 @@
 version: v2
 modules:
   - path: .
-    name: buf.build/rommie/rommie
+    name: buf.build/marius-patrik/agent-os
 lint:
   use:
     - STANDARD

@@ -1,30 +1,29 @@
 [project]
-name = "llm-gateway"
+name = "agent-os-gateway"
 version = "0.1.0"
-description = "Rommie LLM gateway (VS1-minimal) — OpenAI-format, local-engine routing, config-driven model registry. Salvaged + adapted from v3 legacy/src-packages-gateway."
+description = "Agent OS local model gateway with OpenAI-format routing, health probes, and a source-owned registry."
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.110",
-  "uvicorn[standard]>=0.29",
-  "httpx>=0.27",
-  "pydantic>=2.0",
-  "PyYAML>=6.0",
-  "jsonschema>=4.0",
-  "typer>=0.9",
-  "rich>=13.0",
-  "litellm>=1.0",
-  "asyncpg>=0.29",
+  "fastapi==0.136.3",
+  "uvicorn[standard]==0.49.0",
+  "httpx==0.28.1",
+  "pydantic==2.13.4",
+  "PyYAML==6.0.3",
+  "jsonschema==4.26.0",
+  "typer==0.26.7",
+  "rich==15.0.0",
 ]
 
 [project.scripts]
-gateway = "llm_gateway.cli:app"
+agent-os-gateway = "llm_gateway.cli:app"
 
 [dependency-groups]
 dev = [
-  "mypy>=1.17",
-  "pytest>=8.0",
-  "pytest-asyncio>=0.23",
-  "ruff>=0.12",
+  "httpx2==2.5.0",
+  "mypy==2.1.0",
+  "pytest==9.0.3",
+  "pytest-asyncio==1.4.0",
+  "ruff==0.15.20",
 ]
 
 [build-system]
@@ -32,22 +31,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["llm_gateway", "agentos_gateway"]
+packages = ["llm_gateway"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
-markers = [
-  "live: requires live external services such as Postgres",
-]
 
 [tool.ruff]
 line-length = 140
 target-version = "py312"
-exclude = [
-  "legacy",
-]
 
 [tool.ruff.lint]
 select = ["E", "F"]
@@ -57,6 +50,3 @@ ignore = ["E501"]
 python_version = "3.12"
 check_untyped_defs = true
 ignore_missing_imports = true
-exclude = [
-  "^legacy/",
-]

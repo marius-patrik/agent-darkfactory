@@ -1,4 +1,4 @@
-"""No-false-green acceptance gate for VS2 sessions."""
+"""No-false-green acceptance gate for inference worker runs."""
 
 from __future__ import annotations
 

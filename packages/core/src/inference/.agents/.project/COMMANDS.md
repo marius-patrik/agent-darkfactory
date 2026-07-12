@@ -6,10 +6,11 @@ Install JavaScript tooling:
 bun install
 ```
 
-Validate:
+Validate the Python runtime:
 
 ```sh
-bun run validate
+bun scripts/validate.mjs
 ```
 
-The validation script runs Python tests through `python -m uv`, plus focused Go package tests.
+The validator runs Python lint, types, tests, package build, package CLI,
+generated protocol imports, and layering checks.
