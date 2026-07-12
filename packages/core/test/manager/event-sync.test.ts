@@ -132,6 +132,12 @@ describe("encrypted cross-machine event exchange", () => {
 
       await expect(importEventBundle(target, bundle, { failAfter: 1 })).rejects.toThrow("simulated interrupted");
       expect(await eventSyncStatus(target)).toMatchObject({ committedImports: 0, preparedImports: 1 });
+      const [preparedJournalName] = await readdir(path.join(target.stateDir, "sync", "imports"));
+      const preparedJournal = JSON.parse(
+        await readFile(path.join(target.stateDir, "sync", "imports", preparedJournalName), "utf8"),
+      ) as Record<string, unknown>;
+      expect(preparedJournal.entries).toBeUndefined();
+      expect(Array.isArray(preparedJournal.entryHashes)).toBe(true);
       expect((await doctorState(target)).checks.find((check) => check.id === "sync_safety")?.ok).toBe(false);
       await disableEventSync(target);
       expect((await doctorState(target)).checks.find((check) => check.id === "sync_safety")?.ok).toBe(false);

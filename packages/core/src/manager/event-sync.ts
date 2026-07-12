@@ -77,7 +77,7 @@ interface ImportJournal {
   payloadHash: string;
   state: "prepared" | "committed";
   paths: string[];
-  entries?: EventEntry[];
+  entryHashes?: Array<{ path: string; sha256: string; bytes: number }>;
   envelope?: BundleEnvelope;
   imported: number;
   skipped: number;
@@ -566,13 +566,13 @@ async function withAffectedEventLocks<T>(
   return lockSessions(0);
 }
 
-function encodedEntries(incoming: Map<string, string>): EventEntry[] {
+function entryMetadata(incoming: Map<string, string>): Array<{ path: string; sha256: string; bytes: number }> {
   return [...incoming.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([relativePath, content]) => ({
       path: relativePath,
       sha256: sha256(content),
-      content: Buffer.from(content, "utf8").toString("base64"),
+      bytes: Buffer.byteLength(content, "utf8"),
     }));
 }
 
@@ -583,7 +583,10 @@ async function preparedJournalEntries(state: SharedState, journal: ImportJournal
     throw new Error(`prepared event import ${journal.payloadHash} does not match its authenticated envelope`);
   }
   const incoming = authenticated.incoming;
-  if (journal.entries) assertSameIncoming(incoming, decodeEntries(journal.entries));
+  const expectedMetadata = entryMetadata(incoming);
+  if (!journal.entryHashes || JSON.stringify(journal.entryHashes) !== JSON.stringify(expectedMetadata)) {
+    throw new Error(`prepared event import ${journal.payloadHash} has inconsistent authenticated entry metadata`);
+  }
   if (journal.paths.length !== incoming.size || journal.paths.some((item, index) => item !== [...incoming.keys()][index])) {
     throw new Error(`prepared event import ${journal.payloadHash} has inconsistent recovery paths`);
   }
@@ -815,7 +818,7 @@ export async function importEventBundle(
         payloadHash,
         state: "prepared",
         paths: [...incoming.keys()],
-        entries: encodedEntries(incoming),
+        entryHashes: entryMetadata(incoming),
         envelope: authenticated.envelope,
         imported: 0,
         skipped,
