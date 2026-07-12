@@ -259,7 +259,7 @@ test("uses the review API without placing credentials in model input", async () 
   assert.match(request.init.body, /blocking_findings/);
   assert.match(request.init.body, /non_blocking_notes/);
   assert.equal(JSON.parse(request.init.body).temperature, 1);
-  assert.equal(JSON.parse(request.init.body).max_tokens, 4096);
+  assert.equal(JSON.parse(request.init.body).max_tokens, 8192);
 });
 
 test("refreshes an expired OAuth token before the review request", async () => {
