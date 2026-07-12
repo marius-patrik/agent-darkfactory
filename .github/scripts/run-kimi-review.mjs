@@ -34,16 +34,21 @@ export function parseReview(text) {
   const start = trimmed.indexOf("{");
   const end = trimmed.lastIndexOf("}");
   if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
-  let lastError = new Error("response was not parseable JSON");
+  let shapeError = null;
   for (const candidate of candidates) {
+    let parsed;
     try {
-      return reviewShape(JSON.parse(candidate));
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    try {
+      return reviewShape(parsed);
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      // Try the next bounded representation.
+      shapeError = error instanceof Error ? error : new Error(String(error));
     }
   }
-  throw new Error(`Kimi returned invalid review JSON: ${lastError.message}`);
+  throw new Error(`Kimi returned invalid review JSON: ${shapeError?.message ?? "response was not parseable JSON"}`);
 }
 
 export function parseCredential(raw) {

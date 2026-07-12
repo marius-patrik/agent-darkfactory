@@ -38,6 +38,14 @@ test("invalid review shapes report the missing contract without echoing model co
       return true;
     },
   );
+  assert.throws(
+    () => parseReview('not-json-private-content'),
+    (error) => {
+      assert.match(error.message, /response was not parseable JSON/);
+      assert.doesNotMatch(error.message, /private-content/);
+      return true;
+    },
+  );
 });
 
 test("takeover dispatch uses only the trusted automation exit code", () => {
@@ -68,8 +76,10 @@ test("review prompt budgets generated payloads as a file summary", async () => {
   ]) {
     assert.match(runner, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
   }
-  assert.match(runner, /git diff --name-status/);
+  assert.match(runner, /git diff --find-renames --name-status/);
   assert.match(runner, /Generated payload file summary/);
+  assert.match(runner, /trap cleanup_review_temp EXIT/);
+  assert.match(runner, /rm -f .*GENERATED_FILE/);
 });
 
 test("persists rotated credentials through an in-memory gh stdin pipe", async () => {
