@@ -1,21 +1,25 @@
 # Handoff
 
-Andromeda v0.2.2 acceptance is complete. Resume planning from `data/agent-os/context/TASK.md`; do not recreate completed rows from stale Fable, Claude, Codex, or Dream task stores.
+Andromeda v0.2.2 acceptance and provider-memory consolidation are complete.
+Resume planning from `data/agent-os/context/TASK.md`; do not recreate completed
+rows from stale Fable, Claude, Codex, or Dream task stores.
 
-Windows and Mac both install exact `main@d7bafd4f660c`. Explicit-root state doctors are green, encrypted exchange replays idempotently in both directions, and no prepared imports remain. Use the commands below to re-verify live state rather than inferring it from this file.
+The v0.2.2 cross-machine acceptance remains historical evidence. Windows memory,
+session, orchestrator, capability, registry, provider, and sync-safety checks
+are green after consolidation, but the installed launcher/source-install record
+still targets the retired manager path. Do not infer current Mac parity; its
+remaining convergence tail is parked.
 
 ```powershell
 $env:AGENTS_HOME = "$HOME\.agents"
 $env:AGENTS_USER_HOME = "$HOME"
 $env:AGENTS_ROOT = "$HOME\marius-patrik\Andromeda"
-& "$env:AGENTS_HOME\bin\agents.ps1" state doctor --json
+Set-Location $env:AGENTS_ROOT
+bun packages/manager/src/cli.ts state doctor --json
 ```
 
-```sh
-AGENTS_HOME="$HOME/.agents" \
-AGENTS_USER_HOME="$HOME" \
-AGENTS_ROOT="$HOME/marius-patrik/Andromeda" \
-  "$HOME/.agents/bin/agents" state doctor --json
-```
-
-The Backlog row remains deferred. The final Parked row remains frozen until Patrik explicitly reopens an item.
+The remaining sequence is: Planned 1 consolidates specifications into one issue
+lane; Planned 2 resumes Claude, Codex, Kimi, and Agy through DarkFactory; Planned
+3 repairs and completes the global `agents` entrypoint and TUI UX. There is no
+Backlog row. The final Parked row, now including the interrupted Mac convergence
+tail, remains frozen until Patrik explicitly reopens an item.
