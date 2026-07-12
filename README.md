@@ -15,6 +15,53 @@ Bundles follow the [Open Knowledge Format (OKF) v0.1 spec](https://github.com/Go
 
 **Design rule: conformance is enforced in code, not prompts.** The deterministic bundle layer validates frontmatter (`type` required), regenerates `index.md` files, appends `log.md` entries (newest-first, spec §7), and sandboxes all paths to the bundle root. The LLM decides *what* to change; the code guarantees the result is a conformant bundle.
 
+## Quick start (Docker)
+
+No clone needed — the image is public. Save this as `docker-compose.yml`:
+
+```yaml
+services:
+  understory:
+    image: ghcr.io/thecodacus/understory:latest
+    ports:
+      - "3800:3800"
+    volumes:
+      # Your memory lives here as plain markdown — a named volume, or point
+      # a bind mount (e.g. ./my-memory:/bundle) at any OKF bundle.
+      - understory-memory:/bundle
+    environment:
+      BUNDLE_ROOT: /bundle
+      # Pick ONE provider:
+      # 1) Local llama.cpp / llama-swap (model auto-discovered; start llama-server with --jinja)
+      LLM_PROVIDER: llamacpp
+      LLAMACPP_BASE_URL: http://your-inference-box:8080
+      # 2) Anthropic
+      #LLM_PROVIDER: anthropic
+      #ANTHROPIC_API_KEY: sk-ant-...
+      # 3) OpenRouter
+      #LLM_PROVIDER: openrouter
+      #OPENROUTER_API_KEY: sk-or-...
+    restart: unless-stopped
+
+volumes:
+  understory-memory:
+```
+
+```bash
+docker compose up -d
+```
+
+Then:
+
+- **Web UI** → http://localhost:3800 — browse the memory, watch the graph, chat with the agent
+- **MCP endpoint** → `http://localhost:3800/mcp` (streamable HTTP) — register it in any MCP client:
+  ```bash
+  claude mcp add --transport http ustory http://localhost:3800/mcp
+  ```
+- Your agent now has `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain`, and gets a seed overview of the memory at every session start.
+
+Teach it something (`memory_add`: "We deploy on Fridays, never Mondays"), then open the graph and watch the concept wire itself in. Deploying with Portainer? Use [docker-compose.portainer.yml](docker-compose.portainer.yml) as a repository stack.
+
 ## Stack
 
 pnpm monorepo:
@@ -40,7 +87,7 @@ BUNDLE_ROOT=./sample-bundle node packages/server/dist/index.js
 
 Works behind llama-swap too: discovery prefers the currently **loaded** model so a query doesn't trigger a multi-minute model swap. Pin a specific model with `LLM_MODEL=`.
 
-## Quick start
+## From source
 
 ```bash
 pnpm install
@@ -50,6 +97,8 @@ cp .env.example .env   # add your API key
 BUNDLE_ROOT=./sample-bundle ANTHROPIC_API_KEY=sk-... node packages/server/dist/index.js
 # → http://localhost:3800  (web UI + /api + /mcp)
 ```
+
+Or build the container yourself: `docker compose up --build` (the repo's [docker-compose.yml](docker-compose.yml) builds from source and mounts `./sample-bundle`).
 
 Dev mode (server on :3800, Vite HMR on :5180 with proxy):
 
@@ -86,13 +135,6 @@ Memory is a graph, not a pile of notes, and graphs rot: concepts go **orphaned**
 - **`memory_maintain`** — a deterministic lint (orphans + broken links, surfaced in `memory_status` under `graph`) drives an internal agent to wire orphans into related concepts and fix dangling links. Run it periodically to counter drift; it's a no-op when the graph is already healthy.
 
 This design mirrors the pattern in Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (index.md + log.md, create-vs-enrich, lint for orphans). Deferred from that pattern until scale warrants: an explicit page-type schema, and hybrid FTS5+embedding search (the naive scan in `search.ts` is fine into the low thousands of concepts).
-
-## Docker
-
-```bash
-docker compose up --build
-# bundle is a volume mount — point ./sample-bundle at any OKF bundle
-```
 
 ## Tests
 
