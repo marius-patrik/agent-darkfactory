@@ -10,6 +10,24 @@ Git submodules under `plugins/`; the sole data submodule is `data/agent-os`.
 Their names identify components, not alternate Agent OS products or state
 authorities.
 
+All repository authority is rooted here: `.agents/` owns project guidance,
+`.darkfactory/` owns managed-repository policy, and `docs/` owns component,
+protocol, architecture, and specification documentation. Package directories
+contain implementation and package manifests only; they must not carry nested
+repository authorities or documentation trees.
+
+Component ownership:
+
+- `packages/manager` — `agents` CLI, state, providers, sessions, memory,
+  orchestration, package/capability registries, and lifecycle operations.
+- `packages/core` — protobuf sources and generated Go, TypeScript, and Python
+  contracts.
+- `packages/harness` — canonical session event handling and tool execution.
+- `packages/gateway` — local model registry, routing, health, quota, and
+  transient control-plane relay.
+- `packages/inference` — gateway-backed Python agent loop, status, persistence,
+  redaction, and package validation.
+
 Historical product names, provider-home paths, launchers, and variables are
 recovery evidence only. Do not add aliases, bridges, forwarding shims, or
 fallback loaders.

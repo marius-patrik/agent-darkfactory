@@ -129,16 +129,23 @@ older snapshot-sync or provider-adoption command to fall back to.
 
 ## Repository layout
 
-- `packages/manager/src/` — `agents` CLI and Agent OS state/runtime logic.
-- `packages/core/` — shared contracts, schemas, and generated clients.
-- `packages/harness/` — managed runtime harness.
-- `packages/gateway/` — model gateway and provider routing.
-- `packages/inference/` — agent loop and inference runtime.
+- `packages/manager/src/` — `agents` CLI and Agent OS state/runtime logic;
+  see [manager documentation](docs/manager.md).
+- `packages/core/` — shared contracts, schemas, and generated clients;
+  see [core documentation](docs/core.md).
+- `packages/harness/` — managed runtime harness; see
+  [harness documentation](docs/harness.md).
+- `packages/gateway/` — model gateway and provider routing; see
+  [gateway documentation](docs/gateway-runtime.md).
+- `packages/inference/` — agent loop and inference runtime; see
+  [inference documentation](docs/inference.md).
 - `plugins/darkfactory/`, `plugins/life-support/`,
   `plugins/skyblock-agent/`, and `plugins/singularity/` — managed product plugins.
 - `skills/`, `hooks/`, `roles/`, and `commands/` — authored capability roots;
   `persona.md` is the authored identity persona.
 - `data/agent-os/` — the sole managed Agent OS data checkout, not an alternate runtime-state root.
+- `docs/` — the only repository documentation root, including component,
+  protocol, architecture, and specification material.
 
 ## Shared capability contract
 

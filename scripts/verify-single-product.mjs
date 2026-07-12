@@ -35,6 +35,16 @@ for (const retired of ["packages/core/src", "packages/core/test", "packages/core
   }
 }
 
+const nestedRepositoryMetadata = [
+  /^packages\/(?:.*\/)?(?:\.agents|\.darkfactory|docs)(?:\/|$)/i,
+  /^packages\/(?:.*\/)?(?:AGENTS|README|PRD)\.md$/i,
+];
+for (const relative of tracked) {
+  if (nestedRepositoryMetadata.some((pattern) => pattern.test(relative))) {
+    issues.push(`package-local repository metadata or documentation is tracked: ${relative}`);
+  }
+}
+
 const gitmodules = fs.readFileSync(path.join(root, ".gitmodules"), "utf8");
 for (const match of gitmodules.matchAll(/^\s*path\s*=\s*(.+)\s*$/gm)) {
   const submodulePath = match[1].trim();
