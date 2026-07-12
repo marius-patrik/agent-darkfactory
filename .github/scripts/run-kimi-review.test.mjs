@@ -309,14 +309,14 @@ test("uses the review API without placing credentials in model input", async () 
 test("reviews large prompts in bounded segments and combines findings fail-closed", async () => {
   const requests = [];
   const segmentReviews = [
-    validReview,
+    { ...validReview, summary: "A".repeat(700) },
     {
       approved: false,
-      summary: "Middle segment found a blocker.",
+      summary: "B".repeat(700),
       blocking_findings: ["segment blocker"],
       non_blocking_notes: [],
     },
-    validReview,
+    { ...validReview, summary: "C".repeat(700) },
   ];
   const fetchImpl = async (_url, init) => {
     requests.push(JSON.parse(init.body));
@@ -325,7 +325,13 @@ test("reviews large prompts in bounded segments and combines findings fail-close
       status: 200,
     });
   };
-  const sharedContext = "shared issue and repository context\n--- FULL DIFF ---\n";
+  const sharedContext = [
+    "PR body quoted a marker",
+    "--- FULL DIFF ---",
+    "shared issue and repository context",
+    "--- FULL DIFF ---",
+    "",
+  ].join("\n");
   const review = await requestReview({
     prompt: `${sharedContext}${"x".repeat(85_000)}`,
     credential: { access_token: "token", expires_at: Math.floor(Date.now() / 1000) + 3_600 },
@@ -340,6 +346,21 @@ test("reviews large prompts in bounded segments and combines findings fail-close
   assert.equal(review.approved, false);
   assert.deepEqual(review.blocking_findings, ["segment blocker"]);
   assert.match(review.summary, /3 segments/);
+  assert.equal(review.summary.length, 1_500);
+});
+
+test("large prompts fail closed when shared context cannot be preserved", async () => {
+  let calls = 0;
+  await assert.rejects(
+    requestReview({
+      prompt: "x".repeat(40_001),
+      credential: { access_token: "token", expires_at: Math.floor(Date.now() / 1000) + 3_600 },
+      fetchImpl: async () => { calls += 1; },
+      env: { KIMI_REVIEW_CHUNK_CHARS: "40000" },
+    }),
+    /missing the generated full-diff boundary/,
+  );
+  assert.equal(calls, 0);
 });
 
 test("retries one transient provider failure with the same cached prompt", async () => {

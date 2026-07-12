@@ -71,16 +71,15 @@ function splitText(text, maxCharacters) {
 function splitReviewPrompt(prompt, maxCharacters) {
   if (prompt.length <= maxCharacters) return [prompt];
   const marker = "\n--- FULL DIFF ---\n";
-  const markerIndex = prompt.indexOf(marker);
-  if (markerIndex >= 0) {
-    const sharedContext = prompt.slice(0, markerIndex + marker.length);
-    const segmentCharacters = maxCharacters - sharedContext.length;
-    if (segmentCharacters >= 10_000) {
-      return splitText(prompt.slice(markerIndex + marker.length), segmentCharacters)
-        .map((segment) => `${sharedContext}${segment}`);
-    }
+  const markerIndex = prompt.lastIndexOf(marker);
+  if (markerIndex < 0) throw new Error("large review prompt is missing the generated full-diff boundary");
+  const sharedContext = prompt.slice(0, markerIndex + marker.length);
+  const segmentCharacters = maxCharacters - sharedContext.length;
+  if (segmentCharacters < 10_000) {
+    throw new Error("large review shared context leaves too little room for fail-closed diff segments");
   }
-  return splitText(prompt, maxCharacters);
+  return splitText(prompt.slice(markerIndex + marker.length), segmentCharacters)
+    .map((segment) => `${sharedContext}${segment}`);
 }
 
 function reviewShape(value) {
@@ -364,11 +363,12 @@ export async function requestReview(options) {
   if (reviews.length === 1) return reviews[0];
   const blockingFindings = [...new Set(reviews.flatMap((review) => review.blocking_findings))];
   const nonBlockingNotes = [...new Set(reviews.flatMap((review) => review.non_blocking_notes))];
+  const combinedSummary = `Kimi quota-takeover segmented review (${reviews.length} segments): ${reviews
+    .map((review) => review.summary.replace(/^Kimi quota-takeover review:\s*/, ""))
+    .join(" | ")}`;
   return {
     approved: reviews.every((review) => review.approved) && blockingFindings.length === 0,
-    summary: `Kimi quota-takeover segmented review (${reviews.length} segments): ${reviews
-      .map((review) => review.summary.replace(/^Kimi quota-takeover review:\s*/, ""))
-      .join(" | ")}`,
+    summary: combinedSummary.length <= 1_500 ? combinedSummary : `${combinedSummary.slice(0, 1_497)}...`,
     blocking_findings: blockingFindings,
     non_blocking_notes: nonBlockingNotes,
   };
