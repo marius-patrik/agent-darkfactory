@@ -76,6 +76,7 @@ export function parseReview(text) {
   if (fenced) candidates.push(fenced[1]);
   candidates.push(...balancedJsonObjects(trimmed));
   let shapeError = null;
+  let validReview = null;
   for (const candidate of new Set(candidates)) {
     let parsed;
     try {
@@ -84,11 +85,12 @@ export function parseReview(text) {
       continue;
     }
     try {
-      return reviewShape(parsed);
+      validReview = reviewShape(parsed);
     } catch (error) {
       shapeError = error instanceof Error ? error : new Error(String(error));
     }
   }
+  if (validReview) return validReview;
   throw new Error(`Kimi returned invalid review JSON: ${shapeError?.message ?? "response was not parseable JSON"}`);
 }
 

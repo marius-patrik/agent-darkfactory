@@ -36,6 +36,19 @@ test("recovers the final review object after unrelated balanced JSON", () => {
   assert.deepEqual(review.blocking_findings, []);
 });
 
+test("the last schema-valid object wins over a scratch verdict", () => {
+  const scratch = JSON.stringify(validReview);
+  const final = JSON.stringify({
+    approved: false,
+    summary: "Final review found a blocker.",
+    blocking_findings: ["blocking final finding"],
+    non_blocking_notes: [],
+  });
+  const review = parseReview(`scratch ${scratch}\nfinal ${final}`);
+  assert.equal(review.approved, false);
+  assert.deepEqual(review.blocking_findings, ["blocking final finding"]);
+});
+
 test("blocking findings always force a failed normalized verdict", () => {
   const review = parseReview(JSON.stringify({ ...validReview, approved: true, blocking_findings: ["unsafe"] }));
   assert.equal(review.approved, false);
