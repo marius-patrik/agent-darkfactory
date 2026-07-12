@@ -510,6 +510,37 @@ describe("encrypted cross-machine event exchange", () => {
     }
   });
 
+  test("local-only secret history does not block importing safe roaming events", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-local-secret-import-"));
+    try {
+      const source = await exchangeState(path.join(root, "source"));
+      const target = await exchangeState(path.join(root, "target"));
+      await rememberMemory(source, {
+        scope: "project",
+        subject: "Andromeda",
+        predicate: "safe-roaming",
+        value: "allowed",
+        evidence,
+      });
+      await rememberMemory(target, {
+        scope: "project",
+        subject: "Andromeda",
+        predicate: "local-credential",
+        value: "secret://LOCAL_ONLY",
+        evidence,
+        sensitivity: "secret",
+      });
+      const bundle = path.join(root, "events.bundle.json");
+      await exportEventBundle(source, bundle);
+      const imported = await importEventBundle(target, bundle);
+      expect(imported.imported).toBe(1);
+      expect((await doctorState(target)).checks.find((check) => check.id === "memory_integrity")?.ok).toBe(true);
+      await expect(exportEventBundle(target, path.join(root, "must-not-roam.bundle.json"))).rejects.toThrow("local-only");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("symlinked canonical ancestors cannot redirect export reads or import writes", async () => {
     if (process.platform === "win32") return;
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-symlink-ancestor-"));

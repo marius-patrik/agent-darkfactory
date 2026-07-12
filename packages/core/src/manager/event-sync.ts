@@ -342,6 +342,7 @@ async function collectFiles(
   state: SharedState,
   relativeDirectory: string,
   entries: EventEntry[],
+  scanSecrets: boolean,
 ): Promise<void> {
   const absoluteDirectory = path.join(state.stateDir, ...relativeDirectory.split("/"));
   try {
@@ -357,34 +358,43 @@ async function collectFiles(
     const entryInfo = await lstat(absolutePath);
     await assertPhysicalPathUnderRoot(state.stateDir, absolutePath);
     if (entryInfo.isDirectory()) {
-      await collectFiles(state, relativePath, entries);
+      await collectFiles(state, relativePath, entries, scanSecrets);
       continue;
     }
     if (!entryInfo.isFile()) throw new Error(`event exchange source contains an unsupported entry: ${absolutePath}`);
     assertAllowedPath(relativePath);
     if (entryInfo.size > MAX_FILE_BYTES) throw new Error(`event exchange event is too large: ${relativePath}`);
     const content = await readFile(absolutePath, "utf8");
-    assertEventPathIdentity(relativePath, assertNoPlantedSecret(relativePath, content));
+    let parsed: unknown;
+    if (scanSecrets) parsed = assertNoPlantedSecret(relativePath, content);
+    else {
+      try {
+        parsed = JSON.parse(content);
+      } catch (error) {
+        throw new Error(`local event history is not valid JSON at ${relativePath}: ${String(error)}`);
+      }
+    }
+    assertEventPathIdentity(relativePath, parsed);
     entries.push({ path: relativePath, sha256: sha256(content), content: Buffer.from(content).toString("base64") });
     if (entries.length > MAX_FILES) throw new Error(`event exchange exceeds ${MAX_FILES} files`);
   }
 }
 
-async function collectEventEntries(state: SharedState): Promise<EventEntry[]> {
+async function collectEventEntries(state: SharedState, scanSecrets = true): Promise<EventEntry[]> {
   const entries: EventEntry[] = [];
-  await collectFiles(state, "memory/events", entries);
+  await collectFiles(state, "memory/events", entries, scanSecrets);
   const sessionsRoot = path.join(state.stateDir, "sessions");
   try {
     await assertPhysicalPathUnderRoot(state.stateDir, sessionsRoot, { leaf: "directory" });
     for (const entry of (await readdir(sessionsRoot, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name.startsWith(".")) throw new Error(`hidden canonical session entries cannot roam: ${entry.name}`);
       if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error(`invalid canonical session entry: ${entry.name}`);
-      await collectFiles(state, `sessions/${entry.name}/events`, entries);
+      await collectFiles(state, `sessions/${entry.name}/events`, entries, scanSecrets);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  await collectFiles(state, "orchestrator/events", entries);
+  await collectFiles(state, "orchestrator/events", entries, scanSecrets);
   return entries.sort((left, right) => left.path.localeCompare(right.path));
 }
 
@@ -466,7 +476,7 @@ async function authenticateBundleEnvelope(
 }
 
 async function validateMergedEvents(state: SharedState, incoming: Map<string, string>): Promise<Map<string, string>> {
-  const combined = new Map((await collectEventEntries(state)).map((entry) => [entry.path, Buffer.from(entry.content, "base64").toString("utf8")]));
+  const combined = new Map((await collectEventEntries(state, false)).map((entry) => [entry.path, Buffer.from(entry.content, "base64").toString("utf8")]));
   for (const [relativePath, content] of incoming) {
     const existing = combined.get(relativePath);
     if (existing !== undefined && existing !== content) throw new Error(`immutable event collision: ${relativePath}`);
