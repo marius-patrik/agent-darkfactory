@@ -30,6 +30,12 @@ test("parses fenced review JSON into the canonical result shape", () => {
   assert.deepEqual(Object.keys(review), ["approved", "summary", "blocking_findings", "non_blocking_notes"]);
 });
 
+test("recovers the final review object after unrelated balanced JSON", () => {
+  const review = parseReview(`scratch {"phase":"analysis"}\nfinal ${JSON.stringify(validReview)}\ntrailing`);
+  assert.equal(review.approved, true);
+  assert.deepEqual(review.blocking_findings, []);
+});
+
 test("blocking findings always force a failed normalized verdict", () => {
   const review = parseReview(JSON.stringify({ ...validReview, approved: true, blocking_findings: ["unsafe"] }));
   assert.equal(review.approved, false);
@@ -276,6 +282,29 @@ test("reports completion truncation distinctly from malformed JSON", async () =>
       env: {},
     }),
     /completion-token limit/,
+  );
+});
+
+test("malformed response diagnostics expose only bounded metadata", async () => {
+  const privateContent = "not-json-private-model-content";
+  const fetchImpl = async () =>
+    new Response(
+      JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: privateContent } }] }),
+      { status: 200 },
+    );
+  await assert.rejects(
+    requestReview({
+      prompt: "review",
+      credential: { access_token: "token", expires_at: Math.floor(Date.now() / 1000) + 3600 },
+      fetchImpl,
+      env: {},
+    }),
+    (error) => {
+      assert.match(error.message, /finish_reason=stop/);
+      assert.match(error.message, new RegExp(`content_chars=${privateContent.length}`));
+      assert.doesNotMatch(error.message, /private-model-content/);
+      return true;
+    },
   );
 });
 

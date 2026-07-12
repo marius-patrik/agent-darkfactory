@@ -35,16 +35,48 @@ function reviewShape(value) {
   };
 }
 
+function balancedJsonObjects(text) {
+  const objects = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (start < 0) {
+      if (character === "{") {
+        start = index;
+        depth = 1;
+      }
+      continue;
+    }
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') inString = true;
+    else if (character === "{") depth += 1;
+    else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        objects.push(text.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+  return objects;
+}
+
 export function parseReview(text) {
   const trimmed = text.trim();
   const candidates = [trimmed];
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fenced) candidates.push(fenced[1]);
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
+  candidates.push(...balancedJsonObjects(trimmed));
   let shapeError = null;
-  for (const candidate of candidates) {
+  for (const candidate of new Set(candidates)) {
     let parsed;
     try {
       parsed = JSON.parse(candidate);
@@ -158,12 +190,21 @@ export async function requestReview({ prompt, credential, fetchImpl = fetch, env
   });
   if (!response.ok) throw new Error(`Kimi review API failed with HTTP ${response.status}`);
   const payload = await response.json();
-  if (payload?.choices?.[0]?.finish_reason === "length") {
+  const choice = payload?.choices?.[0];
+  if (choice?.finish_reason === "length") {
     throw new Error("Kimi review reached the completion-token limit before producing a complete verdict");
   }
-  const content = payload?.choices?.[0]?.message?.content;
+  const content = choice?.message?.content;
   if (typeof content !== "string") throw new Error("Kimi review API returned no message content");
-  return parseReview(content);
+  try {
+    return parseReview(content);
+  } catch (error) {
+    const finishReason = typeof choice?.finish_reason === "string" && /^[a-z_]+$/.test(choice.finish_reason)
+      ? choice.finish_reason
+      : "unknown";
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${message} (finish_reason=${finishReason}, content_chars=${content.length})`);
+  }
 }
 
 function blockedReview(error) {
