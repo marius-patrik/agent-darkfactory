@@ -107,27 +107,11 @@ jobs:
         id: review
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
-          KIMI_AUTH_JSON: ${{ secrets.KIMI_AUTH_JSON }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         shell: bash
         run: |
-          if [ -z "${CODEX_AUTH_JSON:-}" ]; then
-            cat > codex-review.json <<'EOF'
-          {
-            "approved": false,
-            "summary": "Codex autoreview could not run because repository secret CODEX_AUTH_JSON is not configured.",
-            "blocking_findings": [
-              "Configure CODEX_AUTH_JSON in GitHub repository secrets to enable automated Codex PR review with Codex OAuth auth."
-            ],
-            "non_blocking_notes": []
-          }
-          EOF
-            exit 0
-          fi
-
           CODEX_HOME_DIR="${RUNNER_TEMP}/codex-home"
           REVIEW_OUTPUT_DIR="${RUNNER_TEMP}/review-output"
           mkdir -p "${CODEX_HOME_DIR}"
@@ -161,14 +145,25 @@ jobs:
           fi
 
           if node .github/scripts/run-kimi-review.mjs --should-takeover "${REVIEW_EXIT_CODE}"; then
-            if [ -n "${KIMI_AUTH_JSON:-}" ]; then
-              KIMI_REVIEW_PROMPT="${REVIEW_OUTPUT_DIR}/review-prompt.txt" \
-              KIMI_REVIEW_OUTPUT="${PWD}/codex-review.json" \
-              node .github/scripts/run-kimi-review.mjs
-            fi
+            echo "takeover=true" >> "${GITHUB_OUTPUT}"
           elif [ "${REVIEW_EXIT_CODE}" -ne 0 ]; then
             node -e "const fs=require('fs'); fs.writeFileSync('codex-review.json', JSON.stringify({approved:false,summary:'The primary review container failed outside the provider-takeover contract.',blocking_findings:['Inspect the Codex Review workflow infrastructure before allowing merge.'],non_blocking_notes:[]},null,2)+'\\n')"
           fi
+
+      - name: Run credential-isolated Kimi takeover
+        if: steps.review.outputs.takeover == 'true'
+        env:
+          KIMI_AUTH_JSON: ${{ secrets.KIMI_AUTH_JSON }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          if [ -z "${KIMI_AUTH_JSON:-}" ]; then
+            node -e "const fs=require('fs'); fs.writeFileSync('codex-review.json', JSON.stringify({approved:false,summary:'Codex failed and Kimi takeover credentials are unavailable.',blocking_findings:['Configure KIMI_AUTH_JSON before allowing provider takeover.'],non_blocking_notes:[]},null,2)+'\\n')"
+            exit 0
+          fi
+          KIMI_REVIEW_PROMPT="${RUNNER_TEMP}/review-output/review-prompt.txt" \
+          KIMI_REVIEW_OUTPUT="${PWD}/codex-review.json" \
+          node .github/scripts/run-kimi-review.mjs
 
 
       - name: Comment review

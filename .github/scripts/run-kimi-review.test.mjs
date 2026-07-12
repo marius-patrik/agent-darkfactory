@@ -36,6 +36,17 @@ test("takeover dispatch uses only the trusted automation exit code", () => {
   assert.equal(shouldTakeOver("42"), true);
 });
 
+test("workflow isolates Codex and Kimi credentials in separate provider steps", async () => {
+  const workflow = await readFile(".github/workflows/codex-review.yml", "utf8");
+  const codexStep = workflow.match(/- name: Run Codex review[\s\S]*?(?=\n\s{6}- name:)/)?.[0] || "";
+  const kimiStep = workflow.match(/- name: Run credential-isolated Kimi takeover[\s\S]*?(?=\n\s{6}- name:)/)?.[0] || "";
+  assert.match(codexStep, /CODEX_AUTH_JSON:/);
+  assert.doesNotMatch(codexStep, /KIMI_AUTH_JSON:/);
+  assert.match(kimiStep, /KIMI_AUTH_JSON:/);
+  assert.doesNotMatch(kimiStep, /CODEX_AUTH_JSON:/);
+  assert.match(kimiStep, /steps\.review\.outputs\.takeover == 'true'/);
+});
+
 test("persists rotated credentials through an in-memory gh stdin pipe", async () => {
   let invocation;
   let piped = "";
