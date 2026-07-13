@@ -23,6 +23,7 @@ fs.writeFileSync(process.env.REVIEW_OUTPUT, `${JSON.stringify({
   non_blocking_notes: [],
 }, null, 2)}\n`);
 NODE
+  chmod 600 "${REVIEW_OUTPUT}"
 }
 
 write_infra_review() {
@@ -38,6 +39,7 @@ fs.writeFileSync(process.env.REVIEW_OUTPUT, `${JSON.stringify({
   non_blocking_notes: [],
 }, null, 2)}\n`);
 NODE
+  chmod 600 "${REVIEW_OUTPUT}"
 }
 
 append_capped_file() {
@@ -240,7 +242,10 @@ if [ "${PROMPT_BYTES}" -gt "${MAX_PROMPT_BYTES}" ]; then
 fi
 
 CODEX_EXIT=0
-codex exec \
+# GitHub-hosted Docker blocks the unprivileged user namespaces required by
+# Codex's default bubblewrap backend. The pinned CLI's legacy Landlock backend
+# retains filesystem sandboxing without requiring extra container privileges.
+codex --enable use_legacy_landlock exec \
   --cd /workspace \
   --sandbox read-only \
   --ephemeral \
@@ -265,3 +270,4 @@ if ! extract_review_json "${REVIEW_OUTPUT}" "${EXTRACTED_REVIEW}"; then
 fi
 
 mv "${EXTRACTED_REVIEW}" "${REVIEW_OUTPUT}"
+chmod 600 "${REVIEW_OUTPUT}"

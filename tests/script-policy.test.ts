@@ -1147,6 +1147,46 @@ test("Codex Review workflow validates verdicts before comments and enforcement",
   assert.match(workflow, /isolated CI reviewer, not a local provider\/model authority/);
 });
 
+test("Codex Review keeps image inputs base-trusted before checking out PR content", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/codex-review.yml", import.meta.url), "utf8");
+  const baseCheckout = workflow.indexOf("- name: Checkout PR\n");
+  const imageBuild = workflow.indexOf("- name: Build Codex review image");
+  const headCheckout = workflow.indexOf("- name: Checkout PR head");
+  const outputCleanup = workflow.indexOf("rm -rf -- pr-workspace/codex-review.json");
+  const containerRun = workflow.indexOf("docker run --rm");
+
+  assert.match(workflow, /pull_request_target:/);
+  assert.notEqual(baseCheckout, -1);
+  assert.notEqual(imageBuild, -1);
+  assert.notEqual(headCheckout, -1);
+  assert.ok(baseCheckout < imageBuild);
+  assert.ok(imageBuild < headCheckout);
+  assert.ok(headCheckout < outputCleanup);
+  assert.ok(outputCleanup < containerRun);
+  assert.equal(workflow.match(/docker build/g)?.length, 1);
+  assert.match(workflow, /docker build -f \.github\/codex-review\.Dockerfile -t darkfactory-codex-review \./);
+});
+
+test("Codex Review uses bounded Landlock compatibility while retaining read-only sandboxing", async () => {
+  const runner = await readFile(new URL("../.github/scripts/run-codex-review.sh", import.meta.url), "utf8");
+
+  assert.match(runner, /codex --enable use_legacy_landlock exec/);
+  assert.match(runner, /--sandbox read-only/);
+  assert.doesNotMatch(runner, /danger-full-access|dangerously-bypass-approvals-and-sandbox/);
+});
+
+test("Codex Review hands off private verdicts as the host user without widening container privileges", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/codex-review.yml", import.meta.url), "utf8");
+  const runner = await readFile(new URL("../.github/scripts/run-codex-review.sh", import.meta.url), "utf8");
+
+  assert.match(workflow, /--user "\$\(id -u\):\$\(id -g\)"/);
+  assert.match(workflow, /chmod 700 "\$\{CODEX_HOME_DIR\}"/);
+  assert.match(workflow, /chmod 600 "\$\{CODEX_HOME_DIR\}\/auth\.json"/);
+  assert.doesNotMatch(workflow, /--privileged|--cap-add|seccomp=unconfined|chmod -R/);
+  assert.equal(runner.match(/chmod 600 "\$\{REVIEW_OUTPUT\}"/g)?.length, 3);
+  assert.doesNotMatch(runner, /chmod (?:644|666|777) "\$\{REVIEW_OUTPUT\}"/);
+});
+
 test("df-sweep requires explicit allowlist before merging PRs with no checks", async () => {
   const source = await readFile(new URL("../.github/scripts/df-sweep.mjs", import.meta.url), "utf8");
 

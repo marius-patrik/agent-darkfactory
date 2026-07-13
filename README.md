@@ -102,6 +102,15 @@ ephemeral Codex container and repository secret because GitHub-hosted CI cannot
 access personal Agent OS state. It does not define a repository model or serve
 as local provider authority.
 
+The review command keeps `--sandbox read-only`. Inside GitHub-hosted Docker it
+selects Codex's legacy Landlock backend because the default bubblewrap backend
+requires unprivileged user namespaces that the nested container boundary does
+not provide. This compatibility switch does not grant Docker capabilities,
+disable seccomp, or run a privileged container. The container runs as the host
+runner UID/GID so its mode-600 verdict can be copied by the host; the ephemeral
+Codex home remains mode 700 and `auth.json` remains mode 600, so neither is
+exposed to other users.
+
 ## Self-hosted runner ownership
 
 The `df-local` runner is provisioned and supervised by Agent OS, outside this

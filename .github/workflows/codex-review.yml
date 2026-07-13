@@ -118,11 +118,18 @@ jobs:
 
           CODEX_HOME_DIR="${RUNNER_TEMP}/codex-home"
           mkdir -p "${CODEX_HOME_DIR}"
+          chmod 700 "${CODEX_HOME_DIR}"
           printf '%s' "${CODEX_AUTH_JSON}" > "${CODEX_HOME_DIR}/auth.json"
           chmod 600 "${CODEX_HOME_DIR}/auth.json"
 
           run_review() {
+            # Match the container identity to the GitHub runner so the verdict stays
+            # host-readable without broadening either it or the mounted auth home.
+            # Remove a PR-controlled file, directory, or symlink before the trusted
+            # runner creates the fixed verdict path on the bind mount.
+            rm -rf -- pr-workspace/codex-review.json
             docker run --rm \
+              --user "$(id -u):$(id -g)" \
               -e CODEX_HOME=/codex-home \
               -e HOME=/codex-home \
               -e BASE_BRANCH \
