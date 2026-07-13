@@ -22,8 +22,7 @@ export interface ActiveRenewableLock {
 
 export type StateLockOptions = RenewableLockOptions;
 
-interface LeaseRow {
-  token: string;
+interface LeaseExpiryRow {
   expiresAt: number;
 }
 
@@ -119,10 +118,14 @@ export async function acquireRenewableStateLock(
   const token = randomUUID();
   const deadline = Date.now() + waitMs;
   const database = await openLeaseDatabase(state, Math.min(waitMs, 1_000));
-  const acquire = database.query(`
+  const acquire = database.query<LeaseExpiryRow, [string, string, string, number, string, number]>(`
     INSERT INTO renewable_leases (
       key, token, owner, pid, process_started_at, acquired_at, expires_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    ) VALUES (
+      ?1, ?2, ?3, ?4, ?5,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+      CAST(unixepoch('subsec') * 1000 AS INTEGER) + ?6
+    )
     ON CONFLICT(key) DO UPDATE SET
       token = excluded.token,
       owner = excluded.owner,
@@ -130,78 +133,110 @@ export async function acquireRenewableStateLock(
       process_started_at = excluded.process_started_at,
       acquired_at = excluded.acquired_at,
       expires_at = excluded.expires_at
-    WHERE renewable_leases.expires_at <= ?8
+    WHERE renewable_leases.expires_at <= CAST(unixepoch('subsec') * 1000 AS INTEGER)
+    RETURNING expires_at AS expiresAt
   `);
 
   while (Date.now() < deadline) {
-    const now = Date.now();
     try {
-      const result = acquire.run(
+      const acquired = acquire.get(
         key,
         token,
         owner,
         process.pid,
         PROCESS_STARTED_AT,
-        new Date(now).toISOString(),
-        now + leaseMs,
-        now,
+        leaseMs,
       );
-      if (result.changes === 1) {
+      if (acquired && acquired.expiresAt > Date.now()) {
         let stopped = false;
         let lost: Error | null = null;
-        const renew = database.query(`
+        let knownExpiresAt = acquired.expiresAt;
+        let renewal: Promise<void> | null = null;
+        const renew = database.query<LeaseExpiryRow, [number, string, string]>(`
           UPDATE renewable_leases
-          SET expires_at = ?1
-          WHERE key = ?2 AND token = ?3 AND expires_at > ?4
+          SET expires_at = CAST(unixepoch('subsec') * 1000 AS INTEGER) + ?1
+          WHERE key = ?2
+            AND token = ?3
+            AND expires_at > CAST(unixepoch('subsec') * 1000 AS INTEGER)
+          RETURNING expires_at AS expiresAt
         `);
         const remove = database.query("DELETE FROM renewable_leases WHERE key = ?1 AND token = ?2");
-        const read = database.query<LeaseRow, [string]>(
-          "SELECT token, expires_at AS expiresAt FROM renewable_leases WHERE key = ?1",
-        );
 
-        const renewOrLose = (): void => {
-          if (stopped) throw ownershipLost(key);
-          if (lost) throw lost;
-          const renewalTime = Date.now();
-          try {
-            if (renew.run(renewalTime + leaseMs, key, token, renewalTime).changes !== 1) {
+        const renewOrLose = async (): Promise<void> => {
+          while (true) {
+            if (stopped) throw ownershipLost(key);
+            if (lost) throw lost;
+            const renewalTime = Date.now();
+            if (renewalTime >= knownExpiresAt) {
               lost = ownershipLost(key);
               throw lost;
             }
-          } catch (error) {
-            lost = error instanceof Error ? error : new Error(String(error));
-            throw lost;
+            try {
+              // The token-qualified update is authoritative. Contention may delay
+              // the verdict, but database execution time decides whether the last
+              // confirmed lease was still live when the update actually ran.
+              const renewed = renew.get(leaseMs, key, token);
+              if (!renewed || renewed.expiresAt <= Date.now()) {
+                lost = ownershipLost(key);
+                throw lost;
+              }
+              knownExpiresAt = renewed.expiresAt;
+              return;
+            } catch (error) {
+              if (isBusy(error) && Date.now() < knownExpiresAt) {
+                await delay(Math.min(10, Math.max(1, knownExpiresAt - Date.now())));
+                continue;
+              }
+              lost = isBusy(error)
+                ? ownershipLost(key)
+                : error instanceof Error
+                  ? error
+                  : new Error(String(error));
+              throw lost;
+            }
           }
+        };
+
+        const renewCurrentLease = (): Promise<void> => {
+          if (!renewal) {
+            renewal = renewOrLose().finally(() => {
+              renewal = null;
+            });
+          }
+          return renewal;
         };
 
         const timer = setInterval(() => {
           if (stopped || lost) return;
-          try {
-            renewOrLose();
-          } catch {
+          void renewCurrentLease().catch(() => {
             // The next explicit verification reports the stored failure.
-          }
+          });
         }, heartbeatMs);
         timer.unref?.();
 
         return {
           key,
           verify: async () => {
-            renewOrLose();
-            const current = read.get(key);
-            if (!current || current.token !== token || current.expiresAt <= Date.now()) {
-              lost = ownershipLost(key);
-              throw lost;
-            }
+            await renewCurrentLease();
           },
           release: async () => {
             if (stopped) return;
             stopped = true;
             clearInterval(timer);
             try {
+              if (renewal) await renewal.catch(() => undefined);
               // Token-qualified deletion is the ABA boundary: an expired owner can
               // never delete a lease installed by a later conditional UPSERT.
-              remove.run(key, token);
+              while (true) {
+                try {
+                  remove.run(key, token);
+                  break;
+                } catch (error) {
+                  if (!isBusy(error)) throw error;
+                  if (Date.now() >= knownExpiresAt) break;
+                  await delay(Math.min(10, Math.max(1, knownExpiresAt - Date.now())));
+                }
+              }
             } finally {
               database.close();
             }
