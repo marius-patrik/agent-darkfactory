@@ -10,13 +10,34 @@ import {
   withStateFileLock,
 } from "../src/state-lock";
 
-async function waitForFile(file: string, timeoutMs = 2_000): Promise<void> {
+const TRANSIENT_WINDOWS_CLEANUP_ERRORS = new Set(["EACCES", "EBUSY", "EPERM"]);
+
+async function waitForFile(file: string, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await Bun.file(file).exists()) return;
     await Bun.sleep(10);
   }
   throw new Error(`timed out waiting for test subprocess marker: ${file}`);
+}
+
+async function removeTestRoot(root: string): Promise<void> {
+  if (process.platform !== "win32") {
+    await rm(root, { recursive: true, force: true });
+    return;
+  }
+
+  const deadline = Date.now() + 10_000;
+  while (true) {
+    try {
+      await rm(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (!TRANSIENT_WINDOWS_CLEANUP_ERRORS.has(code) || Date.now() >= deadline) throw error;
+      await Bun.sleep(100);
+    }
+  }
 }
 
 describe("canonical mutable-state locks", () => {
@@ -58,7 +79,7 @@ describe("canonical mutable-state locks", () => {
         await lock.release();
       }
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      await removeTestRoot(root);
     }
   });
 
@@ -108,11 +129,11 @@ describe("canonical mutable-state locks", () => {
         await lock.release();
       }
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      await removeTestRoot(root);
     }
   });
 
-  test("heartbeat holds one writer beyond the nominal lease", async () => {
+  test("success: heartbeat owner releases before its successor enters", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-lock-heartbeat-"));
     try {
       const state = sharedState(root);
@@ -143,11 +164,11 @@ describe("canonical mutable-state locks", () => {
         database.close();
       }
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      await removeTestRoot(root);
     }
   });
 
-  test("a paused subprocess cannot delete its successor during stale release", async () => {
+  test("edge: a paused stale subprocess cannot delete its successor during release", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-lock-aba-"));
     try {
       const state = sharedState(root);
@@ -178,55 +199,63 @@ describe("canonical mutable-state locks", () => {
         await Bun.write(process.argv[3], result + "\\n");
       `;
       const worker = Bun.spawn([process.execPath, "-e", code, root, ready, outcome], {
-        stdout: "pipe",
+        stdout: "ignore",
         stderr: "pipe",
       });
-
-      await waitForFile(ready);
-      await Bun.sleep(130);
-      const successor = await acquireRenewableStateLock(state, "race:aba", {
-        leaseMs: 1_000,
-        heartbeatMs: 100,
-        waitMs: 1_000,
-        owner: "successor",
-      });
+      const stderrPromise = new Response(worker.stderr).text();
       try {
-        const [codeResult, stderr] = await Promise.all([
-          worker.exited,
-          new Response(worker.stderr).text(),
-        ]);
-        expect(codeResult).toBe(0);
-        expect(stderr).toBe("");
-        expect((await readFile(outcome, "utf8")).trim()).toContain("ownership was lost");
+        await waitForFile(ready);
+        await Bun.sleep(130);
+        const successor = await acquireRenewableStateLock(state, "race:aba", {
+          leaseMs: 1_000,
+          heartbeatMs: 100,
+          waitMs: 1_000,
+          owner: "successor",
+        });
+        try {
+          const [codeResult, stderr] = await Promise.all([worker.exited, stderrPromise]);
+          expect(codeResult).toBe(0);
+          expect(stderr).toBe("");
+          expect((await readFile(outcome, "utf8")).trim()).toContain("ownership was lost");
 
-        await successor.verify();
-        await expect(
-          acquireRenewableStateLock(state, "race:aba", {
-            leaseMs: 1_000,
-            heartbeatMs: 100,
-            waitMs: 50,
-            owner: "denied-third-owner",
-          }),
-        ).rejects.toThrow("timed out waiting for canonical renewable lock");
+          await successor.verify();
+          await expect(
+            acquireRenewableStateLock(state, "race:aba", {
+              leaseMs: 1_000,
+              heartbeatMs: 100,
+              waitMs: 50,
+              owner: "denied-third-owner",
+            }),
+          ).rejects.toThrow("timed out waiting for canonical renewable lock");
+        } finally {
+          await successor.release();
+        }
       } finally {
-        await successor.release();
+        worker.kill();
+        await worker.exited;
+        await stderrPromise;
       }
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      await removeTestRoot(root);
     }
   });
 
-  test("an expired owner fails closed and cannot renew itself", async () => {
+  test("denied: an expired owner cannot renew itself before a successor acquires", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-lock-expired-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
       const lock = await acquireRenewableStateLock(state, "race:expired", {
-        leaseMs: 80,
-        heartbeatMs: 20,
+        leaseMs: 10_000,
+        heartbeatMs: 5_000,
         waitMs: 1_000,
       });
-      Bun.sleepSync(120);
+      const database = new Database(renewableLockDatabasePath(state));
+      try {
+        database.query("UPDATE renewable_leases SET expires_at = 0 WHERE key = ?1").run("race:expired");
+      } finally {
+        database.close();
+      }
       await expect(lock.verify()).rejects.toThrow("ownership was lost");
       await lock.release();
 
@@ -239,7 +268,7 @@ describe("canonical mutable-state locks", () => {
       await replacement.release();
       expect(await Bun.file(renewableLockDatabasePath(state)).exists()).toBe(true);
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      await removeTestRoot(root);
     }
   });
 
@@ -275,7 +304,7 @@ describe("canonical mutable-state locks", () => {
       expect(results).toEqual(results.map(() => ({ code: 0, stderr: "" })));
       expect((await readFile(counter, "utf8")).trim()).toBe("8");
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      await removeTestRoot(root);
     }
   });
 
@@ -293,7 +322,7 @@ describe("canonical mutable-state locks", () => {
       expect(manifest.machineId).toBeTruthy();
       expect((await readdir(path.join(root, ".agents"))).some((name) => name.includes(".tmp"))).toBe(false);
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      await removeTestRoot(root);
     }
   });
 });
