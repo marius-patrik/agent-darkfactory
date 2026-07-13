@@ -11,6 +11,8 @@ provider pinning, canonical memory, and managed sessions implement that
 contract directly; retired adoption and snapshot-sync commands do not exist.
 The live branch, review, managed-CI, and Andromeda-data compensating controls
 are recorded in [Managed Enforcement](docs/managed-enforcement.md).
+The complete component, platform, real-process, and product-smoke gate is
+recorded in [CI Validation](docs/ci-validation.md).
 
 ## Installation
 
@@ -167,5 +169,7 @@ bun run test
 bun run ci
 ```
 
-Root validation covers the TypeScript manager surface under
-`packages/manager/src` and its tests under `packages/manager/test`.
+`bun run ci` is the authoritative whole-repository gate. It runs every active
+component, the real gateway and inferctl-routing legs, installer and encrypted
+sync smokes, and review regressions. GitHub runs the same suite contract as
+parallel Ubuntu and Windows legs and reports one required `Validate` result.

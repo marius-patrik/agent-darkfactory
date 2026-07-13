@@ -65,6 +65,20 @@ async function repositoryState(root: string, options: { keepGitIdentity?: boolea
 }
 
 describe("Andromeda-data state repository", () => {
+  test("recognizes an equivalent Windows checkout path alias", async () => {
+    if (process.platform !== "win32") return;
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-repository-alias-"));
+    try {
+      const state = await repositoryState(root);
+      const aliasedState = { ...state, stateDir: state.stateDir.toUpperCase() };
+      const status = await inspectStateRepository(aliasedState);
+      expect(status.checkout).toBe(true);
+      expect(status.issues).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("backs up canonical events as one authenticated immutable Git bundle", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-repository-"));
     try {

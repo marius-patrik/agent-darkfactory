@@ -123,7 +123,7 @@ grep -Fqx "AGENTS_CLIS=$(runtime_path "$AGENTS_HOME/clis")" "$env_file"
 grep -Fqx "AGENTS_IDENTITY=$(runtime_path "$AGENTS_HOME/identity")" "$env_file"
 grep -Fqx "AGENTS_MEMORY=$(runtime_path "$AGENTS_HOME/memory")" "$env_file"
 
-[ "$(find "$AGENTS_HOME/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d '[:space:]')" = "12" ] ||
+[ "$(find "$AGENTS_HOME/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d '[:space:]')" -ge "12" ] ||
   die "the canonical 12-skill floor is not installed"
 [ -f "$AGENTS_HOME/identity/persona.md" ] || die "canonical persona is missing"
 [ "$(find "$AGENTS_HOME/identity/roles" -mindepth 1 -maxdepth 1 -type f -name '*.yaml' | wc -l | tr -d '[:space:]')" = "6" ] ||

@@ -3,54 +3,52 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const configuredUv = process.env.UV;
-const bareUv = configuredUv
-  ? { command: configuredUv, prefix: [] }
-  : spawnSync("uv", ["--version"], { stdio: "ignore", shell: false }).status === 0
-    ? { command: "uv", prefix: [] }
-    : { command: process.platform === "win32" ? "python" : "python3", prefix: ["-m", "uv"] };
+const uv = process.env.UV || "uv";
+if (spawnSync(uv, ["--version"], { stdio: "ignore", shell: false }).status !== 0) {
+  throw new Error("uv CLI is required for Agent OS inference validation");
+}
 
 const checks = [
   {
     name: "Python lint",
     cwd: "python-agent",
-    command: bareUv.command,
-    prefix: bareUv.prefix,
+    command: uv,
+    prefix: [],
     args: ["run", "ruff", "check", "agent", "tests"],
   },
   {
     name: "Python types",
     cwd: "python-agent",
-    command: bareUv.command,
-    prefix: bareUv.prefix,
+    command: uv,
+    prefix: [],
     args: ["run", "mypy", "agent"],
   },
   {
     name: "Python tests",
     cwd: "python-agent",
-    command: bareUv.command,
-    prefix: bareUv.prefix,
+    command: uv,
+    prefix: [],
     args: ["run", "pytest", "-q", "-m", "not live"],
   },
   {
     name: "Python package build",
     cwd: "python-agent",
-    command: bareUv.command,
-    prefix: bareUv.prefix,
+    command: uv,
+    prefix: [],
     args: ["build"],
   },
   {
     name: "Python package CLI",
     cwd: "python-agent",
-    command: bareUv.command,
-    prefix: bareUv.prefix,
+    command: uv,
+    prefix: [],
     args: ["run", "agent-os-inference", "--help"],
   },
   {
     name: "generated protocol imports",
     cwd: "python-agent",
-    command: bareUv.command,
-    prefix: bareUv.prefix,
+    command: uv,
+    prefix: [],
     args: [
       "run",
       "python",
@@ -61,15 +59,15 @@ const checks = [
   {
     name: "layering",
     cwd: ".",
-    command: bareUv.command,
-    prefix: bareUv.prefix,
+    command: uv,
+    prefix: [],
     args: ["run", "--project", "python-agent", "python", "scripts/check_layering.py"],
   },
   {
     name: "layering regression fixtures",
     cwd: ".",
-    command: bareUv.command,
-    prefix: bareUv.prefix,
+    command: uv,
+    prefix: [],
     args: ["run", "--project", "python-agent", "python", "tests/layering/check_planted_violations.py"],
   },
 ];

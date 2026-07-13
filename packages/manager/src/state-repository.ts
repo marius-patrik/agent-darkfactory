@@ -1,6 +1,6 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm } from "node:fs/promises";
 import type { SharedState } from "./state";
 import { SYSTEM_DATA_REPOSITORY } from "./state";
 import { eventSyncStatus, exportEventBundle, importEventBundle, inspectEventBundle, type EventSyncResult } from "./event-sync";
@@ -110,6 +110,17 @@ function normalizedRepository(remote: string): string | null {
   return match?.[1] ?? null;
 }
 
+async function samePhysicalDirectory(left: string, right: string): Promise<boolean> {
+  try {
+    const [physicalLeft, physicalRight] = await Promise.all([realpath(left), realpath(right)]);
+    return process.platform === "win32"
+      ? physicalLeft.toLowerCase() === physicalRight.toLowerCase()
+      : physicalLeft === physicalRight;
+  } catch {
+    return false;
+  }
+}
+
 async function physicalPathUnderState(
   state: SharedState,
   target: string,
@@ -153,7 +164,7 @@ async function trackedBackupBundleFiles(state: SharedState): Promise<Array<{ fil
 export async function inspectStateRepository(state: SharedState): Promise<StateRepositoryStatus> {
   const issues: string[] = [];
   const top = await git(state, ["rev-parse", "--show-toplevel"], true);
-  const checkout = top.code === 0 && path.resolve(top.stdout) === path.resolve(state.stateDir);
+  const checkout = top.code === 0 && await samePhysicalDirectory(top.stdout, state.stateDir);
   if (!checkout) issues.push("AGENTS_HOME is not the root of a Git working tree");
 
   if (checkout) {

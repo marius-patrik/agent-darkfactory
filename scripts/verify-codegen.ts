@@ -15,14 +15,20 @@ import { TextDecoder } from "node:util";
 const root = resolve(import.meta.dir, "..");
 const core = join(root, "packages/core");
 const buf = join(root, "node_modules/.bin", process.platform === "win32" ? "buf.exe" : "buf");
-const temp = mkdtempSync(join(tmpdir(), "andromeda-codegen-"));
-const beforeRoot = join(temp, "before");
 const outputs = [
   "packages/core/contracts-go/gen",
   "packages/core/clients/shared-ts/src/gen",
   "packages/inference/python-agent/agent/gen",
   "packages/gateway/agent_os",
 ];
+const TRANSIENT_RETRY_DELAYS_MS = [5_000, 15_000] as const;
+
+export function isRetryableBufFailure(output: string): boolean {
+  if (/unauthenticated|authentication required|permission denied|forbidden|invalid[_ -]?argument|invalid (?:proto|schema|syntax)|(?:schema|syntax|parse) error/i.test(output)) {
+    return false;
+  }
+  return /resource_exhausted|too many requests|rate[- ]?limit|temporarily unavailable|deadline exceeded|connection reset|timed out/i.test(output);
+}
 
 function generatedFilter(source: string): boolean {
   return basename(source) !== "__pycache__" && !source.endsWith(".pyc");
@@ -74,57 +80,88 @@ function assertTreesEqual(expected: string, actual: string, label: string): void
   }
 }
 
-function run(...args: string[]): string {
-  return execFileSync(buf, args, { cwd: core, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] }).trim();
+function sleep(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
-if (!existsSync(buf)) throw new Error("pinned Buf executable is missing; run bun install --frozen-lockfile");
-if (run("--version") !== "1.71.0") throw new Error("Buf must be exactly 1.71.0");
-
-try {
-  for (const output of outputs) {
-    const source = join(root, output);
-    const backup = join(beforeRoot, output);
-    if (!existsSync(source)) throw new Error(`generated output is missing: ${output}`);
-    mkdirSync(dirname(backup), { recursive: true });
-    cpSync(source, backup, { recursive: true, filter: generatedFilter });
-    rmSync(source, { recursive: true, force: true });
-    mkdirSync(source, { recursive: true });
-  }
-
-  // This package-owned barrel is intentionally not emitted by Buf.
-  cpSync(
-    join(beforeRoot, "packages/core/clients/shared-ts/src/gen/index.ts"),
-    join(root, "packages/core/clients/shared-ts/src/gen/index.ts"),
-  );
-  for (const init of ["__init__.py", "agent_os/__init__.py", "agent_os/v1/__init__.py"]) {
-    const source = join(beforeRoot, "packages/inference/python-agent/agent/gen", init);
-    const destination = join(root, "packages/inference/python-agent/agent/gen", init);
-    mkdirSync(dirname(destination), { recursive: true });
-    cpSync(source, destination);
-  }
-
-  run("lint", "proto");
-  run("generate", "proto");
-  run("generate", "proto", "--template", "buf.gen.python.yaml");
-  run("generate", "proto", "--template", "buf.gen.gateway-python.yaml");
-
-  for (const output of outputs) {
-    assertTreesEqual(join(beforeRoot, output), join(root, output), output);
-  }
-  for (const output of outputs) {
-    if (filesUnder(join(root, output)).some((file) => file.split("/").includes("rommie"))) {
-      throw new Error(`retired rommie wire namespace remains in ${output}`);
+function run(args: string[], retryTransient = false): string {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return execFileSync(buf, args, {
+        cwd: core,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    } catch (error) {
+      const failure = error as Error & { stdout?: string; stderr?: string };
+      const output = [failure.stdout, failure.stderr, failure.message].filter(Boolean).join("\n");
+      const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
+      if (retryTransient && delay !== undefined && isRetryableBufFailure(output)) {
+        console.warn(`Buf transient failure; retrying ${args.join(" ")} in ${delay / 1_000}s (${attempt + 2}/${TRANSIENT_RETRY_DELAYS_MS.length + 1})`);
+        sleep(delay);
+        continue;
+      }
+      if (failure.stdout) process.stdout.write(failure.stdout);
+      if (failure.stderr) process.stderr.write(failure.stderr);
+      throw error;
     }
   }
-  console.log("Agent OS code generation is current and complete.");
-} finally {
-  for (const output of outputs) {
-    const destination = join(root, output);
-    const backup = join(beforeRoot, output);
-    rmSync(destination, { recursive: true, force: true });
-    mkdirSync(dirname(destination), { recursive: true });
-    if (existsSync(backup)) cpSync(backup, destination, { recursive: true });
-  }
-  rmSync(temp, { recursive: true, force: true });
 }
+
+function main(): void {
+  const temp = mkdtempSync(join(tmpdir(), "andromeda-codegen-"));
+  const beforeRoot = join(temp, "before");
+
+  if (!existsSync(buf)) throw new Error("pinned Buf executable is missing; run bun install --frozen-lockfile");
+  if (run(["--version"]) !== "1.71.0") throw new Error("Buf must be exactly 1.71.0");
+
+  try {
+    for (const output of outputs) {
+      const source = join(root, output);
+      const backup = join(beforeRoot, output);
+      if (!existsSync(source)) throw new Error(`generated output is missing: ${output}`);
+      mkdirSync(dirname(backup), { recursive: true });
+      cpSync(source, backup, { recursive: true, filter: generatedFilter });
+      rmSync(source, { recursive: true, force: true });
+      mkdirSync(source, { recursive: true });
+    }
+
+    // This package-owned barrel is intentionally not emitted by Buf.
+    cpSync(
+      join(beforeRoot, "packages/core/clients/shared-ts/src/gen/index.ts"),
+      join(root, "packages/core/clients/shared-ts/src/gen/index.ts"),
+    );
+    for (const init of ["__init__.py", "agent_os/__init__.py", "agent_os/v1/__init__.py"]) {
+      const source = join(beforeRoot, "packages/inference/python-agent/agent/gen", init);
+      const destination = join(root, "packages/inference/python-agent/agent/gen", init);
+      mkdirSync(dirname(destination), { recursive: true });
+      cpSync(source, destination);
+    }
+
+    run(["lint", "proto"]);
+    run(["generate", "proto"], true);
+    run(["generate", "proto", "--template", "buf.gen.python.yaml"], true);
+    run(["generate", "proto", "--template", "buf.gen.gateway-python.yaml"], true);
+
+    for (const output of outputs) {
+      assertTreesEqual(join(beforeRoot, output), join(root, output), output);
+    }
+    for (const output of outputs) {
+      if (filesUnder(join(root, output)).some((file) => file.split("/").includes("rommie"))) {
+        throw new Error(`retired rommie wire namespace remains in ${output}`);
+      }
+    }
+    console.log("Agent OS code generation is current and complete.");
+  } finally {
+    for (const output of outputs) {
+      const destination = join(root, output);
+      const backup = join(beforeRoot, output);
+      rmSync(destination, { recursive: true, force: true });
+      mkdirSync(dirname(destination), { recursive: true });
+      if (existsSync(backup)) cpSync(backup, destination, { recursive: true });
+    }
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+if (import.meta.main) main();

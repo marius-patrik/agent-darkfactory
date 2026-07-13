@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inventoryIssues } from "./verify-test-inventory.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tracked = execFileSync("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"])
@@ -12,6 +13,7 @@ const tracked = execFileSync("git", ["-C", root, "ls-files", "--cached", "--othe
   .filter((relative) => fs.statSync(path.join(root, relative), { throwIfNoEntry: false })?.isFile());
 
 const issues = [];
+issues.push(...inventoryIssues(root));
 const requiredLayout = [
   "plugins",
   "packages/core",

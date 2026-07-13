@@ -192,7 +192,7 @@ const RECORD_FILE = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\.json$/;
 const DEFAULT_STARTUP_RECORDS = 50;
 const DEFAULT_STARTUP_CHARS = 12_000;
 const LOCK_LEASE_MS = 5 * 60_000;
-const LOCK_WAIT_MS = 10_000;
+const LOCK_WAIT_MS = 30_000;
 const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1_000).toISOString();
 
 export const EMPTY_STARTUP_MEMORY_VIEW =

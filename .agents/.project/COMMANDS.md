@@ -6,6 +6,15 @@ bun run check
 bun run test
 bun run ci
 bun run smoke:release
+bun run smoke:sync
+```
+
+`bun run ci` is the complete local gate. The hosted workflow runs the same
+suite contract as independent matrix legs and exposes one required `Validate`
+aggregator. A focused suite can be reproduced with:
+
+```sh
+node scripts/run-ci-suite.mjs <inventory|core|gateway|gateway-real|engine-real|harness|inference|manager|darkfactory|release|sync|review>
 ```
 
 Component-focused validation still runs from the repository root unless a
@@ -19,7 +28,11 @@ bun scripts/verify-codegen.ts
 (cd packages/core/contracts-go && go test ./...)
 
 # Harness behavior
-bun test packages/manager/test/session.test.ts \
+node scripts/run-ci-suite.mjs harness
+
+# The exhaustive manager-coupled harness files remain:
+bun test packages/harness/test/tools.test.ts \
+  packages/manager/test/session.test.ts \
   packages/manager/test/session-adapters.test.ts \
   packages/manager/test/tui-tools.test.ts
 
@@ -39,6 +52,13 @@ bun test packages/manager/test/session.test.ts \
 
 # Inference package
 bun packages/inference/scripts/validate.mjs
+
+# Pinned DarkFactory plugin
+node scripts/run-ci-suite.mjs darkfactory
+
+# Real gateway and inferctl seams
+node scripts/run-ci-suite.mjs gateway-real
+node scripts/run-ci-suite.mjs engine-real
 ```
 
 Explicit temporary or live state commands must always set all three roots:

@@ -55,13 +55,14 @@ while read -r _key component_name; do
   git -C "$stub_repo" init -q -b main
   git -C "$stub_repo" config user.name "Agent OS smoke"
   git -C "$stub_repo" config user.email "agent-os-smoke@invalid"
-  printf '%s\n' "$component_path" >"$stub_repo/COMPONENT"
   if [ "$component_name" = "data" ]; then
     printf '%s\n' '/bin/' '/clis/' '/memory/' '/runtime/' '/secrets/' '/sessions/' '/sync/' >"$stub_repo/.gitignore"
     printf '%s\n' '{"schemaVersion":1,"id":"agent-os-data","kind":"data"}' >"$stub_repo/agent.package.json"
     printf '%s\n' '# Agent OS Data smoke fixture' >"$stub_repo/README.md"
     mkdir -p "$stub_repo/scripts"
     printf '%s\n' '// smoke fixture' >"$stub_repo/scripts/validate.mjs"
+  else
+    printf '%s\n' "$component_path" >"$stub_repo/COMPONENT"
   fi
   git -C "$stub_repo" add .
   git -C "$stub_repo" commit -q -m "stub $component_name"
@@ -184,6 +185,13 @@ grep -F 'preserve-me' "$LEGACY_AGENTS_HOME/memory/legacy-marker"
 legacy_backups=("$LEGACY_USER_HOME"/.agents.pre-andromeda-data-*)
 [ "${#legacy_backups[@]}" -eq 1 ]
 grep -F 'preserve-me' "${legacy_backups[0]}/memory/legacy-marker"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) ;;
+  *) [ "$(stat -c '%a' "$LEGACY_AGENTS_HOME/memory/legacy-marker")" = "600" ] || {
+    echo "error: migrated legacy state is not private" >&2
+    exit 1
+  } ;;
+esac
 
 # An existing worktree with the wrong origin must remain a hard failure.
 DENIED_USER_HOME="$SANDBOX/denied-home"

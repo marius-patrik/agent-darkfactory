@@ -39,6 +39,10 @@ packages = ["llm_gateway", "agent_os"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "gateway_process: real-socket gateway process against an OpenAI-wire echo backend",
+  "engine_routing: inferctl discovery to registration and routing against an echo engine",
+]
 
 [tool.ruff]
 line-length = 140

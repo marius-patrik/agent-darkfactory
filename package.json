@@ -16,12 +16,14 @@
     "test": "bun test packages/manager/test/*.test.ts",
     "proto:check": "bun scripts/verify-codegen.ts",
     "layout:check": "node scripts/verify-single-product.mjs",
-    "ci": "bun run layout:check && bun run check && bun run test && bun run test:compact && bun run proto:check && node --test .github/scripts/run-kimi-review.test.mjs && node --test .github/scripts/managed-enforcement.test.mjs",
+    "ci": "node scripts/run-ci-suite.mjs all",
     "test:compact": "pwsh -NoProfile -ExecutionPolicy Bypass -File skills/compact/scripts/test_write_compaction_capsule.ps1",
-    "smoke:release": "bun scripts/run-release-smoke.mjs"
+    "smoke:release": "bun scripts/run-release-smoke.mjs",
+    "smoke:sync": "bun scripts/run-sync-smoke.mjs"
   },
   "devDependencies": {
     "@bufbuild/buf": "1.71.0",
+    "@bufbuild/protobuf": "2.12.1",
     "@types/bun": "1.3.14",
     "typescript": "5.9.3"
   },

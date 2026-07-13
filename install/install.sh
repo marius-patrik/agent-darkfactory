@@ -154,6 +154,7 @@ migrate_legacy_state_checkout() {
     rm -rf -- "$stage"
     die "could not overlay legacy Agent OS state into the staged checkout"
   fi
+  chmod -R go-rwx -- "$stage"
   [ -z "$(git -C "$stage" status --porcelain --untracked-files=no)" ] || {
     rm -rf -- "$stage"
     die "legacy Agent OS state conflicts with tracked Andromeda-data content"

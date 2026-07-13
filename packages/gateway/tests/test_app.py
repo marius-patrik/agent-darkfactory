@@ -7,27 +7,31 @@ serves).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from llm_gateway.main import app
 
 
 @pytest.fixture
-def client(monkeypatch, tmp_path):
+def source_models():
+    registry_path = Path(__file__).resolve().parents[1] / "registry" / "models.yaml"
+    raw = yaml.safe_load(registry_path.read_text())
+    return raw["models"]
+
+
+@pytest.fixture
+def client(monkeypatch, tmp_path, source_models):
     monkeypatch.setenv("AGENTS_HOME", str(tmp_path / ".agents"))
     status_path = tmp_path / "inferctl-engines.yaml"
     status_path.write_text(
         "schema_version: inferctl-local-engines-v1\nengines:\n"
         + "".join(
-            f"  {model}: {{status: healthy, api_base: 'http://127.0.0.1:{port}/v1'}}\n"
-            for model, port in [
-                ("qwen3-8b", 8001),
-                ("coder-32b-awq", 8002),
-                ("qwen2.5-7b-q4", 8003),
-                ("conv-7b-1m", 8004),
-                ("conv-14b-1m", 8005),
-            ]
+            f"  {model}: {{status: healthy, api_base: 'http://127.0.0.1:{8001 + index}/v1'}}\n"
+            for index, model in enumerate(source_models)
         )
     )
     monkeypatch.setenv("GATEWAY_INFERCTL_STATUS_PATH", str(status_path))
@@ -40,22 +44,24 @@ def test_app_imports():
     assert app.title == "Agent OS Gateway"
 
 
-def test_health_returns_200(client):
+def test_health_returns_200(client, source_models):
     resp = client.get("/health")
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] in ("healthy", "degraded", "unhealthy")
-    assert body["models_registered"] == 5
+    assert body["models_registered"] == len(source_models)
     assert "details" in body
 
 
-def test_models_lists_five_local_engines(client):
+def test_models_match_the_source_registry(client, source_models):
     resp = client.get("/v1/models")
     assert resp.status_code == 200
     ids = {m["id"] for m in resp.json()["data"]}
-    assert ids == {"qwen3-8b", "coder-32b-awq", "qwen2.5-7b-q4", "conv-7b-1m", "conv-14b-1m"}
+    assert ids == set(source_models)
     assert all(model["context_length"] > 0 for model in resp.json()["data"])
-    assert {model["role"] for model in resp.json()["data"]} == {"general", "coding", "conversation", "judge"}
+    assert {model["role"] for model in resp.json()["data"]} == {
+        definition["role"] for definition in source_models.values()
+    }
 
 
 def test_route_resolve_returns_task_class_model(client):
