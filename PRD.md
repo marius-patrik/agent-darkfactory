@@ -267,7 +267,11 @@ implemented and accepted.
 
 Owner-ruled substrate scope (2026-07-13, epic #224): the inference substrate
 ties multiple machines together into a compute cluster and handles local LLM
-inference across the full cluster.
+inference across the full cluster. Owner inputs resolved the same day: the
+initial cluster nodes are specifically the Windows desktop and the Mac
+(further nodes join through the same fabric), and the FULL scope is the
+required target — both engine tiers, lifecycle, routing, and scheduling
+together, with no tier-first partial milestone.
 
 - Cluster fabric rides Agent OS machine identity — nodes join and leave the
   compute mesh with cluster-wide discoverable capabilities (GPU/VRAM/RAM/
