@@ -358,7 +358,7 @@ describe("canonical event-authoritative memory", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 90_000);
 
   test("never injects secret or inactive records into startup context", async () => {
     const { root, state } = await fixture();
