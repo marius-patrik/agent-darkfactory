@@ -1,6 +1,6 @@
 ---
 name: compact
-description: Prepare a compaction-safe Rommie handoff in canonical Agent OS memory and synchronize its encrypted state backup. Use when the user asks to compact, prepare for compaction, preserve current work state, make compaction useful, or before reminding the user to compact after substantial work.
+description: Prepare a compaction-safe handoff in canonical Agent OS memory and synchronize its encrypted Andromeda-data state backup. Use when the user asks to compact, prepare for compaction, preserve current work state, make compaction useful, or before reminding the user to compact after substantial work.
 ---
 
 # Compact
@@ -13,6 +13,9 @@ memory authority.
 Invariant: `$AGENTS_HOME/memory` immutable events are the sole compaction
 authority. Never redirect the script to `.codex/memories`, write a second
 canonical handoff, or bypass an authority mismatch with a path override.
+The authority path must be physically contained in `AGENTS_HOME`; links,
+symlinks, and Windows reparse-point/junction escapes are rejected. All path
+construction must remain portable across Windows, macOS, and Linux.
 
 ## Workflow
 
@@ -26,7 +29,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\skills\compact\scripts\write_com
 ```
 
 4. Verify the returned JSON has `ok=true`, a canonical record ID, a snapshot,
-   a projection hash, and `repositorySynced=true`.
+   a projection hash, and `repositorySynced=true`. A zero process exit is not
+   sufficient: sync JSON must confirm the push and include restore and backup
+   evidence.
 5. If the script detects authority drift, multiple active compaction records,
    projection-integrity failure, or state-sync failure, stop. Repair this skill
    and add a regression case before compacting; do not work around the defect.
@@ -45,6 +50,4 @@ A useful compaction capsule names:
 - The exact next action if work resumes.
 - The canonical memory record, projection hash, and encrypted repository-sync
   result.
-
-
 
