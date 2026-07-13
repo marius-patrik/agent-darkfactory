@@ -61,6 +61,8 @@ ready. Do not use an old product checkout or installer as an update source.
 - `packages/` contains one direct child for each implementation domain.
 - `plugins/` contains the managed product plugins and is also the authored
   root for repository-owned plugin capabilities.
+- `apps/` contains managed product applications.
+- `data/` contains development pins for separate state and ledger repositories.
 
 Older product and topology names are migration evidence only. They are not
 aliases, compatibility surfaces, install roots, or names for new work.
@@ -143,13 +145,16 @@ older snapshot-sync or provider-adoption command to fall back to.
   [gateway documentation](docs/gateway-runtime.md).
 - `packages/inference/` — agent loop and inference runtime; see
   [inference documentation](docs/inference.md).
-- `plugins/darkfactory/`, `plugins/life-support/`,
-  `plugins/skyblock-agent/`, and `plugins/singularity/` — managed product plugins.
+- `plugins/DarkFactory/`, `plugins/LifeQuest/`, and `plugins/SkyAgent/` —
+  managed product plugins.
+- `apps/Singularity/` and `apps/Fabrica/` — managed product applications.
 - `skills/`, `hooks/`, `roles/`, and `commands/` — authored capability roots;
   `persona.md` is the authored identity persona.
-- `data/agent-os/` — the development pin for Andromeda-data; the live
+- `data/andromeda/` — the development pin for Andromeda-data; the live
   Andromeda-data checkout is `$AGENTS_HOME` and is also
   `AGENTS_SYSTEM_DATA_ROOT`.
+- `data/darkfactory/` — the development pin for DarkFactory's separate data
+  ledger.
 - `docs/` — the only repository documentation root, including component,
   protocol, architecture, and specification material.
 

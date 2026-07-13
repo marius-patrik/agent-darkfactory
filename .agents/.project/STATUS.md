@@ -12,8 +12,8 @@
 - Post-acceptance provider-memory consolidation intentionally advances Windows
   to 26 memory events. Mac parity was not asserted; the interrupted Mac tail is
   parked.
-- `data/agent-os/context/TASK.md` is the canonical owner-facing task list. It
-  contains three ordered Planned rows and one final Parked row; the completed
+- `data/andromeda/context/TASK.md` is the canonical owner-facing task list. It
+  contains two ordered Planned rows and one final Parked row; the completed
   memory backlog is removed.
 - Fable/Codex memory consolidation and Dream/Codex hygiene are complete: 27
   immutable events replay to 27 verified records, with 20 active startup facts,

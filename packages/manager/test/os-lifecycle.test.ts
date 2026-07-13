@@ -75,7 +75,7 @@ async function runAgents(
 describe("os lifecycle pure helpers", () => {
   test("toPosixPath normalizes Windows paths", () => {
     expect(toPosixPath("C:\\Users\\foo\\bar")).toBe("/c/Users/foo/bar");
-    expect(toPosixPath("D:/data/agent-os")).toBe("/d/data/agent-os");
+    expect(toPosixPath("D:/data/andromeda")).toBe("/d/data/andromeda");
     expect(toPosixPath("/agents/state")).toBe("/agents/state");
     expect(toPosixPath("\\\\server\\share")).toBe("//server/share");
   });

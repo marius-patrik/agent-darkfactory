@@ -39,6 +39,7 @@ export function inventoryIssues(root = repositoryRoot) {
   ];
   const activeComponents = Array.isArray(inventory.activeComponents) ? inventory.activeComponents : [];
   const parkedPlugins = Array.isArray(inventory.parkedPlugins) ? inventory.parkedPlugins : [];
+  const parkedApps = Array.isArray(inventory.parkedApps) ? inventory.parkedApps : [];
 
   const ids = groups.map((entry) => entry.id);
   const duplicateIds = unique(ids.filter((id, index) => ids.indexOf(id) !== index));
@@ -67,17 +68,25 @@ export function inventoryIssues(root = repositoryRoot) {
   }
 
   const gitmodules = fs.readFileSync(path.join(root, ".gitmodules"), "utf8");
-  const pluginGitlinks = [...gitmodules.matchAll(/^\s*path\s*=\s*(plugins\/[^\s]+)\s*$/gm)].map((match) => match[1]).sort();
-  const activePlugins = activeComponents
+  const activeGitlinks = activeComponents
     .filter((entry) => entry.submodule === true)
     .map((entry) => entry.path)
-    .sort();
-  const classifiedPlugins = [...activePlugins, ...parkedPlugins].sort();
-  for (const pluginPath of pluginGitlinks) {
-    if (!classifiedPlugins.includes(pluginPath)) issues.push(`plugin is neither active nor parked in CI inventory: ${pluginPath}`);
-  }
-  for (const pluginPath of classifiedPlugins) {
-    if (!pluginGitlinks.includes(pluginPath)) issues.push(`classified plugin is not a repository gitlink: ${pluginPath}`);
+    .filter((entry) => typeof entry === "string");
+  for (const [kind, prefix, parked] of [
+    ["plugin", "plugins/", parkedPlugins],
+    ["app", "apps/", parkedApps],
+  ]) {
+    const gitlinks = [...gitmodules.matchAll(new RegExp(`^\\s*path\\s*=\\s*(${prefix}[^\\s]+)\\s*$`, "gm"))]
+      .map((match) => match[1])
+      .sort();
+    const active = activeGitlinks.filter((entry) => entry.startsWith(prefix));
+    const classified = [...active, ...parked].sort();
+    for (const gitlinkPath of gitlinks) {
+      if (!classified.includes(gitlinkPath)) issues.push(`${kind} is neither active nor parked in CI inventory: ${gitlinkPath}`);
+    }
+    for (const classifiedPath of classified) {
+      if (!gitlinks.includes(classifiedPath)) issues.push(`classified ${kind} is not a repository gitlink: ${classifiedPath}`);
+    }
   }
 
   for (const entry of groups) {

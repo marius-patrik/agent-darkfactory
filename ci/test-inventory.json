@@ -60,7 +60,7 @@
     },
     {
       "id": "darkfactory",
-      "path": "plugins/darkfactory",
+      "path": "plugins/DarkFactory",
       "suite": "darkfactory",
       "platforms": ["ubuntu-latest"],
       "submodule": true,
@@ -116,8 +116,11 @@
     }
   ],
   "parkedPlugins": [
-    "plugins/life-support",
-    "plugins/singularity",
-    "plugins/skyblock-agent"
+    "plugins/LifeQuest",
+    "plugins/SkyAgent"
+  ],
+  "parkedApps": [
+    "apps/Fabrica",
+    "apps/Singularity"
   ]
 }

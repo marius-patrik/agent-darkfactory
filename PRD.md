@@ -49,6 +49,8 @@ until the owner reopens it.
   checkout of the Andromeda-data authority.
 - **`packages/`** — implementation domains, each rooted as one direct child.
 - **`plugins/`** — managed product plugins and authored plugin capabilities.
+- **`apps/`** — managed product applications.
+- **`data/`** — development pins for separate state and ledger repositories.
 
 Historical product, repository, and layout names are evidence to migrate and
 retire. They are not supported aliases or compatibility contracts.
@@ -62,7 +64,7 @@ retire. They are not supported aliases or compatibility contracts.
 | `packages/harness` | Canonical session event handling and tool execution today. Owner-ruled target (2026-07-13, #218): the operation engine owning orchestration, with the orchestrator runtime migrating from the manager |
 | `packages/gateway` | Local model registry, routing, health, quota, and transient control-plane relay; switcher control plane and cloud OAuth dispatch |
 | `packages/inference` | Gateway-backed Python agent loop, status, persistence, redaction, and package validation; engine discovery and serve profiles |
-| `plugins/darkfactory` | Thin GitHub control-plane adapter: issues/PRs/labels ↔ work units, enforcement sync, review gates. No second brain. |
+| `plugins/DarkFactory` | Thin GitHub control-plane adapter: issues/PRs/labels ↔ work units, enforcement sync, review gates. No second brain. |
 
 Binding architecture rule: the manager manages and the harness operates — as
 the owner-ruled target architecture. Local system management (state, installs,
@@ -357,7 +359,7 @@ strictly through them.
 
 - Every active component's full test suite runs in Validate on every PR:
   `packages/{core,gateway,harness,inference,manager}` and
-  `plugins/darkfactory`; parked plugins stay excluded.
+  `plugins/DarkFactory`; parked plugins and applications stay excluded.
 - Real-behavior legs, not only mocks: a real gateway process round-trip
   (plain and streaming) against an OpenAI-wire backend and an engine
   discovery→registration→routing pass; no hardcoded registry counts.
@@ -468,16 +470,18 @@ packages/manager/
 packages/harness/
 packages/gateway/
 packages/inference/
-plugins/darkfactory/
-plugins/life-support/
-plugins/skyblock-agent/
-plugins/singularity/
+plugins/DarkFactory/
+plugins/LifeQuest/
+plugins/SkyAgent/
+apps/Singularity/
+apps/Fabrica/
 skills/
 hooks/
 roles/
 commands/
 persona.md
-data/agent-os/
+data/andromeda/
+data/darkfactory/
 ```
 
 No obsolete `os/` package topology is part of the final product.
