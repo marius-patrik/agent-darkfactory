@@ -136,7 +136,7 @@ test("denied failure: an unapproved data repository cannot pass layout validatio
 test("denied failure: a newline-bearing data gitlink cannot disappear during index parsing", () => {
   const roguePath = "data/rogue\nname";
   const rawIndex = `160000 ${fixtureGitlinkOid} 0\t${roguePath}\0`;
-  assert.deepEqual(parseIndexedGitlinks(rawIndex), [roguePath]);
+  assert.deepEqual(parseIndexedGitlinks(rawIndex), [{ path: roguePath, stage: 0 }]);
 });
 
 test("denied failure: a quoted data declaration with a trailing comment cannot evade the allowlist", () => {
@@ -197,6 +197,20 @@ test("denied failure: duplicate staged entries for an allowlisted data path cann
     assert.match(
       inventoryIssues(target).join("\n"),
       /allowlisted data repository has multiple index entries: data\/andromeda/,
+    );
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("denied failure: a lone nonzero-stage allowlisted gitlink cannot pass", () => {
+  const target = fixture();
+  try {
+    git(target, "update-index", "--force-remove", "data/andromeda");
+    addIndexEntries(target, `160000 ${fixtureGitlinkOid} 2\tdata/andromeda\n`);
+    assert.match(
+      inventoryIssues(target).join("\n"),
+      /allowlisted data repository has unmerged index entries: data\/andromeda/,
     );
   } finally {
     rmSync(target, { recursive: true, force: true });

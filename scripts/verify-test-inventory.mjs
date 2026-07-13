@@ -25,11 +25,12 @@ export function parseIndexedGitlinks(output) {
     .split("\0")
     .map((entry) => {
       const separator = entry.indexOf("\t");
-      if (separator < 0 || !/^160000 [0-9a-f]+ [0-3]$/.test(entry.slice(0, separator))) return undefined;
-      return entry.slice(separator + 1);
+      const metadata = separator < 0 ? null : entry.slice(0, separator).match(/^160000 [0-9a-f]+ ([0-3])$/);
+      if (!metadata) return undefined;
+      return { path: entry.slice(separator + 1), stage: Number(metadata[1]) };
     })
-    .filter((entry) => typeof entry === "string")
-    .sort();
+    .filter((entry) => entry !== undefined)
+    .sort((left, right) => left.path.localeCompare(right.path) || left.stage - right.stage);
 }
 
 function indexedGitlinks(root) {
@@ -125,20 +126,21 @@ export function inventoryIssues(root = repositoryRoot) {
 
   const allowedDataGitlinks = ["data/andromeda", "data/darkfactory"];
   const declaredDataGitlinks = declaredGitlinks.filter((entry) => entry.startsWith("data/")).sort();
-  const actualDataGitlinks = indexedGitlinks(root).filter((entry) => entry.startsWith("data/"));
+  const actualDataGitlinks = indexedGitlinks(root).filter((entry) => entry.path.startsWith("data/"));
   for (const declaredPath of declaredDataGitlinks) {
     if (!allowedDataGitlinks.includes(declaredPath)) issues.push(`data repository declaration is not allowlisted: ${declaredPath}`);
   }
-  for (const gitlinkPath of actualDataGitlinks) {
-    if (!allowedDataGitlinks.includes(gitlinkPath)) issues.push(`data repository gitlink is not allowlisted: ${gitlinkPath}`);
+  for (const gitlink of actualDataGitlinks) {
+    if (!allowedDataGitlinks.includes(gitlink.path)) issues.push(`data repository gitlink is not allowlisted: ${gitlink.path}`);
   }
   for (const allowedPath of allowedDataGitlinks) {
     const declarationCount = declaredDataGitlinks.filter((entry) => entry === allowedPath).length;
-    const gitlinkCount = actualDataGitlinks.filter((entry) => entry === allowedPath).length;
+    const gitlinks = actualDataGitlinks.filter((entry) => entry.path === allowedPath);
     if (declarationCount === 0) issues.push(`allowlisted data repository is not declared in .gitmodules: ${allowedPath}`);
     if (declarationCount > 1) issues.push(`allowlisted data repository is declared multiple times: ${allowedPath}`);
-    if (gitlinkCount === 0) issues.push(`allowlisted data repository is not a repository gitlink: ${allowedPath}`);
-    if (gitlinkCount > 1) issues.push(`allowlisted data repository has multiple index entries: ${allowedPath}`);
+    if (gitlinks.length === 0) issues.push(`allowlisted data repository is not a repository gitlink: ${allowedPath}`);
+    if (gitlinks.length > 1) issues.push(`allowlisted data repository has multiple index entries: ${allowedPath}`);
+    if (gitlinks.some((entry) => entry.stage !== 0)) issues.push(`allowlisted data repository has unmerged index entries: ${allowedPath}`);
   }
 
   for (const entry of groups) {
