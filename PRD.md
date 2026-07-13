@@ -216,6 +216,32 @@ local one.
   archives with signed artifacts/checksums, a Windows PowerShell installer
   alongside the Bash installer, and an `agents update` self-update path.
 
+### Operation engine (harness — owner-ruled target, epic #218)
+
+Target requirements for the harness as the operation engine; current authority
+keeps the orchestrator runtime manager-owned until the #221 migration is
+implemented and accepted.
+
+- A recorded runtime contract covers orchestration primitives (waves,
+  baton/lease semantics, scheduling, concurrency caps), canonical session event
+  handling, and the event-backed tool loop, consistent with the state/memory v2
+  event contracts (#221).
+- The concurrent brain: one thought/coordination lane routes work to two or
+  more concurrent workers over a shared blackboard, integrating results into a
+  single validated artifact; a warm interactive session lane coexists with
+  background workers without blocking them (#222).
+- Thought, worker, and blackboard state is exposed through canonical session
+  events — no private side channels — so the TUI can render a brain view
+  (#217, #222).
+- Bounded subagent orchestration: declared scope, budget, and concurrency
+  caps; results return through canonical events; duplicate ownership is
+  prevented within one engine (#223).
+- A non-progress watchdog detects stalled lanes and kills or escalates
+  deterministically, fail-closed on scope/budget/cap violations, with a
+  durable event trail (#223).
+- The harness ships a test floor wired into Validate; its behavioral
+  acceptance proofs are real tasks, not mocks (#206, #221–#223).
+
 ### Model/execution substrate (gateway and inference)
 
 - One canonical gateway identity: public name, distribution name, import
@@ -238,6 +264,47 @@ local one.
   checks, data mounts, secrets), with a no-live-engine smoke.
 - Engine discovery, registration, and routing are exercised end-to-end through
   the inferctl seam.
+
+Owner-ruled substrate scope (2026-07-13, epic #224): the inference substrate
+ties multiple machines together into a compute cluster and handles local LLM
+inference across the full cluster.
+
+- Cluster fabric rides Agent OS machine identity — nodes join and leave the
+  compute mesh with cluster-wide discoverable capabilities (GPU/VRAM/RAM/
+  architecture), health, and liveness; no second identity or state authority.
+- Local serving engines are organized in capability tiers (GPU-backed and
+  RAM/GGUF-backed at minimum) behind one engine contract, with per-node engine
+  lifecycle driven through discovery.
+- Model lifecycle (fetch, verify, cache, serve) uses content-addressed storage
+  with per-node placement rules; models never travel through the state sync
+  lane.
+- The gateway routes inference cluster-wide — local-first, capability- and
+  load-aware — fail-closed when no capable node exists and degrading
+  gracefully when a node drops mid-stream.
+- Per-node GPU/RAM co-budget scheduling with explicit exclusive-vs-shared
+  policies and explicit queued-vs-rejected behavior.
+- Acceptance is a live two-machine round-trip: a request entering the gateway
+  on one machine is served by an engine on another and returns a validated
+  response, with node-drop degradation proven (gated live proofs plus #206
+  contract legs).
+- Distro/container packaging of the cluster remains parked scope.
+
+### Self-improvement (autolearn — recorded scope, owner-gated, epic #225)
+
+Scope is recorded; execution requires explicit owner authorization. Brakes
+come first: the system may only learn in ways it can prove it can stop.
+
+- A curated trace store enforces a strict train/test wall (provenance-tagged;
+  the eval set is mechanically held out of training; no synthetic training
+  data in the first generation).
+- The eval gate must demonstrably catch a deliberately planted bad adapter
+  before any promotion path opens.
+- Adapter training runs on local hardware within the inference substrate's
+  resource budgets; artifacts are content-addressed.
+- Promotion is canary-first with operator-confirm by default and auto-revert
+  always on; closed-loop auto-promote exists only behind a default-off owner
+  flag.
+- The substrate serves per-role adapters behind the same engine contract.
 
 ### GitHub control plane (DarkFactory)
 
@@ -440,8 +507,22 @@ the lane breakdown lives in the program plan (`context/PLAN.md`):
    presets, command-specific help, release-backed installers and self-update.
 5. **DarkFactory work resumption** — owner-gated: DarkFactory spec/issue lane,
    then provider routing, baton ownership, and dispatch.
-6. **Harness operation-engine roadmap** — the runtime contract, orchestrator
-   migration from the manager, first bounded milestone, and test floor (#218).
+6. **Operation engine** — the #218 epic: runtime contract and orchestrator
+   migration (#221), concurrent brain core (#222), subagent orchestration and
+   non-progress watchdog (#223).
+7. **Inference cluster substrate** — the #224 epic: multi-machine compute
+   cluster with cluster-wide local LLM inference.
+8. **Autolearn** — the #225 epic: brakes-first self-improvement, recorded
+   scope only, execution owner-gated.
+
+Program acceptance: one continuous woven live session — an operator task from
+the TUI exercising the concurrent brain with subagents, cluster-served local
+inference, memory-informed behavior, and a synthetic mid-run fault with clean
+recovery, producing validated artifacts end to end. The container/distro demo
+variant of this acceptance stays parked with the distro scope. The
+reflection/cognitive memory layer (reflection engine, dreams as typed
+memories, corpus processing) is deliberately unscoped pending an explicit
+owner decision recorded in the program plan.
 
 Parked (owner-gated): custom distro/distribution including the container
 capstone demo, observability stack, and the other board-parked scopes.
