@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { ensureSharedState, sharedState } from "../src/state";
 import { writeSecret } from "../src/secrets";
-import { rebuildMemoryProjections, rememberMemory, supersedeMemory } from "../src/memory";
+import { rebuildMemoryProjections, rememberMemory, retractMemory, supersedeMemory } from "../src/memory";
 import {
   createSession,
   inspectSessionIntegrity,
@@ -403,6 +403,19 @@ describe("encrypted cross-machine event exchange", () => {
       await expect(
         exportEventBundle(structuredScalarSource, path.join(root, "structured-scalar.bundle.json")),
       ).resolves.toMatchObject({ entries: 1 });
+
+      const retractedStructuredScalar = await exchangeState(path.join(root, "retracted-structured-scalar"));
+      const retractedRecord = await rememberMemory(retractedStructuredScalar, {
+        scope: "session",
+        subject: "compaction",
+        predicate: "current",
+        value: JSON.stringify({ capsuleId: "20260713-041342-a6578aaf9ed84b448d7c41008e04a2e2" }),
+        evidence,
+      });
+      await retractMemory(retractedStructuredScalar, retractedRecord.id, evidence, "publication failed");
+      await expect(
+        exportEventBundle(retractedStructuredScalar, path.join(root, "retracted-structured-scalar.bundle.json")),
+      ).resolves.toMatchObject({ entries: 2 });
 
       const structuredSecretSource = await exchangeState(path.join(root, "structured-secret"));
       await rememberMemory(structuredSecretSource, {

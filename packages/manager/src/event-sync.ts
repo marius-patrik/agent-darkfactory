@@ -230,6 +230,7 @@ async function ensurePhysicalDirectoryChain(root: string, directory: string): Pr
 
 const STRUCTURAL_STRING_FIELDS = new Set([
   "id",
+  "recordId",
   "agentId",
   "machineId",
   "sessionId",
