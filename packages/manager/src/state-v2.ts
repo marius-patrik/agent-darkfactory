@@ -60,6 +60,7 @@ async function exists(filePath: string): Promise<boolean> {
 }
 
 const TRANSIENT_WINDOWS_PUBLICATION_ERRORS = new Set(["EACCES", "EBUSY", "ENOENT", "EPERM"]);
+const WINDOWS_PUBLICATION_ATTEMPTS = 10;
 const atomicPublicationTails = new Map<string, Promise<void>>();
 
 async function serializeAtomicPublication(filePath: string, operation: () => Promise<void>): Promise<void> {
@@ -81,26 +82,44 @@ export async function retryWindowsFileOperation<T>(
   if (platform !== "win32") {
     return await operation();
   }
-  const attempts = 8;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  for (let attempt = 0; attempt < WINDOWS_PUBLICATION_ATTEMPTS; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code ?? "";
-      if (!TRANSIENT_WINDOWS_PUBLICATION_ERRORS.has(code) || attempt === attempts - 1) throw error;
-      await wait(Math.min(80, 5 * 2 ** attempt));
+      if (
+        !TRANSIENT_WINDOWS_PUBLICATION_ERRORS.has(code) ||
+        attempt === WINDOWS_PUBLICATION_ATTEMPTS - 1
+      ) throw error;
+      await wait(Math.min(160, 10 * 2 ** attempt));
     }
   }
   throw new Error("unreachable Windows file-operation retry state");
 }
 
-interface AtomicReplacementOperations {
+export interface AtomicReplacementOperations {
   platform: NodeJS.Platform;
   rename: typeof rename;
-  rm: typeof rm;
-  stat: typeof stat;
   wait: (milliseconds: number) => Promise<void>;
-  randomId: () => string;
+}
+
+export interface ExclusiveFilePublicationOperations {
+  platform: NodeJS.Platform;
+  link: typeof link;
+  open: typeof open;
+  wait: (milliseconds: number) => Promise<void>;
+}
+
+async function syncDirectory(
+  directory: string,
+  openOperation: typeof open = open,
+): Promise<void> {
+  const directoryHandle = await openOperation(directory, "r");
+  try {
+    await directoryHandle.sync();
+  } finally {
+    await directoryHandle.close();
+  }
 }
 
 export async function publishAtomicReplacement(
@@ -111,48 +130,53 @@ export async function publishAtomicReplacement(
   const operations: AtomicReplacementOperations = {
     platform: process.platform,
     rename,
-    rm,
-    stat,
     wait: delay,
-    randomId: randomUUID,
     ...overrides,
   };
-  const retry = <T>(operation: () => Promise<T>) => (
-    retryWindowsFileOperation(operation, operations.platform, operations.wait)
+  // Keep replacement as one namespace operation. A destination-to-backup swap
+  // would make the prior complete state disappear between two renames.
+  await retryWindowsFileOperation(
+    () => operations.rename(temporary, filePath),
+    operations.platform,
+    operations.wait,
   );
-  try {
-    await retry(() => operations.rename(temporary, filePath));
-    return;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "";
-    if (operations.platform !== "win32" || !TRANSIENT_WINDOWS_PUBLICATION_ERRORS.has(code)) throw error;
-  }
-
-  // Windows can refuse rename-over-existing even after bounded retries. Keep
-  // the prior complete projection recoverable instead of deleting it.
-  await operations.stat(filePath);
-  const backup = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${process.pid}.${operations.randomId()}.bak`,
-  );
-  await retry(() => operations.rename(filePath, backup));
-  try {
-    await retry(() => operations.rename(temporary, filePath));
-  } catch (replacementError) {
-    try {
-      await retry(() => operations.rename(backup, filePath));
-    } catch (restoreError) {
-      throw new AggregateError(
-        [replacementError, restoreError],
-        `failed to publish or restore complete projection: ${filePath}`,
-      );
-    }
-    throw replacementError;
-  }
-  await retry(() => operations.rm(backup, { force: true }));
 }
 
-export async function writeTextAtomic(filePath: string, content: string, mode = 0o600): Promise<void> {
+export async function publishFileExclusive(
+  temporary: string,
+  filePath: string,
+  overrides: Partial<ExclusiveFilePublicationOperations> = {},
+): Promise<boolean> {
+  const operations: ExclusiveFilePublicationOperations = {
+    platform: process.platform,
+    link,
+    open,
+    wait: delay,
+    ...overrides,
+  };
+  try {
+    await retryWindowsFileOperation(
+      () => operations.link(temporary, filePath),
+      operations.platform,
+      operations.wait,
+    );
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "";
+    if (code === "EEXIST") return false;
+    throw error;
+  }
+  if (operations.platform !== "win32") {
+    await syncDirectory(path.dirname(filePath), operations.open);
+  }
+  return true;
+}
+
+export async function writeTextAtomic(
+  filePath: string,
+  content: string,
+  mode = 0o600,
+  overrides: Partial<AtomicReplacementOperations> = {},
+): Promise<void> {
   await serializeAtomicPublication(filePath, async () => {
     await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
     const temporary = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
@@ -164,15 +188,28 @@ export async function writeTextAtomic(filePath: string, content: string, mode = 
       } finally {
         await handle.close();
       }
-      await publishAtomicReplacement(temporary, filePath);
-      if (process.platform !== "win32") await chmod(filePath, mode);
+      await publishAtomicReplacement(temporary, filePath, overrides);
+      const platform = overrides.platform ?? process.platform;
+      if (platform !== "win32") {
+        await chmod(filePath, mode);
+        await syncDirectory(path.dirname(filePath));
+      }
     } finally {
-      await retryWindowsFileOperation(() => rm(temporary, { force: true }));
+      await retryWindowsFileOperation(
+        () => rm(temporary, { force: true }),
+        overrides.platform ?? process.platform,
+        overrides.wait ?? delay,
+      );
     }
   });
 }
 
-export async function writeTextExclusive(filePath: string, content: string, mode = 0o600): Promise<boolean> {
+export async function writeTextExclusive(
+  filePath: string,
+  content: string,
+  mode = 0o600,
+  overrides: Partial<ExclusiveFilePublicationOperations> = {},
+): Promise<boolean> {
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
@@ -184,24 +221,20 @@ export async function writeTextExclusive(filePath: string, content: string, mode
     } finally {
       await handle.close();
     }
-    try {
-      await retryWindowsFileOperation(() => link(temporary, filePath));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-      throw error;
-    }
-    if (process.platform !== "win32") {
+    const platform = overrides.platform ?? process.platform;
+    if (platform !== "win32") await chmod(temporary, mode);
+    const published = await publishFileExclusive(temporary, filePath, overrides);
+    if (!published) return false;
+    if (platform !== "win32") {
       await chmod(filePath, mode);
-      const directoryHandle = await open(directory, "r");
-      try {
-        await directoryHandle.sync();
-      } finally {
-        await directoryHandle.close();
-      }
     }
     return true;
   } finally {
-    await retryWindowsFileOperation(() => rm(temporary, { force: true }));
+    await retryWindowsFileOperation(
+      () => rm(temporary, { force: true }),
+      overrides.platform ?? process.platform,
+      overrides.wait ?? delay,
+    );
   }
 }
 
