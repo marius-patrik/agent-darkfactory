@@ -13,10 +13,12 @@ Agent OS remains one product inside or outside a container:
   capabilities, package registries, and lifecycle commands.
 - `packages/manager`, `packages/harness`, `packages/core`, `packages/gateway`,
   and `packages/inference` are implementation components, not separate products.
-- `plugins/darkfactory` is a GitHub control-plane package, not a second agent
+- `plugins/DarkFactory` is a GitHub control-plane package, not a second agent
   brain.
-- `plugins/life-support`, `plugins/skyblock-agent`, and
-  `plugins/singularity` are managed packages.
+- `plugins/LifeQuest` and `plugins/SkyAgent` are managed plugins;
+  `apps/Singularity` and `apps/Fabrica` are managed applications.
+- `data/andromeda` and `data/darkfactory` pin the separate Andromeda and
+  DarkFactory data repositories for development.
 - Andromeda-data is checked out at `AGENTS_HOME`; it is the same physical root
   as `AGENTS_SYSTEM_DATA_ROOT`, not an alternate state authority.
 

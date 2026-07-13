@@ -4,16 +4,16 @@ import { parseGitmodules, serializeGitmodules } from "../src/gitmodules";
 describe("gitmodules", () => {
   test("parses submodule entries", () => {
     expect(
-      parseGitmodules(`[submodule "plugins/skyblock-agent"]
-\tpath = plugins/skyblock-agent
-\turl = https://github.com/marius-patrik/skyblock-agent.git
+      parseGitmodules(`[submodule "SkyAgent"]
+\tpath = plugins/SkyAgent
+\turl = https://github.com/marius-patrik/SkyAgent.git
 \tbranch = main
 `),
     ).toEqual([
       {
-        name: "plugins/skyblock-agent",
-        path: "plugins/skyblock-agent",
-        url: "https://github.com/marius-patrik/skyblock-agent.git",
+        name: "SkyAgent",
+        path: "plugins/SkyAgent",
+        url: "https://github.com/marius-patrik/SkyAgent.git",
         branch: "main",
       },
     ]);
@@ -23,15 +23,15 @@ describe("gitmodules", () => {
     expect(
       serializeGitmodules([
         {
-          name: "plugins/darkfactory",
-          path: "plugins/darkfactory",
-          url: "https://github.com/marius-patrik/agent-darkfactory.git",
+          name: "DarkFactory",
+          path: "plugins/DarkFactory",
+          url: "https://github.com/marius-patrik/DarkFactory.git",
           branch: "main",
         },
       ]),
-    ).toBe(`[submodule "plugins/darkfactory"]
-\tpath = plugins/darkfactory
-\turl = https://github.com/marius-patrik/agent-darkfactory.git
+    ).toBe(`[submodule "DarkFactory"]
+\tpath = plugins/DarkFactory
+\turl = https://github.com/marius-patrik/DarkFactory.git
 \tbranch = main
 `);
   });

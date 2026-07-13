@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function fixture() {
   const target = mkdtempSync(path.join(tmpdir(), "andromeda-ci-inventory-"));
-  for (const relative of ["ci", "scripts", ".github/workflows", "packages", "plugins"]) {
+  for (const relative of ["ci", "scripts", ".github/workflows", "apps", "packages", "plugins"]) {
     mkdirSync(path.join(target, relative), { recursive: true });
   }
   cpSync(path.join(root, "ci", "test-inventory.json"), path.join(target, "ci", "test-inventory.json"));
@@ -70,6 +70,20 @@ test("denied failure: a new package without a suite cannot pass layout validatio
   try {
     mkdirSync(path.join(target, "packages", "unwired"));
     assert.match(inventoryIssues(target).join("\n"), /package has no fail-closed CI inventory entry: packages\/unwired/);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("denied failure: a new app without an inventory classification cannot pass layout validation", () => {
+  const target = fixture();
+  try {
+    const gitmodulesPath = path.join(target, ".gitmodules");
+    writeFileSync(
+      gitmodulesPath,
+      `${requireText(gitmodulesPath)}[submodule "Unclassified"]\n\tpath = apps/Unclassified\n\turl = https://example.test/Unclassified.git\n`,
+    );
+    assert.match(inventoryIssues(target).join("\n"), /app is neither active nor parked in CI inventory: apps\/Unclassified/);
   } finally {
     rmSync(target, { recursive: true, force: true });
   }

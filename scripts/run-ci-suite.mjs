@@ -154,8 +154,8 @@ const suites = {
     ]);
   },
   darkfactory() {
-    run("initialize pinned DarkFactory", "git", ["submodule", "update", "--init", "--depth", "1", "plugins/darkfactory"]);
-    const cwd = path.join(root, "plugins", "darkfactory");
+    run("initialize pinned DarkFactory", "git", ["submodule", "update", "--init", "--depth", "1", "plugins/DarkFactory"]);
+    const cwd = path.join(root, "plugins", "DarkFactory");
     runNpm("DarkFactory dependency install", ["ci"], cwd);
     runNpm("DarkFactory full check", ["run", "check"], cwd);
   },

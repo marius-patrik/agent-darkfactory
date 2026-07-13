@@ -5,11 +5,12 @@ the implementation; `agents` is the only operator/runtime CLI and
 `/Users/user/.agents` is the personal installation's only state root.
 
 Implementation components are direct children of `packages/`: `manager`,
-`core`, `harness`, `gateway`, and `inference`. Managed product repositories are
-Git submodules under `plugins/`; `data/agent-os` pins the Andromeda-data source
-contract for development, while the runtime checkout is `$AGENTS_HOME` itself.
-Their names identify components, not alternate Agent OS products or state
-authorities.
+`core`, `harness`, `gateway`, and `inference`. Managed plugin repositories are
+Git submodules under `plugins/`, managed applications are under `apps/`, and
+development data repositories are under `data/`. `data/andromeda` pins the
+Andromeda-data source contract while `data/darkfactory` pins DarkFactory's data
+ledger; the live Andromeda-data checkout remains `$AGENTS_HOME` itself. Their
+names identify components, not alternate Agent OS products or state authorities.
 
 All repository authority is rooted here: `.agents/` owns project guidance,
 `.darkfactory/` owns managed-repository policy, and `docs/` owns component,

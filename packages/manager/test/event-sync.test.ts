@@ -633,7 +633,7 @@ describe("encrypted cross-machine event exchange", () => {
         subject: "task-board",
         predicate: "location",
         value: "canonical owner-facing board",
-        evidence: { ...evidence, uri: "file:///C:/Users/patrik/marius-patrik/Andromeda/data/agent-os/context/TASK.md" },
+        evidence: { ...evidence, uri: "file:///C:/Users/patrik/marius-patrik/Andromeda/data/andromeda/context/TASK.md" },
       });
       await rememberMemory(source, {
         scope: "project",

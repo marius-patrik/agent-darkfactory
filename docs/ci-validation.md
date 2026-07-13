@@ -14,7 +14,7 @@ succeeds. The same commands run locally through
 | `packages/harness` | `harness` | Ubuntu | direct tool-boundary tests plus the complete manager-coupled session, adapter, and tool-loop suites |
 | `packages/inference` | `inference` | Ubuntu | uv lock sync, lint, types, all non-live tests, build, CLI/import/layering checks |
 | `packages/manager` | `manager` | Ubuntu, Windows | TypeScript types, all manager tests, compact-capsule regression |
-| `plugins/darkfactory` | `darkfactory` | Ubuntu | pinned public submodule, npm clean install, full check including templates and build |
+| `plugins/DarkFactory` | `darkfactory` | Ubuntu | pinned public submodule, npm clean install, full check including templates and build |
 
 Inventory `requiredPaths` are durable coverage anchors, not an exhaustive test
 allowlist. Core, harness, and manager recursively discover every Bun
@@ -28,9 +28,9 @@ session tests remain under `packages/manager/test`. The inventory names those
 files individually and fails if any disappear; `packages/harness/test` owns
 the package-local tool-boundary regression triplet.
 
-The parked `plugins/life-support`, `plugins/singularity`, and
-`plugins/skyblock-agent` gitlinks are classified but intentionally have no CI
-suite. Adding any package or plugin without classifying and wiring it makes
+The parked `plugins/LifeQuest`, `plugins/SkyAgent`, `apps/Singularity`, and
+`apps/Fabrica` gitlinks are classified but intentionally have no CI suite.
+Adding any package, plugin, or app without classifying and wiring it makes
 layout validation fail.
 
 ## Real-behavior legs
