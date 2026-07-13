@@ -93,9 +93,11 @@ darkfactory sync-managed
 ```
 
 `df-work.yml` runs only on a trusted self-hosted runner labeled `df-local`. It
-requires `agents state doctor --json` to pass, then delegates the worker turn to
-`agents run` without provider or model flags. Provider selection, identity,
-memory, and session state therefore come exclusively from `$AGENTS_HOME`.
+requires `$AGENTS_HOME` to be an absolute path containing `bin\agents.ps1`,
+invokes that exact launcher for `state doctor --json`, then delegates the worker
+turn through the same launcher without provider or model flags. It never falls
+back to an ambient `agents` command. Provider selection, identity, memory, and
+session state therefore come exclusively from `$AGENTS_HOME`.
 
 `codex-review.yml` is the one external CI execution boundary. It uses an
 ephemeral Codex container and repository secret because GitHub-hosted CI cannot
@@ -114,9 +116,10 @@ exposed to other users.
 ## Self-hosted runner ownership
 
 The `df-local` runner is provisioned and supervised by Agent OS, outside this
-component. Its service environment must expose the canonical `agents` launcher
-and `$AGENTS_HOME`. DarkFactory intentionally carries no host runner installer,
-PID registry, alternate state root, or platform-specific process manager.
+component. Its service environment must expose the canonical `$AGENTS_HOME`;
+DarkFactory binds the worker to `$AGENTS_HOME\bin\agents.ps1` instead of PATH
+resolution. DarkFactory intentionally carries no host runner installer, PID
+registry, alternate state root, or platform-specific process manager.
 
 ## Service operation
 

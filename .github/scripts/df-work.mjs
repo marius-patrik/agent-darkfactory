@@ -47,6 +47,8 @@ main().catch((error) => {
 });
 
 async function main() {
+  canonicalAgentsLauncher();
+
   if (!Number.isInteger(TARGET_ISSUE_NUMBER) || TARGET_ISSUE_NUMBER <= 0) {
     throw new Error(`Invalid issue number: ${process.env.DF_TARGET_ISSUE_NUMBER}`);
   }
@@ -650,7 +652,7 @@ async function removeWorkerScratch(worktree) {
 }
 
 function verifyAgentOs() {
-  runCommand("agents", ["state", "doctor", "--json"], CONTROL_ROOT, agentOsEnvironment());
+  runAgentCommand(["state", "doctor", "--json"], CONTROL_ROOT);
 }
 
 async function runAgentWorker(worktree) {
@@ -660,7 +662,7 @@ async function runAgentWorker(worktree) {
     "Do not push, open a pull request, merge, or modify Agent OS state.",
     "Write a concise final summary to .darkfactory/df-worker-summary.md before finishing."
   ].join(" ");
-  const output = runCommand("agents", ["run", "--mode", "default", prompt], worktree, agentOsEnvironment()).trim();
+  const output = runAgentCommand(["run", "--mode", "default", prompt], worktree).trim();
   const summaryPath = path.join(worktree, ".darkfactory", "df-worker-summary.md");
   if (!existsSync(summaryPath)) {
     await writeFile(summaryPath, `${output || "Agent OS worker completed without a written summary."}\n`);
@@ -674,6 +676,28 @@ function agentOsEnvironment() {
     env[name] = value;
   }
   return env;
+}
+
+function runAgentCommand(args, cwd) {
+  const agentsLauncher = canonicalAgentsLauncher();
+  return runCommand(
+    "pwsh",
+    ["-NoLogo", "-NoProfile", "-File", agentsLauncher, ...args],
+    cwd,
+    agentOsEnvironment()
+  );
+}
+
+function canonicalAgentsLauncher() {
+  const agentsHome = requiredEnv("AGENTS_HOME");
+  if (!path.isAbsolute(agentsHome)) {
+    throw new Error("AGENTS_HOME must be an absolute path");
+  }
+  const agentsLauncher = path.join(agentsHome, "bin", "agents.ps1");
+  if (!existsSync(agentsLauncher)) {
+    throw new Error(`Canonical Agent OS launcher is missing at ${agentsLauncher}`);
+  }
+  return agentsLauncher;
 }
 
 async function createPullRequest(repository, base, branch, issue, summary) {
