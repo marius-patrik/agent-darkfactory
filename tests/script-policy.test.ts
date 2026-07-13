@@ -834,9 +834,9 @@ test("df-work delegates local model execution exclusively to canonical Agent OS 
   const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
 
   assert.match(workflow, /runs-on: \[self-hosted, df-local\]/);
-  assert.match(workflow, /agents state doctor --json/);
+  assert.match(workflow, /& \$agentsLauncher state doctor --json/);
   assert.doesNotMatch(workflow, /CODEX_AUTH_JSON|KIMI_AUTH_JSON|AGY_AUTH_JSON/);
-  assert.match(source, /runCommand\("agents", \["run", "--mode", "default", prompt\]/);
+  assert.match(source, /runAgentCommand\(\["run", "--mode", "default", prompt\], worktree\)/);
   assert.doesNotMatch(source, /--provider|--model|runWithFailover|loadProviderRegistry/);
   assert.match(source, /TOKEN\|SECRET\|AUTH_JSON\|PRIVATE_KEY/);
 });
@@ -878,13 +878,39 @@ test("df-work native gate remains fail closed before checkout and worker executi
   assert.match(gate, /\$env:GITHUB_REPOSITORY_OWNER -ne "marius-patrik"/);
   assert.match(gate, /\$env:GITHUB_EVENT_NAME -eq "workflow_dispatch" -and \$env:GITHUB_REF -ne "refs\/heads\/main"/);
   assert.equal((gate.match(/exit 1/g) ?? []).length, 2);
-  assert.match(agentOs, /Get-Command agents -ErrorAction Stop/);
-  assert.match(agentOs, /agents state doctor --json/);
+  assert.match(agentOs, /\[string\]::IsNullOrWhiteSpace\(\$env:AGENTS_HOME\)/);
+  assert.match(agentOs, /\[System\.IO\.Path\]::IsPathFullyQualified\(\$env:AGENTS_HOME\)/);
+  assert.match(agentOs, /Join-Path -Path \$env:AGENTS_HOME -ChildPath "bin\\agents\.ps1"/);
+  assert.match(agentOs, /Test-Path -LiteralPath \$agentsLauncher -PathType Leaf/);
+  assert.equal((agentOs.match(/exit 1/g) ?? []).length, 3);
+  assert.match(agentOs, /& \$agentsLauncher state doctor --json/);
   assert.match(agentOs, /if \(\$LASTEXITCODE -ne 0\)\s*\{\s*exit \$LASTEXITCODE/);
   assert.match(verificationTarget, /node -e/);
   assert.match(verificationTarget, /if \(\$LASTEXITCODE -ne 0\)\s*\{\s*exit \$LASTEXITCODE/);
   assert.ok(workflow.indexOf("Validate trusted control ref") < workflow.indexOf("Checkout installed DarkFactory worker"));
   assert.ok(workflow.indexOf("Verify canonical Agent OS") < workflow.indexOf("Run worker"));
+});
+
+test("df-work binds Agent OS execution to the canonical launcher", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /const agentsHome = requiredEnv\("AGENTS_HOME"\)/);
+  assert.match(source, /if \(!path\.isAbsolute\(agentsHome\)\)/);
+  assert.match(source, /const agentsLauncher = path\.join\(agentsHome, "bin", "agents\.ps1"\)/);
+  assert.match(source, /runAgentCommand\(\["state", "doctor", "--json"\], CONTROL_ROOT\)/);
+  assert.match(source, /runAgentCommand\(\["run", "--mode", "default", prompt\], worktree\)/);
+  assert.match(source, /if \(!existsSync\(agentsLauncher\)\)/);
+  assert.match(source, /\["-NoLogo", "-NoProfile", "-File", agentsLauncher, \.\.\.args\]/);
+  assert.ok(source.indexOf("canonicalAgentsLauncher();") < source.indexOf("await getIssue"));
+});
+
+test("df-work never falls back to a PATH-selected agents executable", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/df-work.yml", import.meta.url), "utf8");
+  const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
+
+  assert.doesNotMatch(workflow, /Get-Command\s+agents|^\s*agents\s+/m);
+  assert.doesNotMatch(source, /runCommand\("agents"|spawnSync\("agents"/);
+  assert.doesNotMatch(source, /Get-Command|command -v|\.bun[\\/]install[\\/]global/);
 });
 
 test("df-work failure path comments blocker, marks blocked, and releases the lane", async () => {

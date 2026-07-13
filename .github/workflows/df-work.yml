@@ -73,8 +73,23 @@ jobs:
 
       - name: Verify canonical Agent OS
         run: |
-          Get-Command agents -ErrorAction Stop | Out-Null
-          agents state doctor --json
+          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME)) {
+            Write-Output "::error::AGENTS_HOME is required for the canonical Agent OS launcher."
+            exit 1
+          }
+
+          if (-not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
+            Write-Output "::error::AGENTS_HOME must be an absolute path."
+            exit 1
+          }
+
+          $agentsLauncher = Join-Path -Path $env:AGENTS_HOME -ChildPath "bin\agents.ps1"
+          if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
+            Write-Output "::error::Canonical Agent OS launcher is missing at $agentsLauncher."
+            exit 1
+          }
+
+          & $agentsLauncher state doctor --json
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
