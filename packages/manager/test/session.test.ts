@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -453,12 +454,20 @@ describe("session runtime", () => {
           async (transaction) => {
             const turnId = await transaction.beginTurn();
             await transaction.appendMessage(turnId, { role: "user", content: "before-provider" });
-            Bun.sleepSync(120);
+            const leases = new Database(renewableLockDatabasePath(state));
+            try {
+              const replaced = leases.query(
+                "UPDATE renewable_leases SET token = ?1, expires_at = 0 WHERE key = ?2",
+              ).run("replacement-owner", `session:${descriptor.sessionId}`);
+              expect(replaced.changes).toBe(1);
+            } finally {
+              leases.close();
+            }
             await transaction.verify();
             await transaction.appendMessage(turnId, { role: "assistant", content: "must-not-persist" });
             await transaction.completeTurn(turnId);
           },
-          { leaseMs: 80, heartbeatMs: 20, waitMs: 1_000 },
+          { leaseMs: 5_000, heartbeatMs: 1_000, waitMs: 1_000 },
         ),
       ).rejects.toThrow("ownership was lost");
 
