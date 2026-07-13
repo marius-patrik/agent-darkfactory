@@ -24,7 +24,9 @@ GitHub-only control.** An orchestrator assesses global state on schedule, plans
 waves, dispatches per-component agents within concurrency caps, posts
 dashboards, and escalates only via ask-owner issues. The full backlog drains
 through DarkFactory lanes: issue → branch (from `dev`) → PR → CI + Codex Review
-gates → automerge → release. Zero orchestrator terminal sessions.
+gates → automerge → release. Zero orchestrator terminal sessions. "GitHub-only
+control" means autonomous orchestration operates exclusively through the GitHub
+control plane; the `agents` CLI remains the local operator surface.
 
 This PRD is the repository's specification source of truth. The consolidated
 program plan in the Andromeda-data authority at `context/PLAN.md` sequences
@@ -397,10 +399,10 @@ secret/symlink rejection.
 Milestones 1–5 of the state/memory reconciliation are delivered and folded into
 release history (v0.2.x): v2 bootstrap/doctor, journalled migration, canonical
 event replay, capability content-addressing, and two-machine encrypted event
-exchange. Milestone 6 is partially delivered: the reconciled Agent OS is
-installed and in daily use on both machines via the source install, while
-release-backed distribution and the repaired global launcher remain active
-work (program lane 4 below, issue #217).
+exchange. Milestone 6 is partially delivered: the reconciled Agent OS passed
+source-install activation and two-machine acceptance (recorded in the v0.2.x
+release history), while release-backed distribution and the repaired global
+launcher remain active work (program lane 4 below, issue #217).
 
 The active program (sequenced in the Andromeda-data `context/PLAN.md`):
 
