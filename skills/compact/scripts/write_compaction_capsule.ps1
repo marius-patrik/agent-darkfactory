@@ -303,16 +303,34 @@ function Restore-ProjectionState {
 }
 
 $authority = Resolve-AgentEnvironment
+$script:PhysicalWriteRoots = @($authority.AgentsHome)
 $compactLockPath = Join-Path $authority.MemoryRoot ".compact.lock"
+Assert-PhysicalFileDestination -Path $compactLockPath
 try {
     $compactLock = [System.IO.File]::Open(
         $compactLockPath,
-        [System.IO.FileMode]::OpenOrCreate,
+        [System.IO.FileMode]::CreateNew,
         [System.IO.FileAccess]::ReadWrite,
         [System.IO.FileShare]::None
     )
-} catch {
-    throw "Another compaction operation owns the canonical memory lock: $compactLockPath"
+} catch [System.IO.IOException] {
+    Assert-PhysicalFileDestination -Path $compactLockPath
+    try {
+        $compactLock = [System.IO.File]::Open(
+            $compactLockPath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::None
+        )
+    } catch [System.IO.IOException] {
+        throw "Another compaction operation owns the canonical memory lock: $compactLockPath"
+    }
+    try {
+        Assert-PhysicalFileDestination -Path $compactLockPath
+    } catch {
+        $compactLock.Dispose()
+        throw
+    }
 }
 
 try {

@@ -140,6 +140,32 @@ try {
     Assert-True (@($primaryLog -split "`r?`n" | Where-Object { $_ -eq "state sync --json" }).Count -eq 2) "primary: expected preflight and publication syncs"
     Assert-True (Test-Path -LiteralPath (Join-Path $primary.MemoryRoot ".compact.lock")) "primary: persistent lock identity was unlinked"
 
+    # The lock entry itself cannot redirect acquisition outside canonical state.
+    $linkedLock = Initialize-Case -Name "linked-lock"
+    $linkedLockPath = Join-Path $linkedLock.MemoryRoot ".compact.lock"
+    $linkedLockOutside = Join-Path $linkedLock.Root "lock-outside"
+    if ($env:OS -eq "Windows_NT") {
+        New-Item -ItemType Directory -Path $linkedLockOutside -Force | Out-Null
+        New-Item -ItemType Junction -Path $linkedLockPath -Target $linkedLockOutside | Out-Null
+    } else {
+        Set-Content -LiteralPath $linkedLockOutside -Value "outside must remain" -NoNewline
+        New-Item -ItemType SymbolicLink -Path $linkedLockPath -Target $linkedLockOutside | Out-Null
+    }
+    $env:FAKE_AGENTS_HOME = $linkedLock.AgentsHome
+    $env:FAKE_AGENTS_MEMORY = $linkedLock.MemoryRoot
+    $env:FAKE_AGENTS_LOG = $linkedLock.Log
+    $linkedLockMessage = ""
+    try {
+        & $scriptUnderTest -Objective "must fail" -State "invalid" -Next "none" -AgentsCommand $linkedLock.Fake -UserHome $linkedLock.Root -CompatibilityRoot $linkedLock.CompatibilityRoot | Out-Null
+    } catch {
+        $linkedLockMessage = $_.Exception.Message
+    }
+    Assert-True ($linkedLockMessage -match "physical file|link|reparse point") "linked-lock: redirected lock destination was accepted"
+    if ($env:OS -ne "Windows_NT") {
+        Assert-True ((Get-Content -Raw $linkedLockOutside) -eq "outside must remain") "linked-lock: external lock target was modified"
+    }
+    Assert-True (-not ((Get-Content -Raw $linkedLock.Log) -match "state sync")) "linked-lock: repository mutated before lock validation"
+
     # Concurrent local publications are serialized across the complete workflow.
     $locked = Initialize-Case -Name "locked"
     $env:FAKE_AGENTS_HOME = $locked.AgentsHome

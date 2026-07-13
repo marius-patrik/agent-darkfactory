@@ -33,7 +33,8 @@ above that boundary do not get mistaken for provider-local link escapes.
    mutation and only then selects the active scalar, holds a persistent-file
    exclusive canonical lock through publication, then rolls canonical memory
    and compatibility files back if final publication fails. The lock file is
-   never unlinked during handoff:
+   never unlinked during handoff. First creation is atomic; reused lock entries
+   are link-checked before and after a read-only exclusive open:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\skills\compact\scripts\write_compaction_capsule.ps1 -Objective "current goal" -State "what is done now" -Next "next command or decision" -Validation "checks run and results" -Blockers "known blockers or None"
