@@ -59,8 +59,8 @@ function Assert-PhysicalDirectoryChain {
         $pathsToInspect += $current
     }
     foreach ($pathToInspect in $pathsToInspect) {
-        if (-not (Test-Path -LiteralPath $pathToInspect)) { continue }
-        $item = Get-Item -LiteralPath $pathToInspect -Force
+        $item = Get-Item -LiteralPath $pathToInspect -Force -ErrorAction SilentlyContinue
+        if ($null -eq $item) { continue }
         if (-not $item.PSIsContainer) {
             throw "Canonical write directory chain contains a non-directory: $pathToInspect"
         }
@@ -78,6 +78,32 @@ function Assert-PhysicalDirectoryChain {
         if ($isReparsePoint -or $hasLinkType -or $hasTarget) {
             throw "Canonical authority paths must be physical directories, not links or reparse points: $pathToInspect"
         }
+    }
+}
+
+function Assert-PhysicalFileDestination {
+    param([Parameter(Mandatory=$true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $parent = Split-Path -Parent $fullPath
+    $anchor = [System.IO.Path]::GetPathRoot($parent)
+    Assert-PhysicalDirectoryChain -Root $anchor -Target $parent
+
+    $item = Get-Item -LiteralPath $fullPath -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) { return }
+    $isReparsePoint = (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+    $hasLinkType = (
+        $item.PSObject.Properties.Name -contains "LinkType" -and
+        -not [string]::IsNullOrWhiteSpace([string]$item.LinkType)
+    )
+    $hasTarget = (
+        $item.PSObject.Properties.Name -contains "Target" -and
+        $null -ne $item.Target -and
+        @($item.Target).Count -gt 0 -and
+        -not [string]::IsNullOrWhiteSpace([string](@($item.Target) -join ""))
+    )
+    if ($item.PSIsContainer -or $isReparsePoint -or $hasLinkType -or $hasTarget) {
+        throw "Projection destination must be a physical file, not a directory, link, or reparse point: $fullPath"
     }
 }
 
@@ -129,6 +155,7 @@ function Resolve-AgentEnvironment {
 
 function Write-Utf8NoBom {
     param([Parameter(Mandatory=$true)][string]$Path, [Parameter(Mandatory=$true)][string]$Content)
+    Assert-PhysicalFileDestination -Path $Path
     [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
 }
 
@@ -139,6 +166,7 @@ function Assert-ProjectionBlockShape {
         [Parameter(Mandatory=$true)][string]$End
     )
 
+    Assert-PhysicalFileDestination -Path $Path
     if (-not (Test-Path -LiteralPath $Path)) { return }
     $content = Get-Content -LiteralPath $Path -Raw
     $startCount = [regex]::Matches($content, [regex]::Escape($Start)).Count
@@ -163,6 +191,7 @@ function Update-ProjectionBlock {
     )
 
     Assert-ProjectionBlockShape -Path $Path -Start $Start -End $End
+    Assert-PhysicalFileDestination -Path $Path
     $existing = if (Test-Path -LiteralPath $Path) { Get-Content -LiteralPath $Path -Raw } else { "" }
     $pattern = "(?s)" + [regex]::Escape($Start) + ".*?" + [regex]::Escape($End)
     $updated = if ($existing -match $pattern) {
@@ -227,6 +256,7 @@ function Assert-StateSyncSucceeded {
 
 function Save-ProjectionState {
     param([Parameter(Mandatory=$true)][string]$Path)
+    Assert-PhysicalFileDestination -Path $Path
     return [ordered]@{
         Path = $Path
         Existed = Test-Path -LiteralPath $Path
@@ -236,6 +266,7 @@ function Save-ProjectionState {
 
 function Restore-ProjectionState {
     param([Parameter(Mandatory=$true)]$Saved)
+    Assert-PhysicalFileDestination -Path $Saved.Path
     if ($Saved.Existed) {
         Write-Utf8NoBom -Path $Saved.Path -Content $Saved.Content
     } elseif (Test-Path -LiteralPath $Saved.Path) {
@@ -269,6 +300,8 @@ $canonicalRootPath = [System.IO.Path]::GetFullPath($authority.MemoryRoot)
 if ($resolvedCompatibilityRoot -eq $canonicalRootPath) {
     throw "Compatibility projection root must not equal canonical memory root."
 }
+$compatibilityAnchor = [System.IO.Path]::GetPathRoot($resolvedCompatibilityRoot)
+Assert-PhysicalDirectoryChain -Root $compatibilityAnchor -Target $resolvedCompatibilityRoot
 $handoffPath = Join-Path $resolvedCompatibilityRoot "handoff.md"
 $shortPath = Join-Path $resolvedCompatibilityRoot "SHORT.md"
 Assert-ProjectionBlockShape -Path $handoffPath -Start "<!-- rommie:compact:start -->" -End "<!-- rommie:compact:end -->"
@@ -366,6 +399,7 @@ try {
     }
 
     New-Item -ItemType Directory -Path $resolvedCompatibilityRoot -Force | Out-Null
+    Assert-PhysicalDirectoryChain -Root $compatibilityAnchor -Target $resolvedCompatibilityRoot
 
     $handoffSection = @"
 <!-- rommie:compact:start -->

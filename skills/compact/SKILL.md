@@ -15,7 +15,9 @@ authority. Never redirect the script to `.codex/memories`, write a second
 canonical handoff, or bypass an authority mismatch with a path override.
 The authority path must be physically contained in `AGENTS_HOME`; links,
 symlinks, and Windows reparse-point/junction escapes are rejected. All path
-construction must remain portable across Windows, macOS, and Linux.
+construction must remain portable across Windows, macOS, and Linux. Apply the
+same physical-path checks to compatibility roots and every projection file;
+provider-local projections are untrusted destinations, not an authority carveout.
 
 ## Workflow
 

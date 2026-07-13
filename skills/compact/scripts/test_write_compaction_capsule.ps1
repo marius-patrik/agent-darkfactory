@@ -221,6 +221,55 @@ try {
     Assert-True (@(Get-ChildItem -LiteralPath $linkedSnapshotsOutside -Force).Count -eq 0) "linked-snapshots: wrote capsule evidence outside authority"
     Assert-True (-not ((Get-Content -Raw $linkedSnapshots.Log) -match "state sync")) "linked-snapshots: repository mutated before descendant validation"
 
+    # Compatibility roots cannot redirect provider-local projections externally.
+    $linkedCompatibility = Initialize-Case -Name "linked-compatibility"
+    $linkedCompatibilityOutside = Join-Path $linkedCompatibility.Root "compatibility-outside"
+    Remove-Item -LiteralPath $linkedCompatibility.CompatibilityRoot -Recurse -Force
+    New-Item -ItemType Directory -Path $linkedCompatibilityOutside -Force | Out-Null
+    if ($env:OS -eq "Windows_NT") {
+        New-Item -ItemType Junction -Path $linkedCompatibility.CompatibilityRoot -Target $linkedCompatibilityOutside | Out-Null
+    } else {
+        New-Item -ItemType SymbolicLink -Path $linkedCompatibility.CompatibilityRoot -Target $linkedCompatibilityOutside | Out-Null
+    }
+    $env:FAKE_AGENTS_HOME = $linkedCompatibility.AgentsHome
+    $env:FAKE_AGENTS_MEMORY = $linkedCompatibility.MemoryRoot
+    $env:FAKE_AGENTS_LOG = $linkedCompatibility.Log
+    $linkedCompatibilityMessage = ""
+    try {
+        & $scriptUnderTest -Objective "must fail" -State "invalid" -Next "none" -AgentsCommand $linkedCompatibility.Fake -CompatibilityRoot $linkedCompatibility.CompatibilityRoot | Out-Null
+    } catch {
+        $linkedCompatibilityMessage = $_.Exception.Message
+    }
+    Assert-True ($linkedCompatibilityMessage -match "physical directories|links|reparse points") "linked-compatibility: linked projection root was not rejected"
+    Assert-True (@(Get-ChildItem -LiteralPath $linkedCompatibilityOutside -Force).Count -eq 0) "linked-compatibility: projection escaped its root"
+    Assert-True (-not ((Get-Content -Raw $linkedCompatibility.Log) -match "state sync")) "linked-compatibility: repository mutated before projection validation"
+
+    # Existing destination entries are checked independently of their directory.
+    $linkedDestination = Initialize-Case -Name "linked-destination"
+    $linkedDestinationPath = Join-Path $linkedDestination.CompatibilityRoot "handoff.md"
+    $linkedDestinationOutside = Join-Path $linkedDestination.Root "destination-outside"
+    if ($env:OS -eq "Windows_NT") {
+        New-Item -ItemType Directory -Path $linkedDestinationOutside -Force | Out-Null
+        New-Item -ItemType Junction -Path $linkedDestinationPath -Target $linkedDestinationOutside | Out-Null
+    } else {
+        Set-Content -LiteralPath $linkedDestinationOutside -Value "outside must remain" -NoNewline
+        New-Item -ItemType SymbolicLink -Path $linkedDestinationPath -Target $linkedDestinationOutside | Out-Null
+    }
+    $env:FAKE_AGENTS_HOME = $linkedDestination.AgentsHome
+    $env:FAKE_AGENTS_MEMORY = $linkedDestination.MemoryRoot
+    $env:FAKE_AGENTS_LOG = $linkedDestination.Log
+    $linkedDestinationMessage = ""
+    try {
+        & $scriptUnderTest -Objective "must fail" -State "invalid" -Next "none" -AgentsCommand $linkedDestination.Fake -CompatibilityRoot $linkedDestination.CompatibilityRoot | Out-Null
+    } catch {
+        $linkedDestinationMessage = $_.Exception.Message
+    }
+    Assert-True ($linkedDestinationMessage -match "physical file|link|reparse point") "linked-destination: linked projection file was not rejected"
+    if ($env:OS -ne "Windows_NT") {
+        Assert-True ((Get-Content -Raw $linkedDestinationOutside) -eq "outside must remain") "linked-destination: external file was overwritten"
+    }
+    Assert-True (-not ((Get-Content -Raw $linkedDestination.Log) -match "state sync")) "linked-destination: repository mutated before destination validation"
+
     # Ambiguous authority: duplicate active records fail before creating a snapshot.
     $duplicateActive = Initialize-Case -Name "duplicate-active"
     $env:FAKE_AGENTS_HOME = $duplicateActive.AgentsHome
