@@ -35,6 +35,7 @@ const {
   preflightMergePolicy,
   prdIssueBody,
   prdScaffoldPullRequestBody,
+  readManagedRepoRegistry,
   readLatestRunLedger,
   reconcileLabelDiff,
   repoName,
@@ -396,6 +397,32 @@ test("listActiveManagedRepos excludes archived, disabled, and non-active lifecyc
   assert.ok(warnings.some((warning) => warning.includes("disabled=true")));
   assert.ok(warnings.some((warning) => warning.includes("managed lifecycle state is 'parked'")));
   assert.ok(warnings.some((warning) => warning.includes("managed lifecycle state is 'removed'")));
+});
+
+test("canonical Andromeda installation names resolve through the live managed registry", async () => {
+  const warnings: string[] = [];
+  const registry = await readManagedRepoRegistry();
+  const active = await listActiveManagedRepos(
+    { request: async () => ({ repositories: [] }) },
+    { owner: "marius-patrik", repo: "DarkFactory" },
+    {
+      registry,
+      repositories: [
+        { full_name: "marius-patrik/Andromeda", archived: false, disabled: false },
+        { full_name: "marius-patrik/Andromeda-data", archived: false, disabled: false },
+        { full_name: "marius-patrik/DarkFactory", archived: false, disabled: false },
+        { full_name: "marius-patrik/skyblock-agent", archived: false, disabled: false }
+      ],
+      warn: (warning: string) => warnings.push(warning)
+    }
+  );
+
+  assert.deepEqual(active, [
+    { owner: "marius-patrik", repo: "Andromeda" },
+    { owner: "marius-patrik", repo: "Andromeda-data" }
+  ]);
+  assert.ok(warnings.some((warning) => warning.includes("marius-patrik/DarkFactory") && warning.includes("'removed'")));
+  assert.ok(warnings.some((warning) => warning.includes("marius-patrik/skyblock-agent") && warning.includes("'removed'")));
 });
 
 test("df-sweep dev-merge closure uses worker PR provenance instead of issue labels or comments", async () => {
