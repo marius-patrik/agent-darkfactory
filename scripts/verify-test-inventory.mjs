@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,15 @@ function sortedDirectories(root, relative) {
 
 function unique(values) {
   return [...new Set(values)];
+}
+
+function indexedGitlinks(root) {
+  return execFileSync("git", ["-C", root, "ls-files", "--stage", "-z"])
+    .toString("utf8")
+    .split("\0")
+    .map((entry) => entry.match(/^160000 [0-9a-f]+ 0\t(.+)$/)?.[1])
+    .filter((entry) => typeof entry === "string")
+    .sort();
 }
 
 function workflowHasLeg(workflow, suite, runner) {
@@ -90,14 +100,19 @@ export function inventoryIssues(root = repositoryRoot) {
   }
 
   const allowedDataGitlinks = ["data/andromeda", "data/darkfactory"];
-  const dataGitlinks = [...gitmodules.matchAll(/^\s*path\s*=\s*(data\/[^\s]+)\s*$/gm)]
+  const declaredDataGitlinks = [...gitmodules.matchAll(/^\s*path\s*=\s*(data\/[^\s]+)\s*$/gm)]
     .map((match) => match[1])
     .sort();
-  for (const gitlinkPath of dataGitlinks) {
-    if (!allowedDataGitlinks.includes(gitlinkPath)) issues.push(`data repository is not allowlisted: ${gitlinkPath}`);
+  const actualDataGitlinks = indexedGitlinks(root).filter((entry) => entry.startsWith("data/"));
+  for (const declaredPath of declaredDataGitlinks) {
+    if (!allowedDataGitlinks.includes(declaredPath)) issues.push(`data repository declaration is not allowlisted: ${declaredPath}`);
+  }
+  for (const gitlinkPath of actualDataGitlinks) {
+    if (!allowedDataGitlinks.includes(gitlinkPath)) issues.push(`data repository gitlink is not allowlisted: ${gitlinkPath}`);
   }
   for (const allowedPath of allowedDataGitlinks) {
-    if (!dataGitlinks.includes(allowedPath)) issues.push(`allowlisted data repository is not a repository gitlink: ${allowedPath}`);
+    if (!declaredDataGitlinks.includes(allowedPath)) issues.push(`allowlisted data repository is not declared in .gitmodules: ${allowedPath}`);
+    if (!actualDataGitlinks.includes(allowedPath)) issues.push(`allowlisted data repository is not a repository gitlink: ${allowedPath}`);
   }
 
   for (const entry of groups) {

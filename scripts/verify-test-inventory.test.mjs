@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +9,11 @@ import { discoverBunTests } from "./run-ci-suite.mjs";
 import { inventoryIssues } from "./verify-test-inventory.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const fixtureGitlinkOid = "1111111111111111111111111111111111111111";
+
+function git(target, ...args) {
+  return execFileSync("git", ["-C", target, ...args], { encoding: "utf8" });
+}
 
 function fixture() {
   const target = mkdtempSync(path.join(tmpdir(), "andromeda-ci-inventory-"));
@@ -27,6 +33,10 @@ function fixture() {
       mkdirSync(path.dirname(destination), { recursive: true });
       writeFileSync(destination, "fixture\n");
     }
+  }
+  git(target, "init", "--quiet");
+  for (const match of requireText(path.join(target, ".gitmodules")).matchAll(/^\s*path\s*=\s*([^\s]+)\s*$/gm)) {
+    git(target, "update-index", "--add", "--info-only", "--cacheinfo", `160000,${fixtureGitlinkOid},${match[1]}`);
   }
   return target;
 }
@@ -92,11 +102,7 @@ test("denied failure: a new app without an inventory classification cannot pass 
 test("edge input: a missing allowlisted data repository cannot pass layout validation", () => {
   const target = fixture();
   try {
-    const gitmodulesPath = path.join(target, ".gitmodules");
-    writeFileSync(
-      gitmodulesPath,
-      requireText(gitmodulesPath).replace(/\[submodule "darkfactory-data"\][\s\S]*?branch = main\r?\n/, ""),
-    );
+    git(target, "update-index", "--force-remove", "data/darkfactory");
     assert.match(
       inventoryIssues(target).join("\n"),
       /allowlisted data repository is not a repository gitlink: data\/darkfactory/,
@@ -109,12 +115,15 @@ test("edge input: a missing allowlisted data repository cannot pass layout valid
 test("denied failure: an unapproved data repository cannot pass layout validation", () => {
   const target = fixture();
   try {
-    const gitmodulesPath = path.join(target, ".gitmodules");
-    writeFileSync(
-      gitmodulesPath,
-      `${requireText(gitmodulesPath)}[submodule "Unclassified"]\n\tpath = data/Unclassified\n\turl = https://example.test/Unclassified.git\n`,
+    git(
+      target,
+      "update-index",
+      "--add",
+      "--info-only",
+      "--cacheinfo",
+      `160000,${fixtureGitlinkOid},data/Unclassified`,
     );
-    assert.match(inventoryIssues(target).join("\n"), /data repository is not allowlisted: data\/Unclassified/);
+    assert.match(inventoryIssues(target).join("\n"), /data repository gitlink is not allowlisted: data\/Unclassified/);
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
