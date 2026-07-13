@@ -18,6 +18,8 @@ symlinks, and Windows reparse-point/junction escapes are rejected. All path
 construction must remain portable across Windows, macOS, and Linux. Apply the
 same physical-path checks to compatibility roots and every projection file;
 provider-local projections are untrusted destinations, not an authority carveout.
+The compatibility root and the complete `AGENTS_HOME` tree must be disjoint in
+both directions; neither may be an ancestor or descendant of the other.
 
 ## Workflow
 

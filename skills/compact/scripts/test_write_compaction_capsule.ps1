@@ -184,6 +184,36 @@ try {
     Assert-True ($deniedMessage -match "must remain under AGENTS_HOME") "denied: outside authority was not rejected"
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $outsideMemory "snapshots/compaction"))) "denied: wrote outside canonical authority"
 
+    # Compatibility projections cannot contain or live inside canonical state.
+    $authorityAncestor = Initialize-Case -Name "authority-ancestor"
+    $env:FAKE_AGENTS_HOME = $authorityAncestor.AgentsHome
+    $env:FAKE_AGENTS_MEMORY = $authorityAncestor.MemoryRoot
+    $env:FAKE_AGENTS_LOG = $authorityAncestor.Log
+    $authorityAncestorMessage = ""
+    try {
+        & $scriptUnderTest -Objective "must fail" -State "overlap" -Next "none" -AgentsCommand $authorityAncestor.Fake -CompatibilityRoot $authorityAncestor.Root | Out-Null
+    } catch {
+        $authorityAncestorMessage = $_.Exception.Message
+    }
+    Assert-True ($authorityAncestorMessage -match "physically disjoint") "authority-ancestor: containing projection root was accepted"
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $authorityAncestor.Root "handoff.md"))) "authority-ancestor: projection was written into an authority ancestor"
+    Assert-True (-not ((Get-Content -Raw $authorityAncestor.Log) -match "state sync")) "authority-ancestor: repository mutated before overlap rejection"
+
+    $authorityDescendant = Initialize-Case -Name "authority-descendant"
+    $authorityDescendantProjection = Join-Path $authorityDescendant.MemoryRoot "projections"
+    $env:FAKE_AGENTS_HOME = $authorityDescendant.AgentsHome
+    $env:FAKE_AGENTS_MEMORY = $authorityDescendant.MemoryRoot
+    $env:FAKE_AGENTS_LOG = $authorityDescendant.Log
+    $authorityDescendantMessage = ""
+    try {
+        & $scriptUnderTest -Objective "must fail" -State "overlap" -Next "none" -AgentsCommand $authorityDescendant.Fake -CompatibilityRoot $authorityDescendantProjection | Out-Null
+    } catch {
+        $authorityDescendantMessage = $_.Exception.Message
+    }
+    Assert-True ($authorityDescendantMessage -match "physically disjoint") "authority-descendant: nested projection root was accepted"
+    Assert-True (-not (Test-Path -LiteralPath $authorityDescendantProjection)) "authority-descendant: projection directory was created in canonical memory"
+    Assert-True (-not ((Get-Content -Raw $authorityDescendant.Log) -match "state sync")) "authority-descendant: repository mutated before overlap rejection"
+
     # Physical escape: a lexically contained link or junction cannot redirect writes.
     $linked = Initialize-Case -Name "linked"
     $linkedOutside = Join-Path $linked.Root "linked-outside"

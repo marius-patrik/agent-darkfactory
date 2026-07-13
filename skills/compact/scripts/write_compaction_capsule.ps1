@@ -107,6 +107,23 @@ function Assert-PhysicalFileDestination {
     }
 }
 
+function Test-PathWithin {
+    param(
+        [Parameter(Mandatory=$true)][string]$Parent,
+        [Parameter(Mandatory=$true)][string]$Candidate
+    )
+
+    $parentPath = [System.IO.Path]::GetFullPath($Parent)
+    $candidatePath = [System.IO.Path]::GetFullPath($Candidate)
+    $relative = [System.IO.Path]::GetRelativePath($parentPath, $candidatePath)
+    return -not (
+        [System.IO.Path]::IsPathRooted($relative) -or
+        $relative -eq ".." -or
+        $relative.StartsWith("..$([System.IO.Path]::DirectorySeparatorChar)") -or
+        $relative.StartsWith("..$([System.IO.Path]::AltDirectorySeparatorChar)")
+    )
+}
+
 function Resolve-AgentEnvironment {
     $global:LASTEXITCODE = 0
     $lines = & $AgentsCommand state env
@@ -296,9 +313,11 @@ if ([string]::IsNullOrWhiteSpace($CompatibilityRoot)) {
     $CompatibilityRoot = Join-Path (Join-Path $UserHome ".codex") "memories"
 }
 $resolvedCompatibilityRoot = [System.IO.Path]::GetFullPath($CompatibilityRoot)
-$canonicalRootPath = [System.IO.Path]::GetFullPath($authority.MemoryRoot)
-if ($resolvedCompatibilityRoot -eq $canonicalRootPath) {
-    throw "Compatibility projection root must not equal canonical memory root."
+if (
+    (Test-PathWithin -Parent $authority.AgentsHome -Candidate $resolvedCompatibilityRoot) -or
+    (Test-PathWithin -Parent $resolvedCompatibilityRoot -Candidate $authority.AgentsHome)
+) {
+    throw "Compatibility projection root must be physically disjoint from the canonical AGENTS_HOME tree."
 }
 $compatibilityAnchor = [System.IO.Path]::GetPathRoot($resolvedCompatibilityRoot)
 Assert-PhysicalDirectoryChain -Root $compatibilityAnchor -Target $resolvedCompatibilityRoot
