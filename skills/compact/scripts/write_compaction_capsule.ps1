@@ -361,8 +361,8 @@ function Assert-MemoryStatusSucceeded {
     $integerTypes = @(
         [byte], [sbyte], [int16], [uint16], [int32], [uint32], [int64], [uint64]
     )
-    $recordsIsInteger = @($integerTypes | Where-Object { $Result.records -is $_ }).Count -eq 1
-    $eventsIsInteger = @($integerTypes | Where-Object { $Result.events -is $_ }).Count -eq 1
+    $recordsIsInteger = @($integerTypes | Where-Object { $_.IsInstanceOfType($Result.records) }).Count -eq 1
+    $eventsIsInteger = @($integerTypes | Where-Object { $_.IsInstanceOfType($Result.events) }).Count -eq 1
     if (
         [string]$Result.agentId -ne $ExpectedAgentId -or
         -not $recordsIsInteger -or
