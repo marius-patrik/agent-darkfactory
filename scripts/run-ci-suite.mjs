@@ -85,7 +85,11 @@ export const CI_SUITE_NAMES = Object.freeze([
 
 const suites = {
   inventory() {
-    run("inventory regression tests", process.execPath, ["--test", "scripts/verify-test-inventory.test.mjs"]);
+    run("product contract regression tests", process.execPath, [
+      "--test",
+      "scripts/verify-single-product.test.mjs",
+      "scripts/verify-test-inventory.test.mjs",
+    ]);
     run("repository layout and suite inventory", "bun", ["run", "layout:check"]);
   },
   core() {

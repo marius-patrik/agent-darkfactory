@@ -1,5 +1,9 @@
 # Packages and Environments Groundwork
 
+Status: parked supporting design. The program plan and PRD park custom
+distro/container implementation; this document preserves the already-landed
+scaffold boundary and does not authorize further work.
+
 This document defines the local desired-state groundwork for future real
 OS/container package and named-environment management. Image build/publication
 and named-environment switching remain gated by the current Agent OS image and

@@ -1,4 +1,11 @@
-# Wire Contract [S3.0] — the canonical Agent OS protocol
+# Agent OS wire contract reference
+
+**Status:** active supporting reference. The root [PRD](../../PRD.md) owns
+product specification, and the protobuf module under
+[`packages/core/proto/agent_os/v1/`](../../packages/core/proto/agent_os/v1) is
+the executable wire authority. This document maps that checked-in schema; its
+legacy section and decision labels are provenance, not a competing plan or
+authorization surface.
 
 > **The single most load-bearing artifact in the system.** Everything — gateway,
 > agent loop, TUI, web — builds against this. Source of truth = the protobuf
@@ -122,18 +129,16 @@ One proto module -> language stubs via **buf remote plugins** (no local protoc
 needed). From the **repo root**:
 
 ```sh
-bunx --bun @bufbuild/buf generate proto      # uses buf.gen.yaml
-# lint / breaking-change check:
-bunx --bun @bufbuild/buf lint proto
-bunx --bun @bufbuild/buf breaking proto --against '.git#branch=main,subdir=proto'
+(cd packages/core && bunx --bun @bufbuild/buf generate proto)
+bunx --bun @bufbuild/buf lint packages/core/proto
 ```
 
 Default outputs (all committable, all in this repo):
 
 | Lang | Output | Plugins | Runtime dep |
 |------|--------|---------|-------------|
-| **Go** | `contracts-go/gen` | `protocolbuffers/go` + `connectrpc/go` | `connectrpc.com/connect`, `google.golang.org/protobuf` (`go mod tidy`) |
-| **TS** | `clients/shared-ts/src/gen` | `bufbuild/es` (protobuf-es v2) | `@bufbuild/protobuf`, `@connectrpc/connect` (`bun install`) |
+| **Go** | `packages/core/contracts-go/gen` | `protocolbuffers/go` + `connectrpc/go` | `connectrpc.com/connect`, `google.golang.org/protobuf` (`go mod tidy`) |
+| **TS** | `packages/core/clients/shared-ts/src/gen` | `bufbuild/es` (protobuf-es v2) | `@bufbuild/protobuf`, `@connectrpc/connect` (`bun install`) |
 
 - **Go:** Connect service stubs land in `gen/agent_os/v1/agent_osv1connect`; messages
   in `gen/agent_os/v1`. `go_package` is injected by buf managed mode.
@@ -144,7 +149,7 @@ Default outputs (all committable, all in this repo):
 - **Python:** plain protobuf `*_pb2.py` + `*_pb2.pyi` for the in-repository
   Agent OS inference consumer are generated with the opt-in template:
   ```sh
-  bunx --bun @bufbuild/buf generate proto --template buf.gen.python.yaml
+  (cd packages/core && bunx --bun @bufbuild/buf generate proto --template buf.gen.python.yaml)
   ```
   That writes to `packages/inference/python-agent/agent/gen` and is run whenever the
   in-repository Python consumer changes. Import as:
@@ -166,23 +171,22 @@ validated separately from generated output.
 | `packages/inference/python-agent/agent/gen/__init__.py` | source | `sys.path` bootstrap so `from agent_os.v1 import ...` resolves after `import agent.gen` |
 | `packages/inference/python-agent/agent/gen/agent_os/__init__.py` | source | Python package marker for the `agent_os` namespace |
 | `packages/inference/python-agent/agent/gen/agent_os/v1/__init__.py` | source | Python package marker for the `agent_os.v1` namespace |
-| `clients/shared-ts/src/gen/index.ts` | hand-authored | Re-export barrel so consumers import from `@agent-os/shared-ts/gen` |
+| `packages/core/clients/shared-ts/src/gen/index.ts` | hand-authored | Re-export barrel so consumers import from `@agent-os/shared-ts/gen` |
 | `packages/inference/python-agent/agent/gen/agent_os/v1/*_pb2.py` | **buf-generated** | Protobuf message classes - regenerate, never hand-edit |
 | `packages/inference/python-agent/agent/gen/agent_os/v1/*_pb2.pyi` | **buf-generated** | Type stubs - regenerate, never hand-edit |
-| `clients/shared-ts/src/gen/agent_os/v1/*_pb.ts` | **buf-generated** | protobuf-es v2 message + service descriptors — regenerate, never hand-edit |
-| `contracts-go/gen/...` | **buf-generated** | Go message + Connect stubs - regenerate, never hand-edit |
+| `packages/core/clients/shared-ts/src/gen/agent_os/v1/*_pb.ts` | **buf-generated** | protobuf-es v2 message + service descriptors — regenerate, never hand-edit |
+| `packages/core/contracts-go/gen/...` | **buf-generated** | Go message + Connect stubs - regenerate, never hand-edit |
 
-### Connect-python — deferred to VS2
-VS0 ships **plain protobuf** for Python (sufficient for the agent to
-serialize/deserialize frames; the agent loop is the gateway's *peer*, not a
-Connect server that browsers hit). The **Connect-python** client/server
-(`connectrpc/python`, or grpclib/hyper transport) decision is **deferred to
-VS2**, when the agent↔gateway control surface is wired. The message types are
-identical, so adding Connect-python later is additive (no proto change).
+### Python bindings
+
+The inference worker consumes the plain protobuf bindings below
+`packages/inference/python-agent/agent/gen`. The gateway consumes the generated
+protobuf and Connect bindings below `packages/gateway/agent_os/v1` and mounts
+the implemented services described in [Gateway architecture](../gateway.md).
 
 ---
 
-## 6. Ambiguity resolutions (simplest reading, per the S3.0 brief)
+## 6. Historical schema decisions
 
 Where a doc was ambiguous, the simplest doc-aligned reading was chosen:
 
@@ -197,9 +201,9 @@ Where a doc was ambiguous, the simplest doc-aligned reading was chosen:
    a `session_event(kind=SWITCH)` (§06 SW3 "server replies with a
    `session_event`").
 3. **Jobs vs domains.** §07 distinguishes a domain (long-lived orchestrator) from
-   a job/run (a (sub-)session). Modeled as two services (`DomainService`,
-   `JobService`); VS0 = **list + status** only (lifecycle create/start/stop is
-   detailed at the domains slice, §07 D6).
+   a job/run (a (sub-)session). They are modeled as two services
+   (`DomainService`, `JobService`) with list and status RPCs in the checked-in
+   schema.
 4. **`agent` axis.** Agent ⊥ provider (D-011/RS2) but is selected via the same
    switcher surface (§06/D4 §4.1), so `SWITCHER_AXIS_AGENT` is included on the
    axis enum and `SwitcherState.agent` carries it.
@@ -222,25 +226,29 @@ bun install
 bun run check
 
 # Refresh and validate the in-repository Python consumer:
-bunx --bun @bufbuild/buf generate proto --template buf.gen.python.yaml
+(cd packages/core && bunx --bun @bufbuild/buf generate proto --template buf.gen.python.yaml)
 (cd packages/inference/python-agent && uv sync && uv run python -c "import agent.gen; from agent_os.v1 import session_frames_pb2")
 ```
 
 ---
 
-## 8. Package surface and downstream consumers
+## 8. Internal contract surface and in-repository consumers
 
-`agent-os-core` is a **contracts / shared-client package**, not a CLI. The canonical
-protobuf module in `proto/agent_os/v1/` is published as generated stubs for three
-consumer languages:
+`packages/core` is an internal implementation subtree, not an independently
+published package or CLI. Its generated stubs are checked into this repository
+for Andromeda's in-repository consumers. The package names and import specifiers
+below are internal module identities; the JavaScript workspaces remain private,
+and none of these generated clients is a supported external distribution
+surface.
 
-| Language | Package / module | Import example | Downstream consumer |
-|----------|------------------|----------------|---------------------|
-| **Go** | `github.com/marius-patrik/agents-manager/packages/core/contracts-go` | `agent_osv1 "github.com/marius-patrik/agents-manager/packages/core/contracts-go/gen/agent_os/v1"` | Go services under `packages/inference/` |
-| **Go Connect** | `.../gen/agent_os/v1/agent_osv1connect` | `import "github.com/marius-patrik/agents-manager/packages/core/contracts-go/gen/agent_os/v1/agent_osv1connect"` | Go services that speak the Connect control plane |
-| **TypeScript** | `@agent-os/shared-ts` | `import { RegistryService } from "@agent-os/shared-ts/gen"` | `clients/tui`, `clients/web`, and external TS apps |
+| Language | Internal path / module identity | Import example | In-repository consumer |
+|----------|---------------------------------|----------------|------------------------|
+| **Go** | `packages/core/contracts-go` | `agent_osv1 "github.com/marius-patrik/agents-manager/packages/core/contracts-go/gen/agent_os/v1"` | Go services under `packages/inference/` |
+| **Go Connect** | `packages/core/contracts-go/gen/agent_os/v1/agent_osv1connect` | `import "github.com/marius-patrik/agents-manager/packages/core/contracts-go/gen/agent_os/v1/agent_osv1connect"` | Go services that speak the Connect control plane |
+| **TypeScript** | private workspace `@agent-os/shared-ts` | `import { RegistryService } from "@agent-os/shared-ts/gen"` | `packages/core/clients/tui` and `packages/core/clients/web` |
 | **Python** | `agent.gen` bootstrap + `agent_os.v1` | `import agent.gen; from agent_os.v1 import session_frames_pb2, registry_pb2` | `packages/inference/python-agent` |
 
-`clients/tui` and `clients/web` are currently placeholder workspaces; they
-import `@agent-os/shared-ts` and will host the future TUI and web applications.
-There is no user-facing CLI or installer in this package.
+`packages/core/clients/tui` and `packages/core/clients/web` are currently
+private placeholder workspaces. They import the private `@agent-os/shared-ts`
+workspace and will host Andromeda's future in-repository TUI and web clients.
+There is no user-facing CLI or installer in `packages/core`.

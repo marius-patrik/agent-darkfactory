@@ -1,7 +1,7 @@
 {
   "name": "@marius-patrik/agents-manager",
   "version": "0.1.0",
-  "description": "Agent OS manager and unified `agents` CLI for canonical state, memory, providers, sessions, orchestration, packages, and harnesses.",
+  "description": "Authoritative Agent OS package surface for the unified `agents` CLI and the Andromeda system implementation.",
   "type": "module",
   "workspaces": [
     "packages/manager",

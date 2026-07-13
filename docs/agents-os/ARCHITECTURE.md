@@ -1,9 +1,11 @@
 # Agent OS Container Architecture
 
-Status: target contract. The repository has lifecycle planning code, but no
-released Agent OS image or root Dockerfile. Commands must not report an image
-build, pull, deployment, or environment switch as complete unless the real
-container boundary was invoked and verified.
+Status: parked supporting design. The repository has lifecycle planning code,
+but the program plan and PRD park custom distro/container work. This document
+does not authorize resumption. There is no released Agent OS image or root
+Dockerfile; commands must not report an image build, pull, deployment, or
+environment switch as complete unless a future owner-authorized issue implements
+and verifies the real container boundary.
 
 ## Product boundary
 

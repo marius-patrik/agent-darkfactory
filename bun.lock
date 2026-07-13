@@ -30,9 +30,6 @@
     "packages/manager": {
       "name": "@marius-patrik/andromeda-manager",
       "version": "0.1.0",
-      "bin": {
-        "agents": "./src/cli.ts",
-      },
       "dependencies": {
         "@bufbuild/protobuf": "2.12.1",
         "@connectrpc/connect": "2.1.2",

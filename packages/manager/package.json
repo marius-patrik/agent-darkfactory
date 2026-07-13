@@ -1,11 +1,9 @@
 {
   "name": "@marius-patrik/andromeda-manager",
+  "private": true,
   "version": "0.1.0",
-  "description": "Agent OS manager package implementing the `agents` CLI and canonical state, provider, session, package, and capability workflows.",
+  "description": "Private Agent OS manager implementation for state, lifecycle, providers, sessions, packages, capabilities, and the `agents` CLI.",
   "type": "module",
-  "bin": {
-    "agents": "./src/cli.ts"
-  },
   "scripts": {
     "check": "bunx tsc --noEmit",
     "test": "bun test test/*.test.ts",

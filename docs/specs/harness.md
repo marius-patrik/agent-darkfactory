@@ -1,4 +1,8 @@
-# Agent OS Runtime Harness PRD
+# Agent OS runtime harness component boundary
+
+The root [PRD](../../PRD.md) is the product authority. This supporting document
+records the current harness implementation boundary; the owner-ruled operation
+engine target and its sequencing remain in PRD epic #218 and its child issues.
 
 ## Purpose
 

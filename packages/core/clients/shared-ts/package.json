@@ -2,6 +2,7 @@
   "name": "@agent-os/shared-ts",
   "private": true,
   "version": "0.1.0",
+  "description": "Private generated TypeScript contract surface for Agent OS clients.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

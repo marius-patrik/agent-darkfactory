@@ -1,4 +1,10 @@
-# Worker-Lifecycle Contract
+# Retired worker-lifecycle design
+
+> **Status: retired design evidence.** The implementation files and planning
+> authorities named below are absent from the current repository. This file is
+> not an active contract and its “locked” decisions do not govern new work. The
+> program plan, root PRD, and operation-engine issues #221–#223 own the successor
+> requirements and execution lane.
 
 **Authority:** `.plans/design/drafts/D5-orchestration-algo.md` (§B — primary);
 `D1-decomposition.md` (§D1.2 — boundary call);

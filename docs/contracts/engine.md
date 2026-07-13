@@ -1,4 +1,12 @@
-# Engine Interface Contract — §03 I3
+# Retired engine interface design — §03 I3
+
+> **Status: retired design evidence.** The implementation paths and planning
+> authorities named below do not exist in the current repository. This file is
+> not an active contract and must not be used to authorize or implement work.
+> The program plan, root PRD, and inference-cluster epic #224 own the successor
+> requirements; GitHub issues under that epic are the execution lane. All
+> “authoritative” and “locked” language below is preserved only as historical
+> provenance.
 
 > **Design ref:** `.plans/design/03-inferctl.md` §I3 (line 29 — authoritative)  
 > **Scope decisions:** `EXECUTION-STATE.md` D-028 (Dynamo RESERVED; KTransformers on-demand; vLLM/llama.cpp 4.0 core)  

@@ -1,4 +1,10 @@
-# Execution Lane Contract
+# Retired execution-lane design
+
+> **Status: retired design evidence.** The implementation path and deployment
+> architecture named below are absent from the current repository. This file is
+> not an active contract or authorization surface. The program plan, root PRD,
+> and operation engine epic #218 own the successor requirements; its child
+> issues are the execution lane.
 
 This document specifies the execution-lane interface contract for Agent OS. This seam allows the Agent OS runtime to decouple capability execution from the underlying infrastructure, facilitating detached execution on k3s Jobs + NATS + Daemon today, and enabling Knative (or other FaaS engines) to drop in later with zero runtime code changes.
 

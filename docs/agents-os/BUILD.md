@@ -1,9 +1,11 @@
 # Agent OS Image Build and Release
 
-Status: not implemented. This repository currently has no Agent OS Dockerfile,
-no `image:build` or `image:smoke` package script, and no image-release workflow.
-The lifecycle CLI may render plans, but it must fail rather than claim that a
-missing image pipeline ran.
+Status: parked supporting design. The program plan and PRD park custom
+distro/container work; this document does not authorize resumption. This
+repository currently has no Agent OS Dockerfile, no `image:build` or
+`image:smoke` package script, and no image-release workflow. The lifecycle CLI
+may render plans, but it must fail rather than claim that a missing image
+pipeline ran.
 
 ## Required implementation
 
