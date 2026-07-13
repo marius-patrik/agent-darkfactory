@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "managedBy": "darkfactory",
-  "dataRepo": "marius-patrik/agents-data",
+  "dataRepo": "marius-patrik/Andromeda-data",
   "requiredSecrets": ["CODEX_AUTH_JSON"],
   "packageFiles": [
     ".github/workflows/df-plan.yml",

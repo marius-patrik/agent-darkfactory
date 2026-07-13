@@ -2,10 +2,6 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "_infra_failure": {
-      "type": "boolean",
-      "description": "True only when the review could not be produced due to an infrastructure or automation failure. This marker prevents transient infra failures from masquerading as a real 'changes required' verdict."
-    },
     "approved": {
       "type": "boolean",
       "description": "True only when the PR meets the linked issue spec and has no blocking findings."

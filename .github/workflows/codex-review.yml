@@ -16,7 +16,7 @@ permissions:
 jobs:
   codex-review:
     name: Codex Review
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
 
     steps:
@@ -36,6 +36,13 @@ jobs:
           persist-credentials: false
           path: pr-workspace
 
+      - name: Pin trusted review base
+        env:
+          REVIEW_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git -C pr-workspace cat-file -e "${REVIEW_BASE_SHA}^{commit}"
+          git -C pr-workspace update-ref refs/review/base "${REVIEW_BASE_SHA}"
+
       - name: Prepare review context
         uses: actions/github-script@v7
         with:
@@ -47,6 +54,7 @@ jobs:
 
             const contextFiles = [
               "AGENTS.md",
+              ".agents/AGENTS.md",
               ".agents/.project/AGENTS.md",
               ".agents/.project/PROJECT.md",
               ".agents/.project/COMMANDS.md",
@@ -93,10 +101,10 @@ jobs:
 
       - name: Run Codex review
         id: review
-        # This is an isolated CI reviewer, not a local provider/model authority.
-        # It deliberately uses the Codex CLI default instead of pinning a repo model.
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+          CODEX_REVIEW_MODEL: gpt-5.5
+          CODEX_REVIEW_EFFORT: low
           BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
@@ -121,128 +129,23 @@ jobs:
           printf '%s' "${CODEX_AUTH_JSON}" > "${CODEX_HOME_DIR}/auth.json"
           chmod 600 "${CODEX_HOME_DIR}/auth.json"
 
-          run_review() {
-            docker run --rm \
-              -e CODEX_HOME=/codex-home \
-              -e HOME=/codex-home \
-              -e BASE_BRANCH \
-              -e BASE_REF=origin/${BASE_BRANCH} \
-              -e REVIEW_OUTPUT=codex-review.json \
-              -e REVIEW_CONTEXT_DIR=/review-context \
-              -e PR_TITLE \
-              -e PR_BODY \
-              -v "${PWD}/pr-workspace:/workspace" \
-              -v "${PWD}/review-context:/review-context:ro" \
-              -v "${CODEX_HOME_DIR}:/codex-home" \
-              darkfactory-codex-review
+          docker run --rm \
+            -e CODEX_HOME=/codex-home \
+            -e HOME=/codex-home \
+            -e BASE_BRANCH \
+            -e BASE_REF=refs/review/base \
+            -e REVIEW_OUTPUT=codex-review.json \
+            -e CODEX_REVIEW_MODEL \
+            -e CODEX_REVIEW_EFFORT \
+            -e REVIEW_CONTEXT_DIR=/review-context \
+            -e PR_TITLE \
+            -e PR_BODY \
+            -v "${PWD}/pr-workspace:/workspace" \
+            -v "${PWD}/review-context:/review-context:ro" \
+            -v "${CODEX_HOME_DIR}:/codex-home" \
+            darkfactory-codex-review
 
-            cp pr-workspace/codex-review.json codex-review.json
-          }
-
-          is_infra_failure() {
-            node -e "const r = JSON.parse(require('fs').readFileSync('codex-review.json', 'utf8')); process.exit(r._infra_failure ? 0 : 1)" 2>/dev/null
-          }
-
-          run_review
-          if is_infra_failure; then
-            echo "Codex review reported an infrastructure failure; retrying once..."
-            run_review
-          fi
-
-      - name: Validate Codex verdict
-        if: always()
-        shell: bash
-        run: |
-          # Keep this validator inline so pull_request_target enforcement does not execute
-          # schema or validator files from a pull request-controlled checkout.
-          node <<'NODE'
-          const fs = require("fs");
-
-          const reviewPath = "codex-review.json";
-          const schema = {
-            additionalProperties: false,
-            properties: {
-              _infra_failure: { type: "boolean" },
-              approved: { type: "boolean" },
-              summary: { type: "string" },
-              blocking_findings: { type: "array", items: { type: "string" } },
-              non_blocking_notes: { type: "array", items: { type: "string" } },
-            },
-            required: ["approved", "summary", "blocking_findings", "non_blocking_notes"],
-          };
-
-          function isRecord(value) {
-            return typeof value === "object" && value !== null && !Array.isArray(value);
-          }
-
-          function validateReview(review) {
-            const errors = [];
-            if (!isRecord(review)) return ["review verdict must be a JSON object"];
-
-            const allowedProperties = new Set(Object.keys(schema.properties));
-            for (const property of Object.keys(review)) {
-              if (schema.additionalProperties === false && !allowedProperties.has(property)) {
-                errors.push(`unexpected property '${property}'`);
-              }
-            }
-
-            for (const property of schema.required) {
-              if (!(property in review)) errors.push(`missing required property '${property}'`);
-            }
-
-            if ("_infra_failure" in review && typeof review._infra_failure !== "boolean") {
-              errors.push("property '_infra_failure' must be boolean");
-            }
-            if ("approved" in review && typeof review.approved !== "boolean") {
-              errors.push("property 'approved' must be boolean");
-            }
-            if ("summary" in review && typeof review.summary !== "string") {
-              errors.push("property 'summary' must be string");
-            }
-            for (const property of ["blocking_findings", "non_blocking_notes"]) {
-              if (!(property in review)) continue;
-              if (!Array.isArray(review[property])) {
-                errors.push(`property '${property}' must be an array`);
-                continue;
-              }
-              review[property].forEach((item, index) => {
-                if (typeof item !== "string") errors.push(`property '${property}[${index}]' must be string`);
-              });
-            }
-
-            return errors;
-          }
-
-          function infraVerdict(errors) {
-            return {
-              approved: false,
-              _infra_failure: true,
-              summary: "Codex autoreview did not produce a schema-valid verdict due to an infrastructure/automation failure.",
-              blocking_findings: [
-                `Fix the Codex Review automation so codex-review.json matches the inline trusted schema. Validation errors: ${errors.join("; ")}`
-              ],
-              non_blocking_notes: []
-            };
-          }
-
-          let review;
-          try {
-            review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            review = infraVerdict([`review file is not valid JSON: ${message}`]);
-            fs.writeFileSync(reviewPath, `${JSON.stringify(review, null, 2)}\n`);
-            console.error(review.blocking_findings[0]);
-            process.exit(0);
-          }
-
-          const errors = validateReview(review);
-          if (errors.length > 0) {
-            const fallback = infraVerdict(errors);
-            fs.writeFileSync(reviewPath, `${JSON.stringify(fallback, null, 2)}\n`);
-            console.error(`Codex review verdict failed schema validation: ${errors.join("; ")}`);
-          }
-          NODE
+          cp pr-workspace/codex-review.json codex-review.json
 
       - name: Comment review
         if: always()
@@ -258,12 +161,8 @@ jobs:
             const notes = review.non_blocking_notes.length
               ? review.non_blocking_notes.map((item) => `- ${item}`).join("\n")
               : "- None";
-            const infra = review._infra_failure === true;
-            const verdict = review.approved ? "Approved" : infra ? "Infrastructure failure" : "Changes required";
-            const infraNote = infra
-              ? "\n\n> ⚠️ This result is an infrastructure/automation failure, not a code review verdict. The Codex Review harness failed before producing a valid review."
-              : "";
-            const commentBody = `${marker}\n## Codex Autoreview\n\n**Verdict:** ${verdict}${infraNote}\n\n${review.summary}\n\n### Blocking Findings\n\n${blocking}\n\n### Non-Blocking Notes\n\n${notes}`;
+            const verdict = review.approved ? "Approved" : "Changes required";
+            const commentBody = `${marker}\n## Codex Autoreview\n\n**Verdict:** ${verdict}\n\n${review.summary}\n\n### Blocking Findings\n\n${blocking}\n\n### Non-Blocking Notes\n\n${notes}`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
@@ -278,4 +177,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          node -e "const fs = require('fs'); const r = JSON.parse(fs.readFileSync('codex-review.json', 'utf8')); if (r._infra_failure) { console.error('Codex review failed with an infrastructure failure.'); process.exit(1); } if (!r.approved) { console.error('Codex review did not approve this PR.'); process.exit(1); }"
+          node -e "const fs = require('fs'); const r = JSON.parse(fs.readFileSync('codex-review.json', 'utf8')); if (!r.approved) { console.error('Codex review did not approve this PR.'); process.exit(1); }"

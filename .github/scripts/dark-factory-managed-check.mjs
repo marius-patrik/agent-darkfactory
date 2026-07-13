@@ -39,10 +39,12 @@ function isNonEmptyString(value) {
 try {
   const config = readConfig();
   const requiredFiles = new Set(config.requiredFiles);
+  const packageFiles = new Set(config.packageFiles);
   for (const file of config.packageFiles) {
     if (!requiredFiles.has(file)) fail("Package-owned managed file is not declared as required.", file);
   }
   for (const file of config.requiredFiles) {
+    if (packageFiles.has(file)) continue;
     if (!existsSync(file)) fail("Missing DarkFactory managed file.", file);
   }
   for (const file of config.removedFiles) {
