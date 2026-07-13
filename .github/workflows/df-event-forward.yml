@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: >-
       ${{
-        github.repository == 'marius-patrik/agent-darkfactory' &&
+        github.repository == 'marius-patrik/DarkFactory' &&
         (
           (
             github.event_name == 'issues' &&
@@ -49,7 +49,7 @@ jobs:
           app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
           private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
           owner: marius-patrik
-          repositories: agent-darkfactory
+          repositories: DarkFactory
           permission-actions: write
 
       - name: Dispatch control orchestrator
@@ -59,7 +59,7 @@ jobs:
           script: |
             await github.rest.actions.createWorkflowDispatch({
               owner: "marius-patrik",
-              repo: "agent-darkfactory",
+              repo: "DarkFactory",
               workflow_id: "df-orchestrate.yml",
               ref: "main",
               inputs: {

@@ -19,7 +19,7 @@ const {
 
 const { auditIssueBody } = dfLib;
 
-const parentRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+const parentRepo = { owner: "marius-patrik", repo: "DarkFactory" };
 
 function mockGh(routes: Record<string, unknown>) {
   return {
@@ -48,10 +48,10 @@ test("parseGitmodules returns empty array for empty content", () => {
 test("parseGitmodules parses a single submodule", () => {
   const content = `[submodule "packages/darkfactory"]
   path = packages/darkfactory
-  url = https://github.com/marius-patrik/agent-darkfactory.git
+  url = https://github.com/marius-patrik/DarkFactory.git
 `;
   assert.deepEqual(parseGitmodules(content), [
-    { name: "packages/darkfactory", path: "packages/darkfactory", url: "https://github.com/marius-patrik/agent-darkfactory.git" }
+    { name: "packages/darkfactory", path: "packages/darkfactory", url: "https://github.com/marius-patrik/DarkFactory.git" }
   ]);
 });
 
@@ -98,7 +98,7 @@ test("resolveSubmoduleRepo resolves relative URLs against the parent repository"
     repo: "shared"
   });
   assert.deepEqual(resolveSubmoduleRepo(parentRepo, "./sibling"), {
-    owner: "agent-darkfactory",
+    owner: "DarkFactory",
     repo: "sibling"
   });
 });
@@ -113,10 +113,10 @@ test("resolveSubmoduleRepo returns null for non-GitHub URLs", () => {
 test("auditSubmoduleState returns no findings when submodules are in sync", async () => {
   const sha = "abc123def456abc123def456abc123def456abcd";
   const routes = {
-    "GET /repos/marius-patrik/agent-darkfactory/contents/.gitmodules?ref=main": gitmodulesContent(
+    "GET /repos/marius-patrik/DarkFactory/contents/.gitmodules?ref=main": gitmodulesContent(
       `[submodule "shared"]\n  path = shared\n  url = ../shared.git\n`
     ),
-    "GET /repos/marius-patrik/agent-darkfactory/contents/shared?ref=main": { type: "submodule", sha },
+    "GET /repos/marius-patrik/DarkFactory/contents/shared?ref=main": { type: "submodule", sha },
     "GET /repos/marius-patrik/shared": { default_branch: "main" },
     "GET /repos/marius-patrik/shared/commits/main": { sha }
   };
@@ -129,10 +129,10 @@ test("auditSubmoduleState flags a dirty submodule when recorded commit differs f
   const recordedSha = "abc123def456abc123def456abc123def456abcd";
   const headSha = "fedcba6543210fedcba6543210fedcba6543210f";
   const routes = {
-    "GET /repos/marius-patrik/agent-darkfactory/contents/.gitmodules?ref=main": gitmodulesContent(
+    "GET /repos/marius-patrik/DarkFactory/contents/.gitmodules?ref=main": gitmodulesContent(
       `[submodule "shared"]\n  path = shared\n  url = ../shared.git\n`
     ),
-    "GET /repos/marius-patrik/agent-darkfactory/contents/shared?ref=main": { type: "submodule", sha: recordedSha },
+    "GET /repos/marius-patrik/DarkFactory/contents/shared?ref=main": { type: "submodule", sha: recordedSha },
     "GET /repos/marius-patrik/shared": { default_branch: "main" },
     "GET /repos/marius-patrik/shared/commits/main": { sha: headSha }
   };
@@ -147,10 +147,10 @@ test("auditSubmoduleState flags a dirty submodule when recorded commit differs f
 
 test("auditSubmoduleState flags a submodule declared in .gitmodules but missing from the tree", async () => {
   const routes = {
-    "GET /repos/marius-patrik/agent-darkfactory/contents/.gitmodules?ref=main": gitmodulesContent(
+    "GET /repos/marius-patrik/DarkFactory/contents/.gitmodules?ref=main": gitmodulesContent(
       `[submodule "shared"]\n  path = shared\n  url = ../shared.git\n`
     ),
-    "GET /repos/marius-patrik/agent-darkfactory/contents/shared?ref=main": null,
+    "GET /repos/marius-patrik/DarkFactory/contents/shared?ref=main": null,
     "GET /repos/marius-patrik/shared": { default_branch: "main" },
     "GET /repos/marius-patrik/shared/commits/main": { sha: "abc123" }
   };
@@ -163,7 +163,7 @@ test("auditSubmoduleState flags a submodule declared in .gitmodules but missing 
 
 test("auditSubmoduleState flags non-GitHub submodule URLs", async () => {
   const routes = {
-    "GET /repos/marius-patrik/agent-darkfactory/contents/.gitmodules?ref=main": gitmodulesContent(
+    "GET /repos/marius-patrik/DarkFactory/contents/.gitmodules?ref=main": gitmodulesContent(
       `[submodule "external"]\n  path = external\n  url = https://gitlab.com/foo/bar.git\n`
     )
   };
@@ -176,7 +176,7 @@ test("auditSubmoduleState flags non-GitHub submodule URLs", async () => {
 
 test("auditHealth flags failing workflow runs", async () => {
   const routes = {
-    "GET /repos/marius-patrik/agent-darkfactory/actions/runs?branch=main&per_page=20": {
+    "GET /repos/marius-patrik/DarkFactory/actions/runs?branch=main&per_page=20": {
       workflow_runs: [
         { status: "completed", conclusion: "success", name: "ci", workflow_id: 1 },
         { status: "completed", conclusion: "failure", name: "validate", workflow_id: 2 }
@@ -193,7 +193,7 @@ test("auditHealth flags failing workflow runs", async () => {
 
 test("auditHealth reports no completed runs", async () => {
   const routes = {
-    "GET /repos/marius-patrik/agent-darkfactory/actions/runs?branch=main&per_page=20": {
+    "GET /repos/marius-patrik/DarkFactory/actions/runs?branch=main&per_page=20": {
       workflow_runs: [{ status: "queued", conclusion: null, name: "ci", workflow_id: 1 }]
     }
   };
@@ -206,7 +206,7 @@ test("auditHealth reports no completed runs", async () => {
 
 test("auditHealth ignores skipped and neutral conclusions", async () => {
   const routes = {
-    "GET /repos/marius-patrik/agent-darkfactory/actions/runs?branch=main&per_page=20": {
+    "GET /repos/marius-patrik/DarkFactory/actions/runs?branch=main&per_page=20": {
       workflow_runs: [
         { status: "completed", conclusion: "skipped", name: "ci", workflow_id: 1 },
         { status: "completed", conclusion: "neutral", name: "lint", workflow_id: 2 }
@@ -223,7 +223,7 @@ test("auditDocStaleness flags docs older than the threshold", async () => {
   const stale = new Date(now.getTime() - (DOC_STALE_DAYS + 10) * 24 * 60 * 60 * 1000).toISOString();
   const routes: Record<string, unknown> = {};
   for (const docPath of DOC_PATHS) {
-    routes[`GET /repos/marius-patrik/agent-darkfactory/commits?sha=main&path=${encodeURIComponent(docPath)}&per_page=1`] = [
+    routes[`GET /repos/marius-patrik/DarkFactory/commits?sha=main&path=${encodeURIComponent(docPath)}&per_page=1`] = [
       { commit: { committer: { date: stale } } }
     ];
   }
@@ -240,7 +240,7 @@ test("auditDocStaleness ignores fresh docs", async () => {
   const fresh = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
   const routes: Record<string, unknown> = {};
   for (const docPath of DOC_PATHS) {
-    routes[`GET /repos/marius-patrik/agent-darkfactory/commits?sha=main&path=${encodeURIComponent(docPath)}&per_page=1`] = [
+    routes[`GET /repos/marius-patrik/DarkFactory/commits?sha=main&path=${encodeURIComponent(docPath)}&per_page=1`] = [
       { commit: { committer: { date: fresh } } }
     ];
   }

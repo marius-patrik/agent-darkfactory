@@ -16,7 +16,7 @@ const MANAGED_FILES: ManagedFile[] = [
   { path: ".github/workflows/ci.yml", content: "name: CI\n" },
   {
     path: ".darkfactory/managed-repository.json",
-    content: JSON.stringify({ schemaVersion: 1, requiredFiles: [], removedFiles: [] })
+    content: JSON.stringify({ schemaVersion: 1, packageFiles: [], requiredFiles: [], removedFiles: [] })
   }
 ];
 
@@ -32,13 +32,13 @@ test("syncRepositories processes DarkFactory control repository first", async ()
     requester,
     [
       { full_name: "marius-patrik/dream", default_branch: "main", archived: false },
-      { full_name: "marius-patrik/agent-darkfactory", default_branch: "main", archived: false },
+      { full_name: "marius-patrik/DarkFactory", default_branch: "main", archived: false },
       { full_name: "marius-patrik/agents-plugin", default_branch: "main", archived: false }
     ],
     MANAGED_FILES
   );
 
-  assert.deepEqual(order, ["marius-patrik/agent-darkfactory", "marius-patrik/dream", "marius-patrik/agents-plugin"]);
+  assert.deepEqual(order, ["marius-patrik/DarkFactory", "marius-patrik/dream", "marius-patrik/agents-plugin"]);
 });
 
 test("syncRepositories stops when DarkFactory control repository sync fails", async () => {
@@ -47,7 +47,7 @@ test("syncRepositories stops when DarkFactory control repository sync fails", as
     onSetupRef(owner, repo) {
       order.push(`${owner}/${repo}`);
 
-      if (repo === "agent-darkfactory") {
+      if (repo === "DarkFactory") {
         throw new Error("control repo sync failed");
       }
     }
@@ -57,13 +57,13 @@ test("syncRepositories stops when DarkFactory control repository sync fails", as
     requester,
     [
       { full_name: "marius-patrik/dream", default_branch: "main", archived: false },
-      { full_name: "marius-patrik/agent-darkfactory", default_branch: "main", archived: false },
+      { full_name: "marius-patrik/DarkFactory", default_branch: "main", archived: false },
       { full_name: "marius-patrik/agents-plugin", default_branch: "main", archived: false }
     ],
     MANAGED_FILES
   );
 
-  assert.deepEqual(order, ["marius-patrik/agent-darkfactory"]);
+  assert.deepEqual(order, ["marius-patrik/DarkFactory"]);
 });
 
 test("syncRepositories continues when a non-control repository sync fails", async () => {
@@ -85,14 +85,14 @@ test("syncRepositories continues when a non-control repository sync fails", asyn
     requester,
     [
       { full_name: "marius-patrik/dream", default_branch: "main", archived: false },
-      { full_name: "marius-patrik/agent-darkfactory", default_branch: "main", archived: false },
+      { full_name: "marius-patrik/DarkFactory", default_branch: "main", archived: false },
       { full_name: "marius-patrik/agents-plugin", default_branch: "main", archived: false }
     ],
     MANAGED_FILES
   );
 
   assert.deepEqual(order, [
-    "marius-patrik/agent-darkfactory",
+    "marius-patrik/DarkFactory",
     "marius-patrik/dream",
     "marius-patrik/agents-plugin"
   ]);
@@ -147,7 +147,7 @@ test("dispatchOrchestrator dispatches df-orchestrate.yml in the control reposito
 
   await dispatchOrchestrator(
     requester,
-    { owner: "marius-patrik", repo: "agent-darkfactory" },
+    { owner: "marius-patrik", repo: "DarkFactory" },
     {
       repository: { name: "dream", owner: { login: "marius-patrik" } },
       issue: { number: 42 }
@@ -159,7 +159,7 @@ test("dispatchOrchestrator dispatches df-orchestrate.yml in the control reposito
   assert.equal(requests[0].route, "POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches");
   assert.deepEqual(requests[0].parameters, {
     owner: "marius-patrik",
-    repo: "agent-darkfactory",
+    repo: "DarkFactory",
     workflow_id: "df-orchestrate.yml",
     ref: "main",
     inputs: {
@@ -180,7 +180,7 @@ test("dispatchOrchestrator swallows dispatch errors", async () => {
   await assert.doesNotReject(async () => {
     await dispatchOrchestrator(
       requester,
-      { owner: "marius-patrik", repo: "agent-darkfactory" },
+      { owner: "marius-patrik", repo: "DarkFactory" },
       {
         repository: { name: "dream", owner: { login: "marius-patrik" } },
         issue: { number: 42 }

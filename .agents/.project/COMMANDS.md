@@ -37,7 +37,7 @@ npm run install:url
 npm run sync:managed
 ```
 
-## Product integration
+## Product boundary
 
-DarkFactory has no component release command. Agent OS root integration owns
-versioning and publication.
+DarkFactory owns its repository versioning and releases. Agent OS integration
+may launch a pinned revision but does not own DarkFactory publication.

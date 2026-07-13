@@ -37,7 +37,7 @@ jobs:
     runs-on: [self-hosted, df-local]
     if: >-
       ${{
-        github.repository == 'marius-patrik/agent-darkfactory' &&
+        github.repository == 'marius-patrik/DarkFactory' &&
         github.event_name == 'workflow_dispatch'
       }}
     permissions:
@@ -92,7 +92,7 @@ jobs:
       - name: Run worker
         env:
           DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
-          DF_CONTROL_REPO: marius-patrik/agent-darkfactory
+          DF_CONTROL_REPO: marius-patrik/DarkFactory
           DF_TARGET_REPO: ${{ inputs.repo }}
           DF_TARGET_ISSUE_NUMBER: ${{ inputs.issue_number }}
           DF_TARGET_BASE_REF: ${{ inputs.base_ref }}
@@ -100,3 +100,20 @@ jobs:
           DF_RESUME_BRANCH: ${{ inputs.resume_branch }}
           DF_TRIGGER: ${{ github.event_name }}
         run: node darkfactory-control/.github/scripts/df-work.mjs
+
+      - name: Record verification target
+        env:
+          DF_TARGET_REPO: ${{ inputs.repo }}
+          DF_TARGET_ISSUE_NUMBER: ${{ inputs.issue_number }}
+        shell: bash
+        run: |
+          mkdir -p .darkfactory-verification
+          node -e "const fs=require('node:fs'); const issue=Number(process.env.DF_TARGET_ISSUE_NUMBER); if (!Number.isInteger(issue) || issue <= 0) throw new Error('invalid issue number'); fs.writeFileSync('.darkfactory-verification/target.json', JSON.stringify({repo:process.env.DF_TARGET_REPO,issue_number:issue})+'\n')"
+
+      - name: Upload verification target
+        uses: actions/upload-artifact@v4
+        with:
+          name: df-verification-target
+          path: .darkfactory-verification/target.json
+          if-no-files-found: error
+          retention-days: 1

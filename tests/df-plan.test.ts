@@ -17,7 +17,7 @@ const {
 } = dfPlan;
 
 const repository = { owner: "marius-patrik", repo: "example" };
-const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+const controlRepo = { owner: "marius-patrik", repo: "DarkFactory" };
 const item = {
   marker: "df-prd:core-loops-l3-work",
   slug: "core-loops-l3-work",
@@ -93,12 +93,12 @@ test("escalateHumanClosedPrdIssue creates ask-owner issue and comments once", as
     closed_by: { login: "marius-patrik", type: "User" }
   };
   const { gh, calls } = mockGh({
-    "GET /repos/marius-patrik/agent-darkfactory/issues?state=all&per_page=100&page=1": [],
-    "POST /repos/marius-patrik/agent-darkfactory/labels": {},
+    "GET /repos/marius-patrik/DarkFactory/issues?state=all&per_page=100&page=1": [],
+    "POST /repos/marius-patrik/DarkFactory/labels": {},
     "POST /repos/marius-patrik/example/issues/7/comments": { id: 100 },
-    "POST /repos/marius-patrik/agent-darkfactory/issues": {
+    "POST /repos/marius-patrik/DarkFactory/issues": {
       number: 99,
-      html_url: "https://github.com/marius-patrik/agent-darkfactory/issues/99"
+      html_url: "https://github.com/marius-patrik/DarkFactory/issues/99"
     }
   });
 
@@ -116,7 +116,7 @@ test("escalateHumanClosedPrdIssue creates ask-owner issue and comments once", as
   assert.match(commentCall.body.body, /PRD item is still marked as incomplete/);
 
   const createCall = calls.find(
-    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/agent-darkfactory/issues"
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/DarkFactory/issues"
   );
   assert.ok(createCall);
   assert.deepEqual(createCall.body.labels, ["P1", "df:ask-owner", "df:class:standard"]);
@@ -132,20 +132,20 @@ test("escalateHumanClosedPrdIssue updates existing ask-owner issue and does not 
   const marker = askOwnerIssueMarker(repository, item);
   const existing = {
     number: 99,
-    html_url: "https://github.com/marius-patrik/agent-darkfactory/issues/99",
+    html_url: "https://github.com/marius-patrik/DarkFactory/issues/99",
     body: `<!-- ${marker} -->`,
     state: "closed",
     labels: []
   };
   const { gh, calls } = mockGh({
-    "GET /repos/marius-patrik/agent-darkfactory/issues?state=all&per_page=100&page=1": [existing],
-    "GET /repos/marius-patrik/agent-darkfactory/issues/99": { number: 99, labels: [] },
-    "POST /repos/marius-patrik/agent-darkfactory/labels": {},
-    "PATCH /repos/marius-patrik/agent-darkfactory/issues/99": {
+    "GET /repos/marius-patrik/DarkFactory/issues?state=all&per_page=100&page=1": [existing],
+    "GET /repos/marius-patrik/DarkFactory/issues/99": { number: 99, labels: [] },
+    "POST /repos/marius-patrik/DarkFactory/labels": {},
+    "PATCH /repos/marius-patrik/DarkFactory/issues/99": {
       number: 99,
-      html_url: "https://github.com/marius-patrik/agent-darkfactory/issues/99"
+      html_url: "https://github.com/marius-patrik/DarkFactory/issues/99"
     },
-    "POST /repos/marius-patrik/agent-darkfactory/issues/99/labels": {}
+    "POST /repos/marius-patrik/DarkFactory/issues/99/labels": {}
   });
 
   const result = await escalateHumanClosedPrdIssue(gh, controlRepo, repository, item, issue);
@@ -158,7 +158,7 @@ test("escalateHumanClosedPrdIssue updates existing ask-owner issue and does not 
   );
 
   const patch = calls.find(
-    (call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/agent-darkfactory/issues/99"
+    (call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/DarkFactory/issues/99"
   );
   assert.ok(patch);
   assert.equal(patch.body.state, "open");
@@ -172,12 +172,12 @@ test("handleClosedIncompletePrdIssue escalates human-closed issue without reopen
     closed_by: { login: "marius-patrik", type: "User" }
   };
   const { gh, calls } = mockGh({
-    "GET /repos/marius-patrik/agent-darkfactory/issues?state=all&per_page=100&page=1": [],
-    "POST /repos/marius-patrik/agent-darkfactory/labels": {},
+    "GET /repos/marius-patrik/DarkFactory/issues?state=all&per_page=100&page=1": [],
+    "POST /repos/marius-patrik/DarkFactory/labels": {},
     "POST /repos/marius-patrik/example/issues/7/comments": { id: 100 },
-    "POST /repos/marius-patrik/agent-darkfactory/issues": {
+    "POST /repos/marius-patrik/DarkFactory/issues": {
       number: 99,
-      html_url: "https://github.com/marius-patrik/agent-darkfactory/issues/99"
+      html_url: "https://github.com/marius-patrik/DarkFactory/issues/99"
     }
   });
 

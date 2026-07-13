@@ -10,7 +10,7 @@
   "scripts": {
     "build": "bun run --filter '*' build",
     "ci": "bun install --frozen-lockfile && bun run clean && bun run typecheck && bun run test && bun run build",
-    "clean": "rm -rf packages/*/dist",
+    "clean": "node -e \"const fs=require('node:fs'); for (const name of fs.readdirSync('packages')) fs.rmSync('packages/'+name+'/dist',{recursive:true,force:true})\"",
     "dev:cli": "bun --filter @agent-os/template-cli run dev",
     "dev:web": "bun --filter @agent-os/template-web run dev",
     "start": "bun --filter @agent-os/template-web run start",

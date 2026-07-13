@@ -1,13 +1,13 @@
 # Handoff
 
-## Active reconciliation
+## Current authority
 
-Branch: `reconcile/single-agent-os`
+Branch: `main`
 
-The current change removes copied global agent files, managed-version checks,
-old data/workspace aliases, and DarkFactory's independent provider/model
-registry. Local workers now require a healthy Agent OS installation and invoke
-`agents` without provider or model flags.
+DarkFactory remains a separately owned product and repository. It delegates
+local provider execution and personal state to Agent OS while keeping GitHub
+control-plane behavior and operational ledgers under DarkFactory authority.
+Worker claims remain `df:running` until live GitHub verification succeeds;
+follow-through merges only verified (`df:done`) worker PRs.
 
-Before handoff, run `npm run check` and confirm the no-drift search finds no
-retired product names or copied global-agent paths.
+Before handoff, run `npm run check`.

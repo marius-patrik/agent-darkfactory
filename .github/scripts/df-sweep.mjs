@@ -1,6 +1,6 @@
 import {
   CODEX_REVIEW_REQUIRED_CONTEXT,
-  AGENT_OS_DATA_REPO,
+  DARK_FACTORY_DATA_REPO,
   assertAllowedRepo,
   checksAreGreen,
   checksSummary,
@@ -11,6 +11,7 @@ import {
   getOptionalFileContent,
   getRequiredStatusCheckContexts,
   isDarkFactoryWorkerPullRequest as isWorkerPullRequest,
+  isVerifiedWorkerIssue,
   isParkedRepo,
   listActiveManagedRepos,
   managedRepoLifecycleState,
@@ -36,7 +37,7 @@ const NO_CHECK_ALLOWLIST = new Set(
 const EMPTY_CHECK_SETTLE_MS = 10 * 60 * 1000;
 let gh;
 let CONTROL_REPO;
-const DATA_REPO = AGENT_OS_DATA_REPO;
+const DATA_REPO = DARK_FACTORY_DATA_REPO;
 
 export function configureSweepRuntime(options) {
   gh = options.gh;
@@ -257,6 +258,14 @@ export async function considerPullRequest(repository, pull, enforcementRules = n
       `Fresh GitHub mergeability is \`${mergeGate.mergeable || "unknown"}\`.`
     ]);
     return { repo: repoName(repository), pr: ref, action: "skip", reason, issue_update: issueUpdate };
+  }
+
+  const issueNumber = darkFactoryWorkerIssueNumber(pull);
+  if (issueNumber) {
+    const issue = await gh.request("GET", `/repos/${repoName(repository)}/issues/${issueNumber}`);
+    if (!isVerifiedWorkerIssue(issue)) {
+      return { repo: repoName(repository), pr: ref, action: "skip", reason: "not-verified", issue: `#${issueNumber}` };
+    }
   }
 
   const protectedBranch = await branchIsProtected(repository, pull.baseRefName);

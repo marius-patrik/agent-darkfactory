@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: >-
       ${{
-        github.repository == 'marius-patrik/agent-darkfactory' &&
+        github.repository == 'marius-patrik/DarkFactory' &&
         (
           github.event_name == 'schedule' ||
           github.event_name == 'workflow_dispatch'
@@ -91,7 +91,7 @@ jobs:
       - name: Run audit
         env:
           DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
-          DF_CONTROL_REPO: marius-patrik/agent-darkfactory
+          DF_CONTROL_REPO: marius-patrik/DarkFactory
           DF_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || github.repository }}
           DF_AUDIT_ALL: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.repo)) && 'true' || 'false' }}
           DF_TRIGGER: ${{ github.event_name }}

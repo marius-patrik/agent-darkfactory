@@ -1,6 +1,7 @@
 # DarkFactory project rules
 
-DarkFactory is the GitHub control-plane component of Agent OS.
+DarkFactory is a separate GitHub-native product that integrates with Agent OS
+for local execution and shared personal state.
 
 - Keep webhook handlers in `src/bot.ts` and HTTP routing in `src/server.ts`.
 - Keep managed-file discovery in `src/managed-files.ts` and fail closed unless

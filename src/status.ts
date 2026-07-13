@@ -1,6 +1,6 @@
 export const CONTROL_OWNER = "marius-patrik";
-export const CONTROL_REPO = "agent-darkfactory";
-export const AGENT_OS_DATA_REPO = "agents-data";
+export const CONTROL_REPO = "DarkFactory";
+export const DARK_FACTORY_DATA_REPO = "darkfactory-data";
 
 export interface GitHubRequester {
   request(route: string, parameters: Record<string, unknown>): Promise<{ data: unknown; headers?: Record<string, string> }>;
@@ -124,7 +124,7 @@ export async function buildStatusReport(
 ): Promise<StatusReport> {
   const owner = CONTROL_OWNER;
   const controlRepo = CONTROL_REPO;
-  const dataRepo = AGENT_OS_DATA_REPO;
+  const dataRepo = DARK_FACTORY_DATA_REPO;
 
   const managedRepos = await fetchManagedRepos(github, { owner, repo: controlRepo }, owner);
   const [loopState, recentRuns, latestLedger, blocked, prdCoverage, backlogCoverage] = await Promise.all([

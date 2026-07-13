@@ -92,7 +92,7 @@ test("orchestrator dispatches open df:ready issues in active managed repos", asy
       if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/42/labels/df%3Aready") {
         return null;
       }
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") {
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") {
         return null;
       }
 
@@ -102,7 +102,7 @@ test("orchestrator dispatches open df:ready issues in active managed repos", asy
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     writeLedger: false,
@@ -169,7 +169,7 @@ test("orchestrator does not dispatch issues that already have an open worker PR"
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     writeLedger: false,
@@ -699,12 +699,12 @@ test("orchestrator updates the L6 dashboard issue after dispatch", async () => {
       if (method === "GET" && path === "/repos/marius-patrik/example/branches/main/protection") throw notFound;
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/7/labels") return {};
       if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/7/labels/df%3Aready") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/labels") return {};
-      if (method === "GET" && path === "/repos/marius-patrik/agent-darkfactory/issues?state=open&per_page=100&page=1") {
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/labels") return {};
+      if (method === "GET" && path === "/repos/marius-patrik/DarkFactory/issues?state=open&per_page=100&page=1") {
         return [{ number: 99, body: `<!-- ${DASHBOARD_MARKER} -->`, labels: [] }];
       }
-      if (method === "PATCH" && path === "/repos/marius-patrik/agent-darkfactory/issues/99") return {};
+      if (method === "PATCH" && path === "/repos/marius-patrik/DarkFactory/issues/99") return {};
 
       throw new Error(`Unexpected GitHub request: ${method} ${path}`);
     }
@@ -712,7 +712,7 @@ test("orchestrator updates the L6 dashboard issue after dispatch", async () => {
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     policy: {
@@ -729,7 +729,7 @@ test("orchestrator updates the L6 dashboard issue after dispatch", async () => {
   assert.deepEqual(result.dispatched.map((dispatch: { repo: string; issue: number }) => [dispatch.repo, dispatch.issue]), [
     ["marius-patrik/example", 7]
   ]);
-  const dashboardUpdate = calls.find((call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/agent-darkfactory/issues/99");
+  const dashboardUpdate = calls.find((call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/DarkFactory/issues/99");
   assert.equal(dashboardUpdate?.body.title, "Dashboard");
   assert.match(dashboardUpdate?.body.body, new RegExp(DASHBOARD_MARKER));
   assert.match(dashboardUpdate?.body.body, /marius-patrik\/example#7/);
@@ -770,11 +770,11 @@ test("orchestrator escalates ambiguous sequencing to df:ask-owner without dispat
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/17/labels") return {};
       if (method === "DELETE" && path.startsWith("/repos/marius-patrik/example/issues/17/labels/")) return {};
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/17/comments") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/labels") return {};
-      if (method === "GET" && path === "/repos/marius-patrik/agent-darkfactory/issues?state=open&per_page=100&page=1") {
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/labels") return {};
+      if (method === "GET" && path === "/repos/marius-patrik/DarkFactory/issues?state=open&per_page=100&page=1") {
         return [{ number: 99, body: "<!-- df-dashboard:orchestration -->", labels: [] }];
       }
-      if (method === "PATCH" && path === "/repos/marius-patrik/agent-darkfactory/issues/99") return {};
+      if (method === "PATCH" && path === "/repos/marius-patrik/DarkFactory/issues/99") return {};
 
       throw new Error(`Unexpected GitHub request: ${method} ${path}`);
     }
@@ -782,7 +782,7 @@ test("orchestrator escalates ambiguous sequencing to df:ask-owner without dispat
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     writeLedger: false,
@@ -809,7 +809,7 @@ test("orchestrator escalates ambiguous sequencing to df:ask-owner without dispat
     new RegExp(ASK_OWNER_MARKER)
   );
   assert.equal(calls.some((call) => call.path.endsWith("/actions/workflows/df-work.yml/dispatches")), false);
-  const dashboardUpdate = calls.find((call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/agent-darkfactory/issues/99");
+  const dashboardUpdate = calls.find((call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/DarkFactory/issues/99");
   assert.match(dashboardUpdate?.body.body, /Owner Escalations/);
   assert.match(dashboardUpdate?.body.body, /marius-patrik\/example#17/);
 });
@@ -934,7 +934,7 @@ test("orchestrator dispatches owner-reset issues instead of re-escalating stale 
       if (method === "GET" && path === "/repos/marius-patrik/example/branches/main/protection") throw notFound;
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/30/labels") return {};
       if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/30/labels/df%3Aready") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
 
       throw new Error(`Unexpected GitHub request: ${method} ${path}`);
     }
@@ -942,7 +942,7 @@ test("orchestrator dispatches owner-reset issues instead of re-escalating stale 
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     writeLedger: false,
@@ -1001,7 +1001,7 @@ test("orchestrator turns trusted /df run comments into df:ready before dispatch"
       if (method === "GET" && path === "/repos/marius-patrik/example/git/ref/heads/dev") throw notFound;
       if (method === "GET" && path === "/repos/marius-patrik/example/branches/main/protection") throw notFound;
       if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/12/labels/df%3Aready") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
 
       throw new Error(`Unexpected GitHub request: ${method} ${path}`);
     }
@@ -1010,7 +1010,7 @@ test("orchestrator turns trusted /df run comments into df:ready before dispatch"
   try {
     const result = await orchestrate({
       gh,
-      controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+      controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
       registry: { repositories: { "marius-patrik/example": { state: "active" }, "marius-patrik/other": { state: "active" } } },
       repositories: [
         { full_name: "marius-patrik/example", archived: false, disabled: false },
@@ -1122,7 +1122,7 @@ test("orchestrator turns scoped /df run dispatches into df:ready before dispatch
       if (method === "GET" && path === "/repos/marius-patrik/example/git/ref/heads/dev") throw notFound;
       if (method === "GET" && path === "/repos/marius-patrik/example/branches/main/protection") throw notFound;
       if (method === "DELETE" && path === "/repos/marius-patrik/example/issues/12/labels/df%3Aready") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
 
       throw new Error(`Unexpected GitHub request: ${method} ${path}`);
     }
@@ -1130,7 +1130,7 @@ test("orchestrator turns scoped /df run dispatches into df:ready before dispatch
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" }, "marius-patrik/other": { state: "active" } } },
     repositories: [
       { full_name: "marius-patrik/example", archived: false, disabled: false },
@@ -1168,7 +1168,7 @@ test("orchestrator treats untrusted /df run comments as no-op events", async () 
           throw new Error("untrusted event must not inspect or dispatch global work");
         }
       },
-      controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+      controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
       registry: { repositories: { "marius-patrik/example": { state: "active" } } },
       repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
       trigger: "issue_comment",
@@ -1204,7 +1204,7 @@ test("orchestrator ignores event runs for inactive managed repositories", async 
           throw new Error("inactive event must not mutate labels or dispatch work");
         }
       },
-      controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+      controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
       registry: { repositories: { "marius-patrik/example": { state: "parked" } } },
       repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
       trigger: "issue_comment",
@@ -1264,7 +1264,7 @@ test("orchestrator resumes interrupted run against existing open worker PR", asy
       }
       if (method === "GET" && path === "/repos/marius-patrik/example/issues/8/comments?per_page=100&page=2") return [];
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/8/comments") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
 
       throw new Error(`Unexpected GitHub request: ${method} ${path}`);
     }
@@ -1272,7 +1272,7 @@ test("orchestrator resumes interrupted run against existing open worker PR", asy
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     policy: {
@@ -1292,7 +1292,7 @@ test("orchestrator resumes interrupted run against existing open worker PR", asy
   ]);
   assert.deepEqual(result.dispatched, []);
   const dispatch = calls.find(
-    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches"
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches"
   )?.body;
   assert.deepEqual(dispatch, {
     ref: "main",
@@ -1343,7 +1343,7 @@ test("orchestrator resumes interrupted run from pushed branch when no PR exists"
       if (method === "GET" && path === "/repos/marius-patrik/example/git/ref/heads/dev") throw notFound;
       if (method === "GET" && path === "/repos/marius-patrik/example") return { default_branch: "main", allow_auto_merge: true };
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/9/comments") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
 
       throw new Error(`Unexpected GitHub request: ${method} ${path}`);
     }
@@ -1351,7 +1351,7 @@ test("orchestrator resumes interrupted run from pushed branch when no PR exists"
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     policy: {
@@ -1370,7 +1370,7 @@ test("orchestrator resumes interrupted run from pushed branch when no PR exists"
     { repo: "marius-patrik/example", issue: 9, type: "branch", action: "resume-branch", reason: "", branch: "df/9-resume-test" }
   ]);
   const dispatch = calls.find(
-    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches"
+    (call) => call.method === "POST" && call.path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches"
   )?.body;
   assert.equal(dispatch.inputs.resume_branch, "df/9-resume-test");
   assert.equal(dispatch.inputs.base_ref, "main");
@@ -1420,7 +1420,7 @@ test("orchestrator requeues interrupted run with no usable branch", async () => 
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     policy: {
@@ -1484,7 +1484,7 @@ test("orchestrator does not resume running issue with terminal comment", async (
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     policy: {
@@ -1537,12 +1537,12 @@ test("orchestrator surfaces recovery decisions in ledger and dashboard", async (
       if (method === "GET" && path === "/repos/marius-patrik/example/git/ref/heads/dev") throw notFound;
       if (method === "GET" && path === "/repos/marius-patrik/example") return { default_branch: "main", allow_auto_merge: true };
       if (method === "POST" && path === "/repos/marius-patrik/example/issues/12/comments") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
-      if (method === "POST" && path === "/repos/marius-patrik/agent-darkfactory/labels") return {};
-      if (method === "GET" && path === "/repos/marius-patrik/agent-darkfactory/issues?state=open&per_page=100&page=1") {
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && path === "/repos/marius-patrik/DarkFactory/labels") return {};
+      if (method === "GET" && path === "/repos/marius-patrik/DarkFactory/issues?state=open&per_page=100&page=1") {
         return [{ number: 99, body: `<!-- ${DASHBOARD_MARKER} -->`, labels: [] }];
       }
-      if (method === "PATCH" && path === "/repos/marius-patrik/agent-darkfactory/issues/99") return {};
+      if (method === "PATCH" && path === "/repos/marius-patrik/DarkFactory/issues/99") return {};
 
       throw new Error(`Unexpected GitHub request: ${method} ${path}`);
     }
@@ -1550,7 +1550,7 @@ test("orchestrator surfaces recovery decisions in ledger and dashboard", async (
 
   const result = await orchestrate({
     gh,
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     registry: { repositories: { "marius-patrik/example": { state: "active" } } },
     repositories: [{ full_name: "marius-patrik/example", archived: false, disabled: false }],
     policy: {
@@ -1569,7 +1569,7 @@ test("orchestrator surfaces recovery decisions in ledger and dashboard", async (
     { repo: "marius-patrik/example", issue: 12, type: "branch", action: "resume-branch", reason: "", branch: "df/12-resume-test" }
   ]);
   const dashboardUpdate = calls.find(
-    (call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/agent-darkfactory/issues/99"
+    (call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/DarkFactory/issues/99"
   );
   assert.ok(String(dashboardUpdate?.body.body).includes("## Worker Recoveries"));
   assert.ok(String(dashboardUpdate?.body.body).includes("marius-patrik/example#12"));

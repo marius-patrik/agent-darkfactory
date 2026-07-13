@@ -1,5 +1,5 @@
 import {
-  AGENT_OS_DATA_REPO,
+  DARK_FACTORY_DATA_REPO,
   PLANNING_LABELS,
   WORK_LABELS,
   assertAllowedRepo,
@@ -49,7 +49,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 async function main() {
   const token = requiredEnv("DARK_FACTORY_TOKEN");
   const controlRepo = parseRepo(requiredEnv("DF_CONTROL_REPO"));
-  const dataRepo = AGENT_OS_DATA_REPO;
+  const dataRepo = DARK_FACTORY_DATA_REPO;
   const trigger = process.env.DF_TRIGGER ?? "unknown";
   const auditAll = process.env.DF_AUDIT_ALL === "true";
   gh = createGithubClient(token, "darkfactory-audit");

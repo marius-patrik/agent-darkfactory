@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  AGENT_OS_DATA_REPO,
+  DARK_FACTORY_DATA_REPO,
   PLANNING_LABELS,
   WORK_LABELS,
   assertAllowedRepo,
@@ -34,7 +34,7 @@ import {
 
 const PLANNER_BOT_LOGINS = new Set(["github-actions[bot]", "mp-agents[bot]"]);
 
-const DATA_REPO = AGENT_OS_DATA_REPO;
+const DATA_REPO = DARK_FACTORY_DATA_REPO;
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
 const TARGET_REF = process.env.DF_TARGET_REF?.trim() || "";
 const PLAN_ALL = process.env.DF_PLAN_ALL === "true";

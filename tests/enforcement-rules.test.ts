@@ -101,7 +101,7 @@ test("parked-repos-untouched blocks parked repositories", async () => {
   assert.match(blocked.findings[0].message, /parked/);
 
   const allowed = await evaluateEnforcementRules(rules, {
-    repository: { owner: "marius-patrik", repo: "agent-darkfactory" }
+    repository: { owner: "marius-patrik", repo: "DarkFactory" }
   });
 
   assert.equal(allowed.ok, true);

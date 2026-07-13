@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: >-
       ${{
-        github.repository == 'marius-patrik/agent-darkfactory' &&
+        github.repository == 'marius-patrik/DarkFactory' &&
         (
           github.event_name == 'schedule' ||
           github.event_name == 'workflow_dispatch' ||
@@ -53,8 +53,8 @@ jobs:
       - name: Validate trusted control ref
         shell: bash
         run: |
-          if [[ "${GITHUB_REPOSITORY}" != "marius-patrik/agent-darkfactory" ]]; then
-            echo "::error::DarkFactory privileged orchestration can only run from marius-patrik/agent-darkfactory."
+          if [[ "${GITHUB_REPOSITORY}" != "marius-patrik/DarkFactory" ]]; then
+            echo "::error::DarkFactory privileged orchestration can only run from marius-patrik/DarkFactory."
             exit 1
           fi
 
@@ -81,7 +81,7 @@ jobs:
       - name: Checkout DarkFactory control repository
         uses: actions/checkout@v4
         with:
-          repository: marius-patrik/agent-darkfactory
+          repository: marius-patrik/DarkFactory
           # Pin control scripts to the exact trusted event commit before any
           # installation token is minted.
           ref: ${{ github.sha }}
@@ -102,7 +102,7 @@ jobs:
       - name: Run orchestrator
         env:
           DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
-          DF_CONTROL_REPO: marius-patrik/agent-darkfactory
+          DF_CONTROL_REPO: marius-patrik/DarkFactory
           DF_TRIGGER: ${{ github.event_name }}
           DF_TARGET_REPO: ${{ inputs.repo }}
           DF_TARGET_ISSUE_NUMBER: ${{ inputs.issue_number }}

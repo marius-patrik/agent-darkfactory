@@ -26,13 +26,16 @@ const {
   isIgnorableCleanupError,
   isDarkFactoryWorkerPullRequest,
   isParkedRepo,
+  isVerifiedWorkerIssue,
   listActiveManagedRepos,
   listPackagePaths,
   parsePrdItems,
+  parseWorkerClaim,
   plannedIssueLabelDiff,
   preflightMergePolicy,
   prdIssueBody,
   prdScaffoldPullRequestBody,
+  readLatestRunLedger,
   reconcileLabelDiff,
   repoName,
   scaffoldPackagePrd,
@@ -384,7 +387,7 @@ test("listActiveManagedRepos excludes archived, disabled, and non-active lifecyc
 
   const active = await listActiveManagedRepos(
     { request: async () => ({ repositories: [] }) },
-    { owner: "marius-patrik", repo: "agent-darkfactory" },
+    { owner: "marius-patrik", repo: "DarkFactory" },
     { repositories, registry, warn: (warning: string) => warnings.push(warning) }
   );
 
@@ -512,8 +515,8 @@ test("df-plan workflow reacts safely to PRD edits on the trusted default branch"
   assert.doesNotMatch(workflow, /raw\.githubusercontent\.com|commits\/main|method:\s*'HEAD'/);
   assert.match(workflow, /^\s+workflow_dispatch:\s*$/m);
   assert.match(workflow, /^\s+schedule:\s*$/m);
-  assert.match(workflow, /github\.event_name == 'schedule'.*github\.repository == 'marius-patrik\/agent-darkfactory'/);
-  assert.match(workflow, /github\.event_name == 'workflow_dispatch'.*github\.repository == 'marius-patrik\/agent-darkfactory'/);
+  assert.match(workflow, /github\.event_name == 'schedule'.*github\.repository == 'marius-patrik\/DarkFactory'/);
+  assert.match(workflow, /github\.event_name == 'workflow_dispatch'.*github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.doesNotMatch(workflow, /actions:\s+write/);
   assert.notEqual(gate, -1);
   assert.notEqual(pushCheckout, -1);
@@ -528,7 +531,7 @@ test("df-plan workflow reacts safely to PRD edits on the trusted default branch"
   assert.match(workflow, /if:\s*github\.event_name == 'push'/);
   assert.match(workflow, /persist-credentials:\s+false/);
   assert.match(workflow, /Checkout DarkFactory control scripts/);
-  assert.match(workflow, /repository:\s+marius-patrik\/agent-darkfactory/);
+  assert.match(workflow, /repository:\s+marius-patrik\/DarkFactory/);
   assert.match(workflow, /GITHUB_REPOSITORY_OWNER/);
   assert.match(workflow, /GITHUB_REF_NAME.*main/);
   assert.match(workflow, /GITHUB_REF.*refs\/heads\/main/);
@@ -598,7 +601,7 @@ test("df-audit workflow schedules trusted managed-repo audits", async () => {
 
   assert.match(workflow, /^\s+schedule:\s*$/m);
   assert.match(workflow, /^\s+workflow_dispatch:\s*$/m);
-  assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'/);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.notEqual(gate, -1);
   assert.notEqual(checkout, -1);
   assert.notEqual(token, -1);
@@ -632,7 +635,7 @@ test("df-follow-through workflow validates trusted refs before privileged tokens
   assert.notEqual(token, -1);
   assert.ok(gate < token);
   assert.ok(checkout < token);
-  assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'/);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.match(workflow, /GITHUB_REPOSITORY/);
   assert.match(workflow, /GITHUB_REF_NAME.*main/);
   assert.match(workflow, /GITHUB_REF.*refs\/heads\/main/);
@@ -641,7 +644,7 @@ test("df-follow-through workflow validates trusted refs before privileged tokens
   assert.match(workflow, /permission-pull-requests:\s+write/);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /^\s+workflow_run:\s*$/m);
-  assert.match(workflow, /workflows:\s*\n\s+-\s+DarkFactory Work/);
+  assert.match(workflow, /workflows:\s*\n\s+-\s+DarkFactory Verify Worker Claim/);
   assert.match(workflow, /types:\s*\n\s+-\s+completed/);
   assert.match(workflow, /github\.event_name == 'workflow_run'/);
   assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);
@@ -662,7 +665,7 @@ test("df-fix workflow validates trusted refs before privileged tokens", async ()
   assert.ok(checkout < token);
   assert.match(workflow, /^\s+schedule:\s*$/m);
   assert.match(workflow, /^\s+workflow_dispatch:\s*$/m);
-  assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'/);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.match(workflow, /GITHUB_REPOSITORY/);
   assert.match(workflow, /GITHUB_REF.*refs\/heads\/main/);
   assert.match(workflow, /Manual runs must use --ref main/);
@@ -830,7 +833,7 @@ test("df-work workflow does not expose privileged worker triggers in managed rep
   assert.doesNotMatch(workflow, /^  issues:/m);
   assert.doesNotMatch(workflow, /^  issue_comment:/m);
   assert.doesNotMatch(workflow, /author_association/);
-  assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'/);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.match(workflow, /github\.event_name == 'workflow_dispatch'/);
 });
 
@@ -838,7 +841,7 @@ test("df-work workflow restricts privileged workers to the control repository", 
   const workflow = await readFile(new URL("../.github/workflows/df-work.yml", import.meta.url), "utf8");
 
   assert.match(workflow, /workflow_dispatch/);
-  assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'/);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.doesNotMatch(workflow, /inputs\.repo == github\.repository/);
   assert.match(workflow, /if:\s*github\.event_name == 'workflow_dispatch'/);
   assert.match(workflow, /concurrency:\s*$/m);
@@ -899,7 +902,7 @@ test("df-fix selects only red worker PRs from active repositories", async () => 
 });
 
 test("df-fix posts a trusted revision request, closes the red PR, deletes the branch, and redispatches df-work", async () => {
-  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const controlRepo = { owner: "marius-patrik", repo: "DarkFactory" };
   const repository = { owner: "marius-patrik", repo: "active" };
   const pull = workerPull({ number: 10, checkConclusion: "FAILURE" });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
@@ -939,7 +942,7 @@ test("df-fix posts a trusted revision request, closes the red PR, deletes the br
       if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/10/comments") return {};
       if (method === "PATCH" && pathName === "/repos/marius-patrik/active/pulls/10") return {};
       if (method === "DELETE" && pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker") return {};
-      if (method === "POST" && pathName === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
       throw new Error(`unexpected mocked request: ${method} ${pathName}`);
     }
   };
@@ -964,11 +967,11 @@ test("df-fix posts a trusted revision request, closes the red PR, deletes the br
   assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/10/comments" && call.body.body.includes("<!-- df-fix-revision -->")));
   assert.ok(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/10" && call.body.state === "closed"));
   assert.ok(calls.some((call) => call.method === "DELETE" && call.pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker"));
-  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/agent-darkfactory/actions/workflows/df-work.yml/dispatches" && call.body.inputs.repo === "marius-patrik/active" && call.body.inputs.issue_number === "10" && call.body.inputs.base_ref === "dev"));
+  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches" && call.body.inputs.repo === "marius-patrik/active" && call.body.inputs.issue_number === "10" && call.body.inputs.base_ref === "dev"));
 });
 
 test("df-fix does not close, delete, or redispatch when the fresh PR head trust check fails", async () => {
-  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const controlRepo = { owner: "marius-patrik", repo: "DarkFactory" };
   const repository = { owner: "marius-patrik", repo: "active" };
   const pull = workerPull({ number: 15, checkConclusion: "FAILURE" });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
@@ -1035,7 +1038,7 @@ test("df-fix round cap escalates instead of looping forever", () => {
 });
 
 test("df-fix round cap adds df:ask-owner and does not redispatch", async () => {
-  const controlRepo = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const controlRepo = { owner: "marius-patrik", repo: "DarkFactory" };
   const repository = { owner: "marius-patrik", repo: "active" };
   const pull = workerPull({ number: 20, checkConclusion: "FAILURE" });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
@@ -1224,7 +1227,7 @@ test("df-sweep merges green app-authored dev worker PRs and blocks red ones", as
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
 
   configureSweepRuntime({
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     dataRepo: "marius-patrik/agents-data",
     gh: {
       graphql: async (_query: string, variables: { number: number }) => ({
@@ -1248,7 +1251,10 @@ test("df-sweep merges green app-authored dev worker PRs and blocks red ones", as
           error.status = 404;
           throw error;
         }
-        if (method === "GET" && /^\/repos\/marius-patrik\/active\/issues\/4[01]$/.test(pathName)) {
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/40") {
+          return { labels: [{ name: "df:done" }] };
+        }
+        if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/41") {
           return { labels: [] };
         }
         if (method === "GET" && /^\/repos\/marius-patrik\/active\/issues\/4[01]\/comments\?per_page=100$/.test(pathName)) {
@@ -1289,7 +1295,7 @@ test("df-sweep holds worker PRs when the Codex Review context is present and red
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
 
   configureSweepRuntime({
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     dataRepo: "marius-patrik/agents-data",
     gh: {
       request: async (method: string, pathName: string, body?: any) => {
@@ -1332,7 +1338,7 @@ test("df-sweep falls back to branch-protection checks when Codex Review is not p
 
   try {
     configureSweepRuntime({
-      controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+      controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
       dataRepo: "marius-patrik/agents-data",
       gh: {
         graphql: async () => ({
@@ -1356,6 +1362,9 @@ test("df-sweep falls back to branch-protection checks when Codex Review is not p
             const error: Error & { status?: number } = new Error("Missing managed config");
             error.status = 404;
             throw error;
+          }
+          if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/43") {
+            return { labels: [{ name: "df:done" }] };
           }
           if (method === "PUT" && pathName === "/repos/marius-patrik/active/pulls/43/merge") {
             return { sha: "merged-without-codex-review-sha" };
@@ -1395,7 +1404,7 @@ test("df-sweep holds worker PRs when managed config declares Codex Review but th
   };
 
   configureSweepRuntime({
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     dataRepo: "marius-patrik/agents-data",
     gh: {
       request: async (method: string, pathName: string, body?: any) => {
@@ -1435,7 +1444,7 @@ test("df-sweep merges green app-authored dev worker PRs even when the worker iss
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
 
   configureSweepRuntime({
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     dataRepo: "marius-patrik/agents-data",
     gh: {
       graphql: async () => ({
@@ -1484,13 +1493,13 @@ test("df-sweep merges green app-authored dev worker PRs even when the worker iss
   assert.equal(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/1349/labels"), false);
 });
 
-test("df-sweep merges green app-authored worker PRs even when the worker issue is blocked", async () => {
+test("df-sweep skips green worker PRs when the worker issue is not verified", async () => {
   const repository = { owner: "marius-patrik", repo: "active" };
   const pull = workerPull({ number: 8, checkConclusion: "SUCCESS", author: "mp-agents[bot]" });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
 
   configureSweepRuntime({
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     dataRepo: "marius-patrik/agents-data",
     gh: {
       graphql: async () => ({
@@ -1532,11 +1541,69 @@ test("df-sweep merges green app-authored worker PRs even when the worker issue i
 
   const result = await considerSweepPullRequest(repository, pull);
 
-  assert.equal(result.action, "merge");
-  assert.equal(result.base, "dev");
-  assert.equal(result.sha, "merged-blocked-issue-sha");
-  assert.ok(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/8/merge"));
+  assert.equal(result.action, "skip");
+  assert.equal(result.reason, "not-verified");
+  assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/8/merge"), false);
   assert.equal(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/8/labels"), false);
+});
+
+test("df-verify workflow chains worker completion into trusted verification", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/df-verify.yml", import.meta.url), "utf8");
+
+  assert.match(workflow, /workflow_run:/);
+  assert.match(workflow, /workflows:\s*\n\s+-\s+DarkFactory Work/);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/DarkFactory'/);
+  assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(workflow, /actions\/download-artifact@v4/);
+  assert.match(workflow, /run-id: \$\{\{ github\.event\.workflow_run\.id \}\}/);
+  assert.match(workflow, /DF_VERIFICATION_TARGET_FILE: \.darkfactory-verification\/target\.json/);
+  assert.doesNotMatch(workflow, /workflow_run\.inputs/);
+  assert.match(workflow, /DF_DATA_REPO: marius-patrik\/darkfactory-data/);
+  assert.match(workflow, /node \.github\/scripts\/df-verify\.mjs/);
+});
+
+test("df-follow-through triggers only after verified worker claims", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/df-follow-through.yml", import.meta.url), "utf8");
+
+  assert.match(workflow, /workflows:\s*\n\s+-\s+DarkFactory Verify Worker Claim/);
+  assert.match(workflow, /github\.event\.workflow_run\.workflow_name == 'DarkFactory Verify Worker Claim'/);
+});
+
+test("df-work keeps issue running until verification confirms the claim", async () => {
+  const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /replaceIssueLabels\(TARGET_REPO, TARGET_ISSUE_NUMBER, \["df:done"\]/);
+  assert.match(source, /The issue stays `df:running` until DarkFactory verifies the worker claim against GitHub reality\./);
+  assert.match(source, /ledger\.base_branch = workBaseBranch/);
+});
+
+test("parseWorkerClaim normalizes provider ledger fields", () => {
+  const claim = parseWorkerClaim({
+    issue: "marius-patrik/example#42",
+    branch: "df/42-slug",
+    base_branch: "dev",
+    pull_request: "https://github.com/marius-patrik/example/pull/99",
+    status: "success",
+    token_usage: { provider: "codex", model: "gpt-5.5" }
+  });
+
+  assert.equal(claim.repo, "marius-patrik/example");
+  assert.equal(claim.issueNumber, 42);
+  assert.equal(claim.branch, "df/42-slug");
+  assert.equal(claim.baseBranch, "dev");
+  assert.equal(claim.provider, "codex");
+  assert.equal(claim.model, "gpt-5.5");
+});
+
+test("verified worker state is explicit and ledger reads reject Agent OS state", async () => {
+  assert.equal(isVerifiedWorkerIssue({ labels: [{ name: "df:done" }] }), true);
+  assert.equal(isVerifiedWorkerIssue({ labels: [{ name: "df:running" }] }), false);
+
+  await assert.rejects(
+    readLatestRunLedger({}, "marius-patrik/agents-data", "df-work", "marius-patrik/example"),
+    /marius-patrik\/darkfactory-data/
+  );
 });
 
 test("df-sweep direct-merges protected branch with no required checks instead of arming automerge", async () => {
@@ -1551,7 +1618,7 @@ test("df-sweep direct-merges protected branch with no required checks instead of
   const graphqlCalls: string[] = [];
 
   configureSweepRuntime({
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     dataRepo: "marius-patrik/agents-data",
     gh: {
       graphql: async (query: string, variables: { number: number }) => {
@@ -1582,7 +1649,7 @@ test("df-sweep direct-merges protected branch with no required checks instead of
           throw error;
         }
         if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/50") {
-          return { labels: [] };
+          return { labels: [{ name: "df:done" }] };
         }
         if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/50/comments?per_page=100") {
           return [];
@@ -1622,9 +1689,9 @@ test("df-orchestrate workflow validates trusted refs before privileged tokens", 
   assert.match(workflow, /GITHUB_REF_NAME.*main/);
   assert.doesNotMatch(workflow, /GITHUB_REF.*refs\/heads\/dev/);
   assert.doesNotMatch(workflow, /GITHUB_REF_NAME.*dev/);
-  assert.match(workflow, /repository:\s+marius-patrik\/agent-darkfactory/);
+  assert.match(workflow, /repository:\s+marius-patrik\/DarkFactory/);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
-  assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'[\s\S]+github\.event_name == 'schedule'/);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/DarkFactory'[\s\S]+github\.event_name == 'schedule'/);
   assert.doesNotMatch(workflow, /^\s+issues:\s*$/m);
   assert.doesNotMatch(workflow, /^\s+issue_comment:\s*$/m);
   assert.doesNotMatch(workflow, /github\.repository_owner == 'marius-patrik'[\s\S]+github\.event_name == 'issues'/);
@@ -1634,7 +1701,7 @@ test("df-orchestrate workflow validates trusted refs before privileged tokens", 
   assert.match(workflow, /permission-contents:\s+write/);
   assert.match(workflow, /permission-issues:\s+write/);
   assert.match(workflow, /DARK_FACTORY_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
-  assert.match(workflow, /DF_CONTROL_REPO: marius-patrik\/agent-darkfactory/);
+  assert.match(workflow, /DF_CONTROL_REPO: marius-patrik\/DarkFactory/);
   assert.match(workflow, /repo:\s*\n\s+description: Optional managed repository/);
   assert.match(workflow, /issue_number:\s*\n\s+description: Optional managed issue number/);
   assert.match(workflow, /source_event:\s*\n\s+description: Optional source event name for a scoped control dispatch/);
@@ -1655,7 +1722,7 @@ test("control df-event-forward workflow safely dispatches local events to orches
   assert.match(workflow, /^\s+issues:\s*$/m);
   assert.match(workflow, /^\s+issue_comment:\s*$/m);
   assert.match(workflow, /permissions:\s*\{\}/);
-  assert.match(workflow, /github\.repository == 'marius-patrik\/agent-darkfactory'/);
+  assert.match(workflow, /github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.match(workflow, /github\.event\.label\.name == 'df:ready'/);
   assert.match(workflow, /github\.event\.comment\.body == '\/df run'/);
   assert.match(workflow, /startsWith\(github\.event\.comment\.body, '\/df run '\)/);
@@ -1663,7 +1730,7 @@ test("control df-event-forward workflow safely dispatches local events to orches
   assert.match(workflow, /github\.event\.comment\.author_association == 'MEMBER'/);
   assert.match(workflow, /github\.event\.comment\.author_association == 'COLLABORATOR'/);
   assert.match(workflow, /actions\/create-github-app-token@v2/);
-  assert.match(workflow, /repositories:\s+agent-darkfactory/);
+  assert.match(workflow, /repositories:\s+DarkFactory/);
   assert.match(workflow, /permission-actions:\s+write/);
   assert.doesNotMatch(workflow, /permission-contents:\s+write/);
   assert.doesNotMatch(workflow, /permission-issues:\s+write/);
@@ -1770,7 +1837,7 @@ test("df-sweep evaluates enforcement rules before merge", async () => {
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
 
   configureSweepRuntime({
-    controlRepo: { owner: "marius-patrik", repo: "agent-darkfactory" },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" },
     dataRepo: "marius-patrik/agents-data",
     gh: {
       request: async (method: string, pathName: string, body?: any) => {

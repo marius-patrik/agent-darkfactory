@@ -100,7 +100,7 @@ interface InstallationRepositoriesPayload {
 
 const CONTROL_REPO: ControlRepositoryRef = {
   owner: "marius-patrik",
-  repo: "agent-darkfactory"
+  repo: "DarkFactory"
 };
 
 const DISPATCHABLE_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);

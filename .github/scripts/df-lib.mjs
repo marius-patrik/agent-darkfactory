@@ -3,6 +3,7 @@ import path from "node:path";
 
 export const API_ROOT = "https://api.github.com";
 export const AGENT_OS_DATA_REPO = "marius-patrik/agents-data";
+export const DARK_FACTORY_DATA_REPO = "marius-patrik/darkfactory-data";
 export const PARKED_REPOS = new Set([
   "marius-patrik/fabrica",
   "marius-patrik/skyblock-agent",
@@ -694,10 +695,10 @@ export function extractClosingIssueNumbers(body, repositoryName = "") {
 }
 
 export async function writeRunLedger(gh, dataRepo, kind, targetRepoName, ledger) {
-  if (dataRepo !== AGENT_OS_DATA_REPO) {
-    throw new Error(`DarkFactory ledger writes require the canonical ${AGENT_OS_DATA_REPO} repository.`);
+  if (dataRepo !== DARK_FACTORY_DATA_REPO) {
+    throw new Error(`DarkFactory ledger writes require the canonical ${DARK_FACTORY_DATA_REPO} repository.`);
   }
-  const repository = parseRepo(AGENT_OS_DATA_REPO);
+  const repository = parseRepo(DARK_FACTORY_DATA_REPO);
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const path = `runs/${targetRepoName}/${timestamp}-${kind}.json`;
   const body = `${JSON.stringify({
@@ -879,4 +880,215 @@ function decodeContentResponse(data) {
 
 function encodePath(filePath) {
   return filePath.split("/").map(encodeURIComponent).join("/");
+}
+
+export async function readLatestRunLedger(gh, dataRepo, kind, targetRepoName) {
+  if (dataRepo !== DARK_FACTORY_DATA_REPO) {
+    throw new Error(`DarkFactory ledger reads require the canonical ${DARK_FACTORY_DATA_REPO} repository.`);
+  }
+  const repository = parseRepo(DARK_FACTORY_DATA_REPO);
+  const ledgerDir = `runs/${targetRepoName}`;
+  const response = await gh.request("GET", `/repos/${repoName(repository)}/contents/${encodePath(ledgerDir)}`);
+  if (!Array.isArray(response)) {
+    return null;
+  }
+
+  const suffix = `-${kind}.json`;
+  const matches = response
+    .filter((entry) => isRecord(entry) && typeof entry.name === "string" && entry.name.endsWith(suffix) && entry.type === "file")
+    .map((entry) => entry.name)
+    .sort()
+    .reverse();
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  const content = await getOptionalFileContent(gh, repository, `${ledgerDir}/${matches[0]}`);
+  if (!content) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+export function parseWorkerClaim(ledger) {
+  if (!isRecord(ledger)) {
+    return null;
+  }
+
+  const issueText = typeof ledger.issue === "string" ? ledger.issue : "";
+  const issueMatch = issueText.match(/([^/\s]+)\/([^/\s]+)#(\d+)$/);
+  const issueNumber = Number.isInteger(ledger.issue_number)
+    ? ledger.issue_number
+    : (issueMatch ? Number(issueMatch[3]) : 0);
+  const repoNameFromIssue = issueMatch ? `${issueMatch[1]}/${issueMatch[2]}` : "";
+  const repoNameFromLedger = typeof ledger.target_repo === "string" ? ledger.target_repo : "";
+
+  const provider = typeof ledger.token_usage?.provider === "string"
+    ? ledger.token_usage.provider
+    : (typeof ledger.provider === "string" ? ledger.provider : "");
+  const model = typeof ledger.token_usage?.model === "string"
+    ? ledger.token_usage.model
+    : (typeof ledger.model === "string" ? ledger.model : "");
+
+  return {
+    repo: repoNameFromLedger || repoNameFromIssue || "",
+    issueNumber,
+    branch: typeof ledger.branch === "string" ? ledger.branch : "",
+    baseBranch: typeof ledger.base_branch === "string" ? ledger.base_branch : "",
+    pullRequestNumber: Number.isInteger(ledger.pull_request_number) ? ledger.pull_request_number : 0,
+    pullRequestUrl: typeof ledger.pull_request === "string" ? ledger.pull_request : "",
+    provider,
+    model,
+    status: typeof ledger.status === "string" ? ledger.status : "",
+    summary: typeof ledger.worker_summary === "string" ? ledger.worker_summary : ""
+  };
+}
+
+export async function verifyWorkerClaim(gh, claim, repository, issueNumber) {
+  const mismatches = [];
+
+  if (claim.repo) {
+    try {
+      const claimedRepo = parseRepo(claim.repo);
+      if (normalizedRepoName(repository) !== normalizedRepoName(claimedRepo)) {
+        mismatches.push(`Claimed repository ${claim.repo} does not match target ${repoName(repository)}.`);
+      }
+    } catch {
+      mismatches.push(`Claimed repository ${claim.repo} is not a valid repository reference.`);
+    }
+  }
+
+  if (Number.isInteger(claim.issueNumber) && claim.issueNumber > 0 && claim.issueNumber !== issueNumber) {
+    mismatches.push(`Claimed issue #${claim.issueNumber} does not match target issue #${issueNumber}.`);
+  }
+
+  let issue;
+  try {
+    issue = await gh.request("GET", `/repos/${repoName(repository)}/issues/${issueNumber}`);
+  } catch (error) {
+    if (error.status === 404) {
+      mismatches.push(`Target issue #${issueNumber} does not exist.`);
+      return { verified: false, mismatches, issue: null, pullRequest: null };
+    }
+    throw error;
+  }
+
+  if (issue.state !== "open") {
+    mismatches.push(`Target issue #${issueNumber} is ${issue.state}, not open.`);
+  }
+
+  const issueLabels = new Set((issue.labels || []).map((label) => typeof label === "string" ? label : label?.name).filter(Boolean));
+  if (!issueLabels.has("df:running")) {
+    mismatches.push(`Target issue #${issueNumber} is not labeled df:running.`);
+  }
+
+  let pullRequest = null;
+  if (claim.pullRequestNumber > 0) {
+    try {
+      pullRequest = await gh.request("GET", `/repos/${repoName(repository)}/pulls/${claim.pullRequestNumber}`);
+    } catch (error) {
+      if (error.status === 404) {
+        mismatches.push(`Claimed PR #${claim.pullRequestNumber} does not exist.`);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  if (!pullRequest && claim.branch) {
+    const pulls = await gh.request(
+      "GET",
+      `/repos/${repoName(repository)}/pulls?state=open&head=${encodeURIComponent(`${repository.owner}:${claim.branch}`)}`
+    );
+    if (Array.isArray(pulls) && pulls.length > 0) {
+      pullRequest = pulls[0];
+    }
+  }
+
+  if (!pullRequest) {
+    mismatches.push(`No open PR found for issue #${issueNumber}${claim.branch ? ` (branch ${claim.branch})` : ""}.`);
+    return { verified: false, mismatches, issue, pullRequest: null };
+  }
+
+  if (pullRequest.state !== "open") {
+    mismatches.push(`PR #${pullRequest.number} is ${pullRequest.state}, not open.`);
+  }
+
+  const headRepo = pullRequest.head?.repo;
+  if (!headRepo || headRepo.owner?.login !== repository.owner || headRepo.name !== repository.repo) {
+    mismatches.push(`PR #${pullRequest.number} head repository is ${headRepo?.full_name || "unknown"}, not ${repoName(repository)}.`);
+  }
+
+  if (claim.branch && pullRequest.head?.ref !== claim.branch) {
+    mismatches.push(`PR #${pullRequest.number} head branch is ${pullRequest.head?.ref}, not ${claim.branch}.`);
+  }
+
+  if (claim.baseBranch && pullRequest.base?.ref !== claim.baseBranch) {
+    mismatches.push(`PR #${pullRequest.number} base branch is ${pullRequest.base?.ref}, not ${claim.baseBranch}.`);
+  }
+
+  const prAuthor = pullRequest.user?.login || "";
+  if (!WORKER_PULL_REQUEST_AUTHORS.has(prAuthor)) {
+    mismatches.push(`PR #${pullRequest.number} author ${prAuthor} is not an allowed worker author.`);
+  }
+
+  const closesIssues = extractClosingIssueNumbers(pullRequest.body || "", repoName(repository));
+  if (!closesIssues.includes(issueNumber)) {
+    mismatches.push(`PR #${pullRequest.number} body does not close issue #${issueNumber}.`);
+  }
+
+  const changedFiles = await listPullRequestFiles(gh, repository, pullRequest.number);
+  if (changedFiles.length === 0) {
+    mismatches.push(`PR #${pullRequest.number} has no changed files.`);
+  }
+
+  const branch = pullRequest.head?.ref;
+  if (branch) {
+    try {
+      await gh.request("GET", `/repos/${repoName(repository)}/git/ref/heads/${encodeRefPath(branch)}`);
+    } catch (error) {
+      if (error.status === 404) {
+        mismatches.push(`PR #${pullRequest.number} head branch ${branch} does not exist.`);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return {
+    verified: mismatches.length === 0,
+    mismatches,
+    issue,
+    pullRequest,
+    changedFiles
+  };
+}
+
+async function listPullRequestFiles(gh, repository, pullNumber) {
+  const files = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const batch = await gh.request(
+      "GET",
+      `/repos/${repoName(repository)}/pulls/${pullNumber}/files?per_page=100&page=${page}`
+    );
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    files.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return files;
+}
+
+function encodeRefPath(ref) {
+  return String(ref || "").split("/").map(encodeURIComponent).join("/");
+}
+
+export function isVerifiedWorkerIssue(issue) {
+  const labels = new Set((issue.labels || []).map((label) => typeof label === "string" ? label : label?.name).filter(Boolean));
+  return labels.has("df:done");
 }

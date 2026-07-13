@@ -10,7 +10,7 @@ export const MANAGED_SETUP_COMMENT_MARKER = "<!-- dark-factory:managed-setup-pr 
 const FORBIDDEN_MANAGED_ROOTS = [".agents/.global"] as const;
 export const DARK_FACTORY_CONTROL_REPOSITORY = {
   owner: "marius-patrik",
-  repo: "agent-darkfactory"
+  repo: "DarkFactory"
 } as const;
 
 export interface GitHubRequester {

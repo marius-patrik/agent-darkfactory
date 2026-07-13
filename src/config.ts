@@ -41,7 +41,7 @@ export function parseControlRepo(value: string | undefined): RepositoryRef {
     return parseRepositoryRef(raw);
   }
 
-  return { owner: "marius-patrik", repo: "agent-darkfactory" };
+  return { owner: "marius-patrik", repo: "DarkFactory" };
 }
 
 export function parseRepositoryRef(value: string): RepositoryRef {

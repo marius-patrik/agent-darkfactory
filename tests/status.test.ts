@@ -53,7 +53,7 @@ function workflowRunsResponse(runs: Array<Partial<{ id: number; name: string; st
       conclusion: run.conclusion ?? "success",
       created_at: run.created_at ?? "2026-07-01T00:00:00Z",
       updated_at: run.updated_at ?? "2026-07-01T00:00:00Z",
-      html_url: run.html_url ?? "https://github.com/marius-patrik/agent-darkfactory/actions/runs/1",
+      html_url: run.html_url ?? "https://github.com/marius-patrik/DarkFactory/actions/runs/1",
       ...run
     }))
   };
@@ -76,7 +76,7 @@ test("parseManagedReposJson filters active repositories for the control owner", 
     {
       schemaVersion: 1,
       repositories: {
-        "marius-patrik/agent-darkfactory": { state: "active" },
+        "marius-patrik/DarkFactory": { state: "active" },
         "marius-patrik/dream": { state: "active" },
         "marius-patrik/skyblock-agent": { state: "parked" },
         "other-owner/project": { state: "active" },
@@ -87,7 +87,7 @@ test("parseManagedReposJson filters active repositories for the control owner", 
   );
 
   assert.deepEqual(repos, [
-    { owner: "marius-patrik", repo: "agent-darkfactory", state: "active" },
+    { owner: "marius-patrik", repo: "DarkFactory", state: "active" },
     { owner: "marius-patrik", repo: "dream", state: "active" }
   ]);
 });
@@ -96,15 +96,15 @@ test("fetchManagedRepos reads managed repositories from the control repo via Git
   const github = createRequester({
     "GET /repos/{owner}/{repo}/contents/{path}": () =>
       managedReposContent({
-        "marius-patrik/agent-darkfactory": { state: "active" },
+        "marius-patrik/DarkFactory": { state: "active" },
         "marius-patrik/dream": { state: "active" }
       })
   });
 
-  const repos = await fetchManagedRepos(github, { owner: "marius-patrik", repo: "agent-darkfactory" }, "marius-patrik");
+  const repos = await fetchManagedRepos(github, { owner: "marius-patrik", repo: "DarkFactory" }, "marius-patrik");
 
   assert.deepEqual(repos, [
-    { owner: "marius-patrik", repo: "agent-darkfactory", state: "active" },
+    { owner: "marius-patrik", repo: "DarkFactory", state: "active" },
     { owner: "marius-patrik", repo: "dream", state: "active" }
   ]);
 });
@@ -196,7 +196,7 @@ test("fetchRepoLoopState follows Link headers to paginate issue lists", async ()
 });
 
 test("fetchRecentRuns returns latest plan, orchestrate, and in-flight work runs", async () => {
-  const repo: RepositoryRef = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const repo: RepositoryRef = { owner: "marius-patrik", repo: "DarkFactory" };
   const github = createRequester({
     "GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs": (parameters) => {
       const workflowId = String(parameters.workflow_id);
@@ -229,26 +229,26 @@ test("fetchRecentRuns returns latest plan, orchestrate, and in-flight work runs"
 });
 
 test("fetchLatestLedger reads the most recent df-orchestrate ledger", async () => {
-  const dataRepo: RepositoryRef = { owner: "marius-patrik", repo: "agents-data" };
-  const controlRepo: RepositoryRef = { owner: "marius-patrik", repo: "agent-darkfactory" };
+  const dataRepo: RepositoryRef = { owner: "marius-patrik", repo: "darkfactory-data" };
+  const controlRepo: RepositoryRef = { owner: "marius-patrik", repo: "DarkFactory" };
   const github = createRequester({
     "GET /repos/{owner}/{repo}/contents/{path}": (parameters) => {
       const path = String(parameters.path);
-      if (path === "runs/marius-patrik/agent-darkfactory") {
+      if (path === "runs/marius-patrik/DarkFactory") {
         return [
           { name: "2026-07-05T08-00-00Z-df-orchestrate.json", type: "file" },
           { name: "2026-07-04T08-00-00Z-df-orchestrate.json", type: "file" },
           { name: "2026-07-05T07-00-00Z-df-plan.json", type: "file" }
         ];
       }
-      if (path === "runs/marius-patrik/agent-darkfactory/2026-07-05T08-00-00Z-df-orchestrate.json") {
+      if (path === "runs/marius-patrik/DarkFactory/2026-07-05T08-00-00Z-df-orchestrate.json") {
         return {
           type: "file",
           encoding: "base64",
           content: Buffer.from(
             JSON.stringify({
               kind: "df-orchestrate",
-              target_repo: "marius-patrik/agent-darkfactory",
+              target_repo: "marius-patrik/DarkFactory",
               created_at: "2026-07-05T08:00:00Z",
               dispatched: [{ repo: "marius-patrik/dream", issue: 1 }, { repo: "marius-patrik/dream", issue: 2 }]
             }),
@@ -305,10 +305,10 @@ function createStatusRequester(): GitHubRequester {
       if (path === "PRD.md") {
         return { type: "file" };
       }
-      if (path === "runs/marius-patrik/agent-darkfactory") {
+      if (path === "runs/marius-patrik/DarkFactory") {
         return [{ name: "2026-07-05T08-00-00Z-df-orchestrate.json", type: "file" }];
       }
-      if (path === "runs/marius-patrik/agent-darkfactory/2026-07-05T08-00-00Z-df-orchestrate.json") {
+      if (path === "runs/marius-patrik/DarkFactory/2026-07-05T08-00-00Z-df-orchestrate.json") {
         return encodedJsonFile({
           created_at: "2026-07-05T08:00:00Z",
           dispatched: [{ repo: "marius-patrik/dream", issue: 1 }]

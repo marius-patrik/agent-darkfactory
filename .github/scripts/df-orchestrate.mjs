@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  AGENT_OS_DATA_REPO,
+  DARK_FACTORY_DATA_REPO,
   PLANNING_LABELS,
   WORK_LABELS,
   assertAllowedRepo,
@@ -654,6 +654,7 @@ export function buildOrchestrationPlan(snapshots, policyInput, options = {}) {
       open_work: openIssues.filter(isWorkIssue).length,
       ready: openIssues.filter((issue) => issueLabelNames(issue).has("df:ready")).length,
       running: openIssues.filter((issue) => issueLabelNames(issue).has("df:running")).length,
+      done: openIssues.filter((issue) => issueLabelNames(issue).has("df:done")).length,
       blocked: openIssues.filter((issue) => issueLabelNames(issue).has("df:blocked")).length,
       ask_owner: openIssues.filter((issue) => issueLabelNames(issue).has("df:ask-owner")).length,
       dispatchable: selected.length
@@ -1001,9 +1002,9 @@ function dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, tri
   const rows = plan.repositories.length
     ? plan.repositories.map((state) => {
       const dispatchedCount = dispatched.filter((item) => item.repo === state.repo).length;
-      return `| \`${state.repo}\` | ${state.gate_wave} | ${state.open_work} | ${state.ready} | ${state.running} | ${state.blocked} | ${state.ask_owner} | ${state.dispatchable} | ${dispatchedCount} |`;
+      return `| \`${state.repo}\` | ${state.gate_wave} | ${state.open_work} | ${state.ready} | ${state.running} | ${state.done} | ${state.blocked} | ${state.ask_owner} | ${state.dispatchable} | ${dispatchedCount} |`;
     }).join("\n")
-    : "| _none_ | none | 0 | 0 | 0 | 0 | 0 | 0 | 0 |";
+    : "| _none_ | none | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |";
   const dispatchRows = dispatched.length
     ? dispatched.map((item) => `- \`${item.repo}#${item.issue}\` (${item.wave}; ${item.streams.join(", ")})`).join("\n")
     : "- No worker dispatches in this tick.";
@@ -1034,8 +1035,8 @@ function dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, tri
     "",
     "## Repositories",
     "",
-    "| Repository | Gate | Open work | Ready | Running | Blocked | Ask owner | Dispatchable | Dispatched |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Repository | Gate | Open work | Ready | Running | Done | Blocked | Ask owner | Dispatchable | Dispatched |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     rows,
     "",
     "## Dispatches",
@@ -1052,6 +1053,8 @@ function dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, tri
     "",
     "## Notes",
     "",
+    "- `Running` = worker claimed success but verification against GitHub reality is pending.",
+    "- `Done` = worker claim was verified against GitHub reality and follow-through may merge.",
     "- Cross-repo waves, stream lanes, and concurrency caps are deterministic; AI tokens: 0.",
     "- Execution boundary: this is deterministic GitHub control-plane state; local worker turns run only through Agent OS."
   ].join("\n");
@@ -1312,7 +1315,7 @@ async function createIssueComment(gh, repository, issueNumber, body) {
 
 async function writeLedger(gh, controlRepo, ledger, warn = console.warn, log = console.log) {
   try {
-    const written = await writeRunLedger(gh, AGENT_OS_DATA_REPO, "df-orchestrate", repoName(controlRepo), ledger);
+    const written = await writeRunLedger(gh, DARK_FACTORY_DATA_REPO, "df-orchestrate", repoName(controlRepo), ledger);
     log(`DarkFactory ledger written to ${written.repository}/${written.path}`);
   } catch (error) {
     warn(`DarkFactory ledger warning: ${error.message || String(error)}`);

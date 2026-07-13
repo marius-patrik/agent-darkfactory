@@ -159,6 +159,7 @@ test("ensureManagedRepositorySetup creates a managed PR when files are missing",
       path: DARK_FACTORY_MANAGED_CONFIG_PATH,
       content: JSON.stringify({
         schemaVersion: 1,
+        packageFiles: [],
         requiredFiles: [],
         removedFiles: [".github/workflows/dark-factory-release.yml"]
       })
@@ -219,7 +220,7 @@ test("ensureManagedRepositorySetup creates a managed PR when files are missing",
 test("orderManagedRepositoriesForSync processes DarkFactory control repository first", () => {
   const repositories = [
     { owner: "marius-patrik", repo: "dream" },
-    { owner: "marius-patrik", repo: "agent-darkfactory" },
+    { owner: "marius-patrik", repo: "DarkFactory" },
     { owner: "marius-patrik", repo: "agents-plugin" }
   ];
 
@@ -227,14 +228,14 @@ test("orderManagedRepositoriesForSync processes DarkFactory control repository f
 
   assert.deepEqual(
     ordered.map((repository) => repository.repo),
-    ["agent-darkfactory", "dream", "agents-plugin"]
+    ["DarkFactory", "dream", "agents-plugin"]
   );
 });
 
 test("orderManagedRepositoriesForSync deduplicates repository entries case-insensitively", () => {
   const repositories = [
-    { owner: "marius-patrik", repo: "agent-darkfactory", id: 1 },
-    { owner: "MARIUS-PATRIK", repo: "Agent-DarkFactory", id: 2 },
+    { owner: "marius-patrik", repo: "DarkFactory", id: 1 },
+    { owner: "MARIUS-PATRIK", repo: "darkfactory", id: 2 },
     { owner: "marius-patrik", repo: "dream", id: 3 }
   ];
 

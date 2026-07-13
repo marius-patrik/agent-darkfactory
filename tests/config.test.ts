@@ -67,7 +67,7 @@ test("loadConfig rejects invalid PORT values", () => {
   );
 });
 
-test("loadConfig defaults controlRepo to marius-patrik/agent-darkfactory", () => {
+test("loadConfig defaults controlRepo to marius-patrik/DarkFactory", () => {
   const config = loadConfig({
     GITHUB_APP_ID: "12345",
     GITHUB_PRIVATE_KEY: "private-key",
@@ -75,7 +75,7 @@ test("loadConfig defaults controlRepo to marius-patrik/agent-darkfactory", () =>
   });
 
   assert.equal(config.controlRepo.owner, "marius-patrik");
-  assert.equal(config.controlRepo.repo, "agent-darkfactory");
+  assert.equal(config.controlRepo.repo, "DarkFactory");
 });
 
 test("loadConfig accepts a custom DARK_FACTORY_CONTROL_REPO", () => {

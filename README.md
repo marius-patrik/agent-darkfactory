@@ -1,8 +1,10 @@
 # DarkFactory
 
-Agent OS GitHub control-plane component. It receives GitHub webhooks, verifies
-signatures, synchronizes repository policy, and runs deterministic planning and
-orchestration loops.
+DarkFactory is a separate GitHub-native autonomous engineering product. It
+receives GitHub webhooks, verifies signatures, synchronizes repository policy,
+and runs deterministic planning and orchestration loops. Agent OS is an
+integration dependency for local provider execution and shared personal state,
+not DarkFactory's product or release owner.
 
 ## What it does
 
@@ -109,8 +111,10 @@ PID registry, alternate state root, or platform-specific process manager.
 
 ## Service operation
 
-Run the webhook service through Agent OS. DarkFactory does not carry an
-independent container, deployment, or data checkout:
+Run the webhook service through Agent OS when using the local managed runtime.
+DarkFactory keeps operational run ledgers in the separate
+`marius-patrik/darkfactory-data` repository; personal memory, sessions,
+identity, provider state, and secrets remain under Agent OS `.agents`:
 
 ```powershell
 agents state doctor
@@ -128,7 +132,7 @@ The service requires these settings or Agent OS-managed secrets:
 - `GITHUB_APP_ID`
 - `GITHUB_PRIVATE_KEY`
 - `GITHUB_WEBHOOK_SECRET`
-- `DARK_FACTORY_CONTROL_REPO`, optional and defaults to `marius-patrik/agent-darkfactory`
+- `DARK_FACTORY_CONTROL_REPO`, optional and defaults to `marius-patrik/DarkFactory`
 - `PORT`, optional and defaults to `3000`
 
 Use `GET /healthz` as the health check endpoint.
@@ -154,7 +158,7 @@ Managed files:
 - `.github/scripts/run-codex-review.sh`
 - `.github/scripts/dark-factory-managed-check.mjs`
 
-Managed setup does not ship `.github/workflows/df-event-forward.yml`. That workflow uses control-repository app secrets and is kept only in `marius-patrik/agent-darkfactory`.
+Managed setup does not ship `.github/workflows/df-event-forward.yml`. That workflow uses control-repository app secrets and is kept only in `marius-patrik/DarkFactory`.
 
 When the DarkFactory webhook server is deployed, `df:ready` labels and `/df run` comments in any installed repository are dispatched immediately to the orchestrator workflow, eliminating the wait for the next scheduled tick. If the webhook server is not deployed or the dispatch fails, the schedule and workflow-run chaining still pick up the issue.
 
@@ -177,12 +181,12 @@ Managed sync can also be run manually from the `Sync Managed Repositories` workf
 GitHub Actions still consumes repository secrets, but those secrets should be written by Agent OS:
 
 ```powershell
-agents secrets github sync GITHUB_APP_ID --repo marius-patrik/agent-darkfactory --as DARK_FACTORY_APP_ID
-agents secrets github sync GITHUB_PRIVATE_KEY --repo marius-patrik/agent-darkfactory --as DARK_FACTORY_PRIVATE_KEY
+agents secrets github sync GITHUB_APP_ID --repo marius-patrik/DarkFactory --as DARK_FACTORY_APP_ID
+agents secrets github sync GITHUB_PRIVATE_KEY --repo marius-patrik/DarkFactory --as DARK_FACTORY_PRIVATE_KEY
 agents secrets github sync CODEX_AUTH_JSON --owner marius-patrik
 ```
 
-The workflow requires these repository secrets in `marius-patrik/agent-darkfactory`:
+The workflow requires these repository secrets in `marius-patrik/DarkFactory`:
 
 - `DARK_FACTORY_APP_ID`
 - `DARK_FACTORY_PRIVATE_KEY`
@@ -203,12 +207,12 @@ To print the GitHub App installation URL from local credentials:
 npm run install:url
 ```
 
-## Version ownership
+## Product and version ownership
 
-DarkFactory is versioned and shipped only as part of Agent OS. Its package and
-template metadata align with the root Agent OS version (`0.1.0`); this component
-defines no tag workflow, GitHub release, image tag, or independent deployment
-authority.
+DarkFactory owns its repository history, issues, versioning, and releases.
+Andromeda may consume a pinned DarkFactory revision as a submodule, and Agent OS
+may launch it as an integration, but neither integration transfers product or
+release authority away from this repository.
 
 ## Development notes
 

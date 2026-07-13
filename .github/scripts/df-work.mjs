@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
-  AGENT_OS_DATA_REPO,
+  DARK_FACTORY_DATA_REPO,
   WORK_LABELS,
   assertAllowedRepo,
   cleanupTempRoot,
@@ -37,7 +37,7 @@ const RESUME_PR_NUMBER = process.env.DF_RESUME_PR?.trim() ? Number(process.env.D
 const RESUME_BRANCH = process.env.DF_RESUME_BRANCH?.trim() || "";
 const IS_RESUME = (Number.isInteger(RESUME_PR_NUMBER) && RESUME_PR_NUMBER > 0) || RESUME_BRANCH.length > 0;
 const TRIGGER = process.env.DF_TRIGGER ?? "unknown";
-const DATA_REPO = AGENT_OS_DATA_REPO;
+const DATA_REPO = DARK_FACTORY_DATA_REPO;
 const GIT_BASIC_AUTH = Buffer.from(`x-access-token:${TOKEN}`).toString("base64");
 const gh = createGithubClient(TOKEN, "darkfactory-worker");
 
@@ -77,6 +77,7 @@ async function main() {
 
   const repo = await getRepository(gh, TARGET_REPO);
   const workBaseBranch = resumeInfo?.baseRef || await resolveWorkBaseBranch(TARGET_REPO, repo.default_branch, TARGET_BASE_REF);
+  ledger.base_branch = workBaseBranch;
 
   const enforcementRules = await loadEnforcementRules(CONTROL_ROOT);
   const enforcement = await evaluateEnforcementRules(enforcementRules, {
@@ -221,7 +222,6 @@ async function main() {
       };
     }
 
-    await replaceIssueLabels(TARGET_REPO, TARGET_ISSUE_NUMBER, ["df:done"], ["df:ready", "df:running", "df:blocked"]);
     await createIssueComment(
       TARGET_REPO,
       TARGET_ISSUE_NUMBER,
@@ -411,6 +411,7 @@ function workerSuccessComment(pullRequest, summary, automerge, resumeInfo) {
     "",
     "Execution authority: canonical Agent OS manager state.",
     `Automerge: ${automerge.enabled ? "enabled" : `not enabled (${automerge.reason})`}.`,
+    "The issue stays `df:running` until DarkFactory verifies the worker claim against GitHub reality.",
     "",
     "Worker summary:",
     "",
