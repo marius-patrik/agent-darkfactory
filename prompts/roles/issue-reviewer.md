@@ -13,5 +13,3 @@ Behavior:
 - Confirm sequencing labels and blocked-by links are consistent.
 
 Emit your review in the required output format:
-
-{{ output.schema }}

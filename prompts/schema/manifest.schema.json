@@ -17,7 +17,7 @@
     },
     "contractVersion": {
       "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$",
       "description": "Semver version of the composition contract."
     },
     "artifacts": {
@@ -27,6 +27,7 @@
     },
     "fixtures": {
       "type": "array",
+      "minItems": 1,
       "items": { "$ref": "#/$defs/fixture" }
     }
   },
@@ -38,20 +39,20 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^(role|skill|tier|overlay)/[a-z0-9-]+$",
+          "pattern": "^(role|skill|tier|overlay|output)/[a-z0-9]+(?:-[a-z0-9]+)*$",
           "description": "Stable identifier; prefix must match kind."
         },
         "kind": {
-          "enum": ["role", "skill", "tier", "overlay"]
+          "enum": ["role", "skill", "tier", "overlay", "output"]
         },
         "path": {
           "type": "string",
-          "pattern": "\\.md$",
+          "pattern": "^(?:roles|skills|tiers|overlays|outputs)/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.md$",
           "description": "Path to the artifact body, relative to prompts/."
         },
         "version": {
           "type": "string",
-          "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
         },
         "checksum": {
           "type": "string",
@@ -70,30 +71,66 @@
           "uniqueItems": true,
           "description": "Variables that must be present to compose the artifact."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "role" } } },
+          "then": { "properties": { "id": { "pattern": "^role/" }, "path": { "pattern": "^roles/" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "skill" } } },
+          "then": { "properties": { "id": { "pattern": "^skill/" }, "path": { "pattern": "^skills/" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tier" } } },
+          "then": { "properties": { "id": { "pattern": "^tier/" }, "path": { "pattern": "^tiers/" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "overlay" } } },
+          "then": { "properties": { "id": { "pattern": "^overlay/" }, "path": { "pattern": "^overlays/" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "output" } } },
+          "then": { "properties": { "id": { "pattern": "^output/" }, "path": { "pattern": "^outputs/" } } }
+        }
+      ]
     },
     "fixture": {
       "type": "object",
-      "required": ["id", "path", "snapshot", "covers"],
+      "required": ["id", "path", "snapshot", "version", "checksum", "snapshotChecksum", "covers"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
         "path": {
           "type": "string",
-          "pattern": "\\.json$",
+          "pattern": "^fixtures/compose/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.json$",
           "description": "Typed composition inputs, relative to prompts/."
         },
         "snapshot": {
           "type": "string",
-          "pattern": "\\.md$",
+          "pattern": "^fixtures/snapshots/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.md$",
           "description": "Deterministic composed output for the fixture."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "sha256 of the newline-normalized typed fixture JSON."
+        },
+        "snapshotChecksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "sha256 of the newline-normalized composed snapshot."
         },
         "covers": {
           "type": "array",
           "minItems": 1,
           "items": { "type": "string" },
           "uniqueItems": true,
-          "description": "Artifact ids the fixture composes (role, skills, tier, overlays)."
+          "description": "Exact artifact ids the fixture composes (role, skills, tier, overlays, and output). Runtime also binds every artifact id to its kind-specific root and matching basename."
         }
       }
     }

@@ -3,6 +3,7 @@
   "run": {
     "id": "run-20260713-review-issue-055",
     "kind": "review-issue",
+    "purpose": "iterative-review",
     "triggeredBy": "comment"
   },
   "repository": {
@@ -19,6 +20,7 @@
     "body": "Populate the implementer role with concrete guidance and examples.",
     "comments": ["Confirm the acceptance criteria are objective."]
   },
+  "draftIntent": null,
   "policy": {
     "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
     "labels": ["P0", "P1", "P2", "df:ready", "df:running", "df:blocked"],
@@ -31,14 +33,11 @@
   "verified": {
     "facts": []
   },
-  "output": {
-    "format": "markdown",
-    "schema": "Return a verdict (ready or needs-changes) with concrete reasons for each gap."
-  },
+  "output": { "id": "output/issue-reviewer" },
   "selection": {
     "role": "role/issue-reviewer",
     "skills": ["skill/untrusted-input-handling"],
-    "tier": "standard",
+    "modelTier": "medium",
     "overlays": ["overlay/github-control-plane"]
   }
 }

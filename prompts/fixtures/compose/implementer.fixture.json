@@ -3,6 +3,7 @@
   "run": {
     "id": "run-20260713-implement-049",
     "kind": "implement",
+    "purpose": "implementation",
     "triggeredBy": "label"
   },
   "repository": {
@@ -19,6 +20,7 @@
     "body": "Add the versioned prompt/skill library and typed composition contract.",
     "comments": ["Keep it minimal; content arrives in a follow-up issue."]
   },
+  "draftIntent": null,
   "policy": {
     "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
     "labels": ["P0", "P1", "P2", "df:ready", "df:running", "df:blocked"],
@@ -31,14 +33,11 @@
   "verified": {
     "facts": ["The repository validation lane is npm run check."]
   },
-  "output": {
-    "format": "markdown",
-    "schema": "Return a summary of the change, the files touched, and the validation results."
-  },
+  "output": { "id": "output/implementer" },
   "selection": {
     "role": "role/implementer",
     "skills": ["skill/acceptance-driven-delivery", "skill/minimal-diff", "skill/verification-first"],
-    "tier": "standard",
+    "modelTier": "medium",
     "overlays": ["overlay/github-control-plane", "overlay/agent-os-boundary", "overlay/token-economy"]
   }
 }

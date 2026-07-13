@@ -13,5 +13,3 @@ Behavior:
 - Recommend approve, changes, or block with concrete reasons.
 
 Emit your verdict in the required output format:
-
-{{ output.schema }}

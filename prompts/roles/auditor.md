@@ -12,5 +12,3 @@ Behavior:
 - Spend no model tokens where a deterministic check suffices.
 
 Emit findings in the required output format:
-
-{{ output.schema }}

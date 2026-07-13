@@ -3,7 +3,8 @@
   "run": {
     "id": "run-20260713-draft-001",
     "kind": "draft-issue",
-    "triggeredBy": "schedule"
+    "purpose": "interactive-issue-drafting",
+    "triggeredBy": "owner-interactive"
   },
   "repository": {
     "owner": "marius-patrik",
@@ -11,6 +12,13 @@
     "defaultBranch": "dev"
   },
   "workItem": null,
+  "draftIntent": {
+    "intent": "Add an automated repository-doctor workflow that checks branch posture, repository layout, workflow health, data-repository boundaries, and records deterministic evidence without touching parked or archived repositories.",
+    "comments": [
+      "Draft this interactively and keep publication behind explicit human confirmation.",
+      "The issue must include objective acceptance checks and a safe rollout sequence."
+    ]
+  },
   "policy": {
     "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
     "labels": ["P0", "P1", "P2", "df:ready", "df:running", "df:blocked"],
@@ -23,14 +31,11 @@
   "verified": {
     "facts": ["The PRD is the source of truth for the backlog."]
   },
-  "output": {
-    "format": "markdown",
-    "schema": "Return one section per drafted issue with goal, scope, acceptance criteria, and sequencing."
-  },
+  "output": { "id": "output/issue-drafter" },
   "selection": {
     "role": "role/issue-drafter",
     "skills": ["skill/acceptance-driven-delivery"],
-    "tier": "standard",
+    "modelTier": "high",
     "overlays": ["overlay/github-control-plane", "overlay/token-economy"]
   }
 }

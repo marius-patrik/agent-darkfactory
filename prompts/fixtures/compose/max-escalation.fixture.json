@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "run": {
+    "id": "run-20260713-max-001",
+    "kind": "escalate",
+    "purpose": "explicit-escalation",
+    "triggeredBy": "owner-escalation"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "DarkFactory",
+    "defaultBranch": "dev"
+  },
+  "workItem": {
+    "kind": "issue",
+    "number": 150,
+    "author": "marius-patrik",
+    "url": "https://github.com/marius-patrik/DarkFactory/issues/150",
+    "title": "Resolve explicit maximum-capability escalation",
+    "body": "High-tier analysis exhausted its safe options and recorded an explicit owner-approved escalation.",
+    "comments": ["Reconstruct the decision boundary and return a safe continuation path."]
+  },
+  "draftIntent": null,
+  "policy": {
+    "branching": "Use the normal reviewed issue-to-PR lane for any resulting implementation.",
+    "labels": ["P0", "df:ask-owner"],
+    "enforcement": "The maximum tier is explicit escalation only; it grants no bypass or additional authority."
+  },
+  "validation": {
+    "commands": ["npm run check"]
+  },
+  "effort": "high",
+  "verified": {
+    "facts": ["An owner-approved maximum-tier escalation is recorded on the work item."]
+  },
+  "output": { "id": "output/max-escalation" },
+  "selection": {
+    "role": "role/max-escalation",
+    "skills": ["skill/acceptance-driven-delivery"],
+    "modelTier": "max",
+    "overlays": ["overlay/agent-os-boundary", "overlay/github-control-plane"]
+  }
+}

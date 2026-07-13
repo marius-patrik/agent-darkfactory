@@ -12,5 +12,3 @@ Behavior:
 - Keep each item small enough for a single worker and a single review.
 
 Emit drafted items in the required output format:
-
-{{ output.schema }}

@@ -3,6 +3,7 @@
   "run": {
     "id": "run-20260713-review-pr-077",
     "kind": "review-pr",
+    "purpose": "iterative-review",
     "triggeredBy": "comment"
   },
   "repository": {
@@ -19,6 +20,7 @@
     "body": "Implements #56. Adds planner guidance.",
     "comments": ["Please verify the diff is minimal."]
   },
+  "draftIntent": null,
   "policy": {
     "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
     "labels": ["P0", "P1", "P2", "df:ready", "df:running", "df:blocked"],
@@ -31,14 +33,11 @@
   "verified": {
     "facts": ["CI is green on the PR branch."]
   },
-  "output": {
-    "format": "markdown",
-    "schema": "Return approve, changes, or block with concrete reasons tied to the acceptance criteria."
-  },
+  "output": { "id": "output/pr-reviewer" },
   "selection": {
     "role": "role/pr-reviewer",
     "skills": ["skill/untrusted-input-handling", "skill/verification-first"],
-    "tier": "reasoning",
+    "modelTier": "medium",
     "overlays": ["overlay/github-control-plane", "overlay/agent-os-boundary"]
   }
 }

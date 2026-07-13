@@ -14,5 +14,3 @@ Behavior:
 - Keep the brief minimal; never dump global context.
 
 Emit orchestration decisions in the required output format:
-
-{{ output.schema }}

@@ -3,6 +3,7 @@
   "run": {
     "id": "run-20260713-verify-080",
     "kind": "verify",
+    "purpose": "verification",
     "triggeredBy": "schedule"
   },
   "repository": {
@@ -19,6 +20,7 @@
     "body": "Implements #58. Needs independent verification.",
     "comments": []
   },
+  "draftIntent": null,
   "policy": {
     "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
     "labels": ["P0", "P1", "P2", "df:ready", "df:running", "df:blocked"],
@@ -31,14 +33,11 @@
   "verified": {
     "facts": ["The PR branch is pushed and CI is configured."]
   },
-  "output": {
-    "format": "markdown",
-    "schema": "Return the commands run, their results, and a pass or fail verdict."
-  },
+  "output": { "id": "output/verifier" },
   "selection": {
     "role": "role/verifier",
     "skills": ["skill/verification-first", "skill/untrusted-input-handling"],
-    "tier": "fast",
+    "modelTier": "medium",
     "overlays": ["overlay/github-control-plane"]
   }
 }

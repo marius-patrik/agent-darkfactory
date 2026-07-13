@@ -8,7 +8,7 @@
   configuration
 - `templates/` — repository templates that carry only project-local agent context
 - `prompts/` — versioned, provider-agnostic prompt/skill library (roles, skills,
-  tiers, overlays, fixtures) with a typed composition contract and
+  tiers, overlays, output schemas, fixtures) with a typed composition contract and
   checksum/snapshot validation (`src/prompts.ts`, `tests/prompts.test.ts`)
 - `tests/` — TypeScript and workflow-policy regression suite
 - `.agents/.project/` — DarkFactory-specific context only

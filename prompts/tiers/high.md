@@ -1,8 +1,9 @@
-## Model tier: {{ tier.name }}
+## Model tier: {{ modelTier.name }}
 
 Behavior for this tier:
 
-- Deliberate, multi-step reasoning over trade-offs before acting.
+- Own planning, orchestration, interactive issue drafting, and independent final
+  review confirmation with deliberate multi-step reasoning.
 - Effort budget: {{ effort.level }}.
 - Produce structured, evidence-backed output.
 

@@ -3,6 +3,7 @@
   "run": {
     "id": "run-20260713-fix-pr-078",
     "kind": "fix-pr",
+    "purpose": "review-fix",
     "triggeredBy": "comment"
   },
   "repository": {
@@ -19,6 +20,7 @@
     "body": "Implements #57. Review requested changes.",
     "comments": ["Reviewer asked to drop the unrelated reformat."]
   },
+  "draftIntent": null,
   "policy": {
     "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
     "labels": ["P0", "P1", "P2", "df:ready", "df:running", "df:blocked"],
@@ -31,14 +33,11 @@
   "verified": {
     "facts": []
   },
-  "output": {
-    "format": "markdown",
-    "schema": "Return the list of review comments addressed and the validation results."
-  },
+  "output": { "id": "output/pr-fixer" },
   "selection": {
     "role": "role/pr-fixer",
     "skills": ["skill/minimal-diff", "skill/verification-first"],
-    "tier": "standard",
+    "modelTier": "medium",
     "overlays": ["overlay/github-control-plane", "overlay/agent-os-boundary"]
   }
 }

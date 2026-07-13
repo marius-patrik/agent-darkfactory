@@ -3,6 +3,7 @@
   "run": {
     "id": "run-20260713-audit-001",
     "kind": "audit",
+    "purpose": "audit",
     "triggeredBy": "schedule"
   },
   "repository": {
@@ -11,6 +12,7 @@
     "defaultBranch": "dev"
   },
   "workItem": null,
+  "draftIntent": null,
   "policy": {
     "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
     "labels": ["P0", "P1", "P2", "df:ready", "df:running", "df:blocked"],
@@ -23,14 +25,11 @@
   "verified": {
     "facts": ["The managed-file baseline is synchronized."]
   },
-  "output": {
-    "format": "markdown",
-    "schema": "Return a list of findings, each with evidence and a recommended follow-up issue."
-  },
+  "output": { "id": "output/auditor" },
   "selection": {
     "role": "role/auditor",
     "skills": ["skill/acceptance-driven-delivery"],
-    "tier": "reasoning",
+    "modelTier": "high",
     "overlays": ["overlay/agent-os-boundary", "overlay/token-economy"]
   }
 }

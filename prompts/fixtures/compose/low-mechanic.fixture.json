@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "run": {
+    "id": "run-20260713-trivial-001",
+    "kind": "mechanic",
+    "purpose": "trivial-mechanical",
+    "triggeredBy": "deterministic-classifier"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "DarkFactory",
+    "defaultBranch": "dev"
+  },
+  "workItem": {
+    "kind": "issue",
+    "number": 149,
+    "author": "marius-patrik",
+    "url": "https://github.com/marius-patrik/DarkFactory/issues/149",
+    "title": "Normalize one generated snapshot newline",
+    "body": "This is a trivial mechanical normalization with an exact snapshot check.",
+    "comments": []
+  },
+  "draftIntent": null,
+  "policy": {
+    "branching": "One worker = one issue = one branch = one PR; branch from dev.",
+    "labels": ["df:class:mechanical", "df:ready"],
+    "enforcement": "Stop and escalate if the task requires judgment or touches behavior; never bypass gates."
+  },
+  "validation": {
+    "commands": ["npm run check"]
+  },
+  "effort": "low",
+  "verified": {
+    "facts": ["The requested change is a single deterministic generated-file normalization."]
+  },
+  "output": { "id": "output/low-mechanic" },
+  "selection": {
+    "role": "role/low-mechanic",
+    "skills": ["skill/verification-first"],
+    "modelTier": "low",
+    "overlays": ["overlay/github-control-plane"]
+  }
+}

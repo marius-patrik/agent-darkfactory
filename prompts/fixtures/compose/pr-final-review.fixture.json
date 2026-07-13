@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "run": {
+    "id": "run-20260713-final-review-pr-077",
+    "kind": "review-pr",
+    "purpose": "final-review",
+    "triggeredBy": "workflow"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "DarkFactory",
+    "defaultBranch": "dev"
+  },
+  "workItem": {
+    "kind": "pr",
+    "number": 77,
+    "author": "darkfactory-bot",
+    "url": "https://github.com/marius-patrik/DarkFactory/pull/77",
+    "title": "Add prompt content for the planner role",
+    "body": "The medium review loop reports no remaining findings.",
+    "comments": ["Perform the independent high-tier final confirmation."]
+  },
+  "draftIntent": null,
+  "policy": {
+    "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
+    "labels": ["P0", "P1", "P2", "df:ready", "df:running", "df:blocked"],
+    "enforcement": "All merges require green CI and the configured review gate; never force-push or bypass gates."
+  },
+  "validation": {
+    "commands": ["npm run check"]
+  },
+  "effort": "high",
+  "verified": {
+    "facts": ["The medium-tier review loop is clean.", "CI is green on the current PR head."]
+  },
+  "output": { "id": "output/pr-reviewer" },
+  "selection": {
+    "role": "role/pr-reviewer",
+    "skills": ["skill/untrusted-input-handling", "skill/verification-first"],
+    "modelTier": "high",
+    "overlays": ["overlay/github-control-plane", "overlay/agent-os-boundary"]
+  }
+}
