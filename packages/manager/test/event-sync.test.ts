@@ -415,6 +415,18 @@ describe("encrypted cross-machine event exchange", () => {
         exportEventBundle(structuredSecretSource, path.join(root, "structured-secret.bundle.json")),
       ).rejects.toThrow("secret-like");
 
+      const duplicateStructuredSecret = await exchangeState(path.join(root, "duplicate-structured-secret"));
+      await rememberMemory(duplicateStructuredSecret, {
+        scope: "session",
+        subject: "compaction",
+        predicate: "current",
+        value: '{"apiKey":"sk-proj-abcdefghijklmnopqrstuvwxyz0123456789","apiKey":"redacted"}',
+        evidence,
+      });
+      await expect(
+        exportEventBundle(duplicateStructuredSecret, path.join(root, "duplicate-structured-secret.bundle.json")),
+      ).rejects.toThrow("secret-like");
+
       const secretSession = await exchangeState(path.join(root, "secret-session"));
       await createSession(secretSession, {
         sessionId: "secret-session",
