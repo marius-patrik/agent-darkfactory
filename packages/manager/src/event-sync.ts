@@ -475,7 +475,15 @@ function secretLikeText(value: string): boolean {
   entropyInput = inspectedPaths.value
     // Remove only a credential-free HTTP(S) origin after local path inspection.
     // Repository slugs and opaque path/query material remain in the fallback.
-    .replace(/\bhttps?:\/\/(?:\[[^\]]+\]|[^\s/:@]+)(?::\d+)?(?=\/)/gi, "");
+    .replace(/\bhttps?:\/\/(?:\[[^\]]+\]|[^\s/:@]+)(?::\d+)?(?=\/)/gi, "")
+    // These two repository-relative DarkFactory control artifacts are stable
+    // local identifiers produced by the trusted worker boundary. Keep the
+    // exemption exact and segment-bounded; descendants and lookalikes still
+    // enter the generic entropy guard below.
+    .replace(
+      /(?<![-A-Za-z0-9_+.\\/])\.darkfactory[\\/]df-(?:task-brief|worker-summary)\.md(?![-A-Za-z0-9_+\\/]|\.[A-Za-z0-9])/g,
+      "",
+    );
   for (const candidate of entropyInput.match(/[A-Za-z0-9_+.\\/-]{32,}={0,2}/g) ?? []) {
     if (UUID.test(candidate)) continue;
     if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})\.?$/.test(candidate)) continue;

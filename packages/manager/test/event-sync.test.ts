@@ -901,6 +901,23 @@ describe("encrypted cross-machine event exchange", () => {
     }
   });
 
+  test("canonical DarkFactory worker control paths are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-darkfactory-control-paths-"));
+    try {
+      const messages = [
+        "Write a concise final summary to .darkfactory/df-worker-summary.md before finishing.",
+        "Read .darkfactory\\df-task-brief.md and update .darkfactory\\df-worker-summary.md.",
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `df-control-${index}`, message);
+        const exported = await exportEventBundle(source, path.join(root, `df-control-${index}.bundle.json`));
+        expect(exported.entries).toBeGreaterThan(0);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("bounded absolute paths preserve secret-like suffixes and ambiguous spans", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-bounded-path-denials-"));
     try {
@@ -946,6 +963,28 @@ describe("encrypted cross-machine event exchange", () => {
       for (const [index, message] of deniedMessages.entries()) {
         const source = await assistantMessageState(path.join(root, `source-${index}`), `bounded-denial-${index}`, message);
         await expect(exportEventBundle(source, path.join(root, `bounded-denial-${index}.bundle.json`))).rejects.toThrow(
+          "secret-like",
+        );
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("DarkFactory worker control-path admission remains exact and segment-bounded", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-darkfactory-control-denials-"));
+    try {
+      const opaqueSuffix = ["dQwErTyUiOpA", "sDfGhJkLzXc", "VbNmQwErTyU", "iOpAsD"].join("");
+      const messages = [
+        `Read failed at .darkfactory/df-worker-summary.md/${opaqueSuffix}`,
+        `Read failed at .darkfactory/${opaqueSuffix}.md`,
+        `Read failed at prefix.darkfactory/df-worker-summary.md/${opaqueSuffix}`,
+        `Read failed at prefix-.darkfactory/df-worker-summary.md/${opaqueSuffix}`,
+        `Read failed at .darkfactory/df-worker-summary.md.${opaqueSuffix}`,
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `df-denial-${index}`, message);
+        await expect(exportEventBundle(source, path.join(root, `df-denial-${index}.bundle.json`))).rejects.toThrow(
           "secret-like",
         );
       }
