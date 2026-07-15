@@ -1375,6 +1375,7 @@ describe("Windows runner provisioning boundary", () => {
   test("resets only local upstream configuration before stale-runner reconfiguration", async () => {
     const calls: Array<{ argv: string[]; cwd?: string; env?: Record<string, string | undefined> }> = [];
     const host = createWindowsRunnerHost({
+      configurationLstat: async () => ({ isFile: () => true, isSymbolicLink: () => false }),
       runProcess: async (argv, options) => {
         calls.push({ argv: [...argv], cwd: options?.cwd, env: options?.env });
         return { code: 0, stdout: "", stderr: "" };
@@ -1393,6 +1394,86 @@ describe("Windows runner provisioning boundary", () => {
     expect(calls[0]!.argv).not.toContain("--token");
     expect(calls[0]!.cwd).toBe(installDir);
     expect(calls[0]!.env).toEqual(canonicalChildEnvironment());
+  });
+
+  test("fresh extracted runner skips local removal and proceeds directly to Listener configure", async () => {
+    const calls: string[][] = [];
+    const host = createWindowsRunnerHost({
+      configurationLstat: async () => { throw errno("ENOENT", "not configured"); },
+      runProcess: async (argv) => {
+        calls.push([...argv]);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const installDir = "C:\\canonical\\fresh-runner";
+
+    await host.resetLocalConfiguration(installDir);
+    await host.configure(installDir, {
+      url: `https://github.com/${RUNNER_REPOSITORY}`,
+      token: REGISTRATION_TOKEN,
+      name: RUNNER_NAME,
+      labels: [...RUNNER_LABELS],
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.slice(0, 2)).toEqual([
+      path.join(installDir, "bin", "Runner.Listener.exe"),
+      "configure",
+    ]);
+    expect(calls[0]).not.toContain("remove");
+  });
+
+  test("partial, symlinked, or inaccessible local artifacts fail before Listener removal", async () => {
+    const scenarios = [
+      {
+        label: "runner only",
+        inspect: async (filePath: string) => {
+          if (filePath.endsWith(".runner")) return { isFile: () => true, isSymbolicLink: () => false };
+          throw errno("ENOENT", "missing credentials");
+        },
+        issue: "runner local configuration artifacts are partial or ambiguous",
+      },
+      {
+        label: "credentials only",
+        inspect: async (filePath: string) => {
+          if (filePath.endsWith(".credentials")) return { isFile: () => true, isSymbolicLink: () => false };
+          throw errno("ENOENT", "missing runner");
+        },
+        issue: "runner local configuration artifacts are partial or ambiguous",
+      },
+      {
+        label: "symlinked runner",
+        inspect: async (filePath: string) => ({
+          isFile: () => true,
+          isSymbolicLink: () => filePath.endsWith(".runner"),
+        }),
+        issue: "runner local configuration artifacts are partial or ambiguous",
+      },
+      {
+        label: "inaccessible credentials",
+        inspect: async (filePath: string) => {
+          if (filePath.endsWith(".credentials")) throw errno("EACCES", "localized provider output");
+          return { isFile: () => true, isSymbolicLink: () => false };
+        },
+        issue: "runner configuration inspection failed",
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const calls: string[][] = [];
+      const host = createWindowsRunnerHost({
+        configurationLstat: scenario.inspect,
+        runProcess: async (argv) => {
+          calls.push([...argv]);
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      });
+
+      await expect(host.resetLocalConfiguration("C:\\canonical\\runner"), scenario.label).rejects.toThrow(
+        scenario.issue,
+      );
+      expect(calls, scenario.label).toEqual([]);
+    }
   });
 
   test("spawns the exact Listener and terminates only its PID plus executable plus creation identity", async () => {

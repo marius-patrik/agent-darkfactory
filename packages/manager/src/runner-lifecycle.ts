@@ -949,6 +949,20 @@ export function createWindowsRunnerHost(options: WindowsRunnerHostOptions = {}):
     }
   }
 
+  async function configurationArtifactState(filePath: string): Promise<"absent" | "physical"> {
+    let info: { isFile(): boolean; isSymbolicLink(): boolean };
+    try {
+      info = await configurationLstat(filePath);
+    } catch (error) {
+      if (isMissing(error)) return "absent";
+      throw new Error("runner configuration inspection failed");
+    }
+    if (!info.isFile() || info.isSymbolicLink()) {
+      throw new Error("runner local configuration artifacts are partial or ambiguous");
+    }
+    return "physical";
+  }
+
   async function readVersionMarker(dir: string): Promise<string | null> {
     try {
       return (await readFileImpl(path.join(dir, ".agents-runner-version"), "utf8")).trim() || null;
@@ -1025,6 +1039,14 @@ export function createWindowsRunnerHost(options: WindowsRunnerHostOptions = {}):
       );
     },
     async resetLocalConfiguration(dir) {
+      const [runnerArtifact, credentialsArtifact] = await Promise.all([
+        configurationArtifactState(path.join(dir, ".runner")),
+        configurationArtifactState(path.join(dir, ".credentials")),
+      ]);
+      if (runnerArtifact === "absent" && credentialsArtifact === "absent") return;
+      if (runnerArtifact !== "physical" || credentialsArtifact !== "physical") {
+        throw new Error("runner local configuration artifacts are partial or ambiguous");
+      }
       const result = await runProcessImpl([path.join(dir, "bin", "Runner.Listener.exe"), "remove", "--local"], {
         cwd: dir,
         env: canonicalChildEnvironment(),
