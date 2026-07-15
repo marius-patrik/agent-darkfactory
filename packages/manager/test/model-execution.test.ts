@@ -329,18 +329,36 @@ describe("canonical model execution route and receipt", () => {
     expect(await Bun.file(tampered.receiptPath).text()).toBe("external receipt tamper");
   });
 
-  test("receipt containment accepts a lexical workdir alias but rejects a linked parent escape", async () => {
+  test("receipt containment primary: an OS-aliased receipt stays inside the physical workdir", async () => {
     const { root, state } = await fixture();
     const aliasContainer = await mkdtemp(path.join(os.tmpdir(), "agents-receipt-alias-"));
     roots.push(aliasContainer);
     const workdirAlias = path.join(aliasContainer, "workdir");
     await symlink(root, workdirAlias, process.platform === "win32" ? "junction" : "dir");
 
-    const aliasedReceiptDir = path.join(workdirAlias, ".darkfactory");
-    const aliased = request(workdirAlias, aliasedReceiptDir, "medium");
+    const aliased = request(root, path.join(workdirAlias, ".darkfactory"), "medium");
     const accepted = await executeModelRequest(state, aliased, successfulDependencies());
     expect(accepted.ok).toBe(true);
     expect(await Bun.file(path.join(root, ".darkfactory", path.basename(aliased.receiptPath))).exists()).toBe(true);
+  });
+
+  test("receipt containment edge: a physical receipt stays inside an OS-aliased workdir", async () => {
+    const { root, state } = await fixture();
+    const aliasContainer = await mkdtemp(path.join(os.tmpdir(), "agents-receipt-alias-"));
+    roots.push(aliasContainer);
+    const workdirAlias = path.join(aliasContainer, "workdir");
+    await symlink(root, workdirAlias, process.platform === "win32" ? "junction" : "dir");
+
+    const physical = request(workdirAlias, path.join(root, ".darkfactory"), "medium");
+    const accepted = await executeModelRequest(state, physical, successfulDependencies());
+    expect(accepted.ok).toBe(true);
+    expect(await Bun.file(physical.receiptPath).exists()).toBe(true);
+  });
+
+  test("receipt containment denied: a linked parent cannot escape the physical workdir", async () => {
+    const { root, state } = await fixture();
+    const aliasContainer = await mkdtemp(path.join(os.tmpdir(), "agents-receipt-alias-"));
+    roots.push(aliasContainer);
 
     const outside = path.join(aliasContainer, "outside");
     await mkdir(outside);

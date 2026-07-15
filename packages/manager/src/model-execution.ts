@@ -279,12 +279,15 @@ class ReceiptReservation {
     const canonicalWorkdir = await realpath(requestedWorkdir).catch(() => null);
     if (!canonicalWorkdir) throw new Error("execution workdir is unavailable");
     const target = requiredAbsolutePath(receiptPath, "execution receipt path");
-    if (!containsPath(requestedWorkdir, target) || target === requestedWorkdir) {
-      throw new Error("execution receipt path must be inside the execution workdir");
-    }
+    const lexicallyInside = containsPath(requestedWorkdir, target) && target !== requestedWorkdir;
     const parent = path.dirname(target);
     const physicalParent = await realpath(parent).catch(() => null);
     if (!physicalParent || !containsPath(canonicalWorkdir, physicalParent)) {
+      // Preserve the caller-facing distinction between an ordinary outside
+      // path and a lexically inside parent that escapes through a link. A
+      // lexical mismatch alone is not a denial: Windows 8.3 names and other
+      // OS aliases may identify the same physical worktree.
+      if (!lexicallyInside) throw new Error("execution receipt path must be inside the execution workdir");
       throw new Error("execution receipt parent is outside the execution workdir");
     }
     const parentInfo = await lstat(parent).catch(() => null);
