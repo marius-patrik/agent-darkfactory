@@ -932,16 +932,40 @@ async function runHumanCommand(command: ParsedHumanCommand): Promise<boolean> {
       await runLogsCommand(command);
       return true;
     case "setup":
+      await runSetup([
+        ...command.arguments,
+        ...(command.options["--all"] === true ? ["--all"] : []),
+        ...(command.options["--watch"] === true ? ["--watch"] : []),
+        ...(command.options["--json"] === true ? ["--json"] : [])
+      ]);
+      return true;
     case "clean-plan":
     case "clean-apply":
-    case "clean-verify":
-      throw new Error(`${command.spec.path.join(" ")} requires the dependency-owned repository convergence engine from #263`);
+    case "clean-verify": {
+      const mode = command.spec.id.slice("clean-".length);
+      await runClean([
+        mode,
+        ...command.arguments,
+        ...(typeof command.options["--local"] === "string" ? ["--local", command.options["--local"] as string] : []),
+        ...(command.options["--watch"] === true ? ["--watch"] : []),
+        ...(command.options["--json"] === true ? ["--json"] : [])
+      ]);
+      return true;
+    }
     case "release-status":
     case "release-plan":
     case "release-reconcile":
     case "release-run":
-    case "release-verify":
-      throw new Error(`${command.spec.path.join(" ")} requires the dependency-owned release convergence engine from #41`);
+    case "release-verify": {
+      const mode = command.spec.id.slice("release-".length);
+      await runRelease([
+        mode,
+        ...command.arguments,
+        ...(command.options["--watch"] === true ? ["--watch"] : []),
+        ...(command.options["--json"] === true ? ["--json"] : [])
+      ]);
+      return true;
+    }
     case "submodules-status":
     case "submodules-update":
     case "submodules-verify":

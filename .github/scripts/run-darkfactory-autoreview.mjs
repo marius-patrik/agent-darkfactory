@@ -32,6 +32,7 @@ import {
   validationCommandsForRepository
 } from "../../src/model-turn.ts";
 import {
+  autoreviewTargetVersionMarker,
   issueVersion,
   validateIssueAutofixProposal
 } from "../../src/issue-spec.ts";
@@ -806,6 +807,7 @@ function resultComment(result) {
   const findings = lastReview?.verdict?.blockingFindings || [];
   const lines = [
     REVIEW_MARKER,
+    ...(/^[0-9a-f]{64}$/.test(String(result.targetVersion || "")) ? [autoreviewTargetVersionMarker(result.targetVersion)] : []),
     "## DarkFactory Autoreview",
     "",
     `**Verdict:** ${result.ok ? "Clean high confirmation" : "Blocked closed"}`,
@@ -875,6 +877,7 @@ async function applyOwnerOverride({ gh, repository, number, commentId, target, r
   await gh.request("POST", `/repos/${repoName(repository)}/issues/${number}/labels`, { labels: ["df:reviewed"] });
   await upsertResultComment(gh, repository, number, [
     REVIEW_MARKER,
+    autoreviewTargetVersionMarker(override.target.version),
     "## DarkFactory Autoreview",
     "",
     "**Verdict:** Auditable owner override",

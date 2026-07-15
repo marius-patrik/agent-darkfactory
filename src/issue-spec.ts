@@ -11,7 +11,8 @@ export const DRAFT_MARKER = "darkfactory:local-issue-draft";
 export const OWNER_TEXT_START = "<!-- darkfactory:owner-text:start -->";
 export const OWNER_TEXT_END = "<!-- darkfactory:owner-text:end -->";
 export const AUTOREVIEW_RESULT_MARKER = "<!-- darkfactory-autoreview -->";
-const TRUSTED_DARKFACTORY_ACTORS = new Set(["darkfactory-agent[bot]", "mp-agents[bot]"]);
+export const AUTOREVIEW_TARGET_VERSION_MARKER_PREFIX = "<!-- darkfactory-autoreview-target version=";
+const TRUSTED_DARKFACTORY_REST_ACTOR = "darkfactory-agent[bot]";
 
 export type IssueDraftContent = Readonly<{
   title: string;
@@ -51,8 +52,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function isTrustedDarkFactoryComment(value: unknown): boolean {
   return isRecord(value)
     && isRecord(value.user)
+    && value.user.type === "Bot"
     && typeof value.user.login === "string"
-    && TRUSTED_DARKFACTORY_ACTORS.has(value.user.login.toLowerCase());
+    && value.user.login === TRUSTED_DARKFACTORY_REST_ACTOR;
+}
+
+export function autoreviewTargetVersionMarker(value: string): string {
+  return `${AUTOREVIEW_TARGET_VERSION_MARKER_PREFIX}${validateIssueVersion(value)} -->`;
+}
+
+function autoreviewTargetVersion(body: string): string | null {
+  const escaped = AUTOREVIEW_TARGET_VERSION_MARKER_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`^${escaped}([0-9a-f]{64}) -->$`, "m").exec(body);
+  return match ? match[1] : null;
 }
 
 function exactKeys(value: Record<string, unknown>, expected: readonly string[], context: string): void {
@@ -259,10 +271,22 @@ export function evaluateIssueReady(input: Readonly<{
   }).filter(Boolean) : []);
   const latestReview = [...input.comments].reverse().find((comment) => isTrustedDarkFactoryComment(comment) && typeof comment.body === "string" && comment.body.startsWith(AUTOREVIEW_RESULT_MARKER));
   const reviewText = typeof latestReview?.body === "string" ? latestReview.body : "";
+  const reviewedVersion = autoreviewTargetVersion(reviewText);
+  const reviewVerdictIsClean = /\*\*Verdict:\*\* (?:Clean high confirmation|Auditable owner override)/.test(reviewText);
   const predicates = [
     { id: "open-issue", passed: input.issue.state === "open" && input.issue.pull_request === undefined, evidence: input.issue.state === "open" && input.issue.pull_request === undefined ? "Target is an open issue." : "Target is not an open issue." },
     { id: "reviewed-label", passed: labels.has("df:reviewed"), evidence: labels.has("df:reviewed") ? "df:reviewed is present." : "df:reviewed is missing." },
-    { id: "clean-review-evidence", passed: /\*\*Verdict:\*\* (?:Clean high confirmation|Auditable owner override)/.test(reviewText), evidence: reviewText ? "Latest trusted DarkFactory Autoreview result was inspected." : "No trusted DarkFactory Autoreview result comment is observable." },
+    {
+      id: "clean-review-evidence",
+      passed: reviewVerdictIsClean && reviewedVersion === actualVersion,
+      evidence: !reviewText
+        ? "No trusted DarkFactory Autoreview result comment is observable."
+        : reviewedVersion !== actualVersion
+          ? `Latest trusted DarkFactory Autoreview targets ${reviewedVersion || "no parseable version"}, not current version ${actualVersion}.`
+          : reviewVerdictIsClean
+            ? "Latest trusted DarkFactory Autoreview is clean for the current issue version."
+            : "Latest trusted DarkFactory Autoreview is not clean."
+    },
     { id: "owner-decision-clear", passed: !labels.has("df:ask-owner"), evidence: labels.has("df:ask-owner") ? "df:ask-owner is present." : "No unresolved owner-decision label is present." },
     { id: "not-blocked", passed: !labels.has("df:blocked"), evidence: labels.has("df:blocked") ? "df:blocked is present." : "No blocked label is present." },
     { id: "goal", passed: hasHeading(body, /^#\s+goal\b/i), evidence: "Required Goal heading checked." },

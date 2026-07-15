@@ -89,8 +89,7 @@ test("JSON issue drafting never falls through to interactive prompts", async () 
   );
 });
 
-test("dependency-owned command families fail explicitly instead of falling through as unknown", async () => {
-  await assert.rejects(() => runCli(["release", "status", "marius-patrik/DarkFactory", "--json"]), /release convergence engine from #41/);
+test("the remaining dependency-owned submodule family fails explicitly instead of falling through as unknown", async () => {
   await assert.rejects(() => runCli(["submodules", "status", "marius-patrik/Andromeda", "--json"]), /submodule convergence engine from #43/);
 });
 

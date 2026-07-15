@@ -15,6 +15,7 @@ import {
 } from "../src/issue-development.js";
 import {
   AUTOREVIEW_RESULT_MARKER,
+  autoreviewTargetVersionMarker,
   evaluateIssueReady,
   issueContentDigest,
   issueVersion,
@@ -128,9 +129,16 @@ test("ready evaluation succeeds only for the exact reviewed version with closed 
     labels: [{ name: "df:reviewed" }]
   };
   const expectedVersion = issueVersion(issue);
-  const cleanComment = { body: `${AUTOREVIEW_RESULT_MARKER}\n## DarkFactory Autoreview\n\n**Verdict:** Clean high confirmation`, user: { login: "darkfactory-agent[bot]" } };
+  const cleanComment = {
+    body: `${AUTOREVIEW_RESULT_MARKER}\n${autoreviewTargetVersionMarker(expectedVersion)}\n## DarkFactory Autoreview\n\n**Verdict:** Clean high confirmation`,
+    user: { login: "darkfactory-agent[bot]", type: "Bot" }
+  };
   assert.equal(evaluateIssueReady({ issue, comments: [cleanComment], dependencies: [{ number: 51, state: "closed" }], expectedVersion }).ready, true);
   assert.equal(evaluateIssueReady({ issue, comments: [{ ...cleanComment, user: { login: "untrusted-user" } }], dependencies: [{ number: 51, state: "closed" }], expectedVersion }).ready, false);
+  const staleReview = { ...cleanComment, body: `${AUTOREVIEW_RESULT_MARKER}\n${autoreviewTargetVersionMarker("0".repeat(64))}\n## DarkFactory Autoreview\n\n**Verdict:** Clean high confirmation` };
+  assert.equal(evaluateIssueReady({ issue, comments: [staleReview], dependencies: [], expectedVersion }).ready, false);
+  assert.equal(evaluateIssueReady({ issue, comments: [{ ...cleanComment, user: { login: "mp-agents[bot]", type: "Bot" } }], dependencies: [], expectedVersion }).ready, false);
+  assert.equal(evaluateIssueReady({ issue, comments: [{ ...cleanComment, user: { login: "darkfactory-agent[bot]" } }], dependencies: [], expectedVersion }).ready, false);
   assert.throws(() => evaluateIssueReady({ issue: { ...issue, title: `${issue.title}!` }, comments: [cleanComment], dependencies: [], expectedVersion }), /stale issue version/);
   const denied = evaluateIssueReady({ issue: { ...issue, labels: [] }, comments: [], dependencies: [{ number: 51, state: "open" }], expectedVersion });
   assert.equal(denied.ready, false);
