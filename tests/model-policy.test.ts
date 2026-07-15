@@ -73,6 +73,20 @@ test("all four logical tiers produce only canonical agents CLI arguments", async
     assert.equal(args[args.indexOf("--receipt") + 1], receiptPath);
     assert.doesNotMatch(args.join(" "), /(?:^|\s)(?:kimi|agy|codex|claude)(?:\s|$)|auth\.json|credentials/i);
   }
+
+  const promptFile = path.resolve(controlRoot, ".darkfactory", "bounded-review-prompt.txt");
+  const fileArgs = agentRunArguments(requests[1], {
+    promptFile,
+    receiptPath,
+    executionPolicy: "read-only"
+  });
+  assert.equal(fileArgs[fileArgs.indexOf("--prompt-file") + 1], promptFile);
+  assert.equal(fileArgs.at(-1), promptFile);
+  assert.throws(() => agentRunArguments(requests[1], {
+    prompt: "ambiguous",
+    promptFile,
+    receiptPath
+  }), /Exactly one/);
 });
 
 test("execution receipts match the request and expose only sanitized route evidence", async () => {
@@ -104,5 +118,14 @@ test("execution receipts match the request and expose only sanitized route evide
   assert.throws(
     () => validateAgentExecutionReceipt({ ...receipt, outcome: "blocked", blockReason: "quota_exhausted" }, request),
     /execution blocked/
+  );
+  assert.equal(
+    validateAgentExecutionReceipt({
+      ...receipt,
+      attempts: [{ number: 1, outcome: "blocked", reason: "quota_exhausted" }],
+      outcome: "blocked",
+      blockReason: "quota_exhausted"
+    }, request, { allowBlocked: true }).outcome,
+    "blocked"
   );
 });

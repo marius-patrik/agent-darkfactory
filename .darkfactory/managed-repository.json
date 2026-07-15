@@ -1,9 +1,13 @@
 {
   "schemaVersion": 1,
   "managedBy": "darkfactory",
-  "dataRepo": "marius-patrik/agents-data",
-  "requiredSecrets": ["CODEX_AUTH_JSON"],
+  "dataRepo": "marius-patrik/darkfactory-data",
+  "requiredSecrets": ["DARK_FACTORY_APP_ID", "DARK_FACTORY_PRIVATE_KEY"],
   "packageFiles": [
+    ".darkfactory/autoreview-policy.json",
+    ".darkfactory/model-policy.json",
+    ".github/darkfactory-autoreview.schema.json",
+    ".github/workflows/darkfactory-autoreview.yml",
     ".github/workflows/df-plan.yml",
     ".github/workflows/df-follow-through.yml",
     ".github/workflows/df-orchestrate.yml",
@@ -12,16 +16,21 @@
     ".github/scripts/df-enforcement.mjs",
     ".github/scripts/df-plan.mjs",
     ".github/scripts/df-orchestrate.mjs",
+    ".github/scripts/df-autoreview.mjs",
+    ".github/scripts/df-model-policy.mjs",
     ".github/scripts/df-sweep.mjs",
-    ".github/scripts/df-work.mjs"
+    ".github/scripts/df-work.mjs",
+    ".github/scripts/run-darkfactory-autoreview.mjs"
   ],
   "requiredFiles": [
     "AGENTS.md",
     ".darkfactory/branching-policy.md",
+    ".darkfactory/autoreview-policy.json",
     ".darkfactory/enforcement-rules.json",
     ".darkfactory/labels.json",
     ".darkfactory/managed-repos.json",
     ".darkfactory/managed-repository.json",
+    ".darkfactory/model-policy.json",
     ".darkfactory/orchestration.json",
     ".darkfactory/installer-policy.json",
     ".github/workflows/ci.yml",
@@ -31,22 +40,27 @@
     ".github/workflows/df-follow-through.yml",
     ".github/workflows/df-orchestrate.yml",
     ".github/workflows/df-work.yml",
-    ".github/workflows/codex-review.yml",
-    ".github/codex-review.Dockerfile",
-    ".github/codex-review.schema.json",
-    ".github/scripts/run-codex-review.sh",
+    ".github/workflows/darkfactory-autoreview.yml",
+    ".github/darkfactory-autoreview.schema.json",
     ".github/scripts/dark-factory-managed-check.mjs",
     ".github/scripts/df-lib.mjs",
     ".github/scripts/df-enforcement.mjs",
     ".github/scripts/df-plan.mjs",
     ".github/scripts/df-orchestrate.mjs",
+    ".github/scripts/df-autoreview.mjs",
+    ".github/scripts/df-model-policy.mjs",
     ".github/scripts/df-sweep.mjs",
-    ".github/scripts/df-work.mjs"
+    ".github/scripts/df-work.mjs",
+    ".github/scripts/run-darkfactory-autoreview.mjs"
   ],
   "removedFiles": [
     ".darkfactory/release-conventions.md",
     ".darkfactory/release-policy.json",
     ".github/scripts/dark-factory-release-check.mjs",
-    ".github/workflows/dark-factory-release.yml"
+    ".github/workflows/dark-factory-release.yml",
+    ".github/workflows/codex-review.yml",
+    ".github/codex-review.Dockerfile",
+    ".github/codex-review.schema.json",
+    ".github/scripts/run-codex-review.sh"
   ]
 }

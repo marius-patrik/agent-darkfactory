@@ -441,7 +441,7 @@ export function managedSetupPullRequestBody(changedPaths: string[]): string {
     "- `.github/workflows/ci.yml` provides the managed validation baseline.",
     `- \`${GITHUB_BOOTSTRAP_WORKFLOW_PATH}\` is bootstrap-managed so repositories have a safe baseline workflow.`,
     "- `.github/workflows/dark-factory-autoupdate.yml` verifies managed setup on a schedule while DarkFactory performs centralized sync.",
-    "- `.github/workflows/codex-review.yml` runs Codex autoreview with the repository secret `CODEX_AUTH_JSON`."
+    "- `.github/workflows/darkfactory-autoreview.yml` runs bounded medium review-to-clean and independent high confirmation only through canonical Agent OS on the trusted runner."
   ].join("\n");
 }
 

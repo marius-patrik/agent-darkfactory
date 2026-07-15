@@ -16,8 +16,8 @@ not DarkFactory's product or release owner.
 - Checks pull requests in installed repositories for the current DarkFactory
   policy and workflow scaffold.
 - Dispatches the orchestrator workflow immediately when an issue is labeled `df:ready` or when an owner/member/collaborator comments `/df run`, providing a low-latency path for managed repositories.
-- Installs the current managed Codex Review migration gate. Issue #36 replaces
-  it with provider-agnostic DarkFactory Autoreview through canonical Agent OS.
+- Installs provider-agnostic DarkFactory Autoreview through canonical Agent OS:
+  bounded medium review/fix rounds followed by an independent clean high confirmation.
 - Reads repository-local agent context, `.darkfactory`, and `.github` policy
   from the `managed-repository` child of canonical Andromeda-data authority.
 - Opens managed setup PRs when the app is installed on a repository or when repositories are added to an installation.
@@ -109,7 +109,7 @@ sessions for task-clone cwd isolation when `$AGENTS_HOME` is observable.
 Machine-local absolute paths, Git stderr, and canonical session IDs are never
 serialized into JSON, public findings, or repair issues; those surfaces report
 only aggregate violation classes and counts.
-Managed `Validate`, `Codex Review`, and future `DarkFactory Autoreview` gates
+Managed `Validate` and `DarkFactory Autoreview` gates
 must use their exact context names and the GitHub Actions producer App ID
 `15368`; a same-name check from any other App is critical drift.
 Only the exact canonical `marius-patrik/Andromeda-data` and
@@ -152,21 +152,24 @@ turn through the same launcher without provider or model flags. It never falls
 back to an ambient `agents` command. Provider selection, identity, memory, and
 session state therefore come exclusively from `$AGENTS_HOME`.
 
-`codex-review.yml` is the current external CI execution boundary. It uses an
-ephemeral Codex container and repository secret because GitHub-hosted CI cannot
-access personal Agent OS state. It does not define a repository model or serve
-as local provider authority. This provider-specific gate remains current only
-until #36 lands DarkFactory Autoreview; active specs distinguish the current
-migration gate from that target.
+`darkfactory-autoreview.yml` is base-trusted and runs only on the trusted
+`df-local` runner. It invokes `$AGENTS_HOME\bin\agents.ps1`; repository workflows
+never select providers, models, homes, or credentials. Pull-request and issue
+content is serialized as bounded untrusted prompt data into an empty turn
+workspace. Review turns are read-only and never checkout or execute target
+hooks, scripts, builds, tests, or image inputs. Autofix turns return strict
+hash-bound whole-file proposals; the trusted runner applies them only after a
+fresh same-repository/provenance/base/head check and a normal non-force push.
+Existing tests and `.agents`, `.darkfactory`, `.github`, `AGENTS.md`, and package
+control files are protected from autofix. Validation remains a separate gate.
 
-The review command keeps `--sandbox read-only`. Inside GitHub-hosted Docker it
-selects Codex's legacy Landlock backend because the default bubblewrap backend
-requires unprivileged user namespaces that the nested container boundary does
-not provide. This compatibility switch does not grant Docker capabilities,
-disable seccomp, or run a privileged container. The container runs as the host
-runner UID/GID so its mode-600 verdict can be copied by the host; the ephemeral
-Codex home remains mode 700 and `auth.json` remains mode 600, so neither is
-exposed to other users.
+The protocol records every model tier, effort, resolved provider/model/preset,
+prompt version, complete finding set, usage, and fix version in
+`marius-patrik/darkfactory-data`. Missing/malformed verdicts, stale targets,
+provider failures, receipt failures, and exhausted medium/high budgets block
+closed. Issue mutation preserves an owner-text/history section and re-fetches
+the selected issue immediately before writing. Only an exact owner-authored
+`/df autoreview override` comment can supply the separate auditable override.
 
 ## Self-hosted runner ownership
 
@@ -220,10 +223,11 @@ Managed files:
 - `.github/workflows/df-follow-through.yml`
 - `.github/workflows/df-orchestrate.yml`
 - `.github/workflows/df-work.yml`
-- `.github/workflows/codex-review.yml`
-- `.github/codex-review.Dockerfile`
-- `.github/codex-review.schema.json`
-- `.github/scripts/run-codex-review.sh`
+- `.github/workflows/darkfactory-autoreview.yml`
+- `.github/darkfactory-autoreview.schema.json`
+- `.github/scripts/df-autoreview.mjs`
+- `.github/scripts/run-darkfactory-autoreview.mjs`
+- `.darkfactory/autoreview-policy.json`
 - `.github/scripts/dark-factory-managed-check.mjs`
 
 Managed setup does not ship `.github/workflows/df-event-forward.yml`. That workflow uses control-repository app secrets and is kept only in `marius-patrik/DarkFactory`.
@@ -251,7 +255,6 @@ GitHub Actions still consumes repository secrets, but those secrets should be wr
 ```powershell
 agents secrets github sync GITHUB_APP_ID --repo marius-patrik/DarkFactory --as DARK_FACTORY_APP_ID
 agents secrets github sync GITHUB_PRIVATE_KEY --repo marius-patrik/DarkFactory --as DARK_FACTORY_PRIVATE_KEY
-agents secrets github sync CODEX_AUTH_JSON --owner marius-patrik
 ```
 
 The workflow requires these repository secrets in `marius-patrik/DarkFactory`:
@@ -259,9 +262,9 @@ The workflow requires these repository secrets in `marius-patrik/DarkFactory`:
 - `DARK_FACTORY_APP_ID`
 - `DARK_FACTORY_PRIVATE_KEY`
 
-Every managed repository that should enforce Codex Review also needs this repository secret:
-
-- `CODEX_AUTH_JSON`, containing a Codex OAuth `auth.json`
+Managed repositories do not receive provider credentials. Autoreview resolves
+Kimi and Codex Sol through the canonical Agent OS state on `df-local`; only the
+DarkFactory App installation credentials are repository-managed.
 
 The local equivalent is:
 

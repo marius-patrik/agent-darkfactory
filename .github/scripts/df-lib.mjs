@@ -468,10 +468,10 @@ export async function getRequiredStatusCheckContexts(gh, repository, branch) {
   }
 }
 
-export const CODEX_REVIEW_REQUIRED_CONTEXT = "Codex Review";
+export const AUTOREVIEW_REQUIRED_CONTEXT = "DarkFactory Autoreview";
 
-export function withCodexReviewRequiredContext(requiredContexts = []) {
-  return [...new Set([...requiredContexts, CODEX_REVIEW_REQUIRED_CONTEXT].filter(Boolean))];
+export function withAutoreviewRequiredContext(requiredContexts = []) {
+  return [...new Set([...requiredContexts, AUTOREVIEW_REQUIRED_CONTEXT].filter(Boolean))];
 }
 
 export async function getOptionalFileContent(gh, repository, filePath, ref) {

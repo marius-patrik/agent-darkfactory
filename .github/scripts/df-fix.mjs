@@ -69,7 +69,7 @@ export function extractBlockingFindings(reviewComment) {
   if (start === -1) {
     return text
       ? `- Could not locate a \`### Blocking Findings\` section. Review comment excerpt: ${truncate(text, 2000)}`
-      : "- No Codex Review blocking comment was found.";
+      : "- No DarkFactory Autoreview blocking comment was found.";
   }
 
   const bullets = [];
@@ -80,7 +80,7 @@ export function extractBlockingFindings(reviewComment) {
     if (match) bullets.push(`- ${match[1].trim()}`);
   }
 
-  if (!bullets.length) return "- Codex Review had a blocking section, but no bullet findings were parsed.";
+  if (!bullets.length) return "- DarkFactory Autoreview had a blocking section, but no bullet findings were parsed.";
   return bullets.join("\n");
 }
 
@@ -395,10 +395,10 @@ async function listIssueComments(gh, repository, issueNumber) {
   return Array.isArray(comments) ? comments : [];
 }
 
-async function getLatestCodexReviewComment(gh, repository, pullNumber) {
+async function getLatestAutoreviewComment(gh, repository, pullNumber) {
   const comments = await listIssueComments(gh, repository, pullNumber);
   const matches = comments
-    .filter((comment) => String(comment.body || "").includes("<!-- darkfactory-codex-review -->"))
+    .filter((comment) => String(comment.body || "").includes("<!-- darkfactory-autoreview -->"))
     .sort((a, b) => Date.parse(b.updated_at || b.created_at || "") - Date.parse(a.updated_at || a.created_at || ""));
   return matches[0]?.body || "";
 }
@@ -427,12 +427,12 @@ async function getFailingCheckDetails(gh, repository, pull, token) {
 }
 
 async function residualFindings(gh, repository, pull, requiredContexts, token) {
-  const review = await getLatestCodexReviewComment(gh, repository, pull.number);
+  const review = await getLatestAutoreviewComment(gh, repository, pull.number);
   const failing = await getFailingCheckDetails(gh, repository, pull, token);
   return [
     `Required checks: ${requiredContexts.length ? requiredContexts.join(", ") : "(none configured)"}`,
     `Reported checks: ${checksSummary(pull.statusCheckRollup) || "(none)"}`,
-    `Codex Review blocking findings:\n${extractBlockingFindings(review)}`,
+    `DarkFactory Autoreview blocking findings:\n${extractBlockingFindings(review)}`,
     failing ? `Failing checks:\n${truncate(failing, 6000)}` : ""
   ].filter(Boolean);
 }

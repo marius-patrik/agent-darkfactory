@@ -33,7 +33,7 @@ function mockGh(handler: (method: string, requestPath: string, body?: unknown) =
 
 function protectedBranch() {
   return {
-    required_status_checks: { strict: true, checks: [{ context: "Validate", app_id: 15368 }, { context: "Codex Review", app_id: 15368 }] },
+    required_status_checks: { strict: true, checks: [{ context: "Validate", app_id: 15368 }, { context: "DarkFactory Autoreview", app_id: 15368 }] },
     enforce_admins: { enabled: true },
     allow_force_pushes: { enabled: false },
     allow_deletions: { enabled: false }
@@ -250,7 +250,7 @@ test("post-branch health is bound to current head runs and checks and fails clos
       { name: "Validate", head_sha: "old-head", status: "completed", conclusion: "success" },
       { name: "Validate", head_sha: "current-head", status: "completed", conclusion: "failure", html_url: "https://example.test/run" }
     ] };
-    if (requestPath.includes("/commits/current-head/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "failure", app: { id: 15368 } }, { name: "Codex Review", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/commits/current-head/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "failure", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
     if (requestPath.includes("/commits/current-head/status")) return { statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
@@ -262,7 +262,7 @@ test("post-branch health is bound to current head runs and checks and fails clos
   const { gh: pendingGh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: "current-head", status: "in_progress", conclusion: null, run_started_at: "2026-07-13T00:00:00Z" }] };
-    if (requestPath.includes("/check-runs")) return { check_runs: [{ name: "Validate", status: "in_progress", conclusion: null, started_at: "2026-07-13T00:00:00Z", app: { id: 15368 } }, { name: "Codex Review", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/check-runs")) return { check_runs: [{ name: "Validate", status: "in_progress", conclusion: null, started_at: "2026-07-13T00:00:00Z", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
     if (requestPath.includes("/status")) return { statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
@@ -279,7 +279,7 @@ test("post-branch health is bound to current head runs and checks and fails clos
     throw new Error(`unexpected ${requestPath}`);
   });
   const missing = await doctor.auditHealth(repo, "main", "current-head", missingGh, { now });
-  assert.ok(missing.some((finding) => finding.id === "workflow-main-head-required-checks-missing" && /Codex Review@app:15368/.test(finding.message)));
+  assert.ok(missing.some((finding) => finding.id === "workflow-main-head-required-checks-missing" && /DarkFactory Autoreview@app:15368/.test(finding.message)));
 
   const { gh: inaccessibleGh } = mockGh(() => { throw Object.assign(new Error("forbidden"), { status: 403 }); });
   const inaccessible = await doctor.auditHealth(repo, "dev", "current-head", inaccessibleGh, { now });
@@ -364,14 +364,14 @@ test("branch protection requires exact app-bound gates, strict updates, and admi
 
 test("branch protection fails closed on unbound and malformed required-check payloads", async () => {
   const { gh: unboundGh } = mockGh(() => ({
-    required_status_checks: { strict: true, contexts: ["Validate", "Codex Review"] },
+    required_status_checks: { strict: true, contexts: ["Validate", "DarkFactory Autoreview"] },
     enforce_admins: { enabled: true },
     allow_force_pushes: { enabled: false },
     allow_deletions: { enabled: false }
   }));
   const unbound = await doctor.auditBranchProtection(unboundGh, repo, "dev", { required: true });
   assert.ok(unbound.some((finding) => finding.id === "protection-dev-validate-app-unbound"));
-  assert.ok(unbound.some((finding) => finding.id === "protection-dev-codex-review-app-unbound"));
+  assert.ok(unbound.some((finding) => finding.id === "protection-dev-darkfactory-autoreview-app-unbound"));
 
   const { gh: wrongAppGh } = mockGh(() => ({
     required_status_checks: { strict: true, checks: [{ context: "Validate", app_id: 99999 }, { context: "DarkFactory Autoreview", app_id: 99999 }] },
@@ -472,7 +472,7 @@ test("the #241 shape remains diagnosed while its active head branch is exempt", 
     if (requestPath.endsWith("/compare/main...dev")) return { status: "identical", ahead_by: 0, behind_by: 0 };
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.endsWith("/pulls/241")) return { ...pull, updated_at: "2026-07-01T00:00:00Z", mergeable: false, mergeable_state: "dirty", html_url: "https://github.com/marius-patrik/DarkFactory/pull/241" };
-    if (requestPath.includes("/commits/b/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "failure", html_url: "https://example.test/validate" }, { name: "Codex Review", status: "completed", conclusion: "failure" }] };
+    if (requestPath.includes("/commits/b/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "failure", html_url: "https://example.test/validate" }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "failure" }] };
     if (requestPath.includes("/commits/b/status")) return { statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
@@ -811,7 +811,7 @@ test("diagnose mode performs no GitHub writes", async () => {
     if (requestPath.includes("/actions/secrets")) return { secrets: [] };
     if (requestPath.includes("/actions/runners")) return { runners: [{ status: "online", labels: [{ name: "df-local" }] }] };
     if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: "a", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/commits/a/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }, { name: "Codex Review", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/commits/a/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
     if (requestPath.includes("/commits/a/status")) return { statuses: [] };
     if (requestPath.includes("/commits?sha=")) return [];
     if (requestPath.includes("/contents/.github/workflows/df-work.yml")) return content("AGENTS_HOME bin\\agents.ps1 state doctor --json");
@@ -856,7 +856,7 @@ test("report mode routes issue writes to target authority and contents writes on
     if (requestPath.includes("/actions/secrets")) return { secrets: [] };
     if (requestPath.includes("/actions/runners")) return { runners: [{ status: "online", labels: [{ name: "df-local" }] }] };
     if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: "a", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/commits/a/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }, { name: "Codex Review", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/commits/a/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
     if (requestPath.includes("/commits/a/status")) return { statuses: [] };
     if (requestPath.includes("/commits?sha=")) return [];
     if (requestPath.includes("/contents/.github/workflows/df-work.yml")) return content("AGENTS_HOME bin\\agents.ps1 state doctor --json");

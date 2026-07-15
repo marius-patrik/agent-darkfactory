@@ -16,7 +16,7 @@ const {
   auditIssueBody,
   checksAreGreen,
   cleanupTempRoot,
-  CODEX_REVIEW_REQUIRED_CONTEXT,
+  AUTOREVIEW_REQUIRED_CONTEXT,
   extractClosingIssueNumbers,
   extractReadmeFirstParagraph,
   findAuditMarker,
@@ -41,7 +41,7 @@ const {
   repoName,
   scaffoldPackagePrd,
   taskClassFromLabels,
-  withCodexReviewRequiredContext
+  withAutoreviewRequiredContext
 } = dfLib;
 
 const {
@@ -275,13 +275,13 @@ test("checksAreGreen rejects pending or failing checks without requiring fixed c
   assert.equal(checksAreGreen([{ __typename: "StatusContext", state: "FAILURE" }]), false);
 });
 
-test("Codex Review is added to required contexts only after provisioning is detected", () => {
-  assert.equal(CODEX_REVIEW_REQUIRED_CONTEXT, "Codex Review");
-  assert.deepEqual(withCodexReviewRequiredContext(["Validate", "Codex Review"]), ["Validate", "Codex Review"]);
+test("DarkFactory Autoreview is added to required contexts only after provisioning is detected", () => {
+  assert.equal(AUTOREVIEW_REQUIRED_CONTEXT, "DarkFactory Autoreview");
+  assert.deepEqual(withAutoreviewRequiredContext(["Validate", "DarkFactory Autoreview"]), ["Validate", "DarkFactory Autoreview"]);
   assert.equal(
     checksAreGreen(
       [{ __typename: "CheckRun", name: "Validate", status: "COMPLETED", conclusion: "SUCCESS" }],
-      withCodexReviewRequiredContext(["Validate"])
+      withAutoreviewRequiredContext(["Validate"])
     ),
     false
   );
@@ -289,9 +289,9 @@ test("Codex Review is added to required contexts only after provisioning is dete
     checksAreGreen(
       [
         { __typename: "CheckRun", name: "Validate", status: "COMPLETED", conclusion: "SUCCESS" },
-        { __typename: "CheckRun", name: "Codex Review", status: "COMPLETED", conclusion: "SUCCESS" }
+        { __typename: "CheckRun", name: "DarkFactory Autoreview", status: "COMPLETED", conclusion: "SUCCESS" }
       ],
-      withCodexReviewRequiredContext(["Validate"])
+      withAutoreviewRequiredContext(["Validate"])
     ),
     true
   );
@@ -1064,7 +1064,7 @@ test("df-fix posts a trusted revision request, closes the red PR, deletes the br
           data: [
             {
               body: [
-                "<!-- darkfactory-codex-review -->",
+                "<!-- darkfactory-autoreview -->",
                 "### Blocking Findings",
                 "- fix the trust boundary"
               ].join("\n"),
@@ -1238,7 +1238,7 @@ test("df-sweep verifies branch protection before merging empty check rollups", a
   const source = await readFile(new URL("../.github/scripts/df-sweep.mjs", import.meta.url), "utf8");
 
   assert.match(source, /getRequiredStatusCheckContexts/);
-  assert.match(source, /withCodexReviewRequiredContext/);
+  assert.match(source, /withAutoreviewRequiredContext/);
   assert.match(source, /required_checks/);
   assert.match(source, /required-checks-missing/);
   assert.match(source, /checksAreGreen\(pull\.statusCheckRollup, requiredContexts\)/);
@@ -1262,66 +1262,59 @@ test("df-sweep re-fetches checks immediately before direct merge and blocks red 
   assert.doesNotMatch(source, /--admin/);
 });
 
-test("Codex Review workflow validates verdicts before comments and enforcement", async () => {
-  const workflow = await readFile(new URL("../.github/workflows/codex-review.yml", import.meta.url), "utf8");
+test("DarkFactory Autoreview workflow binds the exact gate to trusted Agent OS execution", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/darkfactory-autoreview.yml", import.meta.url), "utf8");
   const parsedWorkflow = loadYaml(workflow);
-  const codexReviewJob = parsedWorkflow.jobs["codex-review"];
-  const validate = workflow.indexOf("Validate Codex verdict");
-  const comment = workflow.indexOf("Comment review");
-  const enforce = workflow.indexOf("Enforce Codex verdict");
+  const job = parsedWorkflow.jobs["darkfactory-autoreview"];
 
-  assert.equal(codexReviewJob.name, CODEX_REVIEW_REQUIRED_CONTEXT);
-  assert.notEqual(validate, -1);
-  assert.notEqual(comment, -1);
-  assert.notEqual(enforce, -1);
-  assert.ok(validate < comment);
-  assert.ok(validate < enforce);
-  assert.match(workflow, /inline trusted schema/);
-  assert.match(workflow, /approved: \{ type: "boolean" \}/);
-  assert.match(workflow, /blocking_findings: \{ type: "array", items: \{ type: "string" \} \}/);
-  assert.doesNotMatch(workflow, /validate-codex-review\.mjs/);
-  assert.doesNotMatch(workflow, /CODEX_REVIEW_MODEL|KIMI_AUTH_JSON|\.agents\/\.global/);
-  assert.match(workflow, /isolated CI reviewer, not a local provider\/model authority/);
-});
-
-test("Codex Review keeps image inputs base-trusted before checking out PR content", async () => {
-  const workflow = await readFile(new URL("../.github/workflows/codex-review.yml", import.meta.url), "utf8");
-  const baseCheckout = workflow.indexOf("- name: Checkout PR\n");
-  const imageBuild = workflow.indexOf("- name: Build Codex review image");
-  const headCheckout = workflow.indexOf("- name: Checkout PR head");
-  const outputCleanup = workflow.indexOf("rm -rf -- pr-workspace/codex-review.json");
-  const containerRun = workflow.indexOf("docker run --rm");
-
+  assert.equal(parsedWorkflow.name, AUTOREVIEW_REQUIRED_CONTEXT);
+  assert.equal(job.name, AUTOREVIEW_REQUIRED_CONTEXT);
+  assert.deepEqual(job["runs-on"], ["self-hosted", "df-local"]);
   assert.match(workflow, /pull_request_target:/);
-  assert.notEqual(baseCheckout, -1);
-  assert.notEqual(imageBuild, -1);
-  assert.notEqual(headCheckout, -1);
-  assert.ok(baseCheckout < imageBuild);
-  assert.ok(imageBuild < headCheckout);
-  assert.ok(headCheckout < outputCleanup);
-  assert.ok(outputCleanup < containerRun);
-  assert.equal(workflow.match(/docker build/g)?.length, 1);
-  assert.match(workflow, /docker build -f \.github\/codex-review\.Dockerfile -t darkfactory-codex-review \./);
+  assert.match(workflow, /github\.event\.pull_request\.base\.sha \|\| github\.sha/);
+  assert.match(workflow, /bin\\agents\.ps1/);
+  assert.match(workflow, /state doctor --json/);
+  assert.doesNotMatch(workflow, /CODEX_AUTH_JSON|KIMI_AUTH_JSON|codex exec|kimi|claude|agy/);
 });
 
-test("Codex Review uses bounded Landlock compatibility while retaining read-only sandboxing", async () => {
-  const runner = await readFile(new URL("../.github/scripts/run-codex-review.sh", import.meta.url), "utf8");
+test("DarkFactory Autoreview never checks out or executes the untrusted PR head", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/darkfactory-autoreview.yml", import.meta.url), "utf8");
+  const runner = await readFile(new URL("../.github/scripts/run-darkfactory-autoreview.mjs", import.meta.url), "utf8");
 
-  assert.match(runner, /codex --enable use_legacy_landlock exec/);
-  assert.match(runner, /--sandbox read-only/);
-  assert.doesNotMatch(runner, /danger-full-access|dangerously-bypass-approvals-and-sandbox/);
+  assert.match(workflow, /Checkout trusted control definition/);
+  assert.doesNotMatch(workflow, /Checkout PR head|docker build|docker run/);
+  assert.match(runner, /executionPolicy: "read-only"/);
+  assert.match(runner, /Do not execute repository code, hooks, builds, tests/);
+  assert.match(runner, /core\.hooksPath/);
+  assert.match(runner, /--no-ext-diff/);
+  assert.match(runner, /Autoreview requires a protected main or dev base/);
+  assert.match(runner, /TextDecoder\("utf-8", \{ fatal: true \}\)/);
+  assert.doesNotMatch(runner, /npm test|npm run|bun test|dangerously-bypass|--force-with-lease|\["push"[^\]]*"--force"/);
 });
 
-test("Codex Review hands off private verdicts as the host user without widening container privileges", async () => {
-  const workflow = await readFile(new URL("../.github/workflows/codex-review.yml", import.meta.url), "utf8");
-  const runner = await readFile(new URL("../.github/scripts/run-codex-review.sh", import.meta.url), "utf8");
+test("DarkFactory Autoreview applies only hash-bound proposals after fresh target checks", async () => {
+  const runner = await readFile(new URL("../.github/scripts/run-darkfactory-autoreview.mjs", import.meta.url), "utf8");
+  const protocol = await readFile(new URL("../.github/scripts/df-autoreview.mjs", import.meta.url), "utf8");
 
-  assert.match(workflow, /--user "\$\(id -u\):\$\(id -g\)"/);
-  assert.match(workflow, /chmod 700 "\$\{CODEX_HOME_DIR\}"/);
-  assert.match(workflow, /chmod 600 "\$\{CODEX_HOME_DIR\}\/auth\.json"/);
-  assert.doesNotMatch(workflow, /--privileged|--cap-add|seccomp=unconfined|chmod -R/);
-  assert.equal(runner.match(/chmod 600 "\$\{REVIEW_OUTPUT\}"/g)?.length, 3);
-  assert.doesNotMatch(runner, /chmod (?:644|666|777) "\$\{REVIEW_OUTPUT\}"/);
+  assert.match(runner, /validateAutofixProposal/);
+  assert.match(runner, /immediately before autofix push/);
+  assert.match(runner, /same-repository pull request head/);
+  assert.match(protocol, /existing test file/);
+  assert.match(protocol, /protected path/);
+  assert.match(protocol, /receipt_persistence_failed/);
+  assert.match(protocol, /case-collides path/);
+});
+
+test("DarkFactory Autoreview supports explicit issue review and only auditable owner override", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/darkfactory-autoreview.yml", import.meta.url), "utf8");
+  const runner = await readFile(new URL("../.github/scripts/run-darkfactory-autoreview.mjs", import.meta.url), "utf8");
+
+  assert.match(workflow, /target_kind:/);
+  assert.match(workflow, /owner_override_comment:/);
+  assert.match(runner, /\/df autoreview override/);
+  assert.match(runner, /comment\.author_association !== "OWNER"/);
+  assert.match(runner, /owner-text-history/);
+  assert.match(runner, /Issue changed immediately before autofix mutation/);
 });
 
 test("df-sweep requires explicit allowlist before merging PRs with no checks", async () => {
@@ -1461,12 +1454,12 @@ test("df-sweep merges green app-authored dev worker PRs and blocks red ones", as
   assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/41/merge"), false);
 });
 
-test("df-sweep holds worker PRs when the Codex Review context is present and red", async () => {
+test("df-sweep holds worker PRs when the DarkFactory Autoreview context is present and red", async () => {
   const repository = { owner: "marius-patrik", repo: "active" };
   const pull = workerPull({
     number: 42,
     checkConclusion: "SUCCESS",
-    codexReviewConclusion: "FAILURE",
+    autoreviewConclusion: "FAILURE",
     author: "mp-agents[bot]"
   });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
@@ -1495,17 +1488,17 @@ test("df-sweep holds worker PRs when the Codex Review context is present and red
 
   assert.equal(result.action, "skip");
   assert.equal(result.reason, "checks-not-green");
-  assert.deepEqual(result.required_checks, ["Codex Review"]);
+  assert.deepEqual(result.required_checks, ["DarkFactory Autoreview"]);
   assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/42/merge"), false);
   assert.equal(calls.some((call) => call.pathName.includes("managed-repository.json")), false);
 });
 
-test("df-sweep falls back to branch-protection checks when Codex Review is not provisioned", async () => {
+test("df-sweep falls back to branch-protection checks when DarkFactory Autoreview is not provisioned", async () => {
   const repository = { owner: "marius-patrik", repo: "active" };
   const pull = workerPull({
     number: 43,
     checkConclusion: "SUCCESS",
-    includeCodexReview: false,
+    includeAutoreview: false,
     author: "mp-agents[bot]"
   });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
@@ -1544,7 +1537,7 @@ test("df-sweep falls back to branch-protection checks when Codex Review is not p
             return { labels: [{ name: "df:done" }] };
           }
           if (method === "PUT" && pathName === "/repos/marius-patrik/active/pulls/43/merge") {
-            return { sha: "merged-without-codex-review-sha" };
+            return { sha: "merged-without-autoreview-sha" };
           }
           if (method === "GET" && pathName === "/repos/marius-patrik/active/issues/43/comments?per_page=100") return [];
           if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/43/comments") return {};
@@ -1557,8 +1550,8 @@ test("df-sweep falls back to branch-protection checks when Codex Review is not p
     const result = await considerSweepPullRequest(repository, pull);
 
     assert.equal(result.action, "merge");
-    assert.equal(result.sha, "merged-without-codex-review-sha");
-    assert.equal(result.codex_review_gap.warning, "codex-review-not-provisioned");
+    assert.equal(result.sha, "merged-without-autoreview-sha");
+    assert.equal(result.autoreview_gap.warning, "darkfactory-autoreview-not-provisioned");
     assert.ok(warnings.some((warning) => warning.includes("falling back to branch-protection checks only")));
     assert.ok(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/43/merge"));
   } finally {
@@ -1566,18 +1559,18 @@ test("df-sweep falls back to branch-protection checks when Codex Review is not p
   }
 });
 
-test("df-sweep holds worker PRs when managed config declares Codex Review but the context is absent", async () => {
+test("df-sweep holds worker PRs when managed config declares DarkFactory Autoreview but the context is absent", async () => {
   const repository = { owner: "marius-patrik", repo: "active" };
   const pull = workerPull({
     number: 44,
     checkConclusion: "SUCCESS",
-    includeCodexReview: false,
+    includeAutoreview: false,
     author: "mp-agents[bot]"
   });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
   const managedConfig = {
     schemaVersion: 1,
-    requiredFiles: [".github/workflows/codex-review.yml"]
+    requiredFiles: [".github/workflows/darkfactory-autoreview.yml"]
   };
 
   configureSweepRuntime({
@@ -1611,7 +1604,7 @@ test("df-sweep holds worker PRs when managed config declares Codex Review but th
 
   assert.equal(result.action, "skip");
   assert.equal(result.reason, "checks-not-green");
-  assert.deepEqual(result.required_checks, ["Codex Review"]);
+  assert.deepEqual(result.required_checks, ["DarkFactory Autoreview"]);
   assert.equal(calls.some((call) => call.method === "PUT" && call.pathName === "/repos/marius-patrik/active/pulls/44/merge"), false);
 });
 
@@ -1803,7 +1796,7 @@ test("df-sweep direct-merges protected branch with no required checks instead of
   const pull = workerPull({
     number: 50,
     checkConclusion: "SUCCESS",
-    includeCodexReview: false,
+    includeAutoreview: false,
     author: "mp-agents[bot]"
   });
   const calls: Array<{ method: string; pathName: string; body?: any }> = [];
@@ -2074,9 +2067,9 @@ function workerPull(options: {
   number: number;
   checkConclusion: string | null;
   checkStatus?: string;
-  codexReviewConclusion?: string | null;
-  codexReviewStatus?: string;
-  includeCodexReview?: boolean;
+  autoreviewConclusion?: string | null;
+  autoreviewStatus?: string;
+  includeAutoreview?: boolean;
   labels?: Array<{ name: string }>;
   author?: string;
 }) {
@@ -2088,12 +2081,12 @@ function workerPull(options: {
       conclusion: options.checkConclusion
     }
   ];
-  if (options.includeCodexReview !== false) {
+  if (options.includeAutoreview !== false) {
     statusCheckRollup.push({
       __typename: "CheckRun",
-      name: "Codex Review",
-      status: options.codexReviewStatus || "COMPLETED",
-      conclusion: options.codexReviewConclusion === undefined ? "SUCCESS" : options.codexReviewConclusion
+      name: "DarkFactory Autoreview",
+      status: options.autoreviewStatus || "COMPLETED",
+      conclusion: options.autoreviewConclusion === undefined ? "SUCCESS" : options.autoreviewConclusion
     });
   }
 

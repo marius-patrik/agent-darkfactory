@@ -1,5 +1,5 @@
 import {
-  CODEX_REVIEW_WORKFLOW_PATH,
+  DARK_FACTORY_AUTOREVIEW_WORKFLOW_PATH,
   DARK_FACTORY_AUTOUPDATE_WORKFLOW_PATH,
   GITHUB_BOOTSTRAP_WORKFLOW_PATH,
   requiredManagedFilePaths
@@ -73,17 +73,17 @@ export function formatRepositorySetupComment(report: RepositorySetupReport): str
 
   lines.push(
     "",
-    `Bootstrap \`${GITHUB_BOOTSTRAP_WORKFLOW_PATH}\`, \`${DARK_FACTORY_AUTOUPDATE_WORKFLOW_PATH}\`, and \`${CODEX_REVIEW_WORKFLOW_PATH}\` when GitHub workflow scaffolding is missing.`,
+    `Bootstrap \`${GITHUB_BOOTSTRAP_WORKFLOW_PATH}\`, \`${DARK_FACTORY_AUTOUPDATE_WORKFLOW_PATH}\`, and \`${DARK_FACTORY_AUTOREVIEW_WORKFLOW_PATH}\` when GitHub workflow scaffolding is missing.`,
     "Keep repository-local `AGENTS.md` and `.agents/.project` context aligned with the Agent OS authority in `$AGENTS_HOME`.",
-    "Keep `.darkfactory` policy files from the `agents-data` repository so installer, updater, and orchestration expectations stay consistent.",
-    "Configure the repository secret `CODEX_AUTH_JSON` so the Codex reviewer can run."
+    "Keep `.darkfactory` policy files from canonical Andromeda-data so installer, updater, and orchestration expectations stay consistent.",
+    "Install the DarkFactory GitHub App credentials and an online `df-local` runner with canonical `$AGENTS_HOME`; provider credentials remain in Agent OS, never repository secrets."
   );
 
   return lines.join("\n");
 }
 
 function managedPathReason(path: string): string {
-  if (path === CODEX_REVIEW_WORKFLOW_PATH) return "Codex review workflow";
+  if (path === DARK_FACTORY_AUTOREVIEW_WORKFLOW_PATH) return "DarkFactory Autoreview workflow";
   if (path === GITHUB_BOOTSTRAP_WORKFLOW_PATH) return "DarkFactory installer workflow";
   if (path === DARK_FACTORY_AUTOUPDATE_WORKFLOW_PATH) return "DarkFactory auto-update sentinel workflow";
   if (path.startsWith(".darkfactory/")) return "DarkFactory managed policy";

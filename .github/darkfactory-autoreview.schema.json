@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DarkFactory Autoreview Verdict",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "approved": {
+      "type": "boolean"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "findingsComplete": {
+      "const": true
+    },
+    "blockingFindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "details": { "type": "string", "minLength": 1 },
+          "path": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"], "minimum": 1 }
+        },
+        "required": ["title", "details", "path", "line"]
+      }
+    },
+    "nonBlockingNotes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "approved",
+    "summary",
+    "findingsComplete",
+    "blockingFindings",
+    "nonBlockingNotes"
+  ]
+}

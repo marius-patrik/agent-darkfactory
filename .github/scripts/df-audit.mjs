@@ -421,7 +421,7 @@ export async function auditBranchProtection(github, repository, branch, options 
   const required = requiredStatusChecks(data);
   const contexts = required.checks.map((check) => check.context);
   const hasValidate = contexts.includes("Validate");
-  const hasReview = contexts.includes("Codex Review") || contexts.includes("DarkFactory Autoreview");
+  const hasReview = contexts.includes("DarkFactory Autoreview");
   if (gatesRequired) {
     if (required.malformed) {
       findings.push(doctorFinding(`protection-${slug(branch)}-required-checks-malformed`, "branch protection", `Branch \`${branch}\` returned malformed or unobservable required-check metadata.`, {
@@ -436,12 +436,12 @@ export async function auditBranchProtection(github, repository, branch, options 
       }));
     }
     if (!hasReview) {
-      findings.push(doctorFinding(`protection-${slug(branch)}-review-missing`, "branch protection", `Branch \`${branch}\` does not require either exact review gate \`Codex Review\` or \`DarkFactory Autoreview\`. Required contexts: ${formatList(contexts)}.`, {
+      findings.push(doctorFinding(`protection-${slug(branch)}-review-missing`, "branch protection", `Branch \`${branch}\` does not require the exact \`DarkFactory Autoreview\` gate. Required contexts: ${formatList(contexts)}.`, {
         severity: "critical",
-        repair: ["Require the exact DarkFactory Autoreview gate (or the current exact Codex Review migration gate) on this branch."]
+        repair: ["Require the exact DarkFactory Autoreview gate on this branch."]
       }));
     }
-    for (const check of required.checks.filter((item) => ["Validate", "Codex Review", "DarkFactory Autoreview"].includes(item.context))) {
+    for (const check of required.checks.filter((item) => ["Validate", "DarkFactory Autoreview"].includes(item.context))) {
       if (!Number.isInteger(check.appId) || check.appId <= 0) {
         findings.push(doctorFinding(`protection-${slug(branch)}-${slug(check.context)}-app-unbound`, "branch protection", `Required gate \`${check.context}\` on \`${branch}\` is not bound to one observable GitHub App.`, {
           severity: "critical",

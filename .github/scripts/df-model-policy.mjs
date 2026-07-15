@@ -137,8 +137,14 @@ export function agentRunArguments(request, options) {
   if (!isRecord(request) || request.schemaVersion !== 1 || !MODEL_TIERS.includes(request.modelTier) || !EFFORT_TIERS.includes(request.effort)) {
     throw new Error("invalid DarkFactory model request");
   }
-  if (!isRecord(options) || typeof options.prompt !== "string" || !options.prompt.trim()) {
-    throw new Error("Agent OS run prompt is required");
+  if (!isRecord(options)) throw new Error("Agent OS run options are required");
+  const hasPrompt = typeof options.prompt === "string" && options.prompt.trim().length > 0;
+  const hasPromptFile = typeof options.promptFile === "string" && options.promptFile.trim().length > 0;
+  if (hasPrompt === hasPromptFile) {
+    throw new Error("Exactly one Agent OS run prompt or prompt file is required");
+  }
+  if (hasPromptFile && !path.isAbsolute(options.promptFile)) {
+    throw new Error("Agent OS prompt file path must be absolute");
   }
   if (typeof options.receiptPath !== "string" || !path.isAbsolute(options.receiptPath)) {
     throw new Error("Agent OS receipt path must be absolute");
@@ -147,7 +153,7 @@ export function agentRunArguments(request, options) {
   if (!new Set(["read-only", "workspace-write"]).has(executionPolicy)) {
     throw new Error("Agent OS execution policy is invalid");
   }
-  return [
+  const args = [
     "run",
     "--mode",
     options.mode || "default",
@@ -158,9 +164,10 @@ export function agentRunArguments(request, options) {
     "--execution-policy",
     executionPolicy,
     "--receipt",
-    options.receiptPath,
-    options.prompt.trim()
+    options.receiptPath
   ];
+  if (hasPromptFile) return [...args, "--prompt-file", options.promptFile];
+  return [...args, options.prompt.trim()];
 }
 
 function rejectSensitiveReceiptData(value, seen = new Set()) {
@@ -197,7 +204,7 @@ function nonNegativeInteger(value, field) {
   return value;
 }
 
-export function validateAgentExecutionReceipt(raw, expectedRequest) {
+export function validateAgentExecutionReceipt(raw, expectedRequest, options = {}) {
   rejectSensitiveReceiptData(raw);
   if (!isRecord(raw)) throw new Error("Agent OS execution receipt must be an object");
   exactKeys(raw, ["schemaVersion", "requested", "resolved", "attempts", "usage", "outcome", "blockReason"], "Agent OS execution receipt");
@@ -247,7 +254,10 @@ export function validateAgentExecutionReceipt(raw, expectedRequest) {
   if (raw.outcome === "success" && raw.blockReason !== null) {
     throw new Error("A successful Agent OS execution receipt cannot contain a block reason");
   }
-  if (raw.outcome !== "success") {
+  if (raw.outcome === "blocked" && raw.blockReason === null) {
+    throw new Error("A blocked Agent OS execution receipt must contain a block reason");
+  }
+  if (raw.outcome !== "success" && options.allowBlocked !== true) {
     throw new Error(`Agent OS execution blocked: ${raw.blockReason || "route_unavailable"}`);
   }
   return Object.freeze({
@@ -256,7 +266,7 @@ export function validateAgentExecutionReceipt(raw, expectedRequest) {
     resolved: Object.freeze(resolved),
     attempts: Object.freeze(attempts.map(Object.freeze)),
     usage: Object.freeze(usage),
-    outcome: "success",
-    blockReason: null
+    outcome: raw.outcome,
+    blockReason: raw.blockReason
   });
 }

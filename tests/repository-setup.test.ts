@@ -19,10 +19,11 @@ test("checkRepositorySetup returns no comment when managed setup is current", as
       ".github/workflows/df-follow-through.yml": "name: DarkFactory Follow Through\n",
       ".github/workflows/df-orchestrate.yml": "name: DarkFactory Orchestrate\n",
       ".github/workflows/df-work.yml": "name: DarkFactory Work\n",
-      ".github/workflows/codex-review.yml": "name: Codex Review\n",
-      ".github/codex-review.Dockerfile": "FROM node:22-bookworm-slim\n",
-      ".github/codex-review.schema.json": "{}\n",
-      ".github/scripts/run-codex-review.sh": "#!/usr/bin/env bash\n",
+      ".github/workflows/darkfactory-autoreview.yml": "name: DarkFactory Autoreview\n",
+      ".github/darkfactory-autoreview.schema.json": "{}\n",
+      ".github/scripts/df-autoreview.mjs": "export {}\n",
+      ".github/scripts/df-model-policy.mjs": "export {}\n",
+      ".github/scripts/run-darkfactory-autoreview.mjs": "export {}\n",
       ".github/scripts/dark-factory-managed-check.mjs": "#!/usr/bin/env node\n",
       ".github/scripts/df-lib.mjs": "export {}\n",
       ".github/scripts/df-enforcement.mjs": "import './df-lib.mjs';\n",
@@ -31,10 +32,12 @@ test("checkRepositorySetup returns no comment when managed setup is current", as
       ".github/scripts/df-sweep.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-work.mjs": "import './df-lib.mjs';\n",
       ".darkfactory/branching-policy.md": "# Branching\n",
+      ".darkfactory/autoreview-policy.json": "{}\n",
       ".darkfactory/enforcement-rules.json": "{}\n",
       ".darkfactory/labels.json": "{}\n",
       ".darkfactory/managed-repos.json": "{}\n",
       ".darkfactory/managed-repository.json": "{}\n",
+      ".darkfactory/model-policy.json": "{}\n",
       ".darkfactory/orchestration.json": "{}\n",
       ".darkfactory/installer-policy.json": "{}\n"
     }),
@@ -64,7 +67,7 @@ test("checkRepositorySetup reports missing repository policy without a version m
   assert.ok(comment?.includes(".github/workflows/df-plan.yml"));
   assert.ok(comment?.includes(".github/workflows/df-follow-through.yml"));
   assert.ok(comment?.includes(".github/workflows/df-work.yml"));
-  assert.ok(comment?.includes(".github/workflows/codex-review.yml"));
+  assert.ok(comment?.includes(".github/workflows/darkfactory-autoreview.yml"));
   assert.ok(comment?.includes(".darkfactory/enforcement-rules.json"));
   assert.ok(comment?.includes(".darkfactory/managed-repository.json"));
 });
