@@ -11,6 +11,7 @@ import {
   publishReviewedIssueDraft,
   readIssueDraftState,
   writeIssueDraftState,
+  type IssueDevelopmentRuntime,
   type IssueDraftState
 } from "../src/issue-development.js";
 import {
@@ -19,7 +20,9 @@ import {
   evaluateIssueReady,
   issueContentDigest,
   issueVersion,
+  renderIssueAutofixComment,
   renderIssueDraft,
+  resolveEffectiveIssueContent,
   validateIssueDraftResult
 } from "../src/issue-spec.js";
 
@@ -146,6 +149,50 @@ test("ready evaluation succeeds only for the exact reviewed version with closed 
   assert.ok(denied.findings.some((finding) => finding.startsWith("dependencies-closed:")));
 });
 
+test("append-only issue autofix corrections apply only to the exact owner-authored base version", () => {
+  const issue = { title: "Old title", body: "# Goal\n\nOld\n\n## Acceptance\n\n- Old", state: "open" };
+  const targetVersion = issueVersion(issue);
+  const correction = renderIssueAutofixComment({
+    targetVersion,
+    title: "Corrected title",
+    body: "# Goal\n\nCorrected\n\n## Acceptance\n\n- Correct",
+    state: "open",
+    summary: "Correct the stale execution contract."
+  });
+  const trusted = { id: 101, body: correction, user: { login: "darkfactory-agent[bot]", type: "Bot" } };
+  const effective = resolveEffectiveIssueContent(issue, [trusted]);
+  assert.equal(effective.title, "Corrected title");
+  assert.deepEqual(effective.appliedCommentIds, [101]);
+
+  const concurrentlyEdited = { ...issue, body: `${issue.body}\n\nOwner edit` };
+  const preserved = resolveEffectiveIssueContent(concurrentlyEdited, [trusted]);
+  assert.equal(preserved.body, concurrentlyEdited.body);
+  assert.deepEqual(preserved.appliedCommentIds, []);
+
+  assert.equal(resolveEffectiveIssueContent(issue, [{ ...trusted, user: { login: "mp-agents[bot]", type: "Bot" } }]).title, issue.title);
+  assert.throws(
+    () => resolveEffectiveIssueContent(issue, [{ ...trusted, body: "<!-- darkfactory:issue-autofix schema=1 broken -->" }]),
+    /marker is malformed/
+  );
+});
+
+test("Autoreview result comments never patch an untrusted marker owner", async () => {
+  // @ts-ignore The base-trusted workflow runner is native ESM and shared directly with the CLI.
+  const { upsertResultComment } = await import("../.github/scripts/run-darkfactory-autoreview.mjs");
+  const writes: Array<{ method: string; path: string }> = [];
+  const gh = {
+    async request(method: string, requestPath: string) {
+      if (method === "GET" && requestPath.includes("/comments?")) {
+        return [{ id: 7, body: AUTOREVIEW_RESULT_MARKER, user: { login: "attacker", type: "User" } }];
+      }
+      writes.push({ method, path: requestPath });
+      return { id: 8 };
+    }
+  };
+  await upsertResultComment(gh, { owner: "marius-patrik", repo: "DarkFactory" }, 39, `${AUTOREVIEW_RESULT_MARKER}\nclean`);
+  assert.deepEqual(writes, [{ method: "POST", path: "/repos/marius-patrik/DarkFactory/issues/39/comments" }]);
+});
+
 test("only a prior Autoreview failure is retryable without changing owner intent", () => {
   const reviewed = reviewedState();
   const blocked = {
@@ -196,6 +243,51 @@ test("reviewed draft publication is digest-approved, admission-ledgered, exact, 
     assert.equal(again.publication?.issueNumber, 123);
     assert.equal(calls.filter((call) => call.method === "POST").length, 1);
     assert.equal((await readIssueDraftState(draftPath)).status, "published");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("concurrent draft publication is serialized before duplicate search and issue creation", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "df-issue-publish-lock-"));
+  try {
+    const draftPath = path.join(root, "draft.json");
+    const initial = reviewedState();
+    await writeIssueDraftState(draftPath, initial);
+    let releaseAdmission!: () => void;
+    let signalAdmission!: () => void;
+    const admissionGate = new Promise<void>((resolve) => { releaseAdmission = resolve; });
+    const admissionReached = new Promise<void>((resolve) => { signalAdmission = resolve; });
+    let created: Record<string, unknown> | null = null;
+    let creates = 0;
+    const runtime = {
+      agentsHome: root,
+      controlRevision: "a".repeat(40),
+      async ledger(kind: string) {
+        if (kind === "issue-draft-publication-admission") {
+          signalAdmission();
+          await admissionGate;
+        }
+      },
+      github: {
+        async request(method: string, requestPath: string, body?: unknown) {
+          if (method === "GET" && requestPath.includes("issues?state=all")) return [];
+          if (method === "POST" && requestPath.endsWith("/issues")) {
+            creates += 1;
+            created = { number: 401, state: "open", html_url: "https://example.test/401", ...(body as Record<string, unknown>) };
+            return created;
+          }
+          if (method === "GET" && requestPath.endsWith("/issues/401")) return created;
+          throw new Error(`unexpected ${method} ${requestPath}`);
+        }
+      }
+    } satisfies IssueDevelopmentRuntime;
+    const first = publishReviewedIssueDraft(draftPath, initial.current.digest, runtime);
+    await admissionReached;
+    await assert.rejects(() => publishReviewedIssueDraft(draftPath, initial.current.digest, runtime), /already in progress/);
+    releaseAdmission();
+    await first;
+    assert.equal(creates, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

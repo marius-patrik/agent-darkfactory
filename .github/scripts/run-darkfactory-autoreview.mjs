@@ -10,6 +10,7 @@ import {
   assertAllowedRepo,
   createGithubClient,
   extractClosingIssueNumbers,
+  normalizeWorkerPullRequestActor,
   parseRepo,
   repoName,
   sanitize,
@@ -34,6 +35,8 @@ import {
 import {
   autoreviewTargetVersionMarker,
   issueVersion,
+  renderIssueAutofixComment,
+  resolveEffectiveIssueContent,
   validateIssueAutofixProposal
 } from "../../src/issue-spec.ts";
 
@@ -659,18 +662,19 @@ export async function createIssueTarget({
 
   async function read() {
     const issue = await fetchIssue();
-    const observedVersion = issueVersion(issue);
+    const comments = await fetchAll(gh, `/repos/${repoName(repository)}/issues/${number}/comments`);
+    const effective = resolveEffectiveIssueContent(issue, comments);
+    const observedVersion = effective.version;
     if (!initialVersionAdmitted) {
       if (expectedVersion && observedVersion !== expectedVersion) {
         throw stableError("stale_target", `Issue changed before Autoreview admission: expected ${expectedVersion}, observed ${observedVersion}`);
       }
       initialVersionAdmitted = true;
     }
-    const comments = await fetchAll(gh, `/repos/${repoName(repository)}/issues/${number}/comments`);
     const issueIndex = (await fetchAll(gh, `/repos/${repoName(repository)}/issues?state=open`))
       .filter((entry) => !entry.pull_request)
       .map((entry) => ({ number: entry.number, title: entry.title || "", labels: (entry.labels || []).map((label) => label.name || label) }));
-    const references = [...new Set(Array.from(`${issue.title || ""}\n${issue.body || ""}`.matchAll(/(?:^|\s)#(\d+)\b/g), (match) => Number(match[1])))]
+    const references = [...new Set(Array.from(`${effective.title}\n${effective.body}`.matchAll(/(?:^|\s)#(\d+)\b/g), (match) => Number(match[1])))]
       .filter((value) => value !== number)
       .slice(0, 50);
     const dependencies = [];
@@ -683,10 +687,10 @@ export async function createIssueTarget({
         kind: "issue",
         repository: repoName(repository),
         number,
-        title: issue.title || "",
-        body: selectedIssueBody(issue.body || ""),
-        ownerTextHistory: (issue.body || "").includes(OWNER_HISTORY_MARKER)
-          ? (issue.body || "").slice((issue.body || "").indexOf(OWNER_HISTORY_MARKER))
+        title: effective.title,
+        body: selectedIssueBody(effective.body),
+        ownerTextHistory: effective.body.includes(OWNER_HISTORY_MARKER)
+          ? effective.body.slice(effective.body.indexOf(OWNER_HISTORY_MARKER))
           : null,
         labels: (issue.labels || []).map((label) => label.name || label),
         authorAssociation: issue.author_association || ""
@@ -705,8 +709,8 @@ export async function createIssueTarget({
       author: issue.user?.login || "unknown",
       url: issue.html_url || `https://github.com/${repoName(repository)}/issues/${number}`,
       reviewContext,
-      title: issue.title || "",
-      body: issue.body || "",
+      title: effective.title,
+      body: effective.body,
       updatedAt: issue.updated_at || ""
     };
   }
@@ -727,25 +731,31 @@ export async function createIssueTarget({
       const proposal = validateIssueAutofixProposal(turn.output, policy.limits);
       if (proposal.body.includes(OWNER_HISTORY_MARKER)) throw stableError("malformed_fix", "Issue autofix cannot replace the owner-history section");
 
-      const beforeMutation = await fetchIssue();
-      if (issueVersion(beforeMutation) !== snapshot.version) throw stableError("stale_target", "Issue changed immediately before autofix mutation");
+      const beforeIssue = await fetchIssue();
+      const beforeComments = await fetchAll(gh, `/repos/${repoName(repository)}/issues/${number}/comments`);
+      const beforeMutation = resolveEffectiveIssueContent(beforeIssue, beforeComments);
+      if (beforeMutation.version !== snapshot.version) throw stableError("stale_target", "Issue changed immediately before autofix publication");
       const preservedHistory = ownerHistory(snapshot.title, snapshot.body);
       const nextBody = `${proposal.body}\n\n---\n\n${preservedHistory}`;
-      await gh.request("PATCH", `/repos/${repoName(repository)}/issues/${number}`, {
+      const correction = renderIssueAutofixComment({
+        targetVersion: snapshot.version,
         title: proposal.title,
-        body: nextBody
+        body: nextBody,
+        state: beforeMutation.state,
+        summary: proposal.summary
       });
-      const afterMutation = await fetchIssue();
-      if (afterMutation.title !== proposal.title || afterMutation.body !== nextBody) {
-        throw stableError("stale_target", "GitHub did not confirm the exact issue autofix mutation");
+      const published = await gh.request("POST", `/repos/${repoName(repository)}/issues/${number}/comments`, {
+        body: correction
+      });
+      const afterMutation = await read();
+      const expectedAfterVersion = issueVersion({ title: proposal.title, body: nextBody, state: beforeMutation.state });
+      if (afterMutation.version !== expectedAfterVersion || afterMutation.title !== proposal.title || afterMutation.body !== nextBody) {
+        throw stableError("stale_target", "Issue changed while the append-only autofix correction was published");
       }
-      await gh.request("POST", `/repos/${repoName(repository)}/issues/${number}/comments`, {
-        body: issueChangeComment(beforeMutation, afterMutation, proposal.summary)
-      });
       return {
         beforeVersion: snapshot.version,
-        afterVersion: issueVersion(afterMutation),
-        changeRef: `issue:${number}:${issueVersion(afterMutation)}`,
+        afterVersion: afterMutation.version,
+        changeRef: `issue-comment:${published?.id || "unknown"}:${afterMutation.version}`,
         receipt: turn.receipt,
         prompt: turn.prompt
       };
@@ -837,9 +847,9 @@ function resultComment(result) {
   return lines.join("\n");
 }
 
-async function upsertResultComment(gh, repository, number, body) {
+export async function upsertResultComment(gh, repository, number, body) {
   const comments = await fetchAll(gh, `/repos/${repoName(repository)}/issues/${number}/comments`);
-  const existing = comments.find((comment) => String(comment.body || "").startsWith(REVIEW_MARKER));
+  const existing = comments.find((comment) => normalizeWorkerPullRequestActor(comment?.user) !== null && String(comment.body || "").startsWith(REVIEW_MARKER));
   if (existing) {
     await gh.request("PATCH", `/repos/${repoName(repository)}/issues/comments/${existing.id}`, { body });
   } else {
@@ -849,8 +859,9 @@ async function upsertResultComment(gh, repository, number, body) {
 
 async function applyOwnerOverride({ gh, repository, number, commentId, target, record }) {
   if (!Number.isSafeInteger(commentId) || commentId < 1) throw stableError("target_policy_blocked", "Owner override comment id is invalid");
-  const [issue, comment] = await Promise.all([
+  const [issue, snapshot, comment] = await Promise.all([
     target.fetchIssue(),
+    target.read(),
     gh.request("GET", `/repos/${repoName(repository)}/issues/comments/${commentId}`)
   ]);
   if (!String(comment.issue_url || "").endsWith(`/repos/${repoName(repository)}/issues/${number}`)) {
@@ -866,7 +877,7 @@ async function applyOwnerOverride({ gh, repository, number, commentId, target, r
     schemaVersion: 1,
     sequence: 1,
     phase: "owner_override",
-    target: { kind: "issue", repository: repoName(repository), number, version: issueVersion(issue) },
+    target: { kind: "issue", repository: repoName(repository), number, version: snapshot.version },
     promptVersion: null,
     request: null,
     receipt: null,
@@ -992,8 +1003,8 @@ export async function executeAutoreview(environment = process.env) {
     if (!result.ok) return result;
 
     if (kind === "issue") {
-      const finalIssue = await target.fetchIssue();
-      if (issueVersion(finalIssue) !== result.targetVersion) throw stableError("stale_target", "Issue changed before reviewed label publication");
+      const finalSnapshot = await target.read();
+      if (finalSnapshot.version !== result.targetVersion) throw stableError("stale_target", "Issue changed before reviewed label publication");
       await gh.request("POST", `/repos/${repoName(repository)}/issues/${number}/labels`, { labels: ["df:reviewed"] });
     }
     return result;

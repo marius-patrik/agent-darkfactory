@@ -12,6 +12,7 @@ export const OWNER_TEXT_START = "<!-- darkfactory:owner-text:start -->";
 export const OWNER_TEXT_END = "<!-- darkfactory:owner-text:end -->";
 export const AUTOREVIEW_RESULT_MARKER = "<!-- darkfactory-autoreview -->";
 export const AUTOREVIEW_TARGET_VERSION_MARKER_PREFIX = "<!-- darkfactory-autoreview-target version=";
+export const ISSUE_AUTOFIX_MARKER_PREFIX = "<!-- darkfactory:issue-autofix schema=1";
 const TRUSTED_DARKFACTORY_REST_ACTOR = "darkfactory-agent[bot]";
 
 export type IssueDraftContent = Readonly<{
@@ -229,6 +230,88 @@ export function validateIssueVersion(value: string): string {
   return value;
 }
 
+export type EffectiveIssueContent = Readonly<{
+  title: string;
+  body: string;
+  state: string;
+  version: string;
+  appliedCommentIds: readonly number[];
+}>;
+
+export function renderIssueAutofixComment(input: Readonly<{
+  targetVersion: string;
+  title: string;
+  body: string;
+  state: string;
+  summary: string;
+}>): string {
+  const targetVersion = validateIssueVersion(input.targetVersion);
+  const title = safeText(input.title, "Issue autofix comment title", MAX_TITLE_BYTES);
+  const body = safeText(input.body, "Issue autofix comment body", MAX_BODY_BYTES);
+  const state = safeText(input.state, "Issue autofix comment state", 32);
+  const summary = safeText(input.summary, "Issue autofix comment summary", MAX_ITEM_BYTES);
+  const resultVersion = issueVersion({ title, body, state });
+  const payload = Buffer.from(canonicalJson({ title, body }), "utf8").toString("base64url");
+  const comment = [
+    `${ISSUE_AUTOFIX_MARKER_PREFIX} target=${targetVersion} result=${resultVersion} payload=${payload} -->`,
+    "## DarkFactory issue autofix",
+    "",
+    summary,
+    "",
+    `This append-only correction targets issue version \`${targetVersion}\` and resolves to \`${resultVersion}\`. If the owner edits the issue, this correction no longer applies; DarkFactory never overwrites concurrent owner text.`
+  ].join("\n");
+  if (Buffer.byteLength(comment, "utf8") > 60_000) {
+    throw new Error("Issue autofix correction exceeds the safe GitHub comment limit");
+  }
+  return comment;
+}
+
+function parseIssueAutofixComment(body: string): Readonly<{
+  targetVersion: string;
+  resultVersion: string;
+  title: string;
+  body: string;
+}> | null {
+  if (!body.startsWith(ISSUE_AUTOFIX_MARKER_PREFIX)) return null;
+  const firstLine = body.split(/\r?\n/, 1)[0];
+  const match = /^<!-- darkfactory:issue-autofix schema=1 target=([0-9a-f]{64}) result=([0-9a-f]{64}) payload=([A-Za-z0-9_-]+) -->$/.exec(firstLine);
+  if (!match) throw new Error("Trusted issue autofix correction marker is malformed");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(match[3], "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Trusted issue autofix correction payload is malformed");
+  }
+  if (!isRecord(parsed)) throw new Error("Trusted issue autofix correction payload must be an object");
+  exactKeys(parsed, ["title", "body"], "Issue autofix correction payload");
+  const title = safeText(parsed.title, "Issue autofix correction title", MAX_TITLE_BYTES);
+  const nextBody = safeText(parsed.body, "Issue autofix correction body", MAX_BODY_BYTES);
+  return Object.freeze({ targetVersion: match[1], resultVersion: match[2], title, body: nextBody });
+}
+
+export function resolveEffectiveIssueContent(
+  issue: Readonly<{ title?: unknown; body?: unknown; state?: unknown }>,
+  comments: readonly Readonly<{ id?: unknown; body?: unknown; user?: unknown }>[]
+): EffectiveIssueContent {
+  let title = typeof issue.title === "string" ? issue.title : "";
+  let body = typeof issue.body === "string" ? issue.body : "";
+  const state = typeof issue.state === "string" ? issue.state : "";
+  let version = issueVersion({ title, body, state });
+  const appliedCommentIds: number[] = [];
+  for (const comment of comments) {
+    if (!isTrustedDarkFactoryComment(comment) || typeof comment.body !== "string") continue;
+    const correction = parseIssueAutofixComment(comment.body);
+    if (!correction || correction.targetVersion !== version) continue;
+    const computed = issueVersion({ title: correction.title, body: correction.body, state });
+    if (computed !== correction.resultVersion) throw new Error("Trusted issue autofix correction result digest is invalid");
+    title = correction.title;
+    body = correction.body;
+    version = computed;
+    if (typeof comment.id === "number" && Number.isSafeInteger(comment.id)) appliedCommentIds.push(comment.id);
+  }
+  return Object.freeze({ title, body, state, version, appliedCommentIds: Object.freeze(appliedCommentIds) });
+}
+
 export function validateIssueAutofixProposal(
   raw: unknown,
   limits: Readonly<{ targetContextBytes: number; summaryBytes: number }>
@@ -262,9 +345,10 @@ export function evaluateIssueReady(input: Readonly<{
   expectedVersion: string;
 }>): ReadyEvaluation {
   const expectedVersion = validateIssueVersion(input.expectedVersion);
-  const actualVersion = issueVersion(input.issue);
+  const effective = resolveEffectiveIssueContent(input.issue, input.comments);
+  const actualVersion = effective.version;
   if (actualVersion !== expectedVersion) throw new Error(`stale issue version: expected ${expectedVersion}, observed ${actualVersion}`);
-  const body = typeof input.issue.body === "string" ? input.issue.body : "";
+  const body = effective.body;
   const labels = new Set(Array.isArray(input.issue.labels) ? input.issue.labels.map((entry) => {
     if (typeof entry === "string") return entry;
     return isRecord(entry) && typeof entry.name === "string" ? entry.name : "";

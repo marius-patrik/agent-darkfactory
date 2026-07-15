@@ -1590,7 +1590,9 @@ test("DarkFactory Autoreview supports explicit issue review and only auditable o
   assert.match(runner, /\/df autoreview override/);
   assert.match(runner, /comment\.author_association !== "OWNER"/);
   assert.match(runner, /owner-text-history/);
-  assert.match(runner, /Issue changed immediately before autofix mutation/);
+  assert.match(runner, /Issue changed immediately before autofix publication/);
+  assert.match(runner, /renderIssueAutofixComment/);
+  assert.doesNotMatch(runner, /"PATCH", `\/repos\/\$\{repoName\(repository\)\}\/issues\/\$\{number\}`/);
 });
 
 test("df-sweep requires explicit allowlist before merging PRs with no checks", async () => {

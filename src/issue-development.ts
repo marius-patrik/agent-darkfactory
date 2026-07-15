@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -626,6 +626,30 @@ async function validateReviewedDraftEvidence(state: IssueDraftState): Promise<vo
 }
 
 export async function publishReviewedIssueDraft(
+  draftPath: string,
+  approvedDigest: string,
+  runtime: IssueDevelopmentRuntime
+): Promise<IssueDraftState> {
+  const lockPath = `${path.resolve(draftPath)}.publish.lock`;
+  let lock;
+  try {
+    lock = await open(lockPath, "wx", 0o600);
+    await lock.writeFile(JSON.stringify({ schemaVersion: 1, pid: process.pid, draftPath: path.resolve(draftPath) }), "utf8");
+  } catch (error) {
+    if (isRecord(error) && error.code === "EEXIST") {
+      throw new Error(`Issue draft publication is already in progress for ${path.resolve(draftPath)}`);
+    }
+    throw error;
+  }
+  try {
+    return await publishReviewedIssueDraftLocked(draftPath, approvedDigest, runtime);
+  } finally {
+    await lock.close();
+    await rm(lockPath, { force: true });
+  }
+}
+
+async function publishReviewedIssueDraftLocked(
   draftPath: string,
   approvedDigest: string,
   runtime: IssueDevelopmentRuntime
