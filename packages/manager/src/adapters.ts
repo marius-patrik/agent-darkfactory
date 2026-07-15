@@ -78,6 +78,16 @@ export function adapterHome(state: SharedState, id: CliId): string {
   return path.join(state.clisDir, id);
 }
 
+const AGY_DISABLE_AUTO_UPDATE_ENV = "AGY_CLI_DISABLE_AUTO_UPDATE";
+
+function forceAgyAutoUpdateDisabled(env: Record<string, string | undefined>, id: CliId): void {
+  if (id !== "agy") return;
+  for (const name of Object.keys(env)) {
+    if (name.toUpperCase() === AGY_DISABLE_AUTO_UPDATE_ENV) delete env[name];
+  }
+  env[AGY_DISABLE_AUTO_UPDATE_ENV] = "true";
+}
+
 export function adapterEnv(state: SharedState, id: CliId): Record<string, string> {
   const spec = adapter(id);
   const env: Record<string, string> = {
@@ -100,6 +110,17 @@ export function adapterEnv(state: SharedState, id: CliId): Record<string, string
     AGENTS_SYSTEM_DATA_ROOT: systemDataPath(state),
   };
   for (const [name, dir] of Object.entries(spec.homeEnv)) env[name] = path.join(state.clisDir, dir);
+  if (id === "agy") {
+    // Agy (antigravity-cli) resolves its config root from the OS user profile
+    // and ignores HOME on Windows. Bind the explicit absolute canonical config
+    // root and isolate both home variables into the provider home so no
+    // resolution path can fall back to the forbidden standalone ~/.gemini.
+    const providerHome = path.join(state.clisDir, "agy");
+    env.GEMINI_DIR = path.join(providerHome, ".gemini");
+    env.HOME = providerHome;
+    env.USERPROFILE = providerHome;
+    env[AGY_DISABLE_AUTO_UPDATE_ENV] = "true";
+  }
   return env;
 }
 
@@ -167,6 +188,7 @@ export async function pinAdapter(
   if (unsafeReason) throw new Error(`cannot pin ${id}: ${unsafeReason}`);
 
   const env = { ...canonicalChildEnvironment(), ...adapterEnv(state, id) };
+  forceAgyAutoUpdateDisabled(env, id);
   const child = Bun.spawn(commandInvocation(binary, ["--version"], env), {
     cwd: state.root,
     env,

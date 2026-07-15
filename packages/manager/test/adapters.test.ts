@@ -87,6 +87,29 @@ describe("CLI adapters", () => {
     expect(adapterEnv(state, "agy").HOME).toBe(path.join(state.clisDir, "agy"));
   });
 
+  test("agy env binds GEMINI_DIR, HOME, and USERPROFILE to the absolute canonical provider home", () => {
+    const root = path.resolve("repo");
+    const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+    const providerHome = path.join(state.clisDir, "agy");
+    const env = adapterEnv(state, "agy");
+
+    expect(env.GEMINI_DIR).toBe(path.join(providerHome, ".gemini"));
+    expect(env.HOME).toBe(providerHome);
+    expect(env.USERPROFILE).toBe(providerHome);
+    expect(env.AGY_CLI_DISABLE_AUTO_UPDATE).toBe("true");
+    expect(path.isAbsolute(env.GEMINI_DIR)).toBe(true);
+    expect(path.isAbsolute(env.HOME)).toBe(true);
+    expect(path.isAbsolute(env.USERPROFILE)).toBe(true);
+
+    // Other providers are unchanged: no Agy-specific isolation leaks in.
+    expect(adapterEnv(state, "codex").GEMINI_DIR).toBeUndefined();
+    expect(adapterEnv(state, "codex").USERPROFILE).toBeUndefined();
+    expect(adapterEnv(state, "codex").AGY_CLI_DISABLE_AUTO_UPDATE).toBeUndefined();
+    expect(adapterEnv(state, "claude").AGY_CLI_DISABLE_AUTO_UPDATE).toBeUndefined();
+    expect(adapterEnv(state, "kimi").GEMINI_DIR).toBeUndefined();
+    expect(adapterEnv(state, "kimi").AGY_CLI_DISABLE_AUTO_UPDATE).toBeUndefined();
+  });
+
   test("credential paths exist only inside managed CLI homes", () => {
     const state = sharedState(path.join("repo"));
 
@@ -145,6 +168,70 @@ describe("CLI adapters", () => {
       expect(drifted.ok).toBe(false);
       expect(drifted.notes.join("\n")).toContain("checksum changed");
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("pins Agy with the updater disabled despite a mixed-case ambient conflict", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-adapter-pin-"));
+    const previousUpdateEnv = Object.entries(process.env).filter(
+      ([name]) => name.toUpperCase() === "AGY_CLI_DISABLE_AUTO_UPDATE",
+    );
+    try {
+      for (const [name] of previousUpdateEnv) delete process.env[name];
+      process.env.AgY_Cli_Disable_Auto_Update = "false";
+
+      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+      const capture = path.join(root, "pin-env.txt");
+      const binary = path.join(adapterHome(state, "agy"), "bin", process.platform === "win32" ? "agy.ps1" : "agy");
+      if (process.platform === "win32") {
+        const escapedCapture = capture.replaceAll("'", "''");
+        await Bun.write(
+          binary,
+          [
+            `$entries = @(Get-ChildItem Env: | Where-Object { $_.Name -ieq 'AGY_CLI_DISABLE_AUTO_UPDATE' })`,
+            `[System.IO.File]::WriteAllLines('${escapedCapture}', @([string]$env:AGY_CLI_DISABLE_AUTO_UPDATE, [string]($entries.Name -join ','), [string]$entries.Count), [System.Text.UTF8Encoding]::new($false))`,
+            `Write-Output '1.1.1'`,
+          ].join("\r\n"),
+        );
+      } else {
+        const escapedCapture = capture.replaceAll("'", `'"'"'`);
+        await Bun.write(
+          binary,
+          [
+            "#!/bin/sh",
+            `keys=$(env | awk -F= 'toupper($1) == "AGY_CLI_DISABLE_AUTO_UPDATE" { print $1 }' | paste -sd, -)`,
+            `count=$(env | awk -F= 'toupper($1) == "AGY_CLI_DISABLE_AUTO_UPDATE" { count++ } END { print count + 0 }')`,
+            `printf '%s\\n%s\\n%s\\n' "$AGY_CLI_DISABLE_AUTO_UPDATE" "$keys" "$count" > '${escapedCapture}'`,
+            "printf '1.1.1\\n'",
+          ].join("\n"),
+        );
+        await chmod(binary, 0o700);
+      }
+
+      const registration = await pinAdapter(state, "agy", binary);
+      expect(registration.version).toBe("1.1.1");
+      expect(registration.executable).toBe(binary);
+      expect((await Bun.file(capture).text()).trim().split(/\r?\n/)).toEqual([
+        "true",
+        "AGY_CLI_DISABLE_AUTO_UPDATE",
+        "1",
+      ]);
+
+      const healthy = await doctorAdapter(state, "agy");
+      expect(healthy.ok).toBe(true);
+      expect(healthy.pinned).toBe(true);
+      expect(healthy.binary).toBe(binary);
+
+      await Bun.write(binary, process.platform === "win32" ? "Write-Output 'changed'\r\n" : "#!/bin/sh\nprintf 'changed\\n'\n");
+      const drifted = await doctorAdapter(state, "agy");
+      expect(drifted.ok).toBe(false);
+      expect(drifted.notes.join("\n")).toContain("checksum changed");
+    } finally {
+      for (const name of Object.keys(process.env)) {
+        if (name.toUpperCase() === "AGY_CLI_DISABLE_AUTO_UPDATE") delete process.env[name];
+      }
+      for (const [name, value] of previousUpdateEnv) process.env[name] = value;
       await rm(root, { recursive: true, force: true });
     }
   });

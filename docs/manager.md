@@ -58,6 +58,88 @@ locators. Provider-native environment variables are derived projections into
 The complete authority and migration contract is
 [`docs/state-memory-v2.md`](state-memory-v2.md).
 
+## Managed provider launch boundary
+
+A managed session spawns the pinned provider CLI from
+`AGENTS_HOME/clis/<provider>/bin` with provider-native environment variables
+projected into that home. The Agy (`antigravity-cli`) boundary is enforced per
+launch:
+
+- **Argv.** `--print` consumes the immediately-following token as the prompt, so
+  flags must precede it: `--model <concrete> --print <prompt>`. A flag placed
+  after `--print` is swallowed as user input and the model silently falls back
+  to the default.
+- **Home isolation.** Agy binds an absolute `GEMINI_DIR` to `clis/agy/.gemini`
+  and isolates `HOME`/`USERPROFILE` into the provider home, so its config root
+  cannot fall back to the user-profile `.gemini` directory on Windows.
+- **Updater isolation.** Every managed Agy session spawn and Agy pin/version
+  probe receives `AGY_CLI_DISABLE_AUTO_UPDATE=true`. After the final environment
+  merge, the manager removes every case-insensitive alias and reasserts the one
+  uppercase key, so ambient variables and adapter options cannot override it;
+  other providers are unchanged. This suppresses Agy's cooperative startup
+  updater but is not the sole security control: immutable preflight attestation
+  and postflight checksum verification still reject an executable replacement
+  or self-update that ignores the flag. Upgrades remain available only through
+  the trusted Agent OS pin/upgrade control plane.
+- **Fail-closed verification, before and after launch.** Before canonical
+  prompt, argv, and environment preparation, the launch verifies the current
+  trusted registry pin and captures immutable per-run authority S0: the
+  configured executable path, its realpath and sha256, and the exact physical
+  `clis`, provider-home, bin, `.gemini`, and `oauth_creds.json` paths. Those
+  paths must be physically contained with no symlink, junction, or
+  reparse-point escape, and the credential must be a readable regular file
+  (opened only to prove readability; contents are never read, copied, or
+  logged). After all launch material is prepared — and as the final awaited
+  filesystem check immediately before `Bun.spawn` — the manager re-verifies
+  executable metadata, realpath, containment, and sha256 plus the physical
+  boundary and credential readability against S0. It never rereads the
+  mutable registry, so a later registry+binary rewrite cannot replace S0 with
+  a poisoned authority. After the provider exits — and before its output is
+  parsed, returned, or recorded — postflight performs the same
+  registry-independent checks against S0. No successful assistant content or
+  receipt is accepted from persistent drift. Upgrades occur only through
+  `agents cli pin`. A malicious swap in the unavoidable synchronous window
+  after final verification and before or during spawn, or a transient mid-run
+  swap fully restored before postflight, is not eliminated; this boundary does
+  not claim the executed bytes remain immutable for the whole process lifetime.
+- **Tier resolution and receipt.** Canonical reasoning tiers
+  (`low`/`medium`/`high`) resolve to the concrete authenticated model — Agy
+  carries the tier in the model string, e.g. `Gemini 3.5 Flash (Low)` — and are
+  recorded in the session receipt as the resolved concrete model, provider,
+  effort, and agent preset.
+
+### Agy source-and-installed-boundary repair
+
+If the installed Agy boundary drifts from the trusted source checkout, refresh it
+with these constraints:
+
+1. Update from the trusted source checkout and use the source manager until the
+   installed boundary is refreshed.
+2. Keep the direct Agy CLI, provider state, and `oauth_creds.json` only under
+   the canonical `AGENTS_HOME/clis/agy` home.
+3. Run Agy's own authentication only with the absolute `GEMINI_DIR`, `HOME`,
+   and `USERPROFILE` values exposed by `agents cli env agy`, never by copying
+   another provider's credentials or using standalone user-home `.gemini`
+   state.
+4. Before any managed task, confirm the active manager's `agents cli env agy`
+   projection reports `AGY_CLI_DISABLE_AUTO_UPDATE=true`. If the installed
+   launcher does not expose that boundary, use the trusted source manager until
+   the installed boundary is refreshed; do not prove it by launching Agy.
+5. Record upgrades only through `agents cli pin agy`.
+6. Verify `agents cli doctor` plus `agents state status --json` and
+   `agents state doctor --json` before a managed Agy session.
+
+These commands do not delete files or mutate personal provider credentials. The
+fail-closed boundary captures S0 before launch preparation, re-verifies it
+immediately before spawn without rereading the registry, and checks the same S0
+again after exit. Process and output settlement cannot bypass that postflight
+check; output-read failures propagate only after S0 is re-verified. Each
+re-verification checks the physical provider boundary first, then finishes with
+the executable realpath and checksum so byte attestation is the final awaited
+filesystem operation before spawn. The synchronous final-check-to-spawn window
+and a transient mid-run swap fully restored before postflight remain residual
+limitations.
+
 ## Root and exchange safety
 
 - `agents state doctor` is read-only.

@@ -105,6 +105,8 @@ export interface TurnResult {
   quota?: QuotaSurface;
   finishReason?: string;
   error?: string;
+  /** Manager-recorded description of the concrete request sent for this turn (model, effort, preset). */
+  receipt?: Record<string, unknown>;
 }
 
 export interface TurnChunk {
@@ -164,6 +166,7 @@ export type SessionEvent = SessionEventBase &
           quota?: QuotaSurface;
           finishReason?: string;
           error?: string;
+          receipt?: Record<string, unknown>;
         };
       }
     | {
@@ -210,7 +213,7 @@ export interface SessionWriteTransaction {
   appendMessage(turnId: string, message: TranscriptMessage): Promise<SessionProjection>;
   completeTurn(
     turnId: string,
-    result?: Pick<TurnResult, "usage" | "quota" | "finishReason" | "error">,
+    result?: Pick<TurnResult, "usage" | "quota" | "finishReason" | "error" | "receipt">,
   ): Promise<SessionProjection>;
   switchProvider(provider: string, model: string): Promise<SessionDescriptor>;
 }
@@ -485,6 +488,7 @@ function assertSessionEvent(value: unknown, filePath: string): asserts value is 
     assertTranscriptMessage(event.data.message, "message.appended message");
   } else if (event.type === "turn.completed") {
     requiredString(event.data.turnId, "turn.completed turnId");
+    if (event.data.receipt !== undefined) assertPlainRecord(event.data.receipt, "turn.completed receipt");
   } else if (event.type === "provider.switched") {
     requiredString(event.data.fromProvider, "provider.switched fromProvider");
     requiredString(event.data.fromModel, "provider.switched fromModel");
@@ -797,6 +801,7 @@ export async function withSessionWriteTransaction<T>(
               quota: result.quota,
               finishReason: result.finishReason,
               error: result.error,
+              receipt: result.receipt,
             },
           }),
         switchProvider: async (provider, model) => {
@@ -1011,7 +1016,7 @@ export async function completeSessionTurn(
   state: SessionStateRoot,
   sessionId: string,
   turnId: string,
-  result: Pick<TurnResult, "usage" | "quota" | "finishReason" | "error"> = {},
+  result: Pick<TurnResult, "usage" | "quota" | "finishReason" | "error" | "receipt"> = {},
 ): Promise<SessionProjection> {
   return appendSessionEvent(state, sessionId, {
     type: "turn.completed",
@@ -1021,6 +1026,7 @@ export async function completeSessionTurn(
       quota: result.quota,
       finishReason: result.finishReason,
       error: result.error,
+      receipt: result.receipt,
     },
   });
 }
@@ -1080,9 +1086,12 @@ export async function runSessionTurn(
     await transaction.appendMessage(turnId, {
       role: "assistant",
       content: result.error ?? result.content,
-      metadata: result.error
-        ? { error: true }
-        : { usage: result.usage, quota: result.quota, finishReason: result.finishReason },
+      metadata: {
+        ...(result.error
+          ? { error: true }
+          : { usage: result.usage, quota: result.quota, finishReason: result.finishReason }),
+        ...(result.receipt ? { receipt: result.receipt } : {}),
+      },
     });
     await transaction.completeTurn(turnId, result);
     return result;
@@ -1103,6 +1112,7 @@ export async function* streamSessionTurn(
   let usage: Usage | undefined;
   let quota: QuotaSurface | undefined;
   let finishReason: string | undefined;
+  let receipt: Record<string, unknown> | undefined;
   let error: string | undefined;
   let thrown: unknown;
 
@@ -1136,6 +1146,7 @@ export async function* streamSessionTurn(
         usage = result.usage;
         quota = result.quota;
         finishReason = result.finishReason;
+        receipt = result.receipt;
         error = result.error;
         if (error) yield { type: "error", error };
         else {
@@ -1167,14 +1178,14 @@ export async function* streamSessionTurn(
           data: {
             turnId,
             message: error
-              ? { role: "assistant", content: error, metadata: { error: true } }
-              : { role: "assistant", content, metadata: { usage, quota, finishReason } },
+              ? { role: "assistant", content: error, metadata: { error: true, ...(receipt ? { receipt } : {}) } }
+              : { role: "assistant", content, metadata: { usage, quota, finishReason, ...(receipt ? { receipt } : {}) } },
           },
         });
         await lock.verify();
         await appendSessionEventUnlocked(state, sessionId, machineId, {
           type: "turn.completed",
-          data: { turnId, usage, quota, finishReason, error },
+          data: { turnId, usage, quota, finishReason, error, receipt },
         });
       }
     } finally {
