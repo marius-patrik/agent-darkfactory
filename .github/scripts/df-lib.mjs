@@ -1,5 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { validateAgentExecutionReceipt } from "./df-model-policy.mjs";
 
 export const API_ROOT = "https://api.github.com";
 export const AGENT_OS_DATA_REPO = "marius-patrik/Andromeda-data";
@@ -552,6 +553,17 @@ export function prdIssueBody(item, blockedBy = []) {
   const blockedByLines = blockedBy.length
     ? ["", "## Sequencing", "", ...blockedBy.map((issueNumber) => `Blocked-by: #${issueNumber}`)]
     : [];
+  const executionRequest = item.modelRequest
+    ? [
+        "",
+        "## Execution Request",
+        "",
+        `- Task class: \`${item.taskClass}\``,
+        `- Model tier: \`${item.modelRequest.modelTier}\``,
+        `- Effort: \`${item.modelRequest.effort}\``,
+        "- Concrete provider and model are resolved only by canonical Agent OS at execution time."
+      ]
+    : [];
 
   return [
     `<!-- ${item.marker} -->`,
@@ -566,6 +578,7 @@ export function prdIssueBody(item, blockedBy = []) {
     "## Acceptance Criteria",
     "",
     acceptance,
+    ...executionRequest,
     ...blockedByLines,
     "",
     "## Planning Notes",
@@ -954,12 +967,12 @@ export function parseWorkerClaim(ledger) {
   const repoNameFromIssue = issueMatch ? `${issueMatch[1]}/${issueMatch[2]}` : "";
   const repoNameFromLedger = typeof ledger.target_repo === "string" ? ledger.target_repo : "";
 
-  const provider = typeof ledger.token_usage?.provider === "string"
-    ? ledger.token_usage.provider
-    : (typeof ledger.provider === "string" ? ledger.provider : "");
-  const model = typeof ledger.token_usage?.model === "string"
-    ? ledger.token_usage.model
-    : (typeof ledger.model === "string" ? ledger.model : "");
+  let receipt;
+  try {
+    receipt = validateAgentExecutionReceipt(ledger.agent_os?.receipt, ledger.model_request);
+  } catch {
+    return null;
+  }
 
   return {
     repo: repoNameFromLedger || repoNameFromIssue || "",
@@ -968,8 +981,14 @@ export function parseWorkerClaim(ledger) {
     baseBranch: typeof ledger.base_branch === "string" ? ledger.base_branch : "",
     pullRequestNumber: Number.isInteger(ledger.pull_request_number) ? ledger.pull_request_number : 0,
     pullRequestUrl: typeof ledger.pull_request === "string" ? ledger.pull_request : "",
-    provider,
-    model,
+    requestedModelTier: receipt.requested.modelTier,
+    requestedEffort: receipt.requested.effort,
+    provider: receipt.resolved.provider,
+    model: receipt.resolved.model,
+    providerVersion: receipt.resolved.providerVersion,
+    agentPreset: receipt.resolved.agentPreset,
+    attempts: receipt.attempts.length,
+    usage: receipt.usage,
     status: typeof ledger.status === "string" ? ledger.status : "",
     summary: typeof ledger.worker_summary === "string" ? ledger.worker_summary : ""
   };

@@ -32,6 +32,7 @@ import {
   warnReadOnlyRepository,
   writeRunLedger
 } from "./df-lib.mjs";
+import { loadModelPolicy, modelRequestForPurpose } from "./df-model-policy.mjs";
 
 const PLANNER_BOT_LOGINS = new Set(["github-actions[bot]", "mp-agents[bot]"]);
 
@@ -145,7 +146,19 @@ async function reconcileTargetRepository(repo, controlRepo) {
   const prdSources = await getPrdSources(TARGET_REPO, sourceRef, prdPresence.tree);
   ledger.prd_files = prdSources.map((source) => source.path);
 
-  const items = prdSources.flatMap((source) => parsePrdItems(source.content, source.path));
+  const modelPolicy = await loadModelPolicy(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".."));
+  const items = prdSources
+    .flatMap((source) => parsePrdItems(source.content, source.path))
+    .map((item) => ({
+      ...item,
+      modelRequest: modelRequestForPurpose(modelPolicy, "implementation", { taskClass: item.taskClass })
+    }));
+  ledger.work_units = items.map((item) => ({
+    marker: item.marker,
+    task_class: item.taskClass,
+    model_tier: item.modelRequest.modelTier,
+    effort: item.modelRequest.effort
+  }));
   const issues = await listIssues(gh, TARGET_REPO, "all");
   const byMarker = new Map();
   const driftIssues = [];

@@ -5,6 +5,7 @@ import {
   buildStatusReport,
   fetchBlockedIssues,
   fetchLatestLedger,
+  fetchLatestModelExecutions,
   fetchManagedRepos,
   fetchRecentRuns,
   fetchRepoLoopState,
@@ -265,6 +266,48 @@ test("fetchLatestLedger reads the most recent df-orchestrate ledger", async () =
   assert.deepEqual(ledger, { dispatchCount: 2, timestamp: "2026-07-05T08:00:00Z" });
 });
 
+test("fetchLatestModelExecutions reports requested and resolved route evidence", async () => {
+  const github = createRequester({
+    "GET /repos/{owner}/{repo}/contents/{path}": (parameters) => {
+      const path = String(parameters.path);
+      if (path === "runs/marius-patrik/dream") {
+        return [{ name: "2026-07-05T09-00-00Z-df-work.json", type: "file" }];
+      }
+      return encodedJsonFile({
+        created_at: "2026-07-05T09:00:00Z",
+        status: "success",
+        model_request: { modelTier: "medium", effort: "high" },
+        agent_os: {
+          receipt: {
+            resolved: { provider: "fixture-provider", model: "fixture/model" },
+            attempts: [{ number: 1, outcome: "success", reason: null }],
+            usage: { inputTokens: 11, outputTokens: 7, totalTokens: 18 },
+            blockReason: null
+          }
+        }
+      });
+    }
+  });
+  const executions = await fetchLatestModelExecutions(
+    github,
+    { owner: "marius-patrik", repo: "darkfactory-data" },
+    [{ owner: "marius-patrik", repo: "dream" }]
+  );
+  assert.deepEqual(executions, [{
+    repo: "marius-patrik/dream",
+    modelTier: "medium",
+    effort: "high",
+    provider: "fixture-provider",
+    model: "fixture/model",
+    attempts: 1,
+    inputTokens: 11,
+    outputTokens: 7,
+    status: "success",
+    blockReason: null,
+    timestamp: "2026-07-05T09:00:00Z"
+  }]);
+});
+
 test("fetchBlockedIssues aggregates ask-owner issues across managed repos", async () => {
   const repos: RepositoryRef[] = [
     { owner: "marius-patrik", repo: "dream" },
@@ -314,6 +357,17 @@ function createStatusRequester(): GitHubRequester {
           dispatched: [{ repo: "marius-patrik/dream", issue: 1 }]
         });
       }
+      if (path === "runs/marius-patrik/dream") {
+        return [{ name: "2026-07-05T09-00-00Z-df-work.json", type: "file" }];
+      }
+      if (path === "runs/marius-patrik/dream/2026-07-05T09-00-00Z-df-work.json") {
+        return encodedJsonFile({
+          created_at: "2026-07-05T09:00:00Z",
+          status: "success",
+          model_request: { modelTier: "medium", effort: "medium" },
+          agent_os: { receipt: { resolved: { provider: "fixture-provider", model: "fixture/model" }, attempts: [{}], usage: { inputTokens: 2, outputTokens: 1 }, blockReason: null } }
+        });
+      }
       throw new Error(`unexpected path: ${path}`);
     },
     "GET /repos/{owner}/{repo}": () => ({ default_branch: "main" }),
@@ -347,6 +401,7 @@ test("formatStatusReport renders a human-readable summary", async () => {
   assert.match(formatted, /df-plan:/);
   assert.match(formatted, /df-orchestrate:/);
   assert.match(formatted, /Latest ledger: 1 dispatched at 2026-07-05T08:00:00Z/);
+  assert.match(formatted, /tier=medium effort=medium route=fixture-provider\/fixture\/model attempts=1 usage=2\+1 status=success/);
   assert.match(formatted, /Blocked: none/);
   assert.match(formatted, /PRD coverage:/);
   assert.match(formatted, /Backlog coverage:/);

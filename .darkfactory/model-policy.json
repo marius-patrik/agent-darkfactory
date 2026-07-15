@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "description": "DarkFactory requests logical model tier and effort; canonical Agent OS resolves provider, model, authentication, and execution.",
+  "purposes": {
+    "implementation": {
+      "mechanical": {
+        "modelTier": "low",
+        "effort": "low"
+      },
+      "standard": {
+        "modelTier": "medium",
+        "effort": "medium"
+      },
+      "hard": {
+        "modelTier": "medium",
+        "effort": "high"
+      }
+    },
+    "planning": {
+      "modelTier": "high",
+      "effort": "high"
+    },
+    "orchestration": {
+      "modelTier": "high",
+      "effort": "high"
+    },
+    "issueDrafting": {
+      "modelTier": "high",
+      "effort": "high"
+    },
+    "iterativeReview": {
+      "modelTier": "medium",
+      "effort": "high"
+    },
+    "finalReview": {
+      "modelTier": "high",
+      "effort": "high"
+    },
+    "explicitMaximum": {
+      "modelTier": "max",
+      "effort": "high",
+      "requiresOwnerAuthorization": true
+    }
+  }
+}

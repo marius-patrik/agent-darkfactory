@@ -865,12 +865,16 @@ test("df-work blocks target auto-merge setup failures before clone or Agent OS w
 test("df-work delegates local model execution exclusively to canonical Agent OS state", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-work.yml", import.meta.url), "utf8");
   const source = await readFile(new URL("../.github/scripts/df-work.mjs", import.meta.url), "utf8");
+  const modelPolicySource = await readFile(new URL("../.github/scripts/df-model-policy.mjs", import.meta.url), "utf8");
 
   assert.match(workflow, /runs-on: \[self-hosted, df-local\]/);
   assert.match(workflow, /pwsh -NoLogo -NoProfile -File \$agentsLauncher state doctor --json/);
   assert.doesNotMatch(workflow, /CODEX_AUTH_JSON|KIMI_AUTH_JSON|AGY_AUTH_JSON/);
-  assert.match(source, /runAgentCommand\(\["run", "--mode", "default", prompt\], worktree\)/);
-  assert.doesNotMatch(source, /--provider|--model|runWithFailover|loadProviderRegistry/);
+  assert.match(source, /runAgentCommand\(\s*agentRunArguments\(modelRequest/);
+  assert.match(modelPolicySource, /"--model-tier"/);
+  assert.match(modelPolicySource, /"--effort"/);
+  assert.doesNotMatch(`${source}\n${modelPolicySource}`, /["']--provider["']|["']--model["']|runWithFailover|loadProviderRegistry/);
+  assert.match(source, /validateAgentExecutionReceipt/);
   assert.match(source, /TOKEN\|SECRET\|AUTH_JSON\|PRIVATE_KEY/);
 });
 
@@ -932,7 +936,7 @@ test("df-work binds Agent OS execution to the canonical launcher", async () => {
   assert.match(source, /if \(!path\.isAbsolute\(agentsHome\)\)/);
   assert.match(source, /const agentsLauncher = path\.join\(agentsHome, "bin", "agents\.ps1"\)/);
   assert.match(source, /runAgentCommand\(\["state", "doctor", "--json"\], CONTROL_ROOT\)/);
-  assert.match(source, /runAgentCommand\(\["run", "--mode", "default", prompt\], worktree\)/);
+  assert.match(source, /runAgentCommand\(\s*agentRunArguments\(modelRequest/);
   assert.match(source, /if \(!existsSync\(agentsLauncher\)\)/);
   assert.match(source, /\["-NoLogo", "-NoProfile", "-File", agentsLauncher, \.\.\.args\]/);
   assert.ok(source.indexOf("canonicalAgentsLauncher();") < source.indexOf("await getIssue"));
@@ -1752,13 +1756,23 @@ test("df-work keeps issue running until verification confirms the claim", async 
 });
 
 test("parseWorkerClaim normalizes provider ledger fields", () => {
+  const receipt = {
+    schemaVersion: 1,
+    requested: { modelTier: "high", effort: "medium" },
+    resolved: { provider: "codex", model: "gpt-5.5", agentPreset: "Sol", providerVersion: "1.2.3" },
+    attempts: [{ number: 1, outcome: "success", reason: null }],
+    usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+    outcome: "success",
+    blockReason: null
+  };
   const claim = parseWorkerClaim({
     issue: "marius-patrik/example#42",
     branch: "df/42-slug",
     base_branch: "dev",
     pull_request: "https://github.com/marius-patrik/example/pull/99",
     status: "success",
-    token_usage: { provider: "codex", model: "gpt-5.5" }
+    model_request: { schemaVersion: 1, modelTier: "high", effort: "medium" },
+    agent_os: { receipt }
   });
 
   assert.equal(claim.repo, "marius-patrik/example");
@@ -1767,6 +1781,11 @@ test("parseWorkerClaim normalizes provider ledger fields", () => {
   assert.equal(claim.baseBranch, "dev");
   assert.equal(claim.provider, "codex");
   assert.equal(claim.model, "gpt-5.5");
+  assert.equal(claim.requestedModelTier, "high");
+  assert.equal(claim.requestedEffort, "medium");
+  assert.equal(claim.agentPreset, "Sol");
+  assert.equal(claim.attempts, 1);
+  assert.deepEqual(claim.usage, { inputTokens: 10, outputTokens: 5, totalTokens: 15 });
 });
 
 test("verified worker state is explicit and ledger reads reject Agent OS state", async () => {

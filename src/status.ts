@@ -50,6 +50,20 @@ export interface LedgerSummary {
   timestamp: string | null;
 }
 
+export interface ModelExecutionSummary {
+  repo: string;
+  modelTier: "low" | "medium" | "high" | "max";
+  effort: string;
+  provider: string | null;
+  model: string | null;
+  attempts: number;
+  inputTokens: number;
+  outputTokens: number;
+  status: string;
+  blockReason: string | null;
+  timestamp: string | null;
+}
+
 export interface PrdCoverage extends RepositoryRef {
   rootPrd: boolean;
   packagePrds: number;
@@ -67,6 +81,7 @@ export interface StatusReport {
   loopState: RepoLoopState[];
   recentRuns: RecentRuns;
   latestLedger: LedgerSummary | null;
+  modelExecutions: ModelExecutionSummary[];
   blocked: BlockedIssue[];
   prdCoverage: PrdCoverage[];
   backlogCoverage: BacklogCoverage[];
@@ -127,10 +142,11 @@ export async function buildStatusReport(
   const dataRepo = DARK_FACTORY_DATA_REPO;
 
   const managedRepos = await fetchManagedRepos(github, { owner, repo: controlRepo }, owner);
-  const [loopState, recentRuns, latestLedger, blocked, prdCoverage, backlogCoverage] = await Promise.all([
+  const [loopState, recentRuns, latestLedger, modelExecutions, blocked, prdCoverage, backlogCoverage] = await Promise.all([
     fetchLoopStateForRepos(github, managedRepos),
     fetchRecentRuns(github, { owner, repo: controlRepo }),
     fetchLatestLedger(github, { owner, repo: dataRepo }, { owner, repo: controlRepo }),
+    fetchLatestModelExecutions(github, { owner, repo: dataRepo }, managedRepos),
     fetchBlockedIssues(github, managedRepos),
     fetchPrdCoverage(github, managedRepos),
     fetchBacklogCoverage(github, managedRepos)
@@ -142,10 +158,81 @@ export async function buildStatusReport(
     loopState,
     recentRuns,
     latestLedger,
+    modelExecutions,
     blocked,
     prdCoverage,
     backlogCoverage
   };
+}
+
+export async function fetchLatestModelExecutions(
+  github: GitHubRequester,
+  dataRepo: RepositoryRef,
+  repos: RepositoryRef[]
+): Promise<ModelExecutionSummary[]> {
+  const summaries = await Promise.all(repos.map(async (repo) => {
+    const ledgerPath = `runs/${repo.owner}/${repo.repo}`;
+    let listing;
+    try {
+      listing = await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
+        owner: dataRepo.owner,
+        repo: dataRepo.repo,
+        path: ledgerPath
+      });
+    } catch (error) {
+      if (isRequestError(error) && error.status === 404) return null;
+      throw error;
+    }
+    if (!Array.isArray(listing.data)) return null;
+    const latest = listing.data
+      .filter((entry) => isRecord(entry) && typeof entry.name === "string" && entry.name.endsWith("-df-work.json"))
+      .map((entry) => String((entry as Record<string, unknown>).name))
+      .sort()
+      .reverse()[0];
+    if (!latest) return null;
+    const response = await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
+      owner: dataRepo.owner,
+      repo: dataRepo.repo,
+      path: `${ledgerPath}/${latest}`
+    });
+    const content = decodeContentResponse(response.data);
+    if (content === null) return null;
+    let ledger: unknown;
+    try {
+      ledger = JSON.parse(content);
+    } catch {
+      return null;
+    }
+    if (!isRecord(ledger) || !isRecord(ledger.model_request)) return null;
+    const modelTier = ledger.model_request.modelTier;
+    const effort = ledger.model_request.effort;
+    if (typeof modelTier !== "string" || !new Set(["low", "medium", "high", "max"]).has(modelTier) || typeof effort !== "string") return null;
+    const receipt = isRecord(ledger.agent_os) && isRecord(ledger.agent_os.receipt) ? ledger.agent_os.receipt : null;
+    const resolved = receipt && isRecord(receipt.resolved) ? receipt.resolved : null;
+    const usage = receipt && isRecord(receipt.usage) ? receipt.usage : null;
+    const attempts = receipt && Array.isArray(receipt.attempts) ? receipt.attempts.length : 0;
+    const safeRoute = (value: unknown): string | null =>
+      typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.\/-]{0,127}$/.test(value) ? value : null;
+    const safeCount = (value: unknown): number => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+    const status = typeof ledger.status === "string" && /^[a-z][a-z0-9_-]{0,63}$/.test(ledger.status)
+      ? ledger.status
+      : "unknown";
+    const receiptBlockReason = receipt ? safeRoute(receipt.blockReason) : null;
+    return {
+      repo: `${repo.owner}/${repo.repo}`,
+      modelTier: modelTier as ModelExecutionSummary["modelTier"],
+      effort,
+      provider: resolved ? safeRoute(resolved.provider) : null,
+      model: resolved ? safeRoute(resolved.model) : null,
+      attempts,
+      inputTokens: usage ? safeCount(usage.inputTokens) : 0,
+      outputTokens: usage ? safeCount(usage.outputTokens) : 0,
+      status,
+      blockReason: status === "blocked" ? (receiptBlockReason || "execution_blocked") : receiptBlockReason,
+      timestamp: typeof ledger.created_at === "string" ? ledger.created_at : null
+    } satisfies ModelExecutionSummary;
+  }));
+  return summaries.filter((summary): summary is ModelExecutionSummary => summary !== null);
 }
 
 async function fetchLoopStateForRepos(
@@ -587,6 +674,18 @@ export function formatStatusReport(report: StatusReport): string {
     );
     lines.push("");
   }
+
+  lines.push("Latest model executions:");
+  if (report.modelExecutions.length === 0) {
+    lines.push("  none");
+  } else {
+    for (const execution of report.modelExecutions) {
+      lines.push(
+        `  ${execution.repo}: tier=${execution.modelTier} effort=${execution.effort} route=${execution.provider ?? "unresolved"}/${execution.model ?? "unresolved"} attempts=${execution.attempts} usage=${execution.inputTokens}+${execution.outputTokens} status=${execution.status}${execution.blockReason ? ` block=${execution.blockReason}` : ""}`
+      );
+    }
+  }
+  lines.push("");
 
   if (report.blocked.length > 0) {
     lines.push("Blocked (df:ask-owner):");

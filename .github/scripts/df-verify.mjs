@@ -207,7 +207,11 @@ async function markWorkerVerified(gh, repository, issueNumber, claim, pullReques
         `- Claimed PR: ${pullRequest.html_url || `#${pullRequest.number}`}`,
         `- Branch: \`${claim.branch}\``,
         `- Base: \`${pullRequest.base?.ref || claim.baseBranch || "unknown"}\``,
-        `- Provider: \`${claim.provider}\` (${claim.model})`,
+        `- Requested tier / effort: \`${claim.requestedModelTier}\` / \`${claim.requestedEffort}\``,
+        `- Resolved route: \`${claim.provider}\` / \`${claim.model}\` / \`${claim.agentPreset}\``,
+        `- Provider version: \`${claim.providerVersion}\``,
+        `- Attempts: \`${claim.attempts}\``,
+        `- Usage: \`${claim.usage.inputTokens}\` input / \`${claim.usage.outputTokens}\` output tokens`,
         "",
         "The issue is marked `df:done` and follow-through may merge the verified PR."
       ].join("\n")

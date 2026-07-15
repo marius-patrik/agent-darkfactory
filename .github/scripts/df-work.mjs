@@ -26,6 +26,12 @@ import {
   writeRunLedger
 } from "./df-lib.mjs";
 import { evaluateEnforcementRules, loadEnforcementRules } from "./df-enforcement.mjs";
+import {
+  agentRunArguments,
+  loadModelPolicy,
+  modelRequestForPurpose,
+  validateAgentExecutionReceipt
+} from "./df-model-policy.mjs";
 
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const TOKEN = requiredEnv("DARK_FACTORY_TOKEN");
@@ -57,6 +63,8 @@ async function main() {
 
   const issue = await getIssue(TARGET_REPO, TARGET_ISSUE_NUMBER);
   const taskRouting = taskClassFromLabels(issue.labels);
+  const modelPolicy = await loadModelPolicy(CONTROL_ROOT);
+  const modelRequest = modelRequestForPurpose(modelPolicy, "implementation", taskRouting);
   const target = `${repoName(TARGET_REPO)}#${TARGET_ISSUE_NUMBER}`;
   const resumeInfo = await buildResumeInfo(TARGET_REPO, TARGET_ISSUE_NUMBER);
   const branch = resumeInfo?.branch || `df/${TARGET_ISSUE_NUMBER}-${slug(issue.title)}`;
@@ -67,8 +75,10 @@ async function main() {
     branch,
     status: "started",
     actions: [],
+    model_request: modelRequest,
     agent_os: {
       turns: 0,
+      receipt: null,
       note: "Provider, model, identity, memory, and session state are resolved only by the canonical agents launcher."
     }
   };
@@ -162,7 +172,7 @@ async function main() {
     await createIssueComment(
       TARGET_REPO,
       TARGET_ISSUE_NUMBER,
-      workerStartedComment(target, branch, taskRouting, mergePolicy.summary, resumeInfo)
+      workerStartedComment(target, branch, taskRouting, modelRequest, mergePolicy.summary, resumeInfo)
     );
 
     tempRoot = await mkdtemp(path.join(tmpdir(), "df-work-"));
@@ -186,11 +196,24 @@ async function main() {
       runGit(["checkout", "-b", branch], worktree);
     }
 
-    const briefInfo = await writeTaskBrief(worktree, issue, workBaseBranch, taskRouting, resumeInfo);
+    const briefInfo = await writeTaskBrief(worktree, issue, workBaseBranch, taskRouting, modelRequest, resumeInfo);
     ledger.agent_os.input_brief_characters = briefInfo.characters;
 
-    await runAgentWorker(worktree);
+    const executionReceipt = await runAgentWorker(worktree, modelRequest);
     ledger.agent_os.turns = 1;
+    ledger.agent_os.receipt = executionReceipt;
+    ledger.token_usage = {
+      requested_model_tier: executionReceipt.requested.modelTier,
+      requested_effort: executionReceipt.requested.effort,
+      provider: executionReceipt.resolved.provider,
+      model: executionReceipt.resolved.model,
+      provider_version: executionReceipt.resolved.providerVersion,
+      agent_preset: executionReceipt.resolved.agentPreset,
+      attempts: executionReceipt.attempts.length,
+      input_tokens: executionReceipt.usage.inputTokens,
+      output_tokens: executionReceipt.usage.outputTokens,
+      total_tokens: executionReceipt.usage.totalTokens
+    };
 
     const summary = await readWorkerSummary(worktree);
     await removeWorkerScratch(worktree);
@@ -257,7 +280,7 @@ async function main() {
   }
 }
 
-function workerStartedComment(target, branch, taskRouting, mergePolicySummary, resumeInfo) {
+function workerStartedComment(target, branch, taskRouting, modelRequest, mergePolicySummary, resumeInfo) {
   const lines = resumeInfo
     ? [
         `DarkFactory worker resumed for \`${target}\` from \`${TRIGGER}\`.`,
@@ -267,6 +290,7 @@ function workerStartedComment(target, branch, taskRouting, mergePolicySummary, r
           : `Resuming from pushed branch: \`${resumeInfo.branch}\``,
         `Branch: \`${branch}\``,
         `Task class: \`${taskRouting.taskClass}\``,
+        `Requested model tier / effort: \`${modelRequest.modelTier}\` / \`${modelRequest.effort}\``,
         "Execution authority: canonical Agent OS manager state.",
         `Merge policy: ${mergePolicySummary}`
       ]
@@ -275,6 +299,7 @@ function workerStartedComment(target, branch, taskRouting, mergePolicySummary, r
         "",
         `Branch: \`${branch}\``,
         `Task class: \`${taskRouting.taskClass}\``,
+        `Requested model tier / effort: \`${modelRequest.modelTier}\` / \`${modelRequest.effort}\``,
         "Execution authority: canonical Agent OS manager state.",
         `Merge policy: ${mergePolicySummary}`
       ];
@@ -590,7 +615,7 @@ function buildResumeContext(resumeInfo, defaultBranch) {
   return lines.join("\n");
 }
 
-async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting, resumeInfo = null) {
+async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting, modelRequest, resumeInfo = null) {
   const scratchDir = path.join(worktree, ".darkfactory");
   await mkdir(scratchDir, { recursive: true });
 
@@ -611,6 +636,8 @@ async function writeTaskBrief(worktree, issue, defaultBranch, taskRouting, resum
     `Title: ${issue.title}`,
     `Labels: ${issueLabels || "(none)"}`,
     `Task class: ${taskRouting.taskClass}`,
+    `Requested model tier: ${modelRequest.modelTier}`,
+    `Requested effort: ${modelRequest.effort}`,
     "",
     "## Contract",
     "",
@@ -649,24 +676,42 @@ async function readWorkerSummary(worktree) {
 async function removeWorkerScratch(worktree) {
   await rm(path.join(worktree, ".darkfactory", "df-task-brief.md"), { force: true });
   await rm(path.join(worktree, ".darkfactory", "df-worker-summary.md"), { force: true });
+  await rm(path.join(worktree, ".darkfactory", "df-agent-receipt.json"), { force: true });
 }
 
 function verifyAgentOs() {
   runAgentCommand(["state", "doctor", "--json"], CONTROL_ROOT);
 }
 
-async function runAgentWorker(worktree) {
+async function runAgentWorker(worktree, modelRequest) {
   const prompt = [
     "Read .darkfactory/df-task-brief.md and implement that task in the current repository.",
     "Use the repository guidance and run its authoritative verification gates.",
     "Do not push, open a pull request, merge, or modify Agent OS state.",
     "Write a concise final summary to .darkfactory/df-worker-summary.md before finishing."
   ].join(" ");
-  const output = runAgentCommand(["run", "--mode", "default", prompt], worktree).trim();
+  const receiptPath = path.join(worktree, ".darkfactory", "df-agent-receipt.json");
+  const output = runAgentCommand(
+    agentRunArguments(modelRequest, {
+      prompt,
+      receiptPath,
+      mode: "default",
+      executionPolicy: "workspace-write"
+    }),
+    worktree
+  ).trim();
+  let rawReceipt;
+  try {
+    rawReceipt = JSON.parse(await readFile(receiptPath, "utf8"));
+  } catch {
+    throw new Error("Canonical Agent OS did not publish a schema-valid execution receipt");
+  }
+  const receipt = validateAgentExecutionReceipt(rawReceipt, modelRequest);
   const summaryPath = path.join(worktree, ".darkfactory", "df-worker-summary.md");
   if (!existsSync(summaryPath)) {
     await writeFile(summaryPath, `${output || "Agent OS worker completed without a written summary."}\n`);
   }
+  return receipt;
 }
 
 function agentOsEnvironment() {
