@@ -296,11 +296,16 @@ describe("canonical mutable-state locks", () => {
           ]);
 
           await waitForMarkers([{ file: ready, label: "expiry-blocker-ready" }]);
-          const verification = stale.verify();
-          await Bun.write(release, "release\n");
-          await expect(verification).rejects.toThrow(
+          // Attach the rejection observer before releasing the database
+          // blocker. On slow Windows runners the verification can reject
+          // during the asynchronous marker write below; observing it only
+          // afterwards lets Bun classify the correct fail-closed result as an
+          // unhandled rejection.
+          const verification = expect(stale.verify()).rejects.toThrow(
             "canonical renewable lock ownership was lost: race:busy-expiry",
           );
+          await Bun.write(release, "release\n");
+          await verification;
           const [result] = await settleOwnedSubprocesses(
             [blocker],
             SINGLE_WORKER_EXIT_TIMEOUT_MS,
