@@ -288,8 +288,13 @@ function secretLikeText(value: string): boolean {
     /[\r\n\t"'`\[\]{}<>,;:=|?*]/.test(character);
   const looksLikeFileLeaf = (component: string): boolean =>
     /[^.]\.[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/.test(component.trim());
-  const containsOpaquePathToken = (segment: string, isLeaf: boolean): boolean => {
+  const containsOpaquePathToken = (
+    segment: string,
+    isLeaf: boolean,
+    canonicalCompactionSnapshotLeaf: boolean,
+  ): boolean => {
     const normalized = segment.trim();
+    if (isLeaf && canonicalCompactionSnapshotLeaf) return false;
     if (UUID.test(normalized)) return true;
     const wordSlugFile = normalized.match(
       /^([a-z]{3,15}(?:-[a-z]{3,15}){2,})-(\d{8})\.([a-z0-9]{1,10})$/,
@@ -428,7 +433,14 @@ function secretLikeText(value: string): boolean {
       const pathSegments = absolutePath.split(/[\\/]+/);
       let leafIndex = pathSegments.length - 1;
       while (leafIndex >= 0 && !(pathSegments[leafIndex] ?? "").trim()) leafIndex -= 1;
-      if (pathSegments.some((segment, index) => containsOpaquePathToken(segment, index === leafIndex))) {
+      const normalizedPath = absolutePath.replaceAll("\\", "/");
+      const compactionSnapshot = normalizedPath.match(
+        /\/\.agents\/memory\/snapshots\/compaction\/([^/]+)\.json$/,
+      );
+      const canonicalCompactionSnapshotLeaf = COMPACTION_CAPSULE_ID.test(compactionSnapshot?.[1] ?? "");
+      if (pathSegments.some((segment, index) =>
+        containsOpaquePathToken(segment, index === leafIndex, canonicalCompactionSnapshotLeaf)
+      )) {
         longSegment = true;
       }
       for (let index = start; index < end; index += 1) {
