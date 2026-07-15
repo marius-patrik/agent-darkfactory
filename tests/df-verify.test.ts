@@ -63,7 +63,7 @@ test("readVerificationTarget rejects malformed or incomplete artifacts", async (
   }
 });
 
-test("verifyWorkerRun marks issue df:done when claim matches GitHub reality", async () => {
+test("verifyWorkerRun marks issue df:done for an exact App-created worker PR", async () => {
   const calls: Array<{ method: string; path: string; body?: unknown }> = [];
   const gh = {
     request: async (method: string, path: string, body?: unknown) => {
@@ -89,7 +89,7 @@ test("verifyWorkerRun marks issue df:done when claim matches GitHub reality", as
           html_url: "https://github.com/marius-patrik/example/pull/99",
           head: { ref: "df/42-slug", repo: { owner: { login: "marius-patrik" }, name: "example", full_name: "marius-patrik/example" } },
           base: { ref: "dev" },
-          user: { login: "mp-agents[bot]" },
+          user: { login: "darkfactory-agent[bot]", type: "Bot" },
           body: "<!-- dark-factory:worker-pr issue=42 -->\n\nCloses #42"
         };
       }
@@ -149,7 +149,7 @@ test("verifyWorkerRun blocks issue and files blocker issue when PR is on wrong b
           html_url: "https://github.com/marius-patrik/example/pull/99",
           head: { ref: "df/42-slug", repo: { owner: { login: "marius-patrik" }, name: "example", full_name: "marius-patrik/example" } },
           base: { ref: "main" },
-          user: { login: "mp-agents[bot]" },
+          user: { login: "darkfactory-agent[bot]", type: "Bot" },
           body: "<!-- dark-factory:worker-pr issue=42 -->\n\nCloses #42"
         };
       }

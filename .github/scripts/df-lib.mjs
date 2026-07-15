@@ -38,9 +38,12 @@ export const PLANNING_LABELS = [
   { name: "df:doctor", color: "0E8A16", description: "DarkFactory repository-doctor repair finding" }
 ];
 
-export const WORKER_PULL_REQUEST_AUTHORS = new Set([
-  "github-actions[bot]",
-  "mp-agents[bot]"
+const TRUSTED_WORKER_PULL_REQUEST_ACTOR = "darkfactory-agent";
+const REST_WORKER_PULL_REQUEST_ACTORS = new Map([
+  ["darkfactory-agent[bot]", TRUSTED_WORKER_PULL_REQUEST_ACTOR]
+]);
+const GRAPHQL_WORKER_PULL_REQUEST_ACTORS = new Map([
+  ["darkfactory-agent", TRUSTED_WORKER_PULL_REQUEST_ACTOR]
 ]);
 export const WORKER_STATE_LABELS = ["df:running", "df:blocked", "df:done"];
 export const PLANNER_RECONCILED_LABELS = [
@@ -225,13 +228,29 @@ export function plannedIssueLabelDiff(currentLabels, desiredLabels, options = {}
   return reconcileLabelDiff(currentLabels, desired, reconciled);
 }
 
+// GitHub exposes the same App actor as Bot/darkfactory-agent in GraphQL and
+// Bot/darkfactory-agent[bot] in REST. Only those raw API tuples are trusted;
+// CLI display forms such as app/darkfactory-agent are not identities here.
+export function normalizeWorkerPullRequestActor(actor) {
+  if (!actor || typeof actor !== "object" || typeof actor.login !== "string") return null;
+
+  const isRestActor = actor.type === "Bot" && actor.__typename === undefined;
+  const isGraphqlActor = actor.__typename === "Bot" && actor.type === undefined;
+  if (isRestActor === isGraphqlActor) return null;
+
+  const actors = isRestActor
+    ? REST_WORKER_PULL_REQUEST_ACTORS
+    : GRAPHQL_WORKER_PULL_REQUEST_ACTORS;
+  return actors.get(actor.login) ?? null;
+}
+
 export function isDarkFactoryWorkerPullRequest(pull, repository) {
   const provenance = `${pull.title || ""}\n${pull.body || ""}`;
   const sameRepositoryHead = pull.headRepository?.owner?.login === repository.owner && pull.headRepository?.name === repository.repo;
   const markerIssue = darkFactoryWorkerIssueNumber(pull);
   const branchMatchesIssue = Number.isInteger(markerIssue) && markerIssue > 0 && pull.headRefName?.startsWith(`df/${markerIssue}-`);
   const bodyClosesIssue = extractClosingIssueNumbers(pull.body || "", repoName(repository)).includes(markerIssue);
-  const allowedAuthor = WORKER_PULL_REQUEST_AUTHORS.has(pull.author?.login || "");
+  const allowedAuthor = normalizeWorkerPullRequestActor(pull.author) !== null;
 
   return (
     sameRepositoryHead &&
@@ -263,7 +282,7 @@ export async function findOpenWorkerPullRequestForIssue(gh, repository, issueNum
               name
               owner { login }
             }
-            author { login }
+            author { __typename login }
           }
         }
       }
@@ -1079,7 +1098,7 @@ export async function verifyWorkerClaim(gh, claim, repository, issueNumber) {
   }
 
   const prAuthor = pullRequest.user?.login || "";
-  if (!WORKER_PULL_REQUEST_AUTHORS.has(prAuthor)) {
+  if (normalizeWorkerPullRequestActor(pullRequest.user) === null) {
     mismatches.push(`PR #${pullRequest.number} author ${prAuthor} is not an allowed worker author.`);
   }
 

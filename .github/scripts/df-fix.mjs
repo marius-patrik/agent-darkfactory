@@ -272,7 +272,7 @@ async function listOpenPullRequests(gh, repository) {
               name
               owner { login }
             }
-            author { login }
+            author { __typename login }
             statusCheckRollup {
               contexts(first: 100) {
                 nodes {
@@ -619,7 +619,7 @@ async function getPullRequestForFix(gh, repository, pullNumber) {
             name
             owner { login }
           }
-          author { login }
+          author { __typename login }
           statusCheckRollup {
             contexts(first: 100) {
               nodes {

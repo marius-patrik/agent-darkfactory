@@ -8,6 +8,7 @@ import {
   isParkedRepo,
   listActiveManagedRepos,
   managedRepoLifecycleState,
+  normalizeWorkerPullRequestActor,
   parseRepo,
   readManagedRepoRegistry,
   repoName,
@@ -22,7 +23,6 @@ const DATA_REPOSITORIES = new Set([
   "marius-patrik/darkfactory-data"
 ]);
 const ACTIONS_APP_ID = 15368;
-const RELEASE_AUTOMATION_ACTORS = new Set(["mp-agents[bot]"]);
 const MAX_PAGINATION_PAGES = 100;
 let gh;
 let ledgerGh;
@@ -549,9 +549,9 @@ async function assertPlannedMergeCommit(repository, sha, observation) {
   if (commit?.sha !== sha || parents.length !== 2 || JSON.stringify([...parents].sort()) !== JSON.stringify(expectedParents)) {
     throw new Error("marker-owned reconciliation branch is not the exact planned two-parent merge");
   }
-  const actor = commit?.committer?.login || commit?.author?.login;
+  const actor = commit?.committer || commit?.author;
   const message = commit?.commit?.message || "";
-  if (!RELEASE_AUTOMATION_ACTORS.has(actor)
+  if (normalizeWorkerPullRequestActor(actor) === null
       || !message.startsWith(`Reconcile main ${observation.mainSha.slice(0, 12)} into dev ${observation.devSha.slice(0, 12)}`)) {
     throw new Error("marker-owned reconciliation merge lacks trusted automation provenance");
   }
@@ -575,7 +575,7 @@ function assertTrustedPull(repository, pull, branch, base, expectedHeadSha) {
       || pull.base?.ref !== base
       || pull.head?.ref !== branch
       || pull.head?.sha !== expectedHeadSha
-      || !RELEASE_AUTOMATION_ACTORS.has(pull.user?.login)
+      || normalizeWorkerPullRequestActor(pull.user) === null
       || String(pull.head?.repo?.full_name || "").toLowerCase() !== repoName(repository).toLowerCase()) {
     throw new Error("release pull request identity or same-repository provenance did not match the plan");
   }
@@ -880,7 +880,7 @@ async function listAll(path) {
 }
 
 function isTrustedAutomationActor(value) {
-  return RELEASE_AUTOMATION_ACTORS.has(value?.user?.login);
+  return normalizeWorkerPullRequestActor(value?.user) !== null;
 }
 
 function isTrustedReleasePull(repository, policy, pull) {

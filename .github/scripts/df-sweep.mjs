@@ -498,7 +498,6 @@ export async function closeVerifiedDevMergeIssues(request) {
       note: "Issue closure on dev merge is deterministic"
     }
   };
-
   try {
     const verified = await verifyDevMergeRequest(request);
     repository = verified.repository;
@@ -734,7 +733,7 @@ async function listOpenPullRequests(repository) {
               name
               owner { login }
             }
-            author { login }
+            author { __typename login }
             statusCheckRollup {
               contexts(first: 50) {
                 nodes {
@@ -803,7 +802,7 @@ async function getPullRequestMergeGate(repository, pullNumber) {
             name
             owner { login }
           }
-          author { login }
+          author { __typename login }
           statusCheckRollup {
             contexts(first: 100) {
               nodes {
@@ -840,7 +839,7 @@ function normalizeRestPullRequest(pull) {
     title: pull.title,
     body: pull.body || "",
     url: pull.html_url,
-    author: { login: pull.user?.login || "" },
+    author: { login: pull.user?.login || "", type: pull.user?.type || "" },
     headRefName: pull.head?.ref || "",
     headRepository: {
       name: pull.head?.repo?.name || "",

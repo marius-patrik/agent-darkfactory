@@ -194,7 +194,7 @@ test("main-ahead reconciliation fails closed on the explicit owner contract", as
       if (method === "GET" && path.includes("/issues?state=open")) return [];
       if (method === "POST" && path.endsWith("/issues")) {
         writes.push({ method, path, body });
-        return { user: { login: "mp-agents[bot]" }, number: 8, html_url: "https://github.com/marius-patrik/example/issues/8" };
+        return { user: { login: "darkfactory-agent[bot]", type: "Bot" }, number: 8, html_url: "https://github.com/marius-patrik/example/issues/8" };
       }
       throw new Error(`unexpected mocked request: ${method} ${path}`);
     }
@@ -215,7 +215,7 @@ test("deleted dev recovery fails closed on the same explicit owner contract", as
       if (method === "GET" && path.includes("/issues?state=open")) return [];
       if (method === "POST" && path.endsWith("/issues")) {
         writes.push({ method, path, body });
-        return { user: { login: "mp-agents[bot]" }, number: 13, html_url: "https://github.com/marius-patrik/example/issues/13" };
+        return { user: { login: "darkfactory-agent[bot]", type: "Bot" }, number: 13, html_url: "https://github.com/marius-patrik/example/issues/13" };
       }
       throw new Error(`unexpected mocked request: ${method} ${path}`);
     }
@@ -247,7 +247,7 @@ test("diverged reconciliation resumes from the exact trusted two-parent merge", 
         return {
           sha: SHA.merge,
           parents: [{ sha: SHA.dev }, { sha: SHA.main }],
-          committer: { login: "mp-agents[bot]" },
+          committer: { login: "darkfactory-agent[bot]", type: "Bot" },
           commit: { message: `Reconcile main ${SHA.main.slice(0, 12)} into dev ${SHA.dev.slice(0, 12)}` }
         };
       }
@@ -468,7 +468,7 @@ function trustedPull({ number, branch, base, headSha, title = "", body = "" }: a
     title,
     body,
     html_url: `https://github.com/marius-patrik/example/pull/${number}`,
-    user: { login: "mp-agents[bot]" },
+    user: { login: "darkfactory-agent[bot]", type: "Bot" },
     base: { ref: base },
     head: { ref: branch, sha: headSha, repo: { full_name: "marius-patrik/example" } },
     auto_merge: null

@@ -416,7 +416,7 @@ async function fetchResumePullRequest(repository, pullNumber) {
       name: pull.head?.repo?.name || "",
       owner: { login: pull.head?.repo?.owner?.login || "" }
     },
-    author: { login: pull.user?.login || "" }
+    author: { login: pull.user?.login || "", type: pull.user?.type || "" }
   };
 }
 

@@ -161,7 +161,7 @@ test("orchestrator does not dispatch issues that already have an open worker PR"
                 headRefName: "df/8-worker",
                 baseRefName: "main",
                 headRepository: { owner: { login: "marius-patrik" }, name: "example" },
-                author: { login: "mp-agents[bot]" }
+                author: { __typename: "Bot", login: "darkfactory-agent" }
               }
             ]
           }
@@ -1494,7 +1494,7 @@ test("orchestrator resumes interrupted run against existing open worker PR", asy
                 headRefName: "df/8-worker",
                 baseRefName: "main",
                 headRepository: { owner: { login: "marius-patrik" }, name: "example" },
-                author: { login: "mp-agents[bot]" }
+                author: { __typename: "Bot", login: "darkfactory-agent" }
               }
             ]
           }
