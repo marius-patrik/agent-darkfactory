@@ -931,12 +931,14 @@ describe("encrypted cross-machine event exchange", () => {
     }
   });
 
-  test("canonical public trust-policy shorthand is admitted", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-trust-policy-shorthand-"));
+  test("canonical public workflow shorthands are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-public-workflow-shorthands-"));
     try {
       const messages = [
         "Worker policy forbids review/admin/bypass/force-push/deletion across the protected lane.",
         "Never permit review/admin/bypass/force-push/deletion.",
+        "Use CLI/state/secrets/source-install for the managed boundary.",
+        "Expose install/enable/disable/status/repair commands.",
       ] as const;
       for (const [index, message] of messages.entries()) {
         const source = await assistantMessageState(path.join(root, `source-${index}`), `policy-${index}`, message);
@@ -1029,8 +1031,8 @@ describe("encrypted cross-machine event exchange", () => {
     }
   });
 
-  test("trust-policy shorthand admission remains exact and token-bounded", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-trust-policy-denials-"));
+  test("public workflow shorthand admission remains exact and token-bounded", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-public-workflow-denials-"));
     try {
       const opaqueSuffix = ["dQwErTyUiOpA", "sDfGhJkLzXc", "VbNmQwErTyU", "iOpAsD"].join("");
       const messages = [
@@ -1038,6 +1040,14 @@ describe("encrypted cross-machine event exchange", () => {
         `review/admin/bypass/force-push/deletion/${opaqueSuffix}`,
         `review/admin/bypass/force-push/deletions/${opaqueSuffix}`,
         `review/admin/bypass/force-push/deletion.${opaqueSuffix}`,
+        `${opaqueSuffix}/CLI/state/secrets/source-install`,
+        `CLI/state/secrets/source-install/${opaqueSuffix}`,
+        `CLI/state/secrets/source-installs/${opaqueSuffix}`,
+        `CLI/state/secrets/source-install.${opaqueSuffix}`,
+        `${opaqueSuffix}/install/enable/disable/status/repair`,
+        `install/enable/disable/status/repair/${opaqueSuffix}`,
+        `install/enable/disable/status/repairs/${opaqueSuffix}`,
+        `install/enable/disable/status/repair.${opaqueSuffix}`,
       ] as const;
       for (const [index, message] of messages.entries()) {
         const source = await assistantMessageState(path.join(root, `source-${index}`), `policy-denial-${index}`, message);

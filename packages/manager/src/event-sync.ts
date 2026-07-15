@@ -484,11 +484,12 @@ function secretLikeText(value: string): boolean {
       /(?<![-A-Za-z0-9_+.\\/])\.darkfactory[\\/]df-(?:task-brief|worker-summary)\.md(?![-A-Za-z0-9_+\\/]|\.[A-Za-z0-9])/g,
       "",
     )
-    // Canonical worker policy uses this exact public trust-boundary shorthand.
-    // Keep it token-bounded so prefixes, descendants, and lookalikes remain
-    // subject to the generic slash-token entropy guard.
+    // Canonical public instructions use these exact trust-boundary, CLI lane,
+    // and runner lifecycle shorthands. Keep them token-bounded so prefixes,
+    // descendants, and lookalikes remain subject to the generic slash-token
+    // entropy guard.
     .replace(
-      /(?<![-A-Za-z0-9_+.\\/])review\/admin\/bypass\/force-push\/deletion(?![-A-Za-z0-9_+\\/]|\.[A-Za-z0-9])/g,
+      /(?<![-A-Za-z0-9_+.\\/])(?:review\/admin\/bypass\/force-push\/deletion|CLI\/state\/secrets\/source-install|install\/enable\/disable\/status\/repair)(?![-A-Za-z0-9_+\\/]|\.[A-Za-z0-9])/g,
       "",
     );
   for (const candidate of entropyInput.match(/[A-Za-z0-9_+.\\/-]{32,}={0,2}/g) ?? []) {
