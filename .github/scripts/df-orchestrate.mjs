@@ -19,6 +19,13 @@ import {
   warnReadOnlyRepository,
   writeRunLedger
 } from "./df-lib.mjs";
+import {
+  collectLoopWorkflowEvidence,
+  loopStatusMarkdownRows,
+  projectLoopStatus,
+  readTriggerPolicy,
+  validateTriggerPolicy
+} from "./df-trigger-policy.mjs";
 
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ORCHESTRATION_POLICY_PATH = ".darkfactory/orchestration.json";
@@ -61,6 +68,8 @@ export async function orchestrate(options) {
     repositories,
     dispatchRequest: dispatchRequestInput,
     policy: policyInput,
+    triggerPolicy: triggerPolicyInput,
+    loopEvidence: loopEvidenceInput,
     writeLedger: shouldWriteLedger = true,
     updateDashboard: shouldUpdateDashboard = true,
     warn = console.warn,
@@ -78,6 +87,7 @@ export async function orchestrate(options) {
       warn
     );
   const policy = normalizeOrchestrationPolicy(policyInput ?? await readOrchestrationPolicy(root));
+  const triggerPolicy = validateTriggerPolicy(triggerPolicyInput ?? await readTriggerPolicy(root));
   let targets = [];
   if (eventRequest) {
     const activeTargets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
@@ -155,6 +165,10 @@ export async function orchestrate(options) {
       input_tokens: 0,
       output_tokens: 0,
       note: "Orchestrator dispatch is deterministic and uses no model calls"
+    },
+    trigger_policy: {
+      version: triggerPolicy.policyVersion,
+      source_ref: triggerPolicy.trustedSourceRef
     }
   };
 
@@ -162,7 +176,27 @@ export async function orchestrate(options) {
     await writeLedger(gh, controlRepo, ledger, warn, log);
   }
   if (shouldUpdateDashboard && policy.dashboard.enabled) {
-    await updateDashboardIssue(gh, controlRepo, policy, plan, dispatched, escalated, recoveries, trigger, warn, log);
+    let loopEvidence = loopEvidenceInput;
+    try {
+      loopEvidence ??= await collectLoopWorkflowEvidence(gh, controlRepo, triggerPolicy);
+    } catch (error) {
+      warn(`DarkFactory loop evidence warning: ${error.message || String(error)}`);
+      loopEvidence = {};
+    }
+    const loopStatuses = projectLoopStatus(triggerPolicy, loopEvidence);
+    await updateDashboardIssue(
+      gh,
+      controlRepo,
+      policy,
+      plan,
+      dispatched,
+      escalated,
+      recoveries,
+      trigger,
+      loopStatuses,
+      warn,
+      log
+    );
   }
   log(`DarkFactory orchestrator dispatched ${dispatched.length} worker runs, recovered ${recoveries.length} interrupted runs, and escalated ${escalated.length} owner decisions.`);
   return { dispatched, recoveries, autoReadied, escalated, ledger };
@@ -958,11 +992,11 @@ function askOwnerComment(repository, issue, escalation) {
   ].join("\n");
 }
 
-async function updateDashboardIssue(gh, controlRepo, policy, plan, dispatched, escalated, recoveries, trigger, warn = console.warn, log = console.log) {
+async function updateDashboardIssue(gh, controlRepo, policy, plan, dispatched, escalated, recoveries, trigger, loopStatuses = [], warn = console.warn, log = console.log) {
   try {
     await ensureLabels(gh, controlRepo, PLANNING_LABELS);
     const title = policy.dashboard.issueTitle;
-    const body = dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, trigger);
+    const body = dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, trigger, loopStatuses);
     const existing = await findDashboardIssue(gh, controlRepo);
     if (existing) {
       await gh.request("PATCH", `/repos/${repoName(controlRepo)}/issues/${existing.number}`, { title, body });
@@ -997,7 +1031,7 @@ async function findDashboardIssue(gh, controlRepo) {
   return null;
 }
 
-function dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, trigger) {
+function dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, trigger, loopStatuses = []) {
   const updatedAt = new Date().toISOString();
   const rows = plan.repositories.length
     ? plan.repositories.map((state) => {
@@ -1014,6 +1048,9 @@ function dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, tri
   const recoveryRows = recoveries.length
     ? recoveries.map((item) => `- \`${item.repo}#${item.issue}\` (${item.action}${item.reason ? `; ${item.reason}` : ""})`).join("\n")
     : "- No worker recoveries in this tick.";
+  const loopRows = loopStatuses.length
+    ? loopStatusMarkdownRows(loopStatuses)
+    : "| _unavailable_ | stale | never | n/a | `refs/heads/main` | `escalate:df:ask-owner` |";
 
   return [
     `<!-- ${DASHBOARD_MARKER} -->`,
@@ -1050,6 +1087,12 @@ function dashboardIssueBody(policy, plan, dispatched, escalated, recoveries, tri
     "## Owner Escalations",
     "",
     escalationRows,
+    "",
+    "## Automation Loop Health",
+    "",
+    "| Loop | State | Last success | Next expected | Source | Retry / escalation |",
+    "| --- | --- | --- | --- | --- | --- |",
+    loopRows,
     "",
     "## Notes",
     "",

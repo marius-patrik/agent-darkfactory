@@ -721,6 +721,7 @@ test("orchestrator updates the L6 dashboard issue after dispatch", async () => {
       waves: [{ name: "features", streams: ["features", "default"] }],
       dashboard: { enabled: true, issueTitle: "Dashboard" }
     },
+    loopEvidence: {},
     writeLedger: false,
     warn: () => {},
     log: () => {}
@@ -1572,5 +1573,6 @@ test("orchestrator surfaces recovery decisions in ledger and dashboard", async (
     (call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/DarkFactory/issues/99"
   );
   assert.ok(String(dashboardUpdate?.body.body).includes("## Worker Recoveries"));
+  assert.ok(String(dashboardUpdate?.body.body).includes("## Automation Loop Health"));
   assert.ok(String(dashboardUpdate?.body.body).includes("marius-patrik/example#12"));
 });

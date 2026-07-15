@@ -6,6 +6,16 @@ and runs deterministic planning and orchestration loops. Agent OS is an
 integration dependency for local provider execution and shared personal state,
 not DarkFactory's product or release owner.
 
+The versioned `.darkfactory/trigger-policy.json` is the single cadence and
+idempotency contract for automated development loops. It records each event,
+schedule fallback, maximum detection latency, trusted source ref, stable
+idempotency key, model-token policy, mutation authority, receipt gate, retry
+budget, and owner escalation. Active workflow schedules are checked against the
+policy, while dependency-owned future loops remain explicitly `planned` rather
+than being reported as live. The orchestration dashboard projects last success,
+next expected run, trusted source, stale-loop warnings, and exact retry or
+escalation state from Actions evidence.
+
 ## What it does
 
 - Exposes `POST /webhook` for GitHub App webhooks.

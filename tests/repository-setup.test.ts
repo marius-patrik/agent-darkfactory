@@ -28,6 +28,7 @@ test("checkRepositorySetup returns no comment when managed setup is current", as
       ".github/scripts/df-enforcement.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-plan.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-orchestrate.mjs": "import './df-lib.mjs';\n",
+      ".github/scripts/df-trigger-policy.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-sweep.mjs": "import './df-lib.mjs';\n",
       ".github/scripts/df-work.mjs": "import './df-lib.mjs';\n",
       ".darkfactory/branching-policy.md": "# Branching\n",
@@ -36,6 +37,7 @@ test("checkRepositorySetup returns no comment when managed setup is current", as
       ".darkfactory/managed-repos.json": "{}\n",
       ".darkfactory/managed-repository.json": "{}\n",
       ".darkfactory/orchestration.json": "{}\n",
+      ".darkfactory/trigger-policy.json": "{}\n",
       ".darkfactory/installer-policy.json": "{}\n"
     }),
     { owner: "marius-patrik", repo: "example", ref: "abc123" }
@@ -67,6 +69,7 @@ test("checkRepositorySetup reports missing repository policy without a version m
   assert.ok(comment?.includes(".github/workflows/codex-review.yml"));
   assert.ok(comment?.includes(".darkfactory/enforcement-rules.json"));
   assert.ok(comment?.includes(".darkfactory/managed-repository.json"));
+  assert.ok(comment?.includes(".darkfactory/trigger-policy.json"));
 });
 
 function createRequester(files: Record<string, string>): GitHubRequester {

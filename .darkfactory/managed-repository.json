@@ -4,6 +4,7 @@
   "dataRepo": "marius-patrik/agents-data",
   "requiredSecrets": ["CODEX_AUTH_JSON"],
   "packageFiles": [
+    ".darkfactory/trigger-policy.json",
     ".github/workflows/df-plan.yml",
     ".github/workflows/df-follow-through.yml",
     ".github/workflows/df-orchestrate.yml",
@@ -12,6 +13,7 @@
     ".github/scripts/df-enforcement.mjs",
     ".github/scripts/df-plan.mjs",
     ".github/scripts/df-orchestrate.mjs",
+    ".github/scripts/df-trigger-policy.mjs",
     ".github/scripts/df-sweep.mjs",
     ".github/scripts/df-work.mjs"
   ],
@@ -23,6 +25,7 @@
     ".darkfactory/managed-repos.json",
     ".darkfactory/managed-repository.json",
     ".darkfactory/orchestration.json",
+    ".darkfactory/trigger-policy.json",
     ".darkfactory/installer-policy.json",
     ".github/workflows/ci.yml",
     ".github/workflows/dark-factory-bootstrap.yml",
@@ -40,6 +43,7 @@
     ".github/scripts/df-enforcement.mjs",
     ".github/scripts/df-plan.mjs",
     ".github/scripts/df-orchestrate.mjs",
+    ".github/scripts/df-trigger-policy.mjs",
     ".github/scripts/df-sweep.mjs",
     ".github/scripts/df-work.mjs"
   ],
