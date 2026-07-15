@@ -12,6 +12,19 @@ export const DARK_FACTORY_CONTROL_REPOSITORY = {
   owner: "marius-patrik",
   repo: "DarkFactory"
 } as const;
+export const REPOSITORY_OWNED_RELEASE_CONTROLS = new Set([
+  ".darkfactory/release-conventions.md",
+  ".darkfactory/release-policy.json",
+  ".github/scripts/dark-factory-release-check.mjs",
+  ".github/workflows/dark-factory-release.yml"
+]);
+
+export class ManagedSourcePolicyContradiction extends Error {
+  constructor(paths: string[]) {
+    super(`Canonical managed source attempts to remove repository-owned DarkFactory release controls: ${paths.sort().join(", ")}. Reconcile source policy before managed sync.`);
+    this.name = "ManagedSourcePolicyContradiction";
+  }
+}
 
 export interface GitHubRequester {
   request(route: string, parameters: Record<string, unknown>): Promise<{ data: unknown }>;
@@ -67,8 +80,13 @@ export async function ensureManagedRepositorySetup(
     return baseResult(repository, "skipped", [], "Repository is archived.");
   }
 
-  const repoInfo = await getRepositoryInfo(github, repository);
   const managedFiles = files ?? readManagedFiles(repository);
+  const removedPaths = removedManagedFilePaths(managedFiles);
+  if (repositoryKey(repository) === repositoryKey(DARK_FACTORY_CONTROL_REPOSITORY)) {
+    const contradictions = [...removedPaths].filter((path) => REPOSITORY_OWNED_RELEASE_CONTROLS.has(path));
+    if (contradictions.length > 0) throw new ManagedSourcePolicyContradiction(contradictions);
+  }
+  const repoInfo = await getRepositoryInfo(github, repository);
 
   if (repoInfo.archived) {
     return baseResult(repository, "skipped", [], "Repository is archived.");
@@ -83,7 +101,7 @@ export async function ensureManagedRepositorySetup(
     github,
     repository,
     sourceCommit.treeSha,
-    removedManagedFilePaths(managedFiles)
+    removedPaths
   );
 
   if (changedFiles.length === 0 && forbiddenFiles.length === 0) {

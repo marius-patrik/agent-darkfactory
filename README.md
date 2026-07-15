@@ -97,6 +97,10 @@ darkfactory install-url
 darkfactory sync-managed
 darkfactory doctor [owner/repo | --all] [--json]
 darkfactory doctor [owner/repo | --all] --write-issues [--json]
+df setup [owner/repo | --all] [--watch] [--json] [--local PATH] [--agents-home PATH]
+df clean [plan] [owner/repo] [--local PATH] [--json]
+df clean apply <plan-id> [--local PATH] [--watch] [--json]
+df clean verify [owner/repo] [--local PATH] [--json]
 ```
 
 ## Repository doctor
@@ -144,6 +148,44 @@ intentionally a separate reviewed work item; `--repair` is rejected. The
 trusted `DarkFactory Repository Doctor` workflow runs the same engine, uploads
 its JSON evidence, and uses report authority only on the schedule or when the
 manual `write_issues` input is selected.
+
+## Operator convergence and hygiene
+
+`df setup` runs the same doctor engine, orders the observed delta by lifecycle
+stage, and executes only repairs with a narrow trusted implementation. Protected
+content stays in reviewed managed-setup or PRD reconciliation workflows;
+repository settings are re-read after mutation before a receipt can claim
+success. `--watch` re-observes the exact evidence-bound plan, but stops after
+two unchanged re-observations instead of repeating writes or polling forever.
+The canonical Agent OS state doctor itself must be clean; a successful checkout
+probe cannot mask other state-integrity failures. Machine runner lifecycle,
+provider-route probing, and canonical data-registry
+mutation remain explicit blocked residue until their Agent OS owners (#245,
+#260, and #255) expose trusted executors. Setup never improvises those stages.
+
+Readiness is derived from one current managed snapshot: doctor has no findings,
+gates are healthy, dependencies and categorical brakes are clear, the issue
+contract is executable, and configured capacity is available. `df:ready` is a
+machine-owned cache of that result. Setup requests a repository-scoped
+evaluation; it never dispatches fleet work itself, and worker dispatch
+recomputes the predicate before claiming an issue. Only an exact machine-owned
+merge-policy brake may be cleared, and only after the repository is re-proven
+healthy. The GitHub-hosted orchestrator cannot infer owner-machine state: it
+requires a fresh (at most 26 hours old), identity-bound completion receipt from
+the self-hosted repository doctor. Missing, stale, malformed, or unhealthy
+machine evidence blocks readiness fleet-wide.
+
+`df clean` is plan-first. The default command reads GitHub plus an explicitly
+supplied, origin-verified local checkout and writes a durable plan under
+canonical `$AGENTS_HOME`. It enumerates every local ref and worktree, always
+preserves the supplied root and detached worktrees, and admits branch deletion
+only for exact independently preserved heads. Non-branch refs are deletable
+only in the dedicated `refs/df`, `refs/archive`, or `refs/subtree` cleanup
+namespaces. Tags, remote-tracking
+refs, policy branches, active PR heads, dirty/untracked worktrees, unpublished
+commits, and ambiguous work are preserved. `apply` re-collects the full evidence
+and aborts on drift; each mutation requires a durable admission before it runs
+and a completion receipt afterward. There is no force, bypass, or prune mode.
 
 `df-work.yml` runs only on a trusted self-hosted runner labeled `df-local`. It
 requires `$AGENTS_HOME` to be an absolute path containing `bin\agents.ps1`,

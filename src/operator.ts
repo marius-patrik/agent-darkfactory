@@ -104,26 +104,29 @@ export function planSetupConvergence(reports: DoctorReport[]): SetupPlan {
 function setupOperation(finding: DoctorFinding): Pick<SetupAction, "stage" | "operation" | "supported" | "reason"> {
   const id = finding.id.toLowerCase();
   const category = finding.category.toLowerCase();
-  if (category === "runner health" || id.startsWith("canonical-launcher") || id.includes("agents-home")) {
-    return { stage: "machine-wiring", operation: "converge-machine-runtime", supported: true, reason: "Canonical Agent OS owns launcher, route, state, and runner convergence." };
+  if (category === "machine runtime" || category === "runner health" || id.startsWith("canonical-launcher") || id.includes("agents-home")) {
+    return { stage: "machine-wiring", operation: "converge-machine-runtime", supported: false, reason: "Canonical Agent OS must expose a trusted machine-runtime repair executor before setup may mutate launcher, route, state, or runner registration." };
   }
-  if (id.includes("registry") || category === "configuration prerequisites") {
-    return { stage: "registration", operation: "converge-registration", supported: true, reason: "Managed registry and required configuration are deterministic policy inputs." };
+  if (category === "source policy" || id.includes("source-policy-contradiction")) {
+    return { stage: "registration", operation: "resolve-source-policy-contradiction", supported: false, reason: "Contradictory source policy must be reconciled at its canonical authority; target deletion is forbidden." };
   }
-  if (["managed file drift", "repository layout", "product layout", "product naming", "runtime authority", "doc staleness", "authority naming", "prd drift"].includes(category)) {
-    return { stage: "repository-bootstrap", operation: "open-managed-setup-pr", supported: true, reason: "Protected repository content changes only through the managed setup PR lane." };
-  }
-  if (category === "branch protection" || category === "branch convergence" || id.includes("automerge") || id.includes("label") || id.includes("workflow")) {
+  if (category === "branch policy" || category === "branch protection" || category === "branch convergence" || id.includes("automerge") || id.includes("label") || id.includes("workflow")) {
     return { stage: "settings-enforcement", operation: "converge-settings", supported: true, reason: "Repository settings and taxonomy are reconciled from canonical policy." };
   }
-  if (category === "issue lane") {
-    return { stage: "issue-lane-cut", operation: "reconcile-issue-lane", supported: true, reason: "Issue mutations use stable markers and successor-preserving reconciliation." };
-  }
   if (id.includes("ready") || id.includes("brake") || id.includes("dispatch")) {
-    return { stage: "readiness-convergence", operation: "evaluate-readiness", supported: true, reason: "Readiness is machine-evaluated and dispatch recomputes the predicate." };
+    return { stage: "readiness-convergence", operation: "evaluate-readiness", supported: true, reason: "Readiness is machine-evaluated from one explicit repository predicate snapshot." };
+  }
+  if (category === "prd drift" || category === "issue lane") {
+    return { stage: "issue-lane-cut", operation: "reconcile-issue-lane", supported: true, reason: "PRD scaffolding and issue mutations use stable markers and successor-preserving reconciliation." };
+  }
+  if (["managed file drift", "repository layout", "product layout", "product naming", "runtime authority", "doc staleness", "authority naming"].includes(category)) {
+    return { stage: "repository-bootstrap", operation: "open-managed-setup-pr", supported: true, reason: "Protected repository content changes only through the managed setup PR lane." };
+  }
+  if (id.includes("registry") || category === "configuration prerequisites") {
+    return { stage: "registration", operation: "converge-registration", supported: false, reason: "Canonical Andromeda-data registration is externally owned until #255 exposes a trusted mutation API." };
   }
   if (["health", "submodule metadata", "submodule pointer"].includes(category)) {
-    return { stage: "verification", operation: "verify-only", supported: true, reason: "The owning release or submodule lane must land before setup can verify convergence." };
+    return { stage: "verification", operation: "verify-only", supported: false, reason: "The owning release or submodule lane must land before setup can verify convergence; setup has no authority to simulate that work." };
   }
   return { stage: "verification", operation: "unsupported", supported: false, reason: "No narrow, trusted mutation is defined for this finding." };
 }
@@ -153,6 +156,7 @@ export interface CleanWorktreeEvidence {
   dirty: boolean;
   untracked: boolean;
   submoduleDirty: boolean;
+  rootCheckout?: boolean;
 }
 
 export interface CleanBranchEvidence {
@@ -177,6 +181,7 @@ export interface CleanRefEvidence {
   tree: string;
   independentlyPreservedBy: string[];
   worktree: CleanWorktreeEvidence | null;
+  cleanupCandidate: boolean;
 }
 
 export interface CleanEvidence {
@@ -186,6 +191,7 @@ export interface CleanEvidence {
   branches: CleanBranchEvidence[];
   localBranches: CleanBranchEvidence[];
   orphanRefs: CleanRefEvidence[];
+  detachedWorktrees: CleanWorktreeEvidence[];
   pullRequests: Array<{
     number: number;
     head: string;
@@ -245,7 +251,7 @@ export function buildCleanPlan(evidence: CleanEvidence, now = new Date()): Clean
       reasons: branchReasons(branch, classification)
     });
     for (const worktree of [...branch.worktrees].sort((a, b) => a.pathId.localeCompare(b.pathId))) {
-      const removable = safe && !worktree.dirty && !worktree.untracked && !worktree.submoduleDirty && worktree.head === branch.head;
+      const removable = safe && !worktree.rootCheckout && !worktree.dirty && !worktree.untracked && !worktree.submoduleDirty && worktree.head === branch.head;
       entries.push({
         kind: "worktree",
         target: worktree.pathId,
@@ -254,7 +260,9 @@ export function buildCleanPlan(evidence: CleanEvidence, now = new Date()): Clean
         action: removable ? "remove" : "preserve",
         reasons: removable
           ? ["Clean worktree exactly matches an independently preserved branch head."]
-          : ["Worktree is active, dirty, untracked, submodule-dirty, or does not exactly match the observed branch head."]
+          : [worktree.rootCheckout
+            ? "The explicitly supplied root checkout is never a cleanup target."
+            : "Worktree is active, dirty, untracked, submodule-dirty, or does not exactly match the observed branch head."]
       });
     }
   }
@@ -273,7 +281,7 @@ export function buildCleanPlan(evidence: CleanEvidence, now = new Date()): Clean
     });
     if (!remoteBranchNames.has(branch.name)) {
       for (const worktree of [...branch.worktrees].sort((a, b) => a.pathId.localeCompare(b.pathId))) {
-        const removable = safe && !worktree.dirty && !worktree.untracked && !worktree.submoduleDirty && worktree.head === branch.head;
+        const removable = safe && !worktree.rootCheckout && !worktree.dirty && !worktree.untracked && !worktree.submoduleDirty && worktree.head === branch.head;
         entries.push({
           kind: "worktree",
           target: worktree.pathId,
@@ -282,7 +290,9 @@ export function buildCleanPlan(evidence: CleanEvidence, now = new Date()): Clean
           action: removable ? "remove" : "preserve",
           reasons: removable
             ? ["Clean worktree exactly matches an independently preserved local branch head."]
-            : ["Worktree is active, dirty, untracked, submodule-dirty, or lacks exact independent preservation proof."]
+            : [worktree.rootCheckout
+              ? "The explicitly supplied root checkout is never a cleanup target."
+              : "Worktree is active, dirty, untracked, submodule-dirty, or lacks exact independent preservation proof."]
         });
       }
     }
@@ -291,7 +301,7 @@ export function buildCleanPlan(evidence: CleanEvidence, now = new Date()): Clean
   for (const ref of [...evidence.orphanRefs].sort((a, b) => a.ref.localeCompare(b.ref))) {
     const preserved = ref.independentlyPreservedBy.length > 0;
     const clean = !ref.worktree || (!ref.worktree.dirty && !ref.worktree.untracked && !ref.worktree.submoduleDirty);
-    const safe = preserved && clean;
+    const safe = ref.cleanupCandidate && preserved && clean && !ref.worktree?.rootCheckout;
     entries.push({
       kind: "orphan-ref",
       target: ref.ref,
@@ -300,7 +310,22 @@ export function buildCleanPlan(evidence: CleanEvidence, now = new Date()): Clean
       action: safe ? "delete" : "preserve",
       reasons: safe
         ? [`Exact tree/head is independently preserved by ${ref.independentlyPreservedBy.join(", ")}.`]
-        : ["No exact independent preservation proof, or associated worktree state is not clean."]
+        : [ref.worktree?.rootCheckout
+          ? "The explicitly supplied root checkout references this object; its ref is never a cleanup target."
+          : ref.cleanupCandidate
+          ? "No exact independent preservation proof, or associated worktree state is not clean."
+          : "Ref namespace is not an admitted cleanup namespace and remains preserved."]
+    });
+  }
+
+  for (const worktree of [...evidence.detachedWorktrees].sort((a, b) => a.pathId.localeCompare(b.pathId))) {
+    entries.push({
+      kind: "worktree",
+      target: worktree.pathId,
+      head: worktree.head,
+      classification: worktree.dirty || worktree.untracked || worktree.submoduleDirty ? "dirty-worktree" : "active-worktree",
+      action: "preserve",
+      reasons: ["Detached worktrees are always preserved; no branch/ref deletion authority can be inferred."]
     });
   }
 
@@ -393,6 +418,7 @@ function classifyBranch(branch: CleanBranchEvidence): BranchClassification {
   if (branch.openPullRequest !== null) return "open-pr";
   if (branch.worktrees.some((worktree) => worktree.dirty || worktree.untracked || worktree.submoduleDirty)) return "dirty-worktree";
   if (branch.localUnpublished || (branch.localAhead !== null && branch.localAhead > 0)) return "unpublished";
+  if (branch.worktrees.some((worktree) => worktree.rootCheckout)) return "active-worktree";
   if (branch.containedBy.length > 0 || (branch.mergedPullRequest !== null && branch.mergedPullHead === branch.head)) return "proven-merged";
   if (branch.treeEquivalentTo.length > 0) return "proven-redundant";
   if (branch.worktrees.length > 0) return "active-worktree";

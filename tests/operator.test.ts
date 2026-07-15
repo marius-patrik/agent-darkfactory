@@ -25,17 +25,37 @@ test("setup plan orders trusted convergence stages and preserves owner residue",
     { id: "root-prd-missing", category: "PRD drift", message: "missing", severity: "error", repair_class: "pr" },
     { id: "runner-health", category: "runner health", message: "offline", severity: "critical", repair_class: "auto" },
     { id: "required-secret-key-missing", category: "configuration prerequisites", message: "owner secret", severity: "critical", repair_class: "owner" },
+    { id: "label-df-ready-missing", category: "configuration prerequisites", message: "label", severity: "error", repair_class: "auto" },
     { id: "protection-main-strict-missing", category: "branch protection", message: "strict", severity: "critical", repair_class: "auto" }
   ])]);
 
   assert.deepEqual(plan.actions.map((action) => action.stage), [
     "machine-wiring",
-    "repository-bootstrap",
-    "settings-enforcement"
+    "settings-enforcement",
+    "settings-enforcement",
+    "issue-lane-cut"
   ]);
   assert.deepEqual(plan.residue.map((item) => [item.findingId, item.repairClass]), [
-    ["required-secret-key-missing", "owner"]
+    ["required-secret-key-missing", "owner"],
+    ["runner-health", "blocked"]
   ]);
+});
+
+test("setup routes all machine-runtime deltas to the blocked machine-wiring boundary", () => {
+  const plan = planSetupConvergence([report([{
+    id: "provider-route-probe-unavailable",
+    category: "machine runtime",
+    message: "route probe missing",
+    severity: "critical",
+    repair_class: "auto"
+  }])]);
+
+  assert.deepEqual(plan.actions.map((action) => ({
+    stage: action.stage,
+    operation: action.operation,
+    supported: action.supported
+  })), [{ stage: "machine-wiring", operation: "converge-machine-runtime", supported: false }]);
+  assert.deepEqual(plan.residue.map((item) => [item.findingId, item.repairClass]), [["provider-route-probe-unavailable", "blocked"]]);
 });
 
 test("clean plan deletes only exact independently preserved branch heads", () => {
@@ -65,6 +85,28 @@ test("clean plan removes a clean worktree only when its exact head is independen
     ["remote-branch", "delete"],
     ["worktree", "remove"]
   ]);
+});
+
+test("clean plan never targets the explicitly supplied root checkout", () => {
+  const safe = branch({
+    name: "merged-root",
+    containedBy: ["dev"],
+    worktrees: [{ pathId: "wt-root", branch: "merged-root", head: "merged-root-sha", dirty: false, untracked: false, submoduleDirty: false, rootCheckout: true }]
+  });
+  const plan = buildCleanPlan(evidence([safe], {
+    orphanRefs: [{
+      ref: "refs/df/root-evidence",
+      head: "merged-root-sha",
+      tree: "merged-root-tree",
+      independentlyPreservedBy: ["branch:dev"],
+      worktree: safe.worktrees[0],
+      cleanupCandidate: true
+    }]
+  }), new Date("2026-07-15T00:00:00Z"));
+
+  assert.ok(plan.entries.some((entry) => entry.kind === "remote-branch" && entry.target === "merged-root" && entry.action === "preserve" && entry.classification === "active-worktree"));
+  assert.ok(plan.entries.some((entry) => entry.kind === "worktree" && entry.target === "wt-root" && entry.action === "preserve" && entry.classification === "active-worktree"));
+  assert.ok(plan.entries.some((entry) => entry.kind === "orphan-ref" && entry.target === "refs/df/root-evidence" && entry.action === "preserve"));
 });
 
 test("clean plan preserves dirty, unpublished, open-PR, and ambiguous human work", () => {
@@ -161,6 +203,7 @@ function evidence(branches: CleanBranchEvidence[], overrides: Partial<CleanEvide
     branches,
     localBranches: [],
     orphanRefs: [],
+    detachedWorktrees: [],
     pullRequests: [],
     issues: [],
     reviewFindings: [],

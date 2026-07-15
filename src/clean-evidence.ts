@@ -27,6 +27,7 @@ export interface RepositoryRef {
 interface LocalCleanEvidence {
   worktreesByBranch: Map<string, CleanWorktreeEvidence[]>;
   rawWorktreeById: Map<string, string>;
+  detachedWorktrees: CleanWorktreeEvidence[];
   localBranches: Map<string, {
     head: string;
     tree: string;
@@ -56,10 +57,15 @@ export async function collectCleanEvidence(
     const commit = asRecord(branch.commit, `branch ${name} commit`);
     branchHeads.set(name, requiredString(commit.sha, `branch ${name} head`));
   }
-  const policyBranches = new Set([defaultBranch, "main", "dev"].filter((name) => branchHeads.has(name)));
+  // Policy names remain immutable even when the corresponding remote ref is
+  // missing. A local-only main/dev is recovery evidence, never cleanup.
+  const policyBranchNames = new Set([defaultBranch, "main", "dev"]);
+  const policyBranches = new Set([...policyBranchNames].filter((name) => branchHeads.has(name)));
   const trees = new Map<string, string>();
   for (const [name, head] of branchHeads) trees.set(name, await commitTree(github, repository, head));
-  const local = localPath ? collectLocalEvidence(localPath, branchHeads, trees, policyBranches) : emptyLocalEvidence();
+  const local = localPath
+    ? collectLocalEvidence(localPath, repository, branchHeads, trees, policyBranchNames)
+    : emptyLocalEvidence();
 
   const normalizedPulls = pulls.map((pull, index) => normalizePull(pull, index, repository));
   const cleanBranches: CleanBranchEvidence[] = [];
@@ -83,7 +89,7 @@ export async function collectCleanEvidence(
       head,
       tree,
       protected: branch.protected === true,
-      policyBranch: policyBranches.has(name),
+      policyBranch: policyBranchNames.has(name),
       openPullRequest: openPull?.number ?? null,
       mergedPullRequest: mergedPull?.number ?? null,
       mergedPullHead: mergedPull?.headSha ?? null,
@@ -103,7 +109,7 @@ export async function collectCleanEvidence(
       head: branch.head,
       tree: branch.tree,
       protected: false,
-      policyBranch: policyBranches.has(name),
+      policyBranch: policyBranchNames.has(name),
       openPullRequest: openPull?.number ?? null,
       mergedPullRequest: mergedPull?.number ?? null,
       mergedPullHead: mergedPull?.headSha ?? null,
@@ -168,6 +174,7 @@ export async function collectCleanEvidence(
     branches: cleanBranches.sort((a, b) => a.name.localeCompare(b.name)),
     localBranches: localBranches.sort((a, b) => a.name.localeCompare(b.name)),
     orphanRefs: local.orphanRefs,
+    detachedWorktrees: local.detachedWorktrees,
     pullRequests: openPulls.sort((a, b) => a.number - b.number),
     issues: openIssues.sort((a, b) => a.number - b.number),
     reviewFindings: stableReviewFindings,
@@ -210,12 +217,21 @@ export async function applyCleanPlan(
   freshEvidence: CleanEvidence,
   options: {
     localPath?: string;
-    onApplied?: (receipt: CleanApplyReceipt["actions"][number]) => Promise<void>;
+    onAdmission?: (receipt: CleanApplyReceipt["actions"][number]) => Promise<void>;
+    onCompletion?: (receipt: CleanApplyReceipt["actions"][number]) => Promise<void>;
   } = {}
 ): Promise<CleanApplyReceipt> {
   const fresh = buildCleanPlan(freshEvidence, new Date(saved.createdAt));
   verifyCleanPlanAdmission(saved, fresh);
-  const local = options.localPath ? collectLocalEvidence(options.localPath, new Map(freshEvidence.branches.map((branch) => [branch.name, branch.head]))) : emptyLocalEvidence();
+  const local = options.localPath
+    ? collectLocalEvidence(
+      options.localPath,
+      repository,
+      new Map(freshEvidence.branches.map((branch) => [branch.name, branch.head])),
+      new Map(freshEvidence.branches.map((branch) => [branch.name, branch.tree])),
+      new Set([freshEvidence.defaultBranch, "main", "dev"])
+    )
+    : emptyLocalEvidence();
   const actions: CleanApplyReceipt["actions"] = [];
 
   // Remove exact clean worktree copies first. `git worktree remove` has no
@@ -223,20 +239,24 @@ export async function applyCleanPlan(
   for (const entry of saved.entries.filter((candidate) => candidate.kind === "worktree" && candidate.action === "remove")) {
     const rawPath = local.rawWorktreeById.get(entry.target);
     if (!options.localPath || !rawPath) throw new Error(`clean worktree ${entry.target} is no longer observable; apply aborted`);
+    await recordAdmission({ kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "admitted exact clean preserved worktree removal" }, options.onAdmission);
+    revalidateWorktreeRemoval(options.localPath, rawPath, entry);
     runGit(options.localPath, ["worktree", "remove", "--", rawPath]);
-    await recordApplied(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "exact clean preserved worktree removed" }, options.onApplied);
+    await recordCompleted(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "exact clean preserved worktree removed" }, options.onCompletion);
   }
 
   for (const entry of saved.entries.filter((candidate) => candidate.kind === "orphan-ref" && candidate.action === "delete")) {
     if (!options.localPath) throw new Error(`clean orphan ref ${entry.target} requires an explicit local checkout`);
+    await recordAdmission({ kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "admitted atomic exact-head deletion after preservation proof" }, options.onAdmission);
     runGit(options.localPath, ["update-ref", "-d", entry.target, entry.head]);
-    await recordApplied(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "atomic exact-head deletion after independent preservation proof" }, options.onApplied);
+    await recordCompleted(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "atomic exact-head deletion after independent preservation proof" }, options.onCompletion);
   }
 
   for (const entry of saved.entries.filter((candidate) => candidate.kind === "local-branch" && candidate.action === "delete")) {
     if (!options.localPath) throw new Error(`clean local branch ${entry.target} requires an explicit local checkout`);
+    await recordAdmission({ kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "admitted atomic exact-head deletion after preservation proof" }, options.onAdmission);
     runGit(options.localPath, ["update-ref", "-d", `refs/heads/${entry.target}`, entry.head]);
-    await recordApplied(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "atomic exact-head deletion after independent preservation proof" }, options.onApplied);
+    await recordCompleted(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "atomic exact-head deletion after independent preservation proof" }, options.onCompletion);
   }
 
   for (const entry of saved.entries.filter((candidate) => candidate.kind === "remote-branch" && candidate.action === "delete")) {
@@ -246,17 +266,25 @@ export async function applyCleanPlan(
     })).data, `remote branch ${entry.target}`);
     const object = asRecord(current.object, `remote branch ${entry.target} object`);
     if (object.sha !== entry.head) throw new Error(`remote branch ${entry.target} drifted immediately before deletion; apply aborted`);
+    await recordAdmission({ kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "admitted exact remote head deletion after preservation proof" }, options.onAdmission);
     await github.request("DELETE /repos/{owner}/{repo}/git/refs/{ref}", { ...repository, ref: `heads/${entry.target}` });
-    await recordApplied(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "exact head independently preserved and re-fetched" }, options.onApplied);
+    await recordCompleted(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "exact head independently preserved and re-fetched" }, options.onCompletion);
   }
 
   for (const entry of saved.entries.filter((candidate) => candidate.action === "preserve")) {
-    await recordApplied(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "skipped", reason: entry.reasons.join(" ") }, options.onApplied);
+    await recordCompleted(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "skipped", reason: entry.reasons.join(" ") }, options.onCompletion);
   }
   return { planId: saved.planId, repository: saved.repository, actions };
 }
 
-async function recordApplied(
+async function recordAdmission(
+  receipt: CleanApplyReceipt["actions"][number],
+  callback?: (receipt: CleanApplyReceipt["actions"][number]) => Promise<void>
+): Promise<void> {
+  if (callback) await callback(receipt);
+}
+
+async function recordCompleted(
   actions: CleanApplyReceipt["actions"],
   receipt: CleanApplyReceipt["actions"][number],
   callback?: (receipt: CleanApplyReceipt["actions"][number]) => Promise<void>
@@ -267,13 +295,16 @@ async function recordApplied(
 
 function collectLocalEvidence(
   localPath: string,
+  repository: RepositoryRef,
   remoteBranches: Map<string, string>,
   remoteTrees = new Map<string, string>(),
   policyBranches = new Set<string>()
 ): LocalCleanEvidence {
   const root = resolve(localPath);
+  assertLocalRepositoryIdentity(root, repository);
   const worktreesByBranch = new Map<string, CleanWorktreeEvidence[]>();
   const rawWorktreeById = new Map<string, string>();
+  const detachedWorktrees: CleanWorktreeEvidence[] = [];
   const porcelain = runGit(root, ["worktree", "list", "--porcelain"]);
   const records = porcelain.split(/\r?\n\r?\n/).map((block) => block.trim()).filter(Boolean);
   for (const record of records) {
@@ -284,8 +315,8 @@ function collectLocalEvidence(
     const worktreePath = fields.get("worktree") || "";
     const head = fields.get("HEAD") || "";
     const ref = fields.get("branch") || "";
-    if (!worktreePath || !head || !ref.startsWith("refs/heads/")) continue;
-    const branch = ref.slice("refs/heads/".length);
+    if (!worktreePath || !head) continue;
+    const branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : "(detached)";
     const status = runGit(worktreePath, ["status", "--porcelain=v2", "--untracked-files=all", "--ignore-submodules=none"]);
     const lines = status.split(/\r?\n/).filter(Boolean);
     const pathId = `wt-${createHash("sha256").update(resolve(worktreePath).toLowerCase()).digest("hex").slice(0, 16)}`;
@@ -295,9 +326,14 @@ function collectLocalEvidence(
       head,
       dirty: lines.some((line) => !line.startsWith("? ")),
       untracked: lines.some((line) => line.startsWith("? ")),
-      submoduleDirty: lines.some((line) => /^[12u] .{2}S/.test(line))
+      submoduleDirty: lines.some((line) => /^[12u] .{2}S/.test(line)),
+      rootCheckout: resolve(worktreePath).toLowerCase() === root.toLowerCase()
     };
-    worktreesByBranch.set(branch, [...(worktreesByBranch.get(branch) || []), evidence]);
+    if (ref.startsWith("refs/heads/")) {
+      worktreesByBranch.set(branch, [...(worktreesByBranch.get(branch) || []), evidence]);
+    } else {
+      detachedWorktrees.push(evidence);
+    }
     rawWorktreeById.set(pathId, resolve(worktreePath));
   }
 
@@ -345,28 +381,77 @@ function collectLocalEvidence(
   }
 
   const orphanRefs: CleanEvidence["orphanRefs"] = [];
-  const orphanOutput = runGit(root, ["for-each-ref", "--format=%(refname)%09%(objectname)%09%(*objectname)", "refs/df", "refs/archive", "refs/subtree"]);
+  const orphanOutput = runGit(root, ["for-each-ref", "--format=%(refname)%09%(objectname)%09%(*objectname)"]);
   const branchPreservation = new Map<string, string[]>();
   for (const [name, head] of remoteBranches) branchPreservation.set(head, [...(branchPreservation.get(head) || []), `branch:${name}`]);
   for (const line of orphanOutput.split(/\r?\n/).filter(Boolean)) {
     const [ref, object, peeled] = line.split("\t");
     const head = peeled || object;
-    if (!ref || !head) continue;
-    const tree = runGit(root, ["rev-parse", `${head}^{tree}`]).trim();
+    if (!ref || !head || ref.startsWith("refs/heads/")) continue;
+    const treeProbe = spawnGit(root, ["rev-parse", `${head}^{tree}`]);
+    const tree = treeProbe.status === 0 ? String(treeProbe.stdout || "").trim() : "unobservable";
     const preserved = [...(branchPreservation.get(head) || [])];
-    if (preserved.length === 0) {
+    if (preserved.length === 0 && tree !== "unobservable") {
       for (const [name, branchHead] of remoteBranches) {
-        const branchTree = runGit(root, ["rev-parse", `${branchHead}^{tree}`]).trim();
+        const branchTree = remoteTrees.get(name);
+        if (!branchTree) continue;
         if (branchTree === tree) preserved.push(`tree:branch:${name}`);
       }
     }
-    orphanRefs.push({ ref, head, tree, independentlyPreservedBy: preserved.sort(), worktree: null });
+    const associatedWorktree = detachedWorktrees.find((worktree) => worktree.head === head) || null;
+    orphanRefs.push({
+      ref,
+      head,
+      tree,
+      independentlyPreservedBy: preserved.sort(),
+      worktree: associatedWorktree,
+      cleanupCandidate: /^(?:refs\/(?:df|archive|subtree)\/)/.test(ref)
+    });
   }
-  return { worktreesByBranch, rawWorktreeById, localBranches, orphanRefs: orphanRefs.sort((a, b) => a.ref.localeCompare(b.ref)) };
+  return {
+    worktreesByBranch,
+    rawWorktreeById,
+    detachedWorktrees: detachedWorktrees.sort((a, b) => a.pathId.localeCompare(b.pathId)),
+    localBranches,
+    orphanRefs: orphanRefs.sort((a, b) => a.ref.localeCompare(b.ref))
+  };
 }
 
 function emptyLocalEvidence(): LocalCleanEvidence {
-  return { worktreesByBranch: new Map(), rawWorktreeById: new Map(), localBranches: new Map(), orphanRefs: [] };
+  return { worktreesByBranch: new Map(), rawWorktreeById: new Map(), detachedWorktrees: [], localBranches: new Map(), orphanRefs: [] };
+}
+
+function assertLocalRepositoryIdentity(root: string, repository: RepositoryRef): void {
+  const remote = runGit(root, ["remote", "get-url", "origin"]).trim();
+  const observed = normalizeGithubRepository(remote);
+  const expected = `${repository.owner}/${repository.repo}`.toLowerCase();
+  if (observed !== expected) {
+    throw new Error(`local checkout identity mismatch; expected ${expected}, observed ${observed || "unrecognized-origin"}`);
+  }
+}
+
+function normalizeGithubRepository(remote: string): string {
+  const value = remote.trim().replace(/\\/g, "/");
+  const match = value.match(/^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
+  return match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
+}
+
+function revalidateWorktreeRemoval(root: string, rawPath: string, entry: { target: string; head: string }): void {
+  const resolvedRoot = resolve(root).toLowerCase();
+  const resolvedWorktree = resolve(rawPath).toLowerCase();
+  if (resolvedRoot === resolvedWorktree) {
+    throw new Error(`clean worktree ${entry.target} is the explicitly supplied root checkout; apply aborted`);
+  }
+  const head = runGit(rawPath, ["rev-parse", "HEAD"]).trim();
+  if (head !== entry.head) throw new Error(`clean worktree ${entry.target} head drifted immediately before removal; apply aborted`);
+  const status = runGit(rawPath, ["status", "--porcelain=v2", "--untracked-files=all", "--ignore-submodules=none"]);
+  if (status.split(/\r?\n/).some(Boolean)) {
+    throw new Error(`clean worktree ${entry.target} became dirty immediately before removal; apply aborted`);
+  }
+  const branch = runGit(rawPath, ["symbolic-ref", "-q", "HEAD"]).trim();
+  if (!branch.startsWith("refs/heads/")) {
+    throw new Error(`clean worktree ${entry.target} became detached immediately before removal; apply aborted`);
+  }
 }
 
 function gitObjectExists(cwd: string, object: string): boolean {

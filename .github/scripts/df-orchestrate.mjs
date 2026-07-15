@@ -13,12 +13,14 @@ import {
   normalizedRepoName,
   parseRepo,
   preflightMergePolicy,
+  readLatestRunLedger,
   readRequiredJson,
   repoName,
   requiredEnv,
   warnReadOnlyRepository,
   writeRunLedger
 } from "./df-lib.mjs";
+import { runRepositoryDoctor } from "./df-audit.mjs";
 
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ORCHESTRATION_POLICY_PATH = ".darkfactory/orchestration.json";
@@ -41,12 +43,18 @@ async function main() {
   const appInstallationToken = requiredEnv("DARK_FACTORY_TOKEN");
   const controlRepo = parseRepo(requiredEnv("DF_CONTROL_REPO"));
   const trigger = process.env.DF_TRIGGER ?? "unknown";
+  const rawRepo = process.env.DF_TARGET_REPO;
+  const rawIssue = process.env.DF_TARGET_ISSUE_NUMBER;
+  const rawSource = process.env.DF_SOURCE_EVENT;
   const dispatchRequest = parseWorkflowDispatchRequest(
-    process.env.DF_TARGET_REPO,
-    process.env.DF_TARGET_ISSUE_NUMBER,
-    process.env.DF_SOURCE_EVENT,
+    rawRepo,
+    rawIssue,
+    rawSource,
     console.warn
   );
+  if ((String(rawRepo || "").trim() || String(rawIssue || "").trim()) && !dispatchRequest) {
+    throw new Error("DarkFactory refused an invalid or incomplete workflow_dispatch scope instead of falling back to fleet orchestration.");
+  }
   const gh = createGithubClient(appInstallationToken, "darkfactory-orchestrate");
 
   await orchestrate({ gh, controlRepo, trigger, root: CONTROL_ROOT, dispatchRequest });
@@ -62,6 +70,7 @@ export async function orchestrate(options) {
     repositories,
     dispatchRequest: dispatchRequestInput,
     policy: policyInput,
+    readinessByRepository: readinessInput,
     writeLedger: shouldWriteLedger = true,
     updateDashboard: shouldUpdateDashboard = true,
     warn = console.warn,
@@ -84,7 +93,9 @@ export async function orchestrate(options) {
     const activeTargets = await targetRepositories(gh, controlRepo, { root, registry, repositories, warn });
     const activeEventTarget = activeTargets.find((target) => repoName(target) === repoName(eventRequest.repository));
     if (activeEventTarget) {
-      targets = [activeEventTarget];
+      // Preserve the full managed snapshot so cross-repository blockers are
+      // positively observed even though mutations remain scoped to one target.
+      targets = activeTargets;
     } else {
       warn(`DarkFactory ignored event for unmanaged repository ${repoName(eventRequest.repository)}.`);
     }
@@ -102,26 +113,39 @@ export async function orchestrate(options) {
     }
   }
 
-  const scopedSnapshots = eventRequest
+  const scopedSnapshots = eventRequest && Number.isInteger(eventRequest.issueNumber)
     ? snapshots.map((snapshot) => ({
       ...snapshot,
-      openIssues: (snapshot.openIssues || []).filter((issue) => issue.number === eventRequest.issueNumber)
+      openIssues: normalizedRepoName(snapshot.repository) === normalizedRepoName(eventRequest.repository)
+        ? (snapshot.openIssues || []).filter((issue) => issue.number === eventRequest.issueNumber)
+        : []
     }))
+    : eventRequest?.evaluationOnly
+      ? snapshots.map((snapshot) => ({
+        ...snapshot,
+        openIssues: normalizedRepoName(snapshot.repository) === normalizedRepoName(eventRequest.repository)
+          ? snapshot.openIssues
+          : []
+      }))
     : snapshots;
-  const escalated = await escalateOwnerDecisionIssues(gh, scopedSnapshots, warn);
+  const readinessByRepository = readinessInput ?? await collectRepositoryReadiness(gh, controlRepo, snapshots, { root, registry });
+  const escalated = eventRequest?.evaluationOnly ? [] : await escalateOwnerDecisionIssues(gh, scopedSnapshots, warn);
   const readinessEvaluations = await evaluateIssueReadinessLabels(gh, snapshots, warn, {
     targetIssue: eventRequest,
-    commentRequested: Boolean(eventRequest?.slashRun)
+    commentRequested: Boolean(eventRequest?.slashRun),
+    readinessByRepository,
+    policy
   });
   const autoReadied = readinessEvaluations
     .filter((evaluation) => evaluation.action === "labeled-ready")
     .map((evaluation) => ({ repo: evaluation.repo, issue: evaluation.issue }));
   const plan = buildOrchestrationPlan(scopedSnapshots, policy, {
     targetIssue: eventRequest,
-    enforceReadinessContract: true
+    enforceReadinessContract: true,
+    readinessByRepository
   });
 
-  const interrupted = await detectInterruptedWorkerRuns(gh, scopedSnapshots, { warn });
+  const interrupted = eventRequest?.evaluationOnly ? [] : await detectInterruptedWorkerRuns(gh, scopedSnapshots, { warn });
   const recoveries = [];
   for (const item of interrupted) {
     const recovery = await resumeInterruptedWorker(gh, controlRepo, item.repository, item.issue, item.classification, { warn });
@@ -130,7 +154,7 @@ export async function orchestrate(options) {
 
   const dispatched = [];
 
-  for (const candidate of plan.candidates) {
+  for (const candidate of eventRequest?.evaluationOnly ? [] : plan.candidates) {
     const target = candidate.repository;
     const issue = candidate.issue;
     try {
@@ -157,6 +181,7 @@ export async function orchestrate(options) {
     recovery: recoveries,
     auto_readied: autoReadied,
     readiness_evaluations: readinessEvaluations,
+    evaluation_only: Boolean(eventRequest?.evaluationOnly),
     escalated,
     token_usage: {
       codex_calls: 0,
@@ -178,6 +203,134 @@ export async function orchestrate(options) {
 
 export async function targetRepositories(gh, controlRepo, options = {}) {
   return await listActiveManagedRepos(gh, controlRepo, options);
+}
+
+export async function collectRepositoryReadiness(gh, controlRepo, snapshots, options = {}) {
+  const targets = snapshots.map((snapshot) => snapshot.repository);
+  const readiness = new Map();
+  if (targets.length === 0) return readiness;
+  const doctorTargets = [];
+  const seenTargets = new Set();
+  for (const target of [controlRepo, ...targets]) {
+    const key = normalizedRepoName(target);
+    if (seenTargets.has(key)) continue;
+    seenTargets.add(key);
+    doctorTargets.push(target);
+  }
+  let reports;
+  let machineReceipt = options.machineReceipt;
+  if (machineReceipt === undefined) {
+    try {
+      machineReceipt = await readLatestRunLedger(gh, DARK_FACTORY_DATA_REPO, "repo-doctor", repoName(controlRepo));
+    } catch (error) {
+      machineReceipt = null;
+    }
+  }
+  try {
+    reports = await runRepositoryDoctor(gh, {
+      root: options.root || CONTROL_ROOT,
+      controlRepo,
+      registry: options.registry,
+      targets: doctorTargets,
+      mode: "diagnose",
+      trigger: "orchestrator-readiness",
+      agentsHome: options.agentsHome || ""
+    });
+  } catch (error) {
+    for (const target of targets) {
+      readiness.set(normalizedRepoName(target), {
+        observable: false,
+        doctorPerfect: false,
+        gatesHealthy: false,
+        reason: error.message || String(error)
+      });
+    }
+    return readiness;
+  }
+  const controlReport = reports.find((report) => String(report.target_repository || "").toLowerCase() === normalizedRepoName(controlRepo));
+  const machineProof = machineReadinessFromDoctorLedger(
+    machineReceipt,
+    options.now,
+    repoName(controlRepo),
+    controlReport?.source_refs?.main
+  );
+  for (const report of reports) {
+    if (!seenTargets.has(String(report.target_repository || "").toLowerCase())) continue;
+    const findings = Array.isArray(report.findings) ? report.findings : [];
+    const repositoryFindings = String(report.target_repository || "").toLowerCase() === normalizedRepoName(controlRepo)
+      ? findings.filter((finding) => !["machine runtime", "runner health"].includes(String(finding.category || "").toLowerCase()))
+      : findings;
+    const gateFindings = repositoryFindings.filter((finding) => ["branch protection", "health", "pull request health"].includes(String(finding.category || "").toLowerCase())
+      && ["error", "critical"].includes(String(finding.severity || "").toLowerCase()));
+    readiness.set(String(report.target_repository || "").toLowerCase(), {
+      observable: report.lifecycle === "active" && !report.skipped && machineProof.observable,
+      doctorPerfect: repositoryFindings.length === 0 && machineProof.healthy,
+      gatesHealthy: gateFindings.length === 0,
+      findingIds: [...new Set([...repositoryFindings.map((finding) => finding.id), ...machineProof.findingIds])],
+      machineProofAgeMs: machineProof.ageMs
+    });
+  }
+  for (const target of targets) {
+    const key = normalizedRepoName(target);
+    if (!readiness.has(key)) readiness.set(key, { observable: false, doctorPerfect: false, gatesHealthy: false, reason: "doctor report missing" });
+  }
+  return readiness;
+}
+
+export function machineReadinessFromDoctorLedger(receipt, now = Date.now(), expectedTarget = "marius-patrik/DarkFactory", expectedHead = undefined) {
+  const nowMs = new Date(now).getTime();
+  const createdAt = Date.parse(String(receipt?.created_at || ""));
+  const ageMs = nowMs - createdAt;
+  if (!receipt
+    || receipt.kind !== "repo-doctor"
+    || receipt.phase !== "completion"
+    || receipt.machine_evidence_schema !== 1
+    || receipt.target_repo !== expectedTarget
+    || (expectedHead && receipt.source_refs?.main !== expectedHead)) {
+    return { observable: false, healthy: false, ageMs: null, findingIds: ["machine-readiness-proof-missing"] };
+  }
+  if (!Number.isFinite(createdAt) || ageMs < -5 * 60 * 1000 || ageMs > 26 * 60 * 60 * 1000) {
+    return { observable: false, healthy: false, ageMs: Number.isFinite(ageMs) ? ageMs : null, findingIds: ["machine-readiness-proof-stale"] };
+  }
+  if (!Array.isArray(receipt.findings)) {
+    return { observable: false, healthy: false, ageMs, findingIds: ["machine-readiness-proof-malformed"] };
+  }
+  const findingIds = receipt.findings
+    .filter((finding) => ["machine runtime", "runner health"].includes(String(finding?.category || "").toLowerCase()))
+    .map((finding) => String(finding?.id || "machine-readiness-finding-malformed"));
+  return { observable: true, healthy: findingIds.length === 0, ageMs, findingIds };
+}
+
+function capacityAvailableForIssue(counts, repository, issue, policy) {
+  if (!policy?.concurrency) return false;
+  const repositoryName = repoName(repository);
+  if (counts.global >= policy.concurrency.global) return false;
+  if ((counts.byRepository.get(repositoryName) || 0) >= policy.concurrency.perRepository) return false;
+  return issueStreamKeys(issue).every((stream) => (counts.byStream.get(stream) || 0) < policy.concurrency.perStream);
+}
+
+async function clearResolvedMachineBrakes(gh, repository, issue, repositoryState, warn = console.warn) {
+  const names = issueLabelNames(issue);
+  if (!names.has("df:blocked") || !names.has("df:ask-owner")) return false;
+  if (repositoryState?.observable !== true || repositoryState.doctorPerfect !== true || repositoryState.gatesHealthy !== true) return false;
+  try {
+    const comments = await listIssueComments(gh, repository, issue.number);
+    const machineOwned = comments.some((comment) => new RegExp(`<!--\\s*${ASK_OWNER_MARKER}\\s+issue=${issue.number}\\s+reason=merge-policy-blocked\\s*-->`, "i").test(String(comment.body || "")));
+    if (!machineOwned) return false;
+    await replaceIssueLabels(gh, repository, issue.number, [], ["df:blocked", "df:ask-owner"]);
+    setIssueLabelNames(issue, [...names].filter((name) => name !== "df:blocked" && name !== "df:ask-owner"));
+    await createIssueComment(gh, repository, issue.number, [
+      `<!-- ${READINESS_MARKER} issue=${issue.number} brake=resolved -->`,
+      "DarkFactory re-proved the machine-owned merge-policy blocker resolved and cleared its stale brakes.",
+      "Readiness is recomputed from the current repository snapshot; no manual label is required."
+    ].join("\n\n"));
+    return true;
+  } catch (error) {
+    if (!warnReadOnlyRepository(repository, error, "stale brake reconciliation", warn)) {
+      warn(`Failed to reconcile stale machine brake for ${repoName(repository)}#${issue.number}: ${error.message || String(error)}`);
+    }
+    return false;
+  }
 }
 
 export function parseEventRequest(payloadText, trigger = "unknown", warn = console.warn) {
@@ -219,14 +372,23 @@ export function parseEventRequest(payloadText, trigger = "unknown", warn = conso
 
 export function parseWorkflowDispatchRequest(repoInput, issueNumberInput, sourceEventInput = "", warn = console.warn) {
   const repoText = String(repoInput || "").trim();
-  const issueNumber = Number(String(issueNumberInput || "").trim());
+  const issueText = String(issueNumberInput || "").trim();
+  const issueNumber = Number(issueText);
+  const sourceEvent = String(sourceEventInput || "").trim();
   if (!repoText && !issueNumberInput) return null;
+  if (repoText && !issueText && sourceEvent === "df-setup") {
+    try {
+      return { repository: parseRepo(repoText), issueNumber: null, slashRun: false, readyLabel: false, evaluationOnly: true };
+    } catch (error) {
+      warn(`DarkFactory workflow_dispatch scope ignored: ${error.message || String(error)}`);
+      return null;
+    }
+  }
   if (!repoText || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     warn("DarkFactory workflow_dispatch scope ignored because repo or issue_number input is invalid.");
     return null;
   }
 
-  const sourceEvent = String(sourceEventInput || "").trim();
   let repository;
   try {
     repository = parseRepo(repoText);
@@ -370,9 +532,10 @@ export async function resumeInterruptedWorker(gh, controlRepo, repository, issue
       recovery.action = "resume-branch";
       recovery.branch = classification.branch;
     } else {
-      await replaceIssueLabels(gh, repository, issue.number, ["df:ready"], ["df:running", "df:blocked", "df:done"]);
+      await replaceIssueLabels(gh, repository, issue.number, [], ["df:running", "df:blocked", "df:done"]);
+      setIssueLabelNames(issue, [...issueLabelNames(issue)].filter((label) => !["df:ready", "df:running", "df:blocked", "df:done"].includes(label)));
       await createIssueComment(gh, repository, issue.number, requeueComment(target, issue.number));
-      recovery.action = "requeue";
+      recovery.action = "request-evaluation";
       recovery.reason = "no-usable-branch";
     }
   } catch (error) {
@@ -418,7 +581,7 @@ function requeueComment(target, issueNumber) {
     `<!-- ${RESUME_MARKER} issue=${issueNumber} type=none -->`,
     `DarkFactory detected an interrupted worker run for \`${target}\` but found no usable branch or PR to resume from.`,
     "",
-    "The issue has been requeued with `df:ready` so a fresh worker run can start on the next orchestrator tick."
+    "The stale running claim was cleared. Machine readiness evaluation—not a direct label write—decides whether a fresh worker run can start on the next orchestrator tick."
   ].join("\n");
 }
 
@@ -433,12 +596,15 @@ export async function listOpenIssues(gh, repository) {
       "GET",
       `/repos/${repoName(repository)}/issues?state=open&per_page=100&page=${page}`
     );
-    if (!Array.isArray(batch) || batch.length === 0) break;
+    if (!Array.isArray(batch)) {
+      throw new Error(`Issue inventory for ${repoName(repository)} page ${page} was not an array`);
+    }
+    if (batch.length === 0) return issues;
     issues.push(...batch.filter((issue) => !issue.pull_request));
-    if (batch.length < 100) break;
+    if (batch.length < 100) return issues;
   }
 
-  return issues;
+  throw new Error(`Issue inventory for ${repoName(repository)} exceeded 2000 open records; refusing an incomplete readiness snapshot`);
 }
 
 export function selectDispatchableIssues(openIssues, options = {}) {
@@ -464,7 +630,9 @@ export function selectDispatchableIssues(openIssues, options = {}) {
         currentRepoOpenIssueNumbers: openIssueNumbers,
         openIssueIndex: options.openIssueIndex,
         knownRepositories: options.knownRepositories,
-        currentRepoName
+        currentRepoName,
+        repositoryState: options.repositoryState,
+        capacityAvailable: typeof options.capacityForIssue === "function" ? options.capacityForIssue(issue) : false
       });
       return evaluation.ready;
     })
@@ -489,16 +657,18 @@ export function evaluateIssueReadiness(issue, options = {}) {
 
   findings.push(...issueContractFindings(issue, options));
 
+  const repositoryState = options.repositoryState;
+  if (!repositoryState || repositoryState.observable !== true) {
+    findings.push(readinessFinding("repository-state-unobservable", "Repository doctor/gate state is unavailable; readiness fails closed."));
+  } else {
+    if (repositoryState.doctorPerfect !== true) findings.push(readinessFinding("doctor-not-perfect", "Repair the repository doctor delta before dispatch."));
+    if (repositoryState.gatesHealthy !== true) findings.push(readinessFinding("gates-unhealthy", "Restore the managed validation and review gates before dispatch."));
+  }
+
   if (!blockedByRefsResolved(issue, options)) {
     findings.push(readinessFinding("blocked-by-open", "Close every `Blocked-by` dependency before dispatch."));
   }
-  if (options.doctorPerfect === false) {
-    findings.push(readinessFinding("doctor-not-perfect", "Repair the repository doctor delta before dispatch."));
-  }
-  if (options.gatesHealthy === false) {
-    findings.push(readinessFinding("gates-unhealthy", "Restore the managed validation and review gates before dispatch."));
-  }
-  if (options.capacityAvailable === false) {
+  if (options.capacityAvailable !== true) {
     findings.push(readinessFinding("capacity-exhausted", "Wait for managed worker capacity; the next tick will re-evaluate."));
   }
 
@@ -558,59 +728,86 @@ export async function evaluateIssueReadinessLabels(gh, snapshots, warn = console
   const knownRepositories = buildKnownRepositories(snapshots);
   const targetIssue = options.targetIssue || null;
   const evaluations = [];
-
+  const counts = activeConcurrencyCounts(snapshots);
+  const candidates = [];
   for (const snapshot of snapshots) {
     const repository = snapshot.repository;
     const openIssues = Array.isArray(snapshot.openIssues) ? snapshot.openIssues : [];
     const currentRepoName = normalizedRepoName(repository);
     const currentRepoOpenIssueNumbers = new Set(openIssues.map((issue) => issue.number).filter(Number.isInteger));
-    const candidates = targetIssue
+    const scoped = targetIssue && Number.isInteger(targetIssue.issueNumber)
       ? openIssues.filter((issue) => issue.number === targetIssue.issueNumber && normalizedRepoName(targetIssue.repository) === currentRepoName)
-      : openIssues;
+      : targetIssue?.evaluationOnly
+        ? (normalizedRepoName(targetIssue.repository) === currentRepoName ? openIssues : [])
+        : openIssues;
+    for (const issue of scoped) candidates.push({ repository, currentRepoName, currentRepoOpenIssueNumbers, issue });
+  }
 
-    for (const issue of candidates) {
-      const names = issueLabelNames(issue);
-      const evaluation = evaluateIssueReadiness(issue, {
-        repository,
-        currentRepoName,
-        currentRepoOpenIssueNumbers,
-        openIssueIndex,
-        knownRepositories
-      });
-      let action = "no-op";
+  candidates.sort((left, right) => {
+    const leftWave = issueWave(left.issue, options.policy);
+    const rightWave = issueWave(right.issue, options.policy);
+    return waveRank(leftWave, options.policy) - waveRank(rightWave, options.policy)
+      || priorityRank(left.issue) - priorityRank(right.issue)
+      || repoName(left.repository).localeCompare(repoName(right.repository))
+      || left.issue.number - right.issue.number;
+  });
 
-      try {
-        if (evaluation.ready && !names.has("df:ready")) {
-          await ensureLabels(gh, repository, WORK_LABELS);
-          await replaceIssueLabels(gh, repository, issue.number, ["df:ready"], []);
-          setIssueLabelNames(issue, [...names, "df:ready"]);
-          action = "labeled-ready";
-        } else if (!evaluation.ready && names.has("df:ready")) {
-          await replaceIssueLabels(gh, repository, issue.number, [], ["df:ready"]);
-          setIssueLabelNames(issue, [...names].filter((name) => name !== "df:ready"));
-          action = "revoked-stale-ready";
-        }
+  for (const candidate of candidates) {
+    const { repository, currentRepoName, currentRepoOpenIssueNumbers, issue } = candidate;
+    await clearResolvedMachineBrakes(gh, repository, issue, options.readinessByRepository?.get(currentRepoName), warn);
+    const names = issueLabelNames(issue);
+    const evaluation = evaluateIssueReadiness(issue, {
+      repository,
+      currentRepoName,
+      currentRepoOpenIssueNumbers,
+      openIssueIndex,
+      knownRepositories,
+      repositoryState: options.readinessByRepository?.get(currentRepoName),
+      capacityAvailable: capacityAvailableForIssue(counts, repository, issue, options.policy)
+    });
+    let action = "no-op";
 
-        if (options.commentRequested) {
-          await createIssueComment(gh, repository, issue.number, formatReadinessEvaluationComment(issue.number, evaluation));
-          if (action === "no-op") action = "reported";
-        }
-      } catch (error) {
-        if (warnReadOnlyRepository(repository, error, "readiness evaluation", warn)) continue;
-        warn(`Failed to reconcile readiness for ${repoName(repository)}#${issue.number}: ${error.message || String(error)}`);
-        action = "error";
+    try {
+      if (evaluation.ready && !names.has("df:ready")) {
+        await ensureLabels(gh, repository, WORK_LABELS);
+        await replaceIssueLabels(gh, repository, issue.number, ["df:ready"], []);
+        setIssueLabelNames(issue, [...names, "df:ready"]);
+        action = "labeled-ready";
+      } else if (!evaluation.ready && names.has("df:ready")) {
+        await replaceIssueLabels(gh, repository, issue.number, [], ["df:ready"]);
+        setIssueLabelNames(issue, [...names].filter((name) => name !== "df:ready"));
+        action = "revoked-stale-ready";
       }
 
-      evaluations.push({
-        repo: repoName(repository),
-        issue: issue.number,
-        ready: evaluation.ready,
-        findings: evaluation.findings.map((finding) => finding.id),
-        action
-      });
+      if (options.commentRequested) {
+        await createIssueComment(gh, repository, issue.number, formatReadinessEvaluationComment(issue.number, evaluation));
+        if (action === "no-op") action = "reported";
+      }
+    } catch (error) {
+      if (warnReadOnlyRepository(repository, error, "readiness evaluation", warn)) continue;
+      warn(`Failed to reconcile readiness for ${repoName(repository)}#${issue.number}: ${error.message || String(error)}`);
+      action = "error";
     }
+
+    if (evaluation.ready && action !== "error") reserveIssueCapacity(counts, repository, issue);
+    evaluations.push({
+      repo: repoName(repository),
+      issue: issue.number,
+      ready: evaluation.ready,
+      findings: evaluation.findings.map((finding) => finding.id),
+      action
+    });
   }
   return evaluations;
+}
+
+function reserveIssueCapacity(counts, repository, issue) {
+  const repositoryName = repoName(repository);
+  counts.global += 1;
+  counts.byRepository.set(repositoryName, (counts.byRepository.get(repositoryName) || 0) + 1);
+  for (const stream of issueStreamKeys(issue)) {
+    counts.byStream.set(stream, (counts.byStream.get(stream) || 0) + 1);
+  }
 }
 
 export function formatReadinessEvaluationComment(issueNumber, evaluation) {
@@ -802,7 +999,9 @@ export function buildOrchestrationPlan(snapshots, policyInput, options = {}) {
       repository,
       openIssueIndex,
       knownRepositories,
-      enforceContract: options.enforceReadinessContract === true
+      enforceContract: options.enforceReadinessContract === true,
+      repositoryState: options.readinessByRepository?.get(normalizedRepoName(repository)),
+      capacityForIssue: (issue) => capacityAvailableForIssue(counts, repository, issue, policy)
     })
       .map((issue) => ({
         repository,
@@ -812,7 +1011,7 @@ export function buildOrchestrationPlan(snapshots, policyInput, options = {}) {
         streams: issueStreamKeys(issue),
         priority: priorityRank(issue)
       }))
-      .filter((candidate) => !targetIssue || (
+      .filter((candidate) => !targetIssue || !Number.isInteger(targetIssue.issueNumber) || (
         repoName(candidate.repository) === repoName(targetIssue.repository)
         && candidate.issue.number === targetIssue.issueNumber
       ))

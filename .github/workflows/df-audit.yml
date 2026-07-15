@@ -1,6 +1,9 @@
 name: DarkFactory Repository Doctor
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     - cron: "41 5 * * *"
   workflow_dispatch:
@@ -31,6 +34,7 @@ jobs:
         github.repository == 'marius-patrik/DarkFactory' &&
         (
           github.event_name == 'schedule' ||
+          github.event_name == 'push' ||
           github.event_name == 'workflow_dispatch'
         )
       }}
@@ -91,13 +95,13 @@ jobs:
           permission-actions: read
           permission-checks: read
           permission-contents: read
-          permission-issues: ${{ (github.event_name == 'schedule' || inputs.write_issues) && 'write' || 'read' }}
+          permission-issues: ${{ (github.event_name == 'schedule' || github.event_name == 'push' || inputs.write_issues) && 'write' || 'read' }}
           permission-pull-requests: read
           permission-secrets: read
           permission-statuses: read
 
       - name: Mint repository-scoped ledger token
-        if: ${{ github.event_name == 'schedule' || inputs.write_issues }}
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || inputs.write_issues }}
         id: ledger-token
         uses: actions/create-github-app-token@v2
         with:
@@ -114,7 +118,7 @@ jobs:
           DF_CONTROL_REPO: marius-patrik/DarkFactory
           DF_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || github.repository }}
           DF_DOCTOR_ALL: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.repo)) && 'true' || 'false' }}
-          DF_DOCTOR_MODE: ${{ (github.event_name == 'schedule' || inputs.write_issues) && 'report' || 'diagnose' }}
+          DF_DOCTOR_MODE: ${{ (github.event_name == 'schedule' || github.event_name == 'push' || inputs.write_issues) && 'report' || 'diagnose' }}
           DF_LOCAL_PATH: ${{ github.event_name == 'workflow_dispatch' && inputs.repo == github.repository && github.workspace || '' }}
           DF_TRIGGER: ${{ github.event_name }}
         run: |

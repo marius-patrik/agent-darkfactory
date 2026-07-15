@@ -34,26 +34,48 @@ export async function convergeRepositorySettings(
   if (metadata.archived === true || metadata.disabled === true) {
     throw new SetupOwnerActionRequired("repository-lifecycle", "Archived or disabled repositories cannot be converged.");
   }
-  const defaultBranch = text(metadata.default_branch, "default branch");
-  const defaultRef = record((await github.request("GET /repos/{owner}/{repo}/git/ref/{ref}", {
-    ...repository,
-    ref: `heads/${defaultBranch}`
-  })).data, "default branch ref");
-  const defaultHead = text(record(defaultRef.object, "default branch object").sha, "default branch head");
+  let defaultBranch = text(metadata.default_branch, "default branch");
+  let mainHead = await optionalRefHead(github, repository, "main");
+  const defaultHead = await optionalRefHead(github, repository, defaultBranch);
+  if (!mainHead && !defaultHead) {
+    mainHead = await initializeEmptyMain(github, repository);
+    receipts.push(receipt("initialize-main", "main", "applied", "Created the first empty commit and canonical main ref; all managed content still flows through reviewed PRs."));
+  } else if (!mainHead && defaultHead) {
+    await github.request("POST /repos/{owner}/{repo}/git/refs", {
+      ...repository,
+      ref: "refs/heads/main",
+      sha: defaultHead
+    }).catch((error) => { throw wrapOwnerBoundary("ensure-main", error); });
+    mainHead = defaultHead;
+    receipts.push(receipt("ensure-main", "main", "applied", `Created canonical main from the observed ${defaultBranch} head without deleting or rewriting any ref.`));
+  } else {
+    receipts.push(receipt("ensure-main", "main", "current", "Canonical release branch exists."));
+  }
+  if (!mainHead) throw new SetupOwnerActionRequired("ensure-main", "Canonical main head remains unobservable after bootstrap.");
 
-  if (defaultBranch !== "dev") {
-    try {
-      await github.request("GET /repos/{owner}/{repo}/git/ref/{ref}", { ...repository, ref: "heads/dev" });
-      receipts.push(receipt("ensure-dev", "dev", "current", "Integration branch exists."));
-    } catch (error) {
-      if (!status(error, 404)) throw wrapOwnerBoundary("ensure-dev", error);
-      await github.request("POST /repos/{owner}/{repo}/git/refs", {
-        ...repository,
-        ref: "refs/heads/dev",
-        sha: defaultHead
-      }).catch((error) => { throw wrapOwnerBoundary("ensure-dev", error); });
-      receipts.push(receipt("ensure-dev", "dev", "applied", `Created from ${defaultBranch} at the observed head.`));
+  if (defaultBranch !== "main") {
+    await github.request("PATCH /repos/{owner}/{repo}", { ...repository, default_branch: "main" })
+      .catch((error) => { throw wrapOwnerBoundary("default-branch", error); });
+    const verifiedDefault = record((await github.request("GET /repos/{owner}/{repo}", { ...repository })).data, "repository metadata after default-branch repair");
+    if (verifiedDefault.default_branch !== "main") {
+      throw new SetupOwnerActionRequired("default-branch-verification", "GitHub accepted the default-branch repair but main did not become observable as default.");
     }
+    defaultBranch = "main";
+    receipts.push(receipt("default-branch", "main", "applied", "Set main as default after preserving the prior default ref."));
+  } else {
+    receipts.push(receipt("default-branch", "main", "current", "Main is already the default branch."));
+  }
+
+  const devHead = await optionalRefHead(github, repository, "dev");
+  if (devHead) {
+    receipts.push(receipt("ensure-dev", "dev", "current", "Integration branch exists."));
+  } else {
+    await github.request("POST /repos/{owner}/{repo}/git/refs", {
+      ...repository,
+      ref: "refs/heads/dev",
+      sha: mainHead
+    }).catch((error) => { throw wrapOwnerBoundary("ensure-dev", error); });
+    receipts.push(receipt("ensure-dev", "dev", "applied", "Created dev from the exact observed main head."));
   }
 
   const autoMerge = await observeAutoMerge(github, repository, metadata.allow_auto_merge);
@@ -227,7 +249,61 @@ export async function convergeBranchProtection(
   };
   await github.request("PUT /repos/{owner}/{repo}/branches/{branch}/protection", payload)
     .catch((error) => { throw wrapOwnerBoundary(`protection:${branch}`, error); });
+  const verified = record((await github.request("GET /repos/{owner}/{repo}/branches/{branch}/protection", {
+    ...repository,
+    branch
+  })).data, `branch protection ${branch} after repair`);
+  const verifiedChecks = requiredChecks(verified.required_status_checks);
+  const verifiedSafe = recordOrNull(verified.enforce_admins)?.enabled === true
+    && recordOrNull(verified.allow_force_pushes)?.enabled === false
+    && recordOrNull(verified.allow_deletions)?.enabled === false
+    && recordOrNull(verified.required_status_checks)?.strict === true
+    && verifiedChecks.length === desiredChecks.length
+    && desiredChecks.every((desired) => verifiedChecks.some((current) => current.context === desired.context && current.app_id === desired.app_id));
+  if (!verifiedSafe) {
+    throw new SetupOwnerActionRequired(`protection:${branch}:verification`, "Branch-protection repair did not become fully observable with exact app-bound gates and non-bypass controls.");
+  }
   return receipt("branch-protection", branch, "applied", "Converged required app-bound gates, strict updates, admin enforcement, and deletion/force-push denial while preserving observable review/restriction settings.");
+}
+
+async function optionalRefHead(
+  github: OperatorGitHubRequester,
+  repository: RepositoryRef,
+  branch: string
+): Promise<string | null> {
+  try {
+    const ref = record((await github.request("GET /repos/{owner}/{repo}/git/ref/{ref}", {
+      ...repository,
+      ref: `heads/${branch}`
+    })).data, `branch ref ${branch}`);
+    return text(record(ref.object, `branch ref ${branch} object`).sha, `branch ref ${branch} head`);
+  } catch (error) {
+    if (status(error, 404) || status(error, 409)) return null;
+    throw wrapOwnerBoundary(`observe-branch:${branch}`, error);
+  }
+}
+
+async function initializeEmptyMain(github: OperatorGitHubRequester, repository: RepositoryRef): Promise<string> {
+  const tree = record((await github.request("POST /repos/{owner}/{repo}/git/trees", {
+    ...repository,
+    tree: []
+  })).data, "empty bootstrap tree");
+  const treeSha = text(tree.sha, "empty bootstrap tree sha");
+  const commit = record((await github.request("POST /repos/{owner}/{repo}/git/commits", {
+    ...repository,
+    message: "Initialize managed repository",
+    tree: treeSha,
+    parents: []
+  })).data, "empty bootstrap commit");
+  const commitSha = text(commit.sha, "empty bootstrap commit sha");
+  await github.request("POST /repos/{owner}/{repo}/git/refs", {
+    ...repository,
+    ref: "refs/heads/main",
+    sha: commitSha
+  }).catch((error) => { throw wrapOwnerBoundary("initialize-main", error); });
+  const verified = await optionalRefHead(github, repository, "main");
+  if (verified !== commitSha) throw new SetupOwnerActionRequired("initialize-main-verification", "The initial main ref did not match its exact admitted bootstrap commit.");
+  return commitSha;
 }
 
 function requiredChecks(value: unknown): Array<{ context: string; app_id: number | null }> {

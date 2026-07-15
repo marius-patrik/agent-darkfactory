@@ -550,6 +550,8 @@ test("df-plan workflow reacts safely to PRD edits on the trusted default branch"
   assert.doesNotMatch(workflow, /raw\.githubusercontent\.com|commits\/main|method:\s*'HEAD'/);
   assert.match(workflow, /^\s+workflow_dispatch:\s*$/m);
   assert.match(workflow, /^\s+schedule:\s*$/m);
+  assert.match(workflow, /^\s+push:\s*$/m);
+  assert.match(workflow, /push:\s*\n\s+branches:\s*\n\s+- main/);
   assert.match(workflow, /github\.event_name == 'schedule'.*github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.match(workflow, /github\.event_name == 'workflow_dispatch'.*github\.repository == 'marius-patrik\/DarkFactory'/);
   assert.doesNotMatch(workflow, /actions:\s+write/);
@@ -674,7 +676,7 @@ test("repository doctor workflow schedules trusted diagnosis with explicit repor
   assert.equal(targetToken.with["permission-statuses"], "read");
   assert.equal(ledgerToken.with.repositories, "darkfactory-data");
   assert.equal(ledgerToken.with["permission-contents"], "write");
-  assert.match(ledgerToken.if, /schedule.*write_issues/);
+  assert.match(ledgerToken.if, /schedule.*push.*write_issues/);
   assert.match(doctorStep.env.DF_LEDGER_TOKEN, /ledger-token\.outputs\.token/);
   assert.equal(steps.some((step: any) => /label/i.test(step.name || "") && /POST|PATCH/.test(step.run || "")), false);
   assert.match(workflow, /DF_DOCTOR_ALL/);
@@ -1870,9 +1872,14 @@ test("df-orchestrate workflow validates trusted refs before privileged tokens", 
   assert.doesNotMatch(workflow, /github\.repository_owner == 'marius-patrik'[\s\S]+github\.event_name == 'issues'/);
   assert.doesNotMatch(workflow, /github\.repository_owner == 'marius-patrik'[\s\S]+github\.event_name == 'issue_comment'/);
   assert.match(workflow, /permission-actions:\s+write/);
+  assert.match(workflow, /permission-administration:\s+read/);
+  assert.match(workflow, /permission-checks:\s+read/);
   assert.match(workflow, /permission-workflows:\s+write/);
   assert.match(workflow, /permission-contents:\s+write/);
   assert.match(workflow, /permission-issues:\s+write/);
+  assert.match(workflow, /permission-pull-requests:\s+read/);
+  assert.match(workflow, /permission-secrets:\s+read/);
+  assert.match(workflow, /permission-statuses:\s+read/);
   assert.match(workflow, /DARK_FACTORY_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
   assert.match(workflow, /DF_CONTROL_REPO: marius-patrik\/DarkFactory/);
   assert.match(workflow, /repo:\s*\n\s+description: Optional managed repository/);

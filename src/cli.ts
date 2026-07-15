@@ -288,11 +288,18 @@ async function runSetup(args: string[]): Promise<void> {
   const dispatchedReadinessPlans = new Set<string>();
   const maxPasses = options.watch ? boundedInteger(process.env.DF_SETUP_WATCH_PASSES, 40, 1, 240) : 1;
   let finalPlan = planSetupConvergence([]);
+  let previousEvidenceHash = "";
+  let stableEvidencePasses = 0;
+  let completedPasses = 0;
+  let stopReason = options.watch ? "max-passes" : "single-pass";
 
   for (let pass = 1; pass <= maxPasses; pass += 1) {
     const { reports } = await collectDoctorReports(app, { ...options, writeIssues: false });
     const plan = planSetupConvergence(reports);
     finalPlan = plan;
+    completedPasses = pass;
+    stableEvidencePasses = previousEvidenceHash === plan.evidenceHash ? stableEvidencePasses + 1 : 0;
+    previousEvidenceHash = plan.evidenceHash;
     await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "setup-admission", options.all ? "fleet" : options.target, {
       plan_id: plan.planId,
       evidence_hash: plan.evidenceHash,
@@ -310,15 +317,33 @@ async function runSetup(args: string[]): Promise<void> {
       residue: plan.residue,
       watch_requested: options.watch
     });
-    if (!options.watch || plan.actions.length === 0 || plan.actions.every((action) => !action.supported)) break;
+    if (!options.watch) break;
+    if (plan.actions.length === 0) {
+      stopReason = plan.residue.length === 0 ? "converged" : "owner-or-blocked-residue";
+      break;
+    }
+    if (plan.actions.every((action) => !action.supported)) {
+      stopReason = "unsupported-residue";
+      break;
+    }
+    // An unchanged evidence-bound plan means setup has no proof of progress.
+    // Two consecutive unchanged re-observations allow asynchronous workflow
+    // dispatches time to land while bounding repeated writes and polling.
+    if (stableEvidencePasses >= 2) {
+      stopReason = "stable-evidence";
+      break;
+    }
     if (pass < maxPasses) await delay(15_000);
   }
 
+  const converged = finalPlan.actions.length === 0 && finalPlan.residue.length === 0;
   const result = {
     schemaVersion: 1,
     plan: finalPlan,
     receipts,
-    converged: finalPlan.actions.length === 0 && finalPlan.residue.length === 0
+    converged,
+    passes: completedPasses,
+    stopReason: converged ? "converged" : stopReason
   };
   if (options.json) console.log(JSON.stringify(result, null, 2));
   else printSetupResult(result);
@@ -340,9 +365,24 @@ async function executeSetupPlan(
     const [owner, repo] = splitRepository(report.target_repository);
     const octokit = await getInstallationOctokit(app, owner);
     const github = createOperatorRequester(octokit);
-    const operations = new Set(plan.actions.filter((action) => action.repository === report.target_repository && action.supported).map((action) => action.operation));
+    const repositoryActions = plan.actions.filter((action) => action.repository === report.target_repository && action.supported);
+    const activeStage = repositoryActions[0]?.stage;
+    // Execute one proven dependency stage per observation. Later stages must
+    // see a fresh doctor snapshot after this stage's synchronous postcondition
+    // or asynchronous reviewed workflow has actually landed.
+    const operations = new Set(repositoryActions
+      .filter((action) => action.stage === activeStage)
+      .map((action) => action.operation));
 
-    if (operations.has("open-managed-setup-pr")) {
+    const sourcePolicyContradiction = report.findings.some((finding) => finding.category.toLowerCase() === "source policy" || finding.id.includes("source-policy-contradiction"));
+    if (operations.has("open-managed-setup-pr") && sourcePolicyContradiction) {
+      receipts.push({
+        action: "managed-setup-pr",
+        target: report.target_repository,
+        status: "owner-required",
+        detail: "Canonical source policy contradicts repository-owned controls; managed setup is blocked before tree creation or target deletion."
+      });
+    } else if (operations.has("open-managed-setup-pr")) {
       const metadata = await octokit.request("GET /repos/{owner}/{repo}", { owner, repo });
       const value: Record<string, unknown> = isRecord(metadata.data) ? metadata.data : {};
       const result = await ensureManagedRepositorySetup(createOctokitRequester(octokit), {
@@ -517,7 +557,14 @@ async function runClean(args: string[]): Promise<void> {
   });
   const receipt = await applyCleanPlan(github, { owner, repo }, saved, evidence, {
     localPath: options.localPath,
-    onApplied: async (action) => {
+    onAdmission: async (action) => {
+      await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-action-admission", target, {
+        plan_id: saved!.planId,
+        evidence_hash: saved!.evidenceHash,
+        action
+      });
+    },
+    onCompletion: async (action) => {
       await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-action-receipt", target, {
         plan_id: saved!.planId,
         evidence_hash: saved!.evidenceHash,
@@ -655,9 +702,12 @@ function printSetupResult(result: {
   plan: ReturnType<typeof planSetupConvergence>;
   receipts: SetupReceipt[];
   converged: boolean;
+  passes: number;
+  stopReason: string;
 }): void {
   console.log(`Setup plan ${result.plan.planId}: ${result.plan.actions.length} ordered actions, ${result.plan.residue.length} owner/blocked findings.`);
   for (const receipt of result.receipts) console.log(`- ${receipt.status}: ${receipt.action} ${receipt.target} — ${receipt.detail}`);
+  console.log(`Observation stopped after ${result.passes} pass(es): ${result.stopReason}.`);
   console.log(result.converged ? "Setup is a proven no-op." : "Setup is resumable; rerun after reviewed PRs and owner residue resolve.");
 }
 

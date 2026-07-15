@@ -27,6 +27,7 @@ test("setup settings convergence repairs only deterministic settings and preserv
   const calls: Array<{ route: string; parameters: Record<string, unknown> }> = [];
   const notFound = Object.assign(new Error("not found"), { status: 404 });
   let automationEnabled = false;
+  const protectedBranches = new Set<string>();
   const github = requester(calls, (route, parameters) => {
     if (route === "GET /repos/{owner}/{repo}") return { default_branch: "main", allow_auto_merge: automationEnabled, delete_branch_on_merge: automationEnabled };
     if (route === "GET /repos/{owner}/{repo}/git/ref/{ref}") {
@@ -35,8 +36,12 @@ test("setup settings convergence repairs only deterministic settings and preserv
     }
     if (route === "GET /repos/{owner}/{repo}/labels") return [];
     if (route === "GET /repos/{owner}/{repo}/actions/workflows") return { workflows: [{ id: 2, path: workflows[0], state: "disabled_manually" }] };
-    if (route === "GET /repos/{owner}/{repo}/branches/{branch}/protection") throw notFound;
+    if (route === "GET /repos/{owner}/{repo}/branches/{branch}/protection") {
+      if (!protectedBranches.has(String(parameters.branch))) throw notFound;
+      return protection();
+    }
     if (route === "PATCH /repos/{owner}/{repo}") { automationEnabled = true; return {}; }
+    if (route === "PUT /repos/{owner}/{repo}/branches/{branch}/protection") { protectedBranches.add(String(parameters.branch)); return {}; }
     if (/^(POST|PUT) /.test(route)) return {};
     throw new Error(`unexpected ${route}`);
   });
@@ -101,6 +106,54 @@ test("setup settings convergence surfaces App permission gaps as owner actions",
   await assert.rejects(
     () => convergeRepositorySettings(github, repo, labels, workflows),
     (error: unknown) => error instanceof SetupOwnerActionRequired && error.action === "repository-automation"
+  );
+});
+
+test("setup initializes an empty repository with an empty main commit before reviewed content PRs", async () => {
+  const calls: Array<{ route: string; parameters: Record<string, unknown> }> = [];
+  const notFound = Object.assign(new Error("not found"), { status: 404 });
+  const refs = new Map<string, string>();
+  const github = requester(calls, (route, parameters) => {
+    if (route === "GET /repos/{owner}/{repo}") return { default_branch: "main", allow_auto_merge: true, delete_branch_on_merge: true };
+    if (route === "GET /repos/{owner}/{repo}/git/ref/{ref}") {
+      const sha = refs.get(String(parameters.ref));
+      if (!sha) throw notFound;
+      return { object: { sha } };
+    }
+    if (route === "POST /repos/{owner}/{repo}/git/trees") return { sha: "empty-tree" };
+    if (route === "POST /repos/{owner}/{repo}/git/commits") return { sha: "initial-commit" };
+    if (route === "POST /repos/{owner}/{repo}/git/refs") { refs.set(String(parameters.ref).replace(/^refs\//, ""), String(parameters.sha)); return {}; }
+    if (route === "GET /repos/{owner}/{repo}/labels") return [{ name: "df:ready", color: "0e8a16", description: "Machine-evaluated" }];
+    if (route === "GET /repos/{owner}/{repo}/actions/workflows") return { workflows: [{ id: 1, path: workflows[0], state: "active" }] };
+    if (route === "GET /repos/{owner}/{repo}/branches/{branch}/protection") return protection();
+    throw new Error(`unexpected ${route}`);
+  });
+  const receipts = await convergeRepositorySettings(github, repo, labels, workflows);
+  assert.ok(receipts.some((receipt) => receipt.action === "initialize-main" && receipt.status === "applied"));
+  assert.ok(receipts.some((receipt) => receipt.action === "ensure-dev" && receipt.status === "applied"));
+  assert.deepEqual(calls.find((call) => call.route === "POST /repos/{owner}/{repo}/git/trees")?.parameters.tree, []);
+  assert.equal(calls.some((call) => call.route === "PATCH /repos/{owner}/{repo}" && "default_branch" in call.parameters), false);
+});
+
+test("setup fails closed when branch-protection postconditions do not materialize", async () => {
+  const unsafe = {
+    required_status_checks: { strict: false, checks: [] },
+    enforce_admins: { enabled: false },
+    allow_force_pushes: { enabled: false },
+    allow_deletions: { enabled: false }
+  };
+  const github = requester([], (route, parameters) => {
+    if (route === "GET /repos/{owner}/{repo}") return { default_branch: "main", allow_auto_merge: true, delete_branch_on_merge: true };
+    if (route === "GET /repos/{owner}/{repo}/git/ref/{ref}") return { object: { sha: parameters.ref === "heads/main" ? "main-sha" : "dev-sha" } };
+    if (route === "GET /repos/{owner}/{repo}/labels") return [{ name: "df:ready", color: "0e8a16", description: "Machine-evaluated" }];
+    if (route === "GET /repos/{owner}/{repo}/actions/workflows") return { workflows: [{ id: 1, path: workflows[0], state: "active" }] };
+    if (route === "GET /repos/{owner}/{repo}/branches/{branch}/protection") return unsafe;
+    if (route === "PUT /repos/{owner}/{repo}/branches/{branch}/protection") return {};
+    throw new Error(`unexpected ${route}`);
+  });
+  await assert.rejects(
+    () => convergeRepositorySettings(github, repo, labels, workflows),
+    (error: unknown) => error instanceof SetupOwnerActionRequired && error.action === "protection:main:verification"
   );
 });
 

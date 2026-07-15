@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 
 import {
   ensureManagedRepositorySetup,
+  ManagedSourcePolicyContradiction,
   managedSetupPullRequestBody,
   MANAGED_SETUP_BRANCH,
   orderManagedRepositoriesForSync,
@@ -215,6 +216,36 @@ test("ensureManagedRepositorySetup creates a managed PR when files are missing",
           entry.sha === null
       )
   );
+});
+
+test("control managed sync refuses contradictory release-control removals before GitHub reads or writes", async () => {
+  let requests = 0;
+  const requester: GitHubRequester = {
+    async request() {
+      requests += 1;
+      throw new Error("managed sync must reject the trusted source contradiction before GitHub access");
+    }
+  };
+  const files: ManagedFile[] = [{
+    path: DARK_FACTORY_MANAGED_CONFIG_PATH,
+    content: JSON.stringify({
+      schemaVersion: 1,
+      packageFiles: [],
+      requiredFiles: [],
+      removedFiles: [
+        ".github/workflows/dark-factory-release.yml",
+        ".github/scripts/dark-factory-release-check.mjs"
+      ]
+    })
+  }];
+
+  await assert.rejects(
+    ensureManagedRepositorySetup(requester, { owner: "marius-patrik", repo: "DarkFactory" }, files),
+    (error: unknown) => error instanceof ManagedSourcePolicyContradiction
+      && /dark-factory-release-check\.mjs/.test(error.message)
+      && /dark-factory-release\.yml/.test(error.message)
+  );
+  assert.equal(requests, 0);
 });
 
 test("orderManagedRepositoriesForSync processes DarkFactory control repository first", () => {

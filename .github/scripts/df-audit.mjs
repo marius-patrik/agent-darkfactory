@@ -7,6 +7,7 @@ import {
   getBranchProtection,
   getOptionalFileContent,
   getRepository,
+  isNonProductPlanningPath,
   isParkedRepo,
   listActiveManagedRepos,
   managedRepoLifecycleState,
@@ -20,7 +21,7 @@ import {
 } from "./df-lib.mjs";
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -249,14 +250,15 @@ async function auditTargetRepository(github, repository, metadata, options) {
   findings.push(...branchAudit.findings);
   observations.push(...branchAudit.observations);
 
-  findings.push(...await auditManagedFileDrift(github, repository, defaultBranch, options.controlRepo));
+  findings.push(...await auditManagedFileDrift(github, repository, defaultBranch, options.controlRepo, { issues }));
   findings.push(...await auditRepositoryTree(repository, tree, { isData }));
   findings.push(...await auditRootLayout(github, repository, defaultBranch, tree));
   findings.push(...await auditRuntimeAuthority(github, repository, defaultBranch, options.controlRepo));
   findings.push(...await auditPrerequisites(github, repository, defaultBranch, options));
   findings.push(...await auditLabelTaxonomy(github, repository, options.controlRepo));
   findings.push(...auditIssueLane(repository, issues, { now: options.now }));
-  findings.push(...await auditPrdDrift(github, repository, defaultBranch, openIssues));
+  findings.push(...await auditIssueReality(github, repository, openIssues));
+  findings.push(...await auditPrdDrift(github, repository, defaultBranch, issues, { tree }));
   findings.push(...await auditDocStaleness(repository, metadata, defaultBranch, github));
   findings.push(...await auditRetiredAuthorityNames(github, repository, defaultBranch));
 
@@ -277,8 +279,15 @@ async function auditTargetRepository(github, repository, metadata, options) {
     const isolation = auditWorkerSessionIsolation(options.agentsHome, { now: options.now });
     findings.push(...isolation.findings);
     observations.push(...isolation.observations);
+    const machine = auditMachineRuntime(options.agentsHome);
+    findings.push(...machine.findings);
+    observations.push(...machine.observations);
   } else if (normalizedName(repository) === normalizedName(options.controlRepo)) {
-    observations.push("Canonical Agent OS session workdirs were not observable because AGENTS_HOME was not supplied.");
+    findings.push(doctorFinding("machine-runtime-unobservable", "machine runtime", "Canonical Agent OS state, package binding, runner lifecycle, provider route, and local ledger reachability are unobservable because AGENTS_HOME was not supplied.", {
+      severity: "critical",
+      repairClass: "blocked",
+      repair: ["Run the control-repository doctor on the canonical df-local machine or provide a trusted current machine-readiness receipt; do not infer readiness from repository state alone."]
+    }));
   }
 
   return {
@@ -294,6 +303,7 @@ async function auditTargetRepository(github, repository, metadata, options) {
       dev: branchNames.has("dev") ? branchSha(branches, "dev") : null,
       control: `${repoName(options.controlRepo)}@main`
     },
+    machine_evidence_schema: normalizedName(repository) === normalizedName(options.controlRepo) && options.agentsHome ? 1 : 0,
     read_only: options.mode === "diagnose",
     findings: dedupeFindings(findings),
     observations: [...new Set(observations)].sort(),
@@ -642,7 +652,7 @@ async function auditReleaseLane(github, repository, comparison, pulls) {
   return findings;
 }
 
-export async function auditManagedFileDrift(github, repository, targetRef, controlRepo = CONTROL_REPO) {
+export async function auditManagedFileDrift(github, repository, targetRef, controlRepo = CONTROL_REPO, options = {}) {
   if (!targetRef) return [doctorFinding("managed-target-ref-missing", "managed file drift", "Cannot inspect managed files without a target ref.", { severity: "critical" })];
   const findings = [];
   const manifestText = await getOptionalFileContent(github, controlRepo, ".darkfactory/managed-repository.json", "main");
@@ -676,7 +686,33 @@ export async function auditManagedFileDrift(github, repository, targetRef, contr
     }
   }
 
+  const releaseControlPaths = new Set([
+    ".darkfactory/release-conventions.md",
+    ".darkfactory/release-policy.json",
+    ".github/scripts/dark-factory-release-check.mjs",
+    ".github/workflows/dark-factory-release.yml"
+  ]);
+  const releaseLaneIssue = (options.issues || []).find((issue) => issue.state === "open" && (
+    /<!--\s*darkfactory:release-convergence-lane\s*-->/i.test(String(issue.body || ""))
+    || /single deterministic release\/convergence lane/i.test(String(issue.body || ""))
+  ));
+  const contradictoryReleaseRemovals = manifest.value.removedFiles.filter((filePath) => releaseControlPaths.has(filePath));
+  if (releaseLaneIssue && contradictoryReleaseRemovals.length > 0) {
+    findings.push(doctorFinding(
+      "source-policy-contradiction-release-controls",
+      "source policy",
+      `Canonical managed source declares repository-owned release controls removed while open issue #${releaseLaneIssue.number} requires the release engine and repository-declared policy. Target deletion is forbidden.`,
+      {
+        severity: "critical",
+        repairClass: "blocked",
+        evidence: releaseLaneIssue.html_url ? [{ label: `Issue #${releaseLaneIssue.number}`, url: releaseLaneIssue.html_url }] : [],
+        repair: ["Reconcile the canonical Andromeda-data managed manifest with DarkFactory #41 before any managed setup PR is created."]
+      }
+    ));
+  }
+
   for (const filePath of manifest.value.removedFiles) {
+    if (releaseLaneIssue && releaseControlPaths.has(filePath)) continue;
     const actual = await getOptionalFileContent(github, repository, filePath, targetRef);
     if (actual !== null) {
       findings.push(doctorFinding(`managed-removed-file-${slug(filePath)}`, "managed file drift", `Retired managed file \`${filePath}\` is still present.`, {
@@ -903,6 +939,126 @@ export async function auditPrerequisites(github, repository, ref, options = {}) 
   return findings;
 }
 
+export function auditMachineRuntime(agentsHome, options = {}) {
+  const collect = options.collect || collectMachineRuntimeEvidence;
+  return auditMachineRuntimeEvidence(collect(agentsHome));
+}
+
+export function auditMachineRuntimeEvidence(evidence) {
+  const observed = evidence && typeof evidence === "object" && !Array.isArray(evidence) ? evidence : {};
+  const findings = [];
+  const observations = [];
+  const blocked = (id, message, repair) => findings.push(doctorFinding(id, "machine runtime", message, {
+    severity: "critical",
+    repairClass: "blocked",
+    repair: [repair]
+  }));
+  if (!observed.agentsHomeExists) blocked("agents-home-checkout-missing", "Canonical AGENTS_HOME checkout is missing or inaccessible.", "Restore the canonical Andromeda-data checkout before machine convergence.");
+  if (!observed.stateDoctorOk) blocked("agents-state-doctor-failed", "Canonical Agent OS state doctor did not complete cleanly.", "Repair every canonical Agent OS state-doctor finding before DarkFactory may treat machine wiring as healthy.");
+  if (!observed.stateRepositoryOk) blocked("agents-home-checkout-invalid", "AGENTS_HOME is not proven as the clean canonical Andromeda-data main checkout.", "Repair canonical state repository identity and tracked cleanliness through Agent OS.");
+  if (!observed.launcherBound) blocked("canonical-launcher-binding-invalid", "Canonical Agent OS launcher binding is missing, unrunnable, or not bound to the observed state root.", "Repair the canonical launcher through Agent OS; never fall back to PATH selection.");
+  if (!observed.versionObserved) blocked("canonical-launcher-version-unobservable", "Canonical launcher/source version is unobservable.", "Expose a stable Agent OS version/source-install receipt.");
+  if (!observed.packageRegistered) blocked("darkfactory-package-unregistered", "DarkFactory is not registered in the canonical Agent OS package registry.", "Register the landed DarkFactory package through the canonical package manager.");
+  if (!observed.dfRunnable) blocked("darkfactory-command-unrunnable", "The registered DarkFactory package cannot run its df command and materialized CLI help.", "Build/materialize DarkFactory and repair its canonical package command binding.");
+  if (!observed.runnerRegistered) blocked("df-local-runner-missing", "The df-local runner is not registered through the canonical lifecycle controller.", "Land/use Andromeda #245 runner registration before setup may claim convergence.");
+  else if (!observed.runnerOnline) blocked("df-local-runner-offline", "The canonical df-local runner is not online.", "Start and verify the lifecycle-managed runner.");
+  if (!observed.runnerPersistent) blocked("df-local-runner-persistence-unproven", "Runner reboot persistence and listener health are unproven.", "Use the bounded Andromeda #245 lifecycle status probe and prove reboot persistence.");
+  if (!observed.routeProbeOk) blocked("provider-route-probe-unavailable", "Canonical Agent OS resolved-route reachability is unproven.", "Land/use the Andromeda #260 resolved-route probe; do not invoke raw provider CLIs.");
+  if (!observed.ledgerReachable) blocked("darkfactory-ledger-unreachable", "Canonical darkfactory-data ledger checkout/registration is unreachable.", "Repair the canonical darkfactory-data registration and checkout.");
+  if (!observed.ledgerWritable) blocked("darkfactory-ledger-write-unproven", "Canonical darkfactory-data local write access is unproven.", "Repair local data-checkout permissions, then let setup prove remote write authority with its admission/completion receipts.");
+  if (observed.stateDoctorOk) observations.push("Canonical Agent OS state doctor completed successfully.");
+  if (observed.versionObserved) observations.push("Canonical launcher/source version receipt is observable.");
+  return { findings, observations };
+}
+
+function collectMachineRuntimeEvidence(agentsHome) {
+  const root = path.resolve(String(agentsHome || ""));
+  const launcher = process.platform === "win32" ? path.join(root, "bin", "agents.ps1") : path.join(root, "bin", "agents");
+  const agentsHomeExists = Boolean(agentsHome && existsSync(root));
+  if (!agentsHomeExists || !existsSync(launcher)) {
+    return emptyMachineRuntimeEvidence({ agentsHomeExists });
+  }
+  const run = (args) => {
+    const command = process.platform === "win32" ? "powershell.exe" : launcher;
+    const commandArgs = process.platform === "win32"
+      ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", launcher, ...args]
+      : args;
+    const result = spawnSync(command, commandArgs, { encoding: "utf8", windowsHide: true, timeout: 30_000, maxBuffer: 16 * 1024 * 1024 });
+    return { ok: result.status === 0, stdout: String(result.stdout || ""), stderr: String(result.stderr || "") };
+  };
+  const parse = (result) => {
+    try { return JSON.parse(result.stdout); } catch { return null; }
+  };
+  const state = run(["state", "doctor", "--json"]);
+  const stateJson = parse(state);
+  const checks = Array.isArray(stateJson?.checks) ? stateJson.checks : [];
+  const stateRepositoryOk = checks.some((check) => check?.id === "state_repository" && check?.ok === true);
+  const launcherBound = checks.some((check) => check?.id === "launcher" && check?.ok === true);
+  const sourceRecord = checks.find((check) => check?.id === "source_install")?.details?.record;
+  const versionObserved = typeof sourceRecord?.commit === "string" && sourceRecord.commit.length >= 7;
+  const packages = run(["packages", "list", "--json"]);
+  const packagesJson = parse(packages);
+  const packageRecords = Array.isArray(packagesJson) ? packagesJson : Array.isArray(packagesJson?.packages) ? packagesJson.packages : [];
+  const packageRecord = packageRecords.find((item) => /darkfactory/i.test(String(item?.name || item?.path || item?.id || "")));
+  const packageName = String(packageRecord?.name || packageRecord?.id || "DarkFactory");
+  const packageRegistered = Boolean(packageRecord);
+  const dfRunnable = packageRegistered && run(["packages", "run", packageName, "--", "--help"]).ok;
+  const runner = run(["runner", "status", "--json"]);
+  const runnerJson = parse(runner);
+  const runnerRegistered = runner.ok && runnerJson?.registered === true;
+  const runnerOnline = runnerRegistered && runnerJson?.online === true;
+  const runnerPersistent = runnerRegistered && runnerJson?.persistent === true && runnerJson?.listener_healthy === true;
+  const route = run(["route", "probe", "--json"]);
+  const routeJson = parse(route);
+  const routeProbeOk = route.ok && routeJson?.ok === true;
+  const ledger = run(["data", "repo", "path", "darkfactory-data"]);
+  const ledgerPath = ledger.ok ? ledger.stdout.trim() : "";
+  const ledgerReachable = Boolean(ledgerPath && existsSync(ledgerPath));
+  let ledgerWritable = false;
+  if (ledgerReachable) {
+    try {
+      accessSync(ledgerPath, constants.W_OK);
+      ledgerWritable = true;
+    } catch {
+      ledgerWritable = false;
+    }
+  }
+  return {
+    agentsHomeExists,
+    stateRepositoryOk,
+    stateDoctorOk: state.ok,
+    launcherBound,
+    versionObserved,
+    packageRegistered,
+    dfRunnable,
+    runnerRegistered,
+    runnerOnline,
+    runnerPersistent,
+    routeProbeOk,
+    ledgerReachable,
+    ledgerWritable
+  };
+}
+
+function emptyMachineRuntimeEvidence(overrides = {}) {
+  return {
+    agentsHomeExists: false,
+    stateRepositoryOk: false,
+    stateDoctorOk: false,
+    launcherBound: false,
+    versionObserved: false,
+    packageRegistered: false,
+    dfRunnable: false,
+    runnerRegistered: false,
+    runnerOnline: false,
+    runnerPersistent: false,
+    routeProbeOk: false,
+    ledgerReachable: false,
+    ledgerWritable: false,
+    ...overrides
+  };
+}
+
 export async function auditLabelTaxonomy(github, repository, controlRepo = CONTROL_REPO) {
   const source = await getOptionalFileContent(github, controlRepo, "managed-repository/.darkfactory/labels.json", "main")
     ?? await getOptionalFileContent(github, controlRepo, ".darkfactory/labels.json", "main");
@@ -956,6 +1112,7 @@ export function auditIssueLane(repository, issues, options = {}) {
   const byNumber = new Map(candidates.map((issue) => [issue.number, issue]));
   const byTitle = new Map();
   const byMarker = new Map();
+  const byContract = new Map();
   const stale = [];
   const blockerGraph = new Map();
 
@@ -984,6 +1141,15 @@ export function auditIssueLane(repository, issues, options = {}) {
     if (title) byTitle.set(title, [...(byTitle.get(title) || []), issue]);
     const marker = ownershipMarker(issue.body || "");
     if (marker) byMarker.set(marker, [...(byMarker.get(marker) || []), issue]);
+    const contract = normalizeIssueContract(issue.body || "");
+    if (!labels.has("df:no-dispatch") && contract) byContract.set(contract, [...(byContract.get(contract) || []), issue]);
+    if (/\b(?:keep (?:the )?implementation aligned|implement as appropriate|do the needful|tbd|todo)\b/i.test(contract)) {
+      findings.push(doctorFinding(`issue-${issue.number}-contentless-contract`, "issue lane", `Issue #${issue.number} contains contentless implementation boilerplate instead of an executable contract.`, {
+        severity: "error",
+        evidence: issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : [],
+        repair: ["Replace the boilerplate with observable scope and verification criteria; pre-#36 this remains a precise issue finding."]
+      }));
+    }
     if (ageIn(now, issue.updated_at, 24 * 60 * 60 * 1000) >= STALE_ISSUE_DAYS && !hasActiveWorkState(issue)) stale.push(issue);
     if (/^\s*(?:[-*]\s*)?(?:status:\s*)?superseded[- ]by:\s*#\d+/im.test(issue.body || "")) {
       findings.push(doctorFinding(`superseded-issue-${issue.number}-open`, "issue lane", `Issue #${issue.number} says it is superseded but remains open.`, {
@@ -996,7 +1162,9 @@ export function auditIssueLane(repository, issues, options = {}) {
       }));
     }
 
-    const blockers = extractBlockedByIssueNumbers(issue.body || "");
+    const blockers = extractBlockedByIssueRefs(issue.body || "", repository)
+      .filter((blocker) => blocker.repository === normalizedName(repository))
+      .map((blocker) => blocker.number);
     blockerGraph.set(issue.number, blockers.filter((number) => byNumber.get(number)?.state === "open"));
     for (const blocker of blockers) {
       const evidence = issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : [];
@@ -1038,6 +1206,15 @@ export function auditIssueLane(repository, issues, options = {}) {
       severity: "critical", evidence: matches.map((issue) => ({ label: `Issue #${issue.number}`, url: issue.html_url }))
     }));
   }
+  for (const matches of byContract.values()) {
+    if (matches.length < 2) continue;
+    const numbers = matches.map((issue) => issue.number).sort((left, right) => left - right);
+    findings.push(doctorFinding(`duplicate-issue-contract-${numbers.join("-")}`, "issue lane", `Open issues have deterministically equivalent normalized contracts: ${numbers.map((number) => `#${number}`).join(", ")}.`, {
+      severity: "error",
+      evidence: matches.flatMap((issue) => issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : []),
+      repair: ["Cross-review the competing scopes and fold only with a durable successor pointer; never discard unique scope."]
+    }));
+  }
   if (stale.length) {
     findings.push(doctorFinding("stale-open-issues", "issue lane", `Open issues have no update for at least ${STALE_ISSUE_DAYS} days: ${stale.slice(0, 20).map((issue) => `#${issue.number}`).join(", ")}${stale.length > 20 ? "…" : ""}.`, {
       severity: "warning", evidence: stale.slice(0, 20).map((issue) => ({ label: `Issue #${issue.number}`, url: issue.html_url }))
@@ -1047,12 +1224,25 @@ export function auditIssueLane(repository, issues, options = {}) {
 }
 
 export function extractBlockedByIssueNumbers(body) {
-  const numbers = new Set();
+  return [...new Set(extractBlockedByIssueRefs(body, { owner: "", repo: "" }).map((reference) => reference.number))]
+    .sort((a, b) => a - b);
+}
+
+export function extractBlockedByIssueRefs(body, repository) {
+  const current = normalizedName(repository);
+  const references = new Map();
   for (const line of String(body || "").split(/\r?\n/)) {
     if (!/^\s*(?:[-*]\s*)?(?:blocked[- ]by|depends[- ]on)\s*:/i.test(line)) continue;
-    for (const match of line.matchAll(/#(\d+)\b/g)) numbers.add(Number(match[1]));
+    for (const match of line.matchAll(/(?:https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)|(?:([\w.-]+)\/([\w.-]+))?#(\d+))\b/gi)) {
+      const owner = match[1] || match[4] || repository?.owner || "";
+      const repo = match[2] || match[5] || repository?.repo || "";
+      const number = Number(match[3] || match[6]);
+      if (!Number.isInteger(number) || number <= 0) continue;
+      const qualified = owner && repo ? `${owner}/${repo}`.toLowerCase() : current;
+      references.set(`${qualified}#${number}`, { repository: qualified, number });
+    }
   }
-  return [...numbers].filter((number) => Number.isInteger(number) && number > 0).sort((a, b) => a - b);
+  return [...references.values()].sort((left, right) => left.repository.localeCompare(right.repository) || left.number - right.number);
 }
 
 export function findIssueBlockerCycles(graph) {
@@ -1082,17 +1272,194 @@ export function findIssueBlockerCycles(graph) {
   return [...cycles.values()].sort((a, b) => a[0] - b[0]);
 }
 
-async function auditPrdDrift(github, repository, ref, issues) {
+export async function auditIssueReality(github, repository, issues) {
   const findings = [];
-  const prd = await getOptionalFileContent(github, repository, "PRD.md", ref);
-  if (!prd) {
-    findings.push(doctorFinding("root-prd-missing", "PRD drift", `Root \`PRD.md\` is missing on \`${ref}\`.`, { severity: "error" }));
-    return findings;
+  const allowedOwner = String(repository.owner || "").toLowerCase();
+  const observedByRoute = new Map();
+  let uniqueReferenceCount = 0;
+  for (const issue of issues || []) {
+    if (isTrustedDoctorIssue(issue)) continue;
+    const body = String(issue.body || "");
+    const references = issueRealityReferences(body, repository)
+      .filter((reference) => reference.repository.split("/")[0] === allowedOwner);
+    if (references.length > 50) {
+      findings.push(doctorFinding(`issue-${issue.number}-reality-reference-cap-exceeded`, "issue lane", `Issue #${issue.number} contains ${references.length} live-reality references; bounded deterministic review refuses to inspect only a prefix.`, {
+        severity: "critical",
+        repairClass: "blocked",
+        evidence: issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : []
+      }));
+      continue;
+    }
+    for (const reference of references) {
+      try {
+        if (!observedByRoute.has(reference.route)) {
+          uniqueReferenceCount += 1;
+          if (uniqueReferenceCount > 1000) {
+            findings.push(doctorFinding("issue-reality-fleet-reference-cap-exceeded", "issue lane", "Live-reality review exceeded 1000 unique same-owner GitHub resources; bounded review refuses to publish a partial healthy result.", {
+              severity: "critical",
+              repairClass: "blocked"
+            }));
+            return findings;
+          }
+          observedByRoute.set(reference.route, github.request("GET", reference.route));
+        }
+        const observed = await observedByRoute.get(reference.route);
+        if (!observed || typeof observed !== "object") throw new Error("malformed reality evidence");
+        const mismatch = explicitRealityMismatch(reference, observed);
+        if (mismatch) {
+          findings.push(doctorFinding(`issue-${issue.number}-referenced-${reference.kind}-${reference.id}-state-drift`, "issue lane", `Issue #${issue.number} carries an explicit live-state claim for ${reference.url || reference.display}, but GitHub reports ${mismatch}.`, {
+            severity: "error",
+            evidence: issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : [],
+            repair: ["Refresh the stale premise while preserving the original evidence and issue history."]
+          }));
+        }
+      } catch (error) {
+        const unavailable = error?.status === 404 ? "missing" : "unobservable";
+        findings.push(doctorFinding(`issue-${issue.number}-referenced-${reference.kind}-${reference.id}-${unavailable}`, "issue lane", `Issue #${issue.number} references ${reference.url || reference.display}, but live GitHub reality is ${unavailable}.`, {
+          severity: unavailable === "missing" ? "error" : "critical",
+          repairClass: unavailable === "missing" ? "pr" : "blocked",
+          evidence: issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : [],
+          repair: unavailable === "missing" ? ["Update the stale premise/reference while preserving owner-authored history."] : ["Restore observable GitHub evidence before classifying or autofixing the issue."]
+        }));
+      }
+    }
   }
-  const hasIncompleteItems = parsePrdItems(prd).some((item) => !item.completed);
-  const hasTracked = issues.some((issue) => findPrdMarker(issue.body || ""));
-  if (hasIncompleteItems && !hasTracked) {
-    findings.push(doctorFinding("prd-backlog-missing", "PRD drift", "PRD has incomplete loop/milestone items but no open PRD-tracked backlog issues.", { severity: "error" }));
+  return findings;
+}
+
+function issueRealityReferences(body, repository) {
+  const references = new Map();
+  const lines = String(body || "").split(/\r?\n/);
+  for (const line of lines) {
+    for (const match of line.matchAll(/https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/(pull\/(\d+)|actions\/runs\/(\d+)|issues\/(\d+)|settings(?:\/[\w./-]+)?)/gi)) {
+      const target = `${match[1]}/${match[2]}`.toLowerCase();
+      const kind = match[4] ? "pull" : match[5] ? "run" : match[6] ? "issue" : "settings";
+      const id = match[4] || match[5] || match[6] || "repository";
+      const route = kind === "pull"
+        ? `/repos/${target}/pulls/${id}`
+        : kind === "run"
+          ? `/repos/${target}/actions/runs/${id}`
+          : kind === "issue"
+            ? `/repos/${target}/issues/${id}`
+            : `/repos/${target}`;
+      references.set(`${kind}:${target}:${id}`, { kind, id, repository: target, route, url: match[0], display: match[0], context: line });
+    }
+  }
+  for (const reference of extractBlockedByIssueRefs(body, repository)) {
+    if (reference.repository === normalizedName(repository)) continue;
+    const key = `issue:${reference.repository}:${reference.number}`;
+    if (!references.has(key)) references.set(key, {
+      kind: "issue",
+      id: String(reference.number),
+      repository: reference.repository,
+      route: `/repos/${reference.repository}/issues/${reference.number}`,
+      url: "",
+      display: `${reference.repository}#${reference.number}`,
+      context: ""
+    });
+  }
+  return [...references.values()].sort((left, right) => `${left.repository}:${left.kind}:${left.id}`.localeCompare(`${right.repository}:${right.kind}:${right.id}`));
+}
+
+function explicitRealityMismatch(reference, observed) {
+  const claim = String(reference.context || "").match(/\b(?:state|status|conclusion)\s*[:=]\s*(open|closed|merged|success|failure|failed|cancelled|timed_out)\b/i)?.[1]?.toLowerCase();
+  if (claim) {
+    const normalizedClaim = claim === "failed" ? "failure" : claim;
+    const actual = reference.kind === "pull"
+      ? (observed.merged_at ? "merged" : String(observed.state || "unobservable").toLowerCase())
+      : reference.kind === "run"
+        ? String(observed.conclusion || observed.status || "unobservable").toLowerCase()
+        : reference.kind === "issue"
+          ? String(observed.state || "unobservable").toLowerCase()
+          : "";
+    if (actual && actual !== normalizedClaim) return actual;
+  }
+  if (reference.kind === "settings") {
+    const autoMergeClaim = String(reference.context || "").match(/\bauto-merge\s*[:=]\s*(enabled|disabled)\b/i)?.[1]?.toLowerCase();
+    if (autoMergeClaim) {
+      if (typeof observed.allow_auto_merge !== "boolean") return "auto-merge visibility is unobservable";
+      const actual = observed.allow_auto_merge ? "enabled" : "disabled";
+      if (actual !== autoMergeClaim) return `auto-merge ${actual}`;
+    }
+    const defaultClaim = String(reference.context || "").match(/\bdefault branch\s*[:=]\s*([\w./-]+)\b/i)?.[1];
+    if (defaultClaim && String(observed.default_branch || "") !== defaultClaim) return `default branch ${observed.default_branch || "unobservable"}`;
+  }
+  return "";
+}
+
+export async function auditPrdDrift(github, repository, ref, issues, options = {}) {
+  const findings = [];
+  const treeEntries = Array.isArray(options.tree?.tree) ? options.tree.tree : [];
+  const prdPaths = treeEntries.length
+    ? treeEntries
+      .filter((entry) => entry?.type === "blob"
+        && typeof entry.path === "string"
+        && (entry.path === "PRD.md" || entry.path.endsWith("/PRD.md"))
+        && (entry.path === "PRD.md" || !isNonProductPlanningPath(entry.path)))
+      .map((entry) => entry.path)
+      .sort((left, right) => left === "PRD.md" ? -1 : right === "PRD.md" ? 1 : left.localeCompare(right))
+    : ["PRD.md"];
+  if (!prdPaths.includes("PRD.md")) {
+    findings.push(doctorFinding("root-prd-missing", "PRD drift", `Root \`PRD.md\` is missing on \`${ref}\`.`, { severity: "error" }));
+  }
+  const sources = [];
+  for (const prdPath of prdPaths) {
+    const content = await getOptionalFileContent(github, repository, prdPath, ref);
+    if (content === null) {
+      if (prdPath === "PRD.md" && !findings.some((finding) => finding.id === "root-prd-missing")) {
+        findings.push(doctorFinding("root-prd-missing", "PRD drift", `Root \`PRD.md\` is missing on \`${ref}\`.`, { severity: "error" }));
+      } else if (prdPath !== "PRD.md") {
+        findings.push(doctorFinding(`prd-source-${slug(prdPath)}-unobservable`, "PRD drift", `Product PRD source \`${prdPath}\` was present in the observed tree but its content is unobservable.`, {
+          severity: "critical",
+          repairClass: "blocked"
+        }));
+      }
+      continue;
+    }
+    sources.push({ path: prdPath, content });
+  }
+  const items = sources.flatMap((source) => parsePrdItems(source.content, source.path));
+  const byMarker = new Map(items.map((item) => [item.marker, item]));
+  const open = (issues || []).filter((issue) => issue.state === "open" && !isTrustedDoctorIssue(issue));
+  for (const item of items.filter((candidate) => !candidate.completed)) {
+    const matches = open.filter((issue) => findPrdMarker(issue.body || "") === item.marker);
+    if (matches.length === 0) {
+      findings.push(doctorFinding(`prd-item-${slug(item.marker)}-issue-missing`, "PRD drift", `Incomplete PRD item \`${item.marker}\` has no open issue contract.`, {
+        severity: "error",
+        repair: ["Run trusted PRD reconciliation to create or reopen exactly one marker-owned issue."]
+      }));
+    } else if (matches.length > 1) {
+      findings.push(doctorFinding(`prd-item-${slug(item.marker)}-issue-duplicate`, "PRD drift", `Incomplete PRD item \`${item.marker}\` maps to multiple open issues: ${matches.map((issue) => `#${issue.number}`).join(", ")}.`, {
+        severity: "critical",
+        evidence: matches.flatMap((issue) => issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : [])
+      }));
+    }
+  }
+  for (const issue of open) {
+    const marker = findPrdMarker(issue.body || "");
+    const labels = new Set((issue.labels || []).map((label) => typeof label === "string" ? label : label?.name).filter(Boolean));
+    const recordClass = labels.has("df:no-dispatch") || /<!--\s*(?:df-dashboard:|darkfactory:decision-record|df-doctor:|df-prd-drift:)/i.test(String(issue.body || ""));
+    if (!marker && !recordClass) {
+      findings.push(doctorFinding(`issue-${issue.number}-prd-backing-missing`, "PRD drift", `Open issue #${issue.number} has no stable PRD backing marker.`, {
+        severity: "warning",
+        evidence: issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : [],
+        repair: ["Link the issue to an existing PRD item, add the missing PRD item, or mark a genuine non-dispatch record categorically."]
+      }));
+      continue;
+    }
+    if (!marker) continue;
+    const item = byMarker.get(marker);
+    if (!item) {
+      findings.push(doctorFinding(`issue-${issue.number}-prd-marker-stale`, "PRD drift", `Open issue #${issue.number} references PRD marker \`${marker}\`, which is absent from current PRD.md.`, {
+        severity: "error",
+        evidence: issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : []
+      }));
+    } else if (item.completed) {
+      findings.push(doctorFinding(`issue-${issue.number}-prd-item-completed`, "PRD drift", `Open issue #${issue.number} remains open although its PRD item \`${marker}\` is completed.`, {
+        severity: "warning",
+        evidence: issue.html_url ? [{ label: `Issue #${issue.number}`, url: issue.html_url }] : []
+      }));
+    }
   }
   return findings;
 }
@@ -1625,6 +1992,8 @@ async function writeDoctorLedger(ledgerGithub, repository, report, options) {
   const kind = phase === "admission" ? "repo-doctor-admission" : "repo-doctor";
   const written = await writeRunLedger(ledgerGithub, DARK_FACTORY_DATA_REPO, kind, repoName(repository), {
     phase,
+    schema_version: report.schema_version,
+    machine_evidence_schema: report.machine_evidence_schema || 0,
     mode: report.mode,
     trigger: report.trigger,
     source_refs: report.source_refs,
@@ -1925,6 +2294,21 @@ function checkLabel(check) {
 
 function normalizeIssueTitle(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function normalizeIssueContract(value) {
+  const normalized = String(value || "")
+    .replace(/<!--[^]*?-->/g, " ")
+    .replace(/```[^]*?```/g, " ")
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(?:[-*]\s*)?(?:blocked[- ]by|depends[- ]on|superseded[- ]by)\s*:/i.test(line))
+    .join(" ")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized.length >= 80 && normalized.split(" ").length >= 12 ? normalized : "";
 }
 
 function ownershipMarker(body) {
