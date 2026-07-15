@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile, mkdir, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   inspectMemoryIntegrity,
   listMemoryRecords,
@@ -343,11 +344,22 @@ describe("Dream v1.3 cursor migration", () => {
       expect(migrated.legacyCursor.provider_counts).toEqual({ claude: 165, kimi: 31, codex: 166, agy: 6 });
       expect(migrated.canonicalCursor).toEqual({ lastSessionEventAt: null, lastSessionEventHash: null });
       expect(migrated.source.contentHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(fileURLToPath(migrated.source.uri)).toBe(path.resolve(source));
+      expect(migrated.source.uri).not.toContain(path.basename(path.dirname(source)));
       expect(await readFile(source, "utf8")).toBe(sourceBytes);
       const authority = await listMemoryRecords(state, { scope: "memory-plugin", status: "active" });
       expect(authority).toHaveLength(1);
       expect(authority[0].id).toBe(migrated.recordId);
       expect(authority[0].sensitivity).toBe("sensitive");
+      if (typeof authority[0].value !== "string") throw new Error("Dream cursor authority must be serialized text");
+      const encodedAuthority = JSON.parse(authority[0].value) as {
+        lastProcessed: { pathUri: string };
+        lastSessionTitleUri: string;
+      };
+      expect(encodedAuthority.lastProcessed.pathUri).toContain("%31%35%62%35%64%62%66%63");
+      expect(encodedAuthority.lastSessionTitleUri).toContain("%31%35%62%35%64%62%66%63");
+      expect(encodedAuthority.lastProcessed.pathUri).not.toContain(cursor.last_session_title);
+      expect(encodedAuthority.lastSessionTitleUri).not.toContain(cursor.last_session_title);
       expect((await renderStartupMemory(state)).content).not.toContain("provider_raw");
 
       const repeated = await migrateDreamV13Cursor(state, source, {
@@ -376,6 +388,48 @@ describe("Dream v1.3 cursor migration", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(targetFixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("round-trips a POSIX provider session artifact without exposing its opaque filename", async () => {
+    const { root, state } = await fixture();
+    try {
+      const posixCursor = {
+        ...cursor,
+        last_processed_file: `20260706113120000|codex|provider_raw|/home/patrik/.codex/sessions/${cursor.last_session_title}`,
+      };
+      const source = path.join(root, "posix-cursor.json");
+      await writeFile(source, `${JSON.stringify(posixCursor, null, 2)}\n`);
+
+      const migrated = await migrateDreamV13Cursor(state, source);
+      expect(migrated.legacyCursor).toEqual(posixCursor);
+      const [authority] = await listMemoryRecords(state, { scope: "memory-plugin", status: "active" });
+      if (typeof authority?.value !== "string") throw new Error("Dream cursor authority must be serialized text");
+      expect(authority.value).not.toContain(cursor.last_session_title);
+      expect(authority.value).toContain("%31%35%62%35%64%62%66%63");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects raw and encoded secret-like source path segments before reversible URI encoding", async () => {
+    const { root, state } = await fixture();
+    try {
+      for (const directoryName of [
+        "api_key=secret-value-that-must-not-cross",
+        "api%5Fkey%3Dsecret-value-that-must-not-cross",
+      ]) {
+        const sourceDirectory = path.join(root, directoryName);
+        await mkdir(sourceDirectory);
+        const source = path.join(sourceDirectory, "dream-v1.3.json");
+        await writeFile(source, `${JSON.stringify(cursor, null, 2)}\n`);
+        await expect(migrateDreamV13Cursor(state, source)).rejects.toThrow(
+          /Dream cursor contains secret-like content at source\.path/,
+        );
+      }
+      expect(await listMemoryRecords(state, { scope: "memory-plugin" })).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 

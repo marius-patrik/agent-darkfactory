@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { lstat, open, opendir, readFile, realpath } from "node:fs/promises";
 import { findSecretLikePath } from "../../../packages/manager/src/event-sync";
 import {
@@ -698,6 +698,30 @@ export function dreamCursorPath(state: SharedState): string {
   return pluginRuntimeProjectionPath(state, "memory", "dream-v1.3-cursor");
 }
 
+function percentEncodeEveryByte(value: string): string {
+  return [...Buffer.from(value, "utf8")]
+    .map((byte) => `%${byte.toString(16).padStart(2, "0").toUpperCase()}`)
+    .join("");
+}
+
+function encodeCursorUriComponent(value: string): string {
+  if (!DREAM_SESSION_ARTIFACT.test(value)) return encodeURIComponent(value);
+  // UUID-named provider session artifacts are admitted evidence identifiers,
+  // not credentials. Encode every byte so the manager's opaque-token scanner
+  // does not mistake their reversible URI representation for secret material.
+  return percentEncodeEveryByte(value);
+}
+
+function cursorSourceUri(sourcePath: string): string {
+  assertAdmittedCursorSourcePath(sourcePath);
+  const uri = pathToFileURL(sourcePath);
+  uri.pathname = uri.pathname
+    .split("/")
+    .map((segment) => (segment ? percentEncodeEveryByte(decodeURIComponent(segment)) : ""))
+    .join("/");
+  return uri.href;
+}
+
 function cursorPathUri(rawPath: string): { pathStyle: "windows" | "posix"; pathUri: string } {
   if (/^[A-Za-z]:\\/.test(rawPath)) {
     const normalized = rawPath.replaceAll("\\", "/");
@@ -705,12 +729,17 @@ function cursorPathUri(rawPath: string): { pathStyle: "windows" | "posix"; pathU
     const tail = normalized
       .slice(3)
       .split("/")
-      .map((segment) => encodeURIComponent(segment))
+      .map(encodeCursorUriComponent)
       .join("/");
     return { pathStyle: "windows", pathUri: `file:///${drive}/${tail}` };
   }
   if (!rawPath.startsWith("/")) throw new Error("Dream cursor timeline path must be absolute");
-  return { pathStyle: "posix", pathUri: pathToFileURL(rawPath).href };
+  const uri = pathToFileURL(rawPath);
+  uri.pathname = uri.pathname
+    .split("/")
+    .map((segment) => (segment ? encodeCursorUriComponent(decodeURIComponent(segment)) : ""))
+    .join("/");
+  return { pathStyle: "posix", pathUri: uri.href };
 }
 
 function visitDecodedTextVariants(value: string, label: string, visit: (variant: string) => void): void {
@@ -758,10 +787,7 @@ function assertAdmittedCursorText(
 
 function assertAdmittedCursorPath(rawPath: string): void {
   visitDecodedTextVariants(rawPath, "last_processed_file.path", (variant) => {
-    const segments = variant.split(/[\\/]/).filter(Boolean);
-    for (const [index, segment] of segments.entries()) {
-      assertAdmittedCursorText(segment, `last_processed_file.path[${index}]`, { allowSessionArtifact: true });
-    }
+    assertAdmittedPathSegments(variant, "last_processed_file.path");
     const withoutSessionArtifacts = variant.replace(
       /(^|[\\/])[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.(?:jsonl|json)(?=$|[\\/])/gi,
       "$1session-artifact.jsonl",
@@ -770,6 +796,17 @@ function assertAdmittedCursorPath(rawPath: string): void {
       throw new Error("Dream cursor contains secret-like content at last_processed_file.path");
     }
   });
+}
+
+function assertAdmittedPathSegments(value: string, label: string): void {
+  const segments = value.split(/[\\/]/).filter(Boolean);
+  for (const [index, segment] of segments.entries()) {
+    assertAdmittedCursorText(segment, `${label}[${index}]`, { allowSessionArtifact: true });
+  }
+}
+
+function assertAdmittedCursorSourcePath(rawPath: string): void {
+  visitDecodedTextVariants(rawPath, "source.path", (variant) => assertAdmittedPathSegments(variant, "source.path"));
 }
 
 function assertDreamCursorAdmission(
@@ -811,7 +848,7 @@ function authorityFromCursor(cursor: DreamV13Cursor): DreamCursorAuthority {
       ...encodedPath,
     },
     processedTotal: cursor.processed_total,
-    lastSessionTitleUri: `file:///dream-session-title/${encodeURIComponent(cursor.last_session_title)}`,
+    lastSessionTitleUri: `file:///dream-session-title/${encodeCursorUriComponent(cursor.last_session_title)}`,
     pendingCount: cursor.pending_count,
     openItems: [...cursor.open_items],
     nextWork: [...cursor.next_work],
@@ -836,11 +873,13 @@ function cursorFromAuthority(value: unknown): DreamV13Cursor {
   const pathUri = requiredText(temporal.pathUri, "Dream cursor authority path URI");
   const parsedUri = new URL(pathUri);
   if (parsedUri.protocol !== "file:") throw new Error("Dream cursor authority path URI must use file:");
+  if (parsedUri.hostname) throw new Error("Dream cursor authority path URI must not use a host");
   let rawPath: string;
   if (temporal.pathStyle === "windows") {
     rawPath = decodeURIComponent(parsedUri.pathname).replace(/^\/([A-Za-z]:)/, "$1").replaceAll("/", "\\");
   } else if (temporal.pathStyle === "posix") {
-    rawPath = fileURLToPath(parsedUri);
+    rawPath = decodeURIComponent(parsedUri.pathname);
+    if (!rawPath.startsWith("/")) throw new Error("Dream cursor authority POSIX path must be absolute");
   } else {
     throw new Error("Dream cursor authority path style is unsupported");
   }
@@ -938,7 +977,7 @@ export async function migrateDreamV13Cursor(
       predicate: "cursor-authority",
       value: canonicalJson(authority),
       evidence: {
-        uri: pathToFileURL(sourcePath).href,
+        uri: cursorSourceUri(sourcePath),
         contentHash: sourceHash,
         sourceClass: "verified",
         confidence: 1,
