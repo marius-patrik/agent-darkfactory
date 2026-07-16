@@ -29,6 +29,13 @@ test("release convergence classifies every branch relation and exposes missing d
   assert.equal(release.classifyConvergence(SHA.main, SHA.dev, { status: "ahead" }), "unobservable");
 });
 
+test("fleet release exits nonzero when any repository is blocked or failed", () => {
+  assert.equal(release.fleetReleaseHasBlockedResult([{ status: "verified" }, { status: "waiting-for-green" }]), false);
+  for (const status of ["failed", "blocked", "owner-required"]) {
+    assert.equal(release.fleetReleaseHasBlockedResult([{ status: "verified" }, { status }]), true, status);
+  }
+});
+
 test("release policy is exact, declares independent publication mode, and requires both gates", () => {
   const policy = release.validateReleasePolicy(releasePolicy());
   assert.equal(policy.mode, "branch-only");

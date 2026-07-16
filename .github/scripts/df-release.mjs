@@ -67,6 +67,11 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ schemaVersion: 1, mode, results }, null, 2));
+  if (fleetReleaseHasBlockedResult(results)) process.exitCode = 1;
+}
+
+export function fleetReleaseHasBlockedResult(results) {
+  return results.some((result) => ["failed", "blocked", "owner-required"].includes(String(result?.status || "")));
 }
 
 export function validateReleasePolicy(value) {

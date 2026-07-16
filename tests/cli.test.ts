@@ -10,6 +10,7 @@ import {
   parseReleaseCliArgs,
   parseSetupCliArgs,
   readExactReceiptFile,
+  releaseResultIsBlocked,
   validateReceiptDocument,
   type ReceiptFileEvidence
 } from "../src/cli.js";
@@ -135,6 +136,15 @@ test("release CLI defaults to status and keeps watch separate from authorization
   assert.equal(run.target, "marius-patrik/Andromeda");
   assert.throws(() => parseReleaseCliArgs(["verify", "--watch"]), /only with release run/);
   assert.throws(() => parseReleaseCliArgs(["run", "--bypass"]), /intentionally unavailable/);
+});
+
+test("blocked release outcomes cannot use the successful command contract", () => {
+  for (const status of ["blocked", "failed", "owner-required"]) {
+    assert.equal(releaseResultIsBlocked({ status }), true, status);
+  }
+  for (const status of ["observed", "waiting-for-green", "automerge-armed", "verified", "skipped"]) {
+    assert.equal(releaseResultIsBlocked({ status }), false, status);
+  }
 });
 
 test("receipt verification accepts an exact completion contract and exposes every promised proof facet", () => {
@@ -266,12 +276,14 @@ test("exact-name receipt lookup fetches the immutable path directly without a bo
   assert.equal(requests.some((request) => request.includes("/git/trees/")), false);
 });
 
-test("every successful JSON verb adapter uses the universal command envelope", async () => {
+test("every JSON verb adapter uses the universal command envelope and exposes blocked convergence", async () => {
   const source = await readFile(path.resolve(import.meta.dirname, "..", "src", "cli.ts"), "utf8");
   assert.doesNotMatch(source, /if \(options\.json\) console\.log\(JSON\.stringify\((?:reports|result|\{ \.\.\.receipt)/);
   assert.match(source, /humanJsonResult\(commandId, "ok", reports\)/);
-  assert.match(source, /humanJsonResult\(commandId, "ok", result\)/);
-  assert.match(source, /humanJsonResult\(commandId \?\? `release-\$\{options\.mode\}`, "ok", result\)/);
+  assert.match(source, /setup_not_converged/);
+  assert.match(source, /release_convergence_blocked/);
+  assert.match(source, /clean_verification_blocked/);
+  assert.match(source, /clean_convergence_blocked/);
   for (const id of ["doctor", "setup", "clean-plan", "clean-apply", "clean-verify", "release-status", "release-plan", "release-reconcile", "release-run", "release-verify"]) {
     const command = HUMAN_COMMANDS.find((entry) => entry.id === id);
     assert.equal(command?.options.some((option) => option.name === "--json"), true, id);

@@ -451,8 +451,15 @@ async function runSetup(args: string[], commandId = "setup"): Promise<void> {
     passes: completedPasses,
     stopReason: converged ? "converged" : stopReason
   };
-  if (options.json) console.log(JSON.stringify(humanJsonResult(commandId, "ok", result), null, 2));
+  const blocked = !converged;
+  if (options.json) console.log(JSON.stringify(humanJsonResult(
+    commandId,
+    blocked ? "blocked" : "ok",
+    result,
+    blocked ? { code: "setup_not_converged", message: `Setup stopped without convergence: ${stopReason}` } : null
+  ), null, 2));
   else printSetupResult(result);
+  if (blocked) process.exitCode = 1;
 }
 
 async function executeSetupPlan(
@@ -490,6 +497,7 @@ async function executeSetupPlan(
       receipts.push(...await convergeMachineRuntime({
         agentsHome: machine.agentsHome,
         packageRoot: machine.packageRoot,
+        trustedRevision: exactControlRevision(),
         findingIds: repositoryActions
           .filter((action) => action.stage === activeStage)
           .map((action) => action.findingId)
@@ -722,8 +730,19 @@ async function runRelease(args: string[], commandId?: string): Promise<void> {
     if (!options.watch || ["verified", "blocked", "skipped", "failed"].includes(status)) break;
     if (pass < maxPasses) await delay(15_000);
   }
-  if (options.json) console.log(JSON.stringify(humanJsonResult(commandId ?? `release-${options.mode}`, "ok", result), null, 2));
+  const blocked = releaseResultIsBlocked(result);
+  if (options.json) console.log(JSON.stringify(humanJsonResult(
+    commandId ?? `release-${options.mode}`,
+    blocked ? "blocked" : "ok",
+    result,
+    blocked ? { code: "release_convergence_blocked", message: "Release convergence is blocked by current evidence" } : null
+  ), null, 2));
   else printReleaseResult(result);
+  if (blocked) process.exitCode = 1;
+}
+
+export function releaseResultIsBlocked(result: Record<string, unknown>): boolean {
+  return ["blocked", "failed", "owner-required"].includes(String(result.status || ""));
 }
 
 export type SubmoduleCliOptions = {
@@ -881,6 +900,7 @@ export function parseCleanCliArgs(args: string[]): CleanCliOptions {
 
 async function runClean(args: string[], commandId?: string): Promise<void> {
   const options = parseCleanCliArgs(args);
+  const controlRevision = exactControlRevision();
   const credentials = loadAppCredentials();
   const app = new App({ appId: credentials.appId, privateKey: credentials.privateKey });
   let target = options.target;
@@ -898,6 +918,7 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
   if (options.mode === "plan") {
     const path = await persistCleanPlan(options.agentsHome, plan);
     await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-plan", target, {
+      control_revision: controlRevision,
       plan_id: plan.planId,
       evidence_hash: plan.evidenceHash,
       entries: plan.entries,
@@ -912,10 +933,16 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
   if (options.mode === "verify") {
     const actionable = plan.entries.filter((entry) => entry.action !== "preserve");
     const reviewResidue = plan.entries.filter((entry) => entry.kind === "lane-finding");
-    const result = { schemaVersion: 1, mode: "verify", repository: target, clean: actionable.length === 0 && reviewResidue.length === 0, actionable, reviewResidue };
+    const result = { schemaVersion: 1, mode: "verify", repository: target, controlRevision, clean: actionable.length === 0 && reviewResidue.length === 0, actionable, reviewResidue };
     await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-verify", target, result);
-    if (options.json) console.log(JSON.stringify(humanJsonResult(commandId ?? "clean-verify", "ok", result), null, 2));
+    if (options.json) console.log(JSON.stringify(humanJsonResult(
+      commandId ?? "clean-verify",
+      result.clean ? "ok" : "blocked",
+      result,
+      result.clean ? null : { code: "clean_verification_blocked", message: "Repository hygiene still has actionable or review residue" }
+    ), null, 2));
     else console.log(result.clean ? `${target}: clean (proven no-op)` : `${target}: ${actionable.length} admitted hygiene actions and ${reviewResidue.length} deterministic review findings remain; run df clean plan.`);
+    if (!result.clean) process.exitCode = 1;
     return;
   }
 
@@ -928,6 +955,7 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
     ? await getScopedInstallationToken(app, owner, { contents: "write" }, [repo])
     : "";
   await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-apply-admission", target, {
+    control_revision: controlRevision,
     plan_id: saved.planId,
     evidence_hash: saved.evidenceHash,
     intended_actions: saved.entries.filter((entry) => entry.action !== "preserve")
@@ -947,6 +975,7 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
     } : {}),
     onAdmission: async (action) => {
       await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-action-admission", target, {
+        control_revision: controlRevision,
         plan_id: saved!.planId,
         evidence_hash: saved!.evidenceHash,
         action
@@ -954,6 +983,7 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
     },
     onCompletion: async (action) => {
       await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-action-receipt", target, {
+        control_revision: controlRevision,
         plan_id: saved!.planId,
         evidence_hash: saved!.evidenceHash,
         action
@@ -961,6 +991,7 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
     }
   });
   await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-apply-completion", target, {
+    control_revision: controlRevision,
     plan_id: saved.planId,
     evidence_hash: saved.evidenceHash,
     actions: receipt.actions,
@@ -979,6 +1010,7 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
       const stalled: boolean = previousEvidenceHash.length > 0 && previousEvidenceHash === freshPlan.evidenceHash;
       watchVerification = { clean: actionable.length === 0 && reviewResidue.length === 0, actionable: actionable.length, reviewResidue: reviewResidue.length, passes: pass, stalled };
       await ledger.writeRunLedger(dataGithub, "marius-patrik/darkfactory-data", "clean-watch-verify", target, {
+        control_revision: controlRevision,
         plan_id: saved.planId,
         evidence_hash: freshPlan.evidenceHash,
         pass,
@@ -990,11 +1022,18 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
       if (pass < maxPasses) await delay(15_000);
     }
   }
-  if (options.json) console.log(JSON.stringify(humanJsonResult(commandId ?? "clean-apply", "ok", { ...receipt, watchVerification }), null, 2));
+  const blocked = options.watch && watchVerification?.clean !== true;
+  if (options.json) console.log(JSON.stringify(humanJsonResult(
+    commandId ?? "clean-apply",
+    blocked ? "blocked" : "ok",
+    { ...receipt, controlRevision, watchVerification },
+    blocked ? { code: "clean_convergence_blocked", message: "Clean apply completed but watch verification did not converge" } : null
+  ), null, 2));
   else {
     console.log(`${target}: applied ${receipt.actions.filter((action) => action.status === "applied").length} admitted actions; ${receipt.actions.filter((action) => action.status === "skipped").length} entries preserved.`);
     if (watchVerification) console.log(`${target}: watch verification clean=${watchVerification.clean}, stalled=${watchVerification.stalled} after ${watchVerification.passes} pass(es); actions=${watchVerification.actionable}, review findings=${watchVerification.reviewResidue}.`);
   }
+  if (blocked) process.exitCode = 1;
 }
 
 const CLEAN_REVIEW_CATEGORIES = new Set([
@@ -1291,19 +1330,19 @@ function packageRoot(): string {
 
 function exactControlRevision(): string {
   const supplied = process.env.DF_CONTROL_REVISION?.trim() || "";
-  if (supplied) {
-    if (!/^[0-9a-f]{40}$/i.test(supplied)) throw new Error("DF_CONTROL_REVISION must be an exact commit");
-    return supplied;
-  }
+  if (supplied && !/^[0-9a-f]{40}$/i.test(supplied)) throw new Error("DF_CONTROL_REVISION must be an exact commit");
   try {
     const root = packageRoot();
-    const revision = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8", windowsHide: true }).trim();
+    const revision = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8", windowsHide: true }).trim().toLowerCase();
     if (!/^[0-9a-f]{40}$/i.test(revision)) throw new Error("invalid revision");
-    const dirty = execFileSync("git", ["-C", root, "status", "--porcelain", "--untracked-files=no"], { encoding: "utf8", windowsHide: true }).trim();
+    const dirty = execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8", windowsHide: true }).trim();
     if (dirty) throw new Error("DarkFactory control checkout is dirty; use an exact reviewed control revision");
+    if (supplied && revision !== supplied.toLowerCase()) {
+      throw new Error("DarkFactory control checkout does not match DF_CONTROL_REVISION");
+    }
     return revision;
   } catch (error) {
-    if (error instanceof Error && error.message.includes("dirty")) throw error;
+    if (error instanceof Error && (error.message.includes("dirty") || error.message.includes("does not match"))) throw error;
     throw new Error("An exact trusted DarkFactory control revision is unavailable");
   }
 }

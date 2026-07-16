@@ -21,6 +21,7 @@ export interface MachineConvergenceInput {
   agentsHome: string;
   packageRoot: string;
   findingIds: string[];
+  trustedRevision?: string;
   run?: MachineProcessRunner;
   platform?: NodeJS.Platform;
 }
@@ -47,6 +48,7 @@ export async function convergeMachineRuntime(input: MachineConvergenceInput): Pr
   }
 
   const run = input.run ?? defaultProcessRunner;
+  const landedRevision = assertTrustedLandedPackage(packageRoot, run, input.trustedRevision);
   const invokeAgents = (args: string[], allowFailure = false): MachineProcessResult => {
     const command = platform === "win32" ? "pwsh" : launcher;
     const commandArgs = platform === "win32"
@@ -78,7 +80,7 @@ export async function convergeMachineRuntime(input: MachineConvergenceInput): Pr
       action: "machine-package-binding",
       target: "canonical-agent-os",
       status: "applied",
-      detail: "Built the trusted landed DarkFactory package, registered its exact root, and proved the package-owned CLI help runs through Agent OS."
+      detail: `Built the trusted landed DarkFactory package at ${landedRevision}, registered its exact root, and proved the package-owned CLI help runs through Agent OS.`
     });
   }
 
@@ -105,6 +107,49 @@ export async function convergeMachineRuntime(input: MachineConvergenceInput): Pr
     });
   }
   return receipts;
+}
+
+function assertTrustedLandedPackage(packageRoot: string, run: MachineProcessRunner, expectedRevision?: string): string {
+  const invokeGit = (args: string[], label: string, allowFailure = false): MachineProcessResult => {
+    const result = run("git", args, { cwd: packageRoot, env: { ...process.env } });
+    if (!allowFailure && result.status !== 0) throw commandFailure(label, result);
+    return result;
+  };
+  const head = exactRevision(invokeGit(["rev-parse", "HEAD"], "DarkFactory package HEAD").stdout, "DarkFactory package HEAD");
+  const status = invokeGit(["status", "--porcelain"], "DarkFactory package status").stdout.trim();
+  if (status) throw new Error("DarkFactory package checkout is dirty; machine setup refused global registration");
+  const origin = invokeGit(["remote", "get-url", "origin"], "DarkFactory package origin").stdout.trim();
+  if (!isCanonicalDarkFactoryRemote(origin)) {
+    throw new Error("DarkFactory package checkout origin is not canonical; machine setup refused global registration");
+  }
+  const remoteMain = invokeGit(["ls-remote", "--exit-code", "origin", "refs/heads/main"], "DarkFactory protected main").stdout.trim();
+  const match = remoteMain.match(/^([0-9a-f]{40})\s+refs\/heads\/main$/i);
+  if (!match) throw new Error("DarkFactory protected main did not resolve to one exact revision");
+  const mainHead = match[1].toLowerCase();
+  if (head !== mainHead) throw new Error("DarkFactory package checkout is not the exact landed protected main revision");
+  if (expectedRevision !== undefined) {
+    const expected = exactRevision(expectedRevision, "trusted DarkFactory control revision");
+    if (head !== expected) throw new Error("DarkFactory package checkout does not match the trusted control revision");
+  }
+  return head;
+}
+
+function exactRevision(value: string, label: string): string {
+  const revision = String(value || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error(`${label} must be one exact commit`);
+  return revision;
+}
+
+function isCanonicalDarkFactoryRemote(value: string): boolean {
+  const remote = String(value || "").trim().replace(/\\/g, "/");
+  if (/^git@github\.com:marius-patrik\/DarkFactory(?:\.git)?$/i.test(remote)) return true;
+  try {
+    const url = new URL(remote);
+    return url.hostname.toLowerCase() === "github.com"
+      && url.pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "").toLowerCase() === "marius-patrik/darkfactory";
+  } catch {
+    return false;
+  }
 }
 
 function defaultProcessRunner(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): MachineProcessResult {
