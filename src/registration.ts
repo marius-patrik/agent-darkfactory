@@ -1,12 +1,30 @@
+import { createHash } from "node:crypto";
+
 import type { OperatorGitHubRequester } from "./clean-evidence.js";
 import type { SetupReceipt } from "./setup.js";
 
 export const MANAGED_REGISTRY_REPOSITORY = "marius-patrik/Andromeda-data";
 export const MANAGED_REGISTRY_PATH = "managed-repository/.darkfactory/managed-repos.json";
+const REGISTRATION_PR_MARKER = "<!-- darkfactory:managed-registration-pr -->";
+const REGISTRATION_PROVENANCE_PREFIX = "<!-- darkfactory:managed-registration";
+
+interface RegistrationProvenance {
+  baseSha: string;
+  headSha: string;
+  target: string;
+  contentDigest: string;
+}
 
 export interface ManagedRegistrationResult {
   receipt: SetupReceipt;
   sourceActive: boolean;
+}
+
+export class ManagedRegistrationTrustViolation extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ManagedRegistrationTrustViolation";
+  }
 }
 
 export async function convergeManagedRegistration(
@@ -64,38 +82,44 @@ export async function convergeManagedRegistration(
     per_page: 10
   })).data, "managed registration pull requests");
   if (existingPulls.length > 1) throw new Error("multiple open managed registration pull requests exist for one repository");
-  const branchRef = await optionalBranchRef(github, registryRepository, branch);
-  if (existingPulls.length === 1) {
-    const pull = record(existingPulls[0], "managed registration pull request");
-    if (!branchRef) throw new Error("managed registration pull request exists without its exact source branch");
-    const branchFile = registryFile(await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
+  const pullReference = existingPulls.length === 1
+    ? registrationPullReference(existingPulls[0])
+    : null;
+  let pull = pullReference
+    ? record((await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
       ...registryRepository,
-      path: MANAGED_REGISTRY_PATH,
-      ref: branch
-    }));
-    if (branchFile.content !== content) throw new Error("existing managed registration pull request does not carry the exact canonical registry content");
-    await assertSafeRegistrationBranch(github, registryRepository, mainHead, branchRef, branch);
-    return {
-      sourceActive: false,
-      receipt: {
-        action: "managed-registration-pr",
-        target,
-        status: "current",
-        detail: requiredText(pull.html_url, "managed registration pull request URL")
-      }
-    };
-  }
+      pull_number: pullReference.number
+    })).data, "managed registration pull request")
+    : null;
+  let branchHead = await optionalBranchRef(github, registryRepository, branch);
+  let changed = false;
 
-  if (!branchRef) {
+  if (pull && !branchHead) throw new Error("managed registration pull request exists without its exact source branch");
+  if (!branchHead) {
     await github.request("POST /repos/{owner}/{repo}/git/refs", {
       ...registryRepository,
       ref: `refs/heads/${branch}`,
       sha: mainHead
     });
-  } else {
-    await assertSafeRegistrationBranch(github, registryRepository, mainHead, branchRef, branch);
+    branchHead = mainHead;
+    changed = true;
+  } else if (branchHead !== mainHead) {
+    const convergence = await convergeRegistrationBranch(
+      github,
+      registryRepository,
+      branch,
+      branchHead,
+      mainHead,
+      target,
+      content,
+      pull
+    );
+    branchHead = convergence.headSha;
+    changed ||= convergence.changed;
+    pull = convergence.pull;
   }
-  let branchFile = branchRef && branchRef !== mainHead
+
+  let branchFile = branchHead !== mainHead
     ? registryFile(await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
       ...registryRepository,
       path: MANAGED_REGISTRY_PATH,
@@ -111,30 +135,64 @@ export async function convergeManagedRegistration(
       message: `Register ${target} for DarkFactory management`,
       content: Buffer.from(content, "utf8").toString("base64")
     });
+    changed = true;
+    branchHead = requiredBranchRef(await optionalBranchRef(github, registryRepository, branch), branch);
+    branchFile = registryFile(await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
+      ...registryRepository,
+      path: MANAGED_REGISTRY_PATH,
+      ref: branch
+    }));
+    await assertRegistrationBranch(github, registryRepository, mainHead, branchHead, branch, content);
   }
+
+  const provenance = registrationProvenance(mainHead, branchHead, target, content);
+  if (pullReference && pull) {
+    const currentBody = typeof pull.body === "string" ? pull.body : "";
+    const nextBody = replaceRegistrationProvenance(currentBody, provenance, target);
+    if (nextBody !== currentBody) {
+      await github.request("PATCH /repos/{owner}/{repo}/pulls/{pull_number}", {
+        ...registryRepository,
+        pull_number: pullReference.number,
+        body: nextBody
+      });
+      changed = true;
+    }
+    pull = record((await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+      ...registryRepository,
+      pull_number: pullReference.number
+    })).data, "managed registration pull request after convergence");
+    await assertRegistrationPullRequest(github, registryRepository, pull, branch, branchHead, mainHead, target, content);
+    return {
+      sourceActive: false,
+      receipt: {
+        action: "managed-registration-pr",
+        target,
+        status: changed ? "applied" : "current",
+        detail: pullReference.url
+      }
+    };
+  }
+
   const created = record((await github.request("POST /repos/{owner}/{repo}/pulls", {
     ...registryRepository,
-    title: `Register ${target} for DarkFactory management`,
+    title: registrationTitle(target),
     head: branch,
     base: "main",
-    body: [
-      "## Summary",
-      "",
-      `- register \`${target}\` as an active managed code repository`,
-      "- preserve every existing lifecycle entry exactly",
-      "",
-      "## Safety",
-      "",
-      "This reviewed source-policy change does not touch the target repository or override parked/archived state."
-    ].join("\n")
+    body: registrationPullRequestBody(target, provenance)
   })).data, "created managed registration pull request");
+  const createdReference = registrationPullReference(created);
+  const createdPull = record((await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+    ...registryRepository,
+    pull_number: createdReference.number
+  })).data, "created managed registration pull request evidence");
+  await assertRegistrationPullRequest(github, registryRepository, createdPull, branch, branchHead, mainHead, target, content);
   return {
     sourceActive: false,
     receipt: {
       action: "managed-registration-pr",
       target,
       status: "applied",
-      detail: requiredText(created.html_url, "created managed registration pull request URL")
+      detail: createdReference.url
     }
   };
 }
@@ -156,23 +214,354 @@ async function optionalBranchRef(
   }
 }
 
-async function assertSafeRegistrationBranch(
+async function convergeRegistrationBranch(
   github: OperatorGitHubRequester,
   repository: { owner: string; repo: string },
-  mainHead: string,
+  branch: string,
   branchHead: string,
-  branch: string
+  mainHead: string,
+  target: string,
+  content: string,
+  pull: Record<string, any> | null
+): Promise<{ headSha: string; changed: boolean; pull: Record<string, any> | null }> {
+  try {
+    await assertRegistrationBranch(github, repository, mainHead, branchHead, branch, content);
+    if (pull) {
+      await assertRegistrationPullRequest(
+        github,
+        repository,
+        pull,
+        branch,
+        branchHead,
+        mainHead,
+        target,
+        content,
+        { allowLegacyProvenance: true }
+      );
+    }
+    return { headSha: branchHead, changed: false, pull };
+  } catch (error) {
+    if (!(error instanceof ManagedRegistrationTrustViolation)) throw error;
+  }
+
+  const branchCommit = await registrationCommit(github, repository, branchHead);
+  const priorProvenance = parseRegistrationProvenance(pull?.body);
+  const priorBase = priorProvenance?.baseSha
+    ?? (branchCommit.parents.length === 1 ? branchCommit.parents[0] : null);
+  if (
+    !priorBase
+    || priorBase === mainHead
+    || (priorProvenance && (
+      priorProvenance.headSha !== branchHead
+      || priorProvenance.target !== target
+    ))
+  ) {
+    throw new ManagedRegistrationTrustViolation(
+      `managed registration branch ${branch} contains unknown or conflicting work; setup preserved it and refused base-advance recovery`
+    );
+  }
+
+  const priorFile = registryFile(await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
+    ...repository,
+    path: MANAGED_REGISTRY_PATH,
+    ref: priorBase
+  }));
+  const priorContent = registrationContentForTarget(priorFile.content, target);
+  await assertRegistrationBranch(github, repository, priorBase, branchHead, branch, priorContent);
+  if (pull) {
+    await assertRegistrationPullRequest(
+      github,
+      repository,
+      pull,
+      branch,
+      branchHead,
+      mainHead,
+      target,
+      priorContent,
+      { provenanceBaseSha: priorBase, allowLegacyProvenance: priorProvenance === null }
+    );
+  }
+  await assertRegistrationBaseAdvance(github, repository, priorBase, mainHead);
+
+  const admittedMain = requiredBranchRef(await optionalBranchRef(github, repository, "main"), "main");
+  const admittedBranch = requiredBranchRef(await optionalBranchRef(github, repository, branch), branch);
+  if (admittedMain !== mainHead || admittedBranch !== branchHead) {
+    throw new ManagedRegistrationTrustViolation("managed registration refs changed before base-advance recovery; no branch mutation was authorized");
+  }
+
+  const mainCommit = await registrationCommit(github, repository, mainHead);
+  const tree = record((await github.request("POST /repos/{owner}/{repo}/git/trees", {
+    ...repository,
+    base_tree: mainCommit.treeSha,
+    tree: [{
+      path: MANAGED_REGISTRY_PATH,
+      mode: "100644",
+      type: "blob",
+      content
+    }]
+  })).data, "managed registration recovery tree");
+  const treeSha = exactCommit(tree.sha, "managed registration recovery tree SHA");
+  const recovery = record((await github.request("POST /repos/{owner}/{repo}/git/commits", {
+    ...repository,
+    message: `Recover ${target} registration on ${mainHead}`,
+    tree: treeSha,
+    parents: [branchHead, mainHead]
+  })).data, "managed registration recovery commit");
+  const recoverySha = exactCommit(recovery.sha, "managed registration recovery commit SHA");
+  try {
+    await github.request("PATCH /repos/{owner}/{repo}/git/refs/{ref}", {
+      ...repository,
+      ref: `heads/${branch}`,
+      sha: recoverySha,
+      force: false
+    });
+  } catch (error) {
+    throw new ManagedRegistrationTrustViolation(`managed registration base-advance update conflicted; preserved existing work and blocked recovery (${recordStatus(error) ?? "unknown"})`);
+  }
+
+  const verifiedMain = requiredBranchRef(await optionalBranchRef(github, repository, "main"), "main");
+  const verifiedBranch = requiredBranchRef(await optionalBranchRef(github, repository, branch), branch);
+  if (verifiedMain !== mainHead || verifiedBranch !== recoverySha) {
+    throw new ManagedRegistrationTrustViolation("managed registration base-advance recovery did not retain the exact admitted refs");
+  }
+  await assertRegistrationBranch(github, repository, mainHead, recoverySha, branch, content);
+  return { headSha: recoverySha, changed: true, pull };
+}
+
+async function assertRegistrationBranch(
+  github: OperatorGitHubRequester,
+  repository: { owner: string; repo: string },
+  baseHead: string,
+  branchHead: string,
+  branch: string,
+  expectedContent: string
 ): Promise<void> {
-  if (branchHead === mainHead) return;
+  if (branchHead === baseHead) {
+    throw new ManagedRegistrationTrustViolation(`managed registration branch ${branch} has no reviewed registry change`);
+  }
   const comparison = record((await github.request("GET /repos/{owner}/{repo}/compare/{basehead}", {
     ...repository,
-    basehead: `${mainHead}...${branchHead}`
+    basehead: `${baseHead}...${branchHead}`
   })).data, "managed registration branch comparison");
   const files = array(comparison.files, "managed registration branch files");
-  if (comparison.status !== "ahead" || comparison.ahead_by !== 1 || comparison.behind_by !== 0
+  if (comparison.status !== "ahead" || !Number.isInteger(comparison.ahead_by) || comparison.ahead_by < 1 || comparison.behind_by !== 0
       || files.length !== 1 || record(files[0], "managed registration branch file").filename !== MANAGED_REGISTRY_PATH) {
-    throw new Error(`managed registration branch ${branch} contains unknown or stale work; setup preserved it and refused adoption`);
+    throw new ManagedRegistrationTrustViolation(`managed registration branch ${branch} contains unknown or stale work; setup preserved it and refused adoption`);
   }
+  const branchFile = registryFile(await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
+    ...repository,
+    path: MANAGED_REGISTRY_PATH,
+    ref: branchHead
+  }));
+  if (branchFile.content !== expectedContent) {
+    throw new ManagedRegistrationTrustViolation(`managed registration branch ${branch} does not carry the exact canonical registry content`);
+  }
+  await assertRegistrationHeadOwnedByApp(github, repository, branchHead);
+}
+
+async function assertRegistrationBaseAdvance(
+  github: OperatorGitHubRequester,
+  repository: { owner: string; repo: string },
+  priorBase: string,
+  currentBase: string
+): Promise<void> {
+  const comparison = record((await github.request("GET /repos/{owner}/{repo}/compare/{basehead}", {
+    ...repository,
+    basehead: `${priorBase}...${currentBase}`
+  })).data, "managed registration base advance");
+  if (comparison.status !== "ahead" || !Number.isInteger(comparison.ahead_by) || comparison.ahead_by < 1 || comparison.behind_by !== 0) {
+    throw new ManagedRegistrationTrustViolation("current main is not a proven descendant of the managed registration provenance base");
+  }
+}
+
+async function assertRegistrationPullRequest(
+  github: OperatorGitHubRequester,
+  repository: { owner: string; repo: string },
+  pull: Record<string, any>,
+  branch: string,
+  headSha: string,
+  observedBaseSha: string,
+  target: string,
+  content: string,
+  options: { provenanceBaseSha?: string; allowLegacyProvenance?: boolean } = {}
+): Promise<void> {
+  const actor = await expectedRegistrationActor(github);
+  const base = record(pull.base, "managed registration pull request base");
+  const head = record(pull.head, "managed registration pull request head");
+  const user = record(pull.user, "managed registration pull request actor");
+  const baseRepository = record(base.repo, "managed registration pull request base repository");
+  const headRepository = record(head.repo, "managed registration pull request head repository");
+  const provenance = registrationProvenance(options.provenanceBaseSha ?? observedBaseSha, headSha, target, content);
+  const parsed = parseRegistrationProvenance(pull.body);
+  const repositoryName = `${repository.owner}/${repository.repo}`.toLowerCase();
+  const exact = parsed
+    && parsed.baseSha === provenance.baseSha
+    && parsed.headSha === provenance.headSha
+    && parsed.target === provenance.target
+    && parsed.contentDigest === provenance.contentDigest;
+  const legacyIsExact = options.allowLegacyProvenance === true
+    && parsed === null
+    && pull.body === legacyRegistrationPullRequestBody(target);
+  if (
+    pull.state !== "open"
+    || pull.draft !== false
+    || pull.title !== registrationTitle(target)
+    || !Number.isInteger(pull.commits)
+    || pull.commits < 1
+    || base.ref !== "main"
+    || base.sha !== observedBaseSha
+    || String(baseRepository.full_name || "").toLowerCase() !== repositoryName
+    || head.ref !== branch
+    || head.sha !== headSha
+    || String(headRepository.full_name || "").toLowerCase() !== repositoryName
+    || String(user.login || "").toLowerCase() !== actor.login.toLowerCase()
+    || user.type !== "Bot"
+    || (!exact && !legacyIsExact)
+  ) {
+    throw new ManagedRegistrationTrustViolation("managed registration pull request is not the exact App-owned target, branch, base, and provenance plan");
+  }
+  await assertRegistrationBranch(github, repository, options.provenanceBaseSha ?? observedBaseSha, headSha, branch, content);
+}
+
+async function expectedRegistrationActor(github: OperatorGitHubRequester): Promise<{ login: string }> {
+  const installation = record((await github.request("GET /installation", {})).data, "managed registration App installation");
+  const slug = requiredText(installation.app_slug, "managed registration App slug");
+  if (!Number.isInteger(installation.app_id) || installation.app_id <= 0) {
+    throw new ManagedRegistrationTrustViolation("managed registration App identity is incomplete");
+  }
+  return { login: `${slug}[bot]` };
+}
+
+async function assertRegistrationHeadOwnedByApp(
+  github: OperatorGitHubRequester,
+  repository: { owner: string; repo: string },
+  headSha: string
+): Promise<void> {
+  const actor = await expectedRegistrationActor(github);
+  const commit = record((await github.request("GET /repos/{owner}/{repo}/commits/{ref}", {
+    ...repository,
+    ref: headSha
+  })).data, "managed registration commit actor");
+  const author = record(commit.author, "managed registration commit author");
+  if (String(author.login || "").toLowerCase() !== actor.login.toLowerCase() || author.type !== "Bot") {
+    throw new ManagedRegistrationTrustViolation("managed registration branch head is not owned by the expected GitHub App");
+  }
+}
+
+async function registrationCommit(
+  github: OperatorGitHubRequester,
+  repository: { owner: string; repo: string },
+  sha: string
+): Promise<{ treeSha: string; parents: string[] }> {
+  const commit = record((await github.request("GET /repos/{owner}/{repo}/git/commits/{commit_sha}", {
+    ...repository,
+    commit_sha: sha
+  })).data, "managed registration commit");
+  const parents = array(commit.parents, "managed registration commit parents").map((parent) =>
+    exactCommit(record(parent, "managed registration commit parent").sha, "managed registration parent SHA")
+  );
+  return {
+    treeSha: exactCommit(record(commit.tree, "managed registration commit tree").sha, "managed registration tree SHA"),
+    parents
+  };
+}
+
+function registrationTitle(target: string): string {
+  return `Register ${target} for DarkFactory management`;
+}
+
+function registrationProvenance(
+  baseSha: string,
+  headSha: string,
+  target: string,
+  content: string
+): RegistrationProvenance {
+  return {
+    baseSha,
+    headSha,
+    target,
+    contentDigest: createHash("sha256").update(content).digest("hex")
+  };
+}
+
+function registrationProvenanceMarker(provenance: RegistrationProvenance): string {
+  return `${REGISTRATION_PROVENANCE_PREFIX} schema=1 target=${provenance.target} base=${provenance.baseSha} head=${provenance.headSha} content-sha256=${provenance.contentDigest} -->`;
+}
+
+function parseRegistrationProvenance(body: unknown): RegistrationProvenance | null {
+  if (typeof body !== "string") return null;
+  const candidates = body.match(/<!-- darkfactory:managed-registration\b(?!-pr)[^>]*-->/g) ?? [];
+  if (candidates.length === 0) return null;
+  if (candidates.length !== 1) throw new ManagedRegistrationTrustViolation("managed registration pull request contains ambiguous provenance");
+  const match = /^<!-- darkfactory:managed-registration schema=1 target=([a-z0-9_.-]+\/[a-z0-9_.-]+) base=([0-9a-f]{40}) head=([0-9a-f]{40}) content-sha256=([0-9a-f]{64}) -->$/.exec(candidates[0]);
+  if (!match) throw new ManagedRegistrationTrustViolation("managed registration pull request provenance is malformed");
+  return { target: match[1], baseSha: match[2], headSha: match[3], contentDigest: match[4] };
+}
+
+function registrationPullRequestBody(target: string, provenance: RegistrationProvenance): string {
+  return [
+    REGISTRATION_PR_MARKER,
+    registrationProvenanceMarker(provenance),
+    legacyRegistrationPullRequestBody(target)
+  ].join("\n");
+}
+
+function legacyRegistrationPullRequestBody(target: string): string {
+  return [
+    "## Summary",
+    "",
+    `- register \`${target}\` as an active managed code repository`,
+    "- preserve every existing lifecycle entry exactly",
+    "",
+    "## Safety",
+    "",
+    "This reviewed source-policy change does not touch the target repository or override parked/archived state."
+  ].join("\n");
+}
+
+function replaceRegistrationProvenance(
+  body: string,
+  provenance: RegistrationProvenance,
+  target: string
+): string {
+  const existing = body.match(/<!-- darkfactory:managed-registration\b(?!-pr)[^>]*-->/g) ?? [];
+  if (existing.length > 1) throw new ManagedRegistrationTrustViolation("managed registration pull request contains ambiguous provenance");
+  const marker = registrationProvenanceMarker(provenance);
+  if (existing.length === 1) return body.replace(existing[0], marker);
+  if (body.split(REGISTRATION_PR_MARKER).length === 2) {
+    return body.replace(REGISTRATION_PR_MARKER, `${REGISTRATION_PR_MARKER}\n${marker}`);
+  }
+  return registrationPullRequestBody(target, provenance);
+}
+
+function registrationContentForTarget(baseContent: string, target: string): string {
+  const registry = parseRegistry(baseContent);
+  if (findEntry(registry.repositories, target)) {
+    throw new ManagedRegistrationTrustViolation("managed registration provenance base already contains the target entry");
+  }
+  const next = structuredClone(registry);
+  next.repositories[target] = {
+    state: "active",
+    kind: "code",
+    note: "Managed code repository admitted through the reviewed df setup registration lane."
+  };
+  return `${JSON.stringify(sortRegistry(next), null, 2)}\n`;
+}
+
+function registrationPullReference(value: unknown): { number: number; url: string } {
+  const pull = record(value, "managed registration pull request reference");
+  if (!Number.isInteger(pull.number) || pull.number <= 0) {
+    throw new ManagedRegistrationTrustViolation("managed registration pull request number is invalid");
+  }
+  return {
+    number: pull.number,
+    url: requiredText(pull.html_url, "managed registration pull request URL")
+  };
+}
+
+function requiredBranchRef(value: string | null, branch: string): string {
+  if (!value) throw new ManagedRegistrationTrustViolation(`managed registration branch ${branch} is not observable`);
+  return value;
 }
 
 interface Registry {

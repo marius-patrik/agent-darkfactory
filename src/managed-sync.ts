@@ -128,6 +128,16 @@ export async function ensureManagedRepositorySetup(
     removedPaths
   );
   const setupRef = await getOptionalRef(github, repository, `heads/${MANAGED_SETUP_BRANCH}`);
+  const existingPr = setupRef
+    ? await findExistingPullRequest(github, repository, repoInfo.defaultBranch)
+    : null;
+  let existingPull = existingPr
+    ? (await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+      owner: repository.owner,
+      repo: repository.repo,
+      pull_number: existingPr.number
+    })).data
+    : null;
 
   if (plan.changedPaths.length === 0) {
     if (setupRef && setupRef.sha !== plan.baseSha) {
@@ -141,21 +151,17 @@ export async function ensureManagedRepositorySetup(
   let headSha: string;
 
   if (setupRef) {
-    const setupCommit = await getCommit(github, repository, setupRef.sha);
-    if (
-      setupCommit.treeSha !== plan.expectedTreeSha
-      || !setupCommit.parents
-      || setupCommit.parents.length !== 1
-      || setupCommit.parents[0] !== plan.baseSha
-    ) {
-      throw new ManagedSetupTrustViolation(
-        `Managed setup branch ${MANAGED_SETUP_BRANCH} is not the exact canonical one-commit plan on ${plan.baseSha}; preserved existing branch work and blocked adoption.`
-      );
-    }
-    await assertManagedSetupHeadOwnedByApp(github, repository, setupRef.sha);
-    headSha = setupRef.sha;
+    headSha = await convergeExistingManagedSetupBranch(
+      github,
+      repository,
+      setupRef.sha,
+      plan,
+      managedFiles,
+      removedPaths,
+      existingPull
+    );
   } else {
-    const commit = await createCommit(github, repository, plan.baseSha, plan.expectedTreeSha);
+    const commit = await createCommit(github, repository, [plan.baseSha], plan.expectedTreeSha);
     await github.request("POST /repos/{owner}/{repo}/git/refs", {
       owner: repository.owner,
       repo: repository.repo,
@@ -167,15 +173,23 @@ export async function ensureManagedRepositorySetup(
 
   const provenance = managedSetupProvenance(plan, headSha);
 
-  const existingPr = await findExistingPullRequest(github, repository, repoInfo.defaultBranch);
-
   if (existingPr) {
-    const pull = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+    const currentBody = isRecord(existingPull) && typeof existingPull.body === "string" ? existingPull.body : "";
+    const nextBody = replaceManagedSetupProvenance(currentBody, provenance, plan.changedPaths);
+    if (nextBody !== currentBody) {
+      await github.request("PATCH /repos/{owner}/{repo}/pulls/{pull_number}", {
+        owner: repository.owner,
+        repo: repository.repo,
+        pull_number: existingPr.number,
+        body: nextBody
+      });
+    }
+    existingPull = (await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
       owner: repository.owner,
       repo: repository.repo,
       pull_number: existingPr.number
-    });
-    await assertManagedSetupPullRequest(github, repository, pull.data, plan);
+    })).data;
+    await assertManagedSetupPullRequest(github, repository, existingPull, plan);
     return {
       ...baseResult(repository, "updated", plan.changedPaths),
       pullRequestUrl: existingPr.url
@@ -253,8 +267,26 @@ async function prepareManagedSetupPlan(
   removedPaths: ReadonlySet<string>
 ): Promise<PreparedManagedSetupPlan> {
   const baseRef = await getRef(github, repository, `heads/${baseBranch}`);
-  const changedFiles = await changedManagedFiles(github, repository, baseRef.sha, managedFiles);
-  const baseCommit = await getCommit(github, repository, baseRef.sha);
+  return prepareManagedSetupPlanAtSha(
+    github,
+    repository,
+    baseBranch,
+    baseRef.sha,
+    managedFiles,
+    removedPaths
+  );
+}
+
+async function prepareManagedSetupPlanAtSha(
+  github: GitHubRequester,
+  repository: ManagedRepository,
+  baseBranch: string,
+  baseSha: string,
+  managedFiles: ManagedFile[],
+  removedPaths: ReadonlySet<string>
+): Promise<PreparedManagedSetupPlan> {
+  const changedFiles = await changedManagedFiles(github, repository, baseSha, managedFiles);
+  const baseCommit = await getCommit(github, repository, baseSha);
   const forbiddenFiles = await findForbiddenManagedFiles(
     github,
     repository,
@@ -271,7 +303,7 @@ async function prepareManagedSetupPlan(
 
   return {
     baseBranch,
-    baseSha: baseRef.sha,
+    baseSha,
     expectedTreeSha,
     changedFiles,
     forbiddenFiles,
@@ -297,6 +329,180 @@ function managedSetupProvenance(
 
 export function managedSetupProvenanceMarker(provenance: ManagedSetupProvenance): string {
   return `${MANAGED_SETUP_PROVENANCE_PREFIX} schema=${provenance.schemaVersion} base-branch=${provenance.baseBranch} base=${provenance.baseSha} head=${provenance.headSha} tree=${provenance.treeSha} paths-sha256=${provenance.changedPathsDigest} -->`;
+}
+
+function parseManagedSetupProvenance(body: unknown): ManagedSetupProvenance | null {
+  if (typeof body !== "string") return null;
+  const candidates = body.match(/<!-- dark-factory:managed-setup-provenance\b[^>]*-->/g) ?? [];
+  if (candidates.length === 0) return null;
+  if (candidates.length !== 1) {
+    throw new ManagedSetupTrustViolation("Managed setup pull request contains ambiguous provenance markers.");
+  }
+  const match = /^<!-- dark-factory:managed-setup-provenance schema=1 base-branch=([A-Za-z0-9._/-]+) base=([0-9a-f]{40}) head=([0-9a-f]{40}) tree=([0-9a-f]{40}) paths-sha256=([0-9a-f]{64}) -->$/.exec(candidates[0]);
+  if (!match) throw new ManagedSetupTrustViolation("Managed setup pull request provenance marker is malformed.");
+  return {
+    schemaVersion: 1,
+    baseBranch: match[1],
+    baseSha: match[2],
+    headSha: match[3],
+    treeSha: match[4],
+    changedPathsDigest: match[5]
+  };
+}
+
+function replaceManagedSetupProvenance(
+  body: string,
+  provenance: ManagedSetupProvenance,
+  changedPaths: string[]
+): string {
+  const marker = managedSetupProvenanceMarker(provenance);
+  const existing = body.match(/<!-- dark-factory:managed-setup-provenance\b[^>]*-->/g) ?? [];
+  if (existing.length > 1) {
+    throw new ManagedSetupTrustViolation("Managed setup pull request contains ambiguous provenance markers.");
+  }
+  if (existing.length === 1) return body.replace(existing[0], marker);
+  if (body.split(MANAGED_SETUP_COMMENT_MARKER).length === 2) {
+    return body.replace(MANAGED_SETUP_COMMENT_MARKER, `${MANAGED_SETUP_COMMENT_MARKER}\n${marker}`);
+  }
+  return managedSetupPullRequestBody(changedPaths, provenance);
+}
+
+async function convergeExistingManagedSetupBranch(
+  github: GitHubRequester,
+  repository: ManagedRepository,
+  setupHead: string,
+  currentPlan: PreparedManagedSetupPlan,
+  managedFiles: ManagedFile[],
+  removedPaths: ReadonlySet<string>,
+  pullRequest: unknown
+): Promise<string> {
+  try {
+    await assertManagedSetupBranch(github, repository, setupHead, currentPlan);
+    if (pullRequest) {
+      try {
+        await assertManagedSetupPullRequest(github, repository, pullRequest, currentPlan);
+      } catch (error) {
+        if (!(error instanceof ManagedSetupTrustViolation) || parseManagedSetupProvenance(isRecord(pullRequest) ? pullRequest.body : null)) {
+          throw error;
+        }
+        await assertManagedSetupPullRequest(github, repository, pullRequest, currentPlan, {
+          allowLegacyProvenance: true
+        });
+      }
+    }
+    return setupHead;
+  } catch (error) {
+    if (!(error instanceof ManagedSetupTrustViolation)) throw error;
+  }
+
+  const setupCommit = await getCommit(github, repository, setupHead);
+  const priorProvenance = parseManagedSetupProvenance(isRecord(pullRequest) ? pullRequest.body : null);
+  const priorBase = priorProvenance?.baseSha
+    ?? (setupCommit.parents?.length === 1 ? setupCommit.parents[0] : null);
+  if (
+    !priorBase
+    || priorBase === currentPlan.baseSha
+    || (priorProvenance && (
+      priorProvenance.baseBranch !== currentPlan.baseBranch
+      || priorProvenance.headSha !== setupHead
+    ))
+  ) {
+    throw new ManagedSetupTrustViolation(
+      `Managed setup branch ${MANAGED_SETUP_BRANCH} contains unknown or conflicting work; setup preserved it and refused base-advance recovery.`
+    );
+  }
+
+  const priorPlan = await prepareManagedSetupPlanAtSha(
+    github,
+    repository,
+    currentPlan.baseBranch,
+    priorBase,
+    managedFiles,
+    removedPaths
+  );
+  await assertManagedSetupBranch(github, repository, setupHead, priorPlan);
+  if (pullRequest) {
+    await assertManagedSetupPullRequest(github, repository, pullRequest, priorPlan, {
+      observedBaseSha: currentPlan.baseSha,
+      allowLegacyProvenance: priorProvenance === null
+    });
+  }
+  await assertManagedSetupBaseAdvance(github, repository, priorBase, currentPlan.baseSha);
+
+  const admittedMain = await getRef(github, repository, `heads/${currentPlan.baseBranch}`);
+  const admittedBranch = await getRef(github, repository, `heads/${MANAGED_SETUP_BRANCH}`);
+  if (admittedMain.sha !== currentPlan.baseSha || admittedBranch.sha !== setupHead) {
+    throw new ManagedSetupTrustViolation("Managed setup refs changed before base-advance recovery; no branch mutation was authorized.");
+  }
+
+  const recovery = await createCommit(
+    github,
+    repository,
+    [setupHead, currentPlan.baseSha],
+    currentPlan.expectedTreeSha,
+    `Recover Dark Factory managed setup on ${currentPlan.baseSha}`
+  );
+  try {
+    await github.request("PATCH /repos/{owner}/{repo}/git/refs/{ref}", {
+      owner: repository.owner,
+      repo: repository.repo,
+      ref: `heads/${MANAGED_SETUP_BRANCH}`,
+      sha: recovery.sha,
+      force: false
+    });
+  } catch (error) {
+    throw new ManagedSetupTrustViolation(`Managed setup base-advance update conflicted; preserved the existing branch and blocked recovery (${requestStatus(error) ?? "unknown"}).`);
+  }
+
+  const verifiedMain = await getRef(github, repository, `heads/${currentPlan.baseBranch}`);
+  const verifiedBranch = await getRef(github, repository, `heads/${MANAGED_SETUP_BRANCH}`);
+  if (verifiedMain.sha !== currentPlan.baseSha || verifiedBranch.sha !== recovery.sha) {
+    throw new ManagedSetupTrustViolation("Managed setup base-advance recovery did not retain the exact admitted refs.");
+  }
+  await assertManagedSetupBranch(github, repository, recovery.sha, currentPlan);
+  return recovery.sha;
+}
+
+async function assertManagedSetupBranch(
+  github: GitHubRequester,
+  repository: ManagedRepository,
+  headSha: string,
+  plan: PreparedManagedSetupPlan
+): Promise<void> {
+  const commit = await getCommit(github, repository, headSha);
+  if (
+    commit.treeSha !== plan.expectedTreeSha
+    || !commit.parents
+    || ![1, 2].includes(commit.parents.length)
+    || !commit.parents.includes(plan.baseSha)
+  ) {
+    throw new ManagedSetupTrustViolation(
+      `Managed setup branch ${MANAGED_SETUP_BRANCH} is not the exact canonical managed-only plan on ${plan.baseSha}.`
+    );
+  }
+  await assertManagedSetupHeadOwnedByApp(github, repository, headSha);
+}
+
+async function assertManagedSetupBaseAdvance(
+  github: GitHubRequester,
+  repository: ManagedRepository,
+  priorBase: string,
+  currentBase: string
+): Promise<void> {
+  const comparison = await github.request("GET /repos/{owner}/{repo}/compare/{basehead}", {
+    owner: repository.owner,
+    repo: repository.repo,
+    basehead: `${priorBase}...${currentBase}`
+  });
+  if (
+    !isRecord(comparison.data)
+    || comparison.data.status !== "ahead"
+    || typeof comparison.data.ahead_by !== "number"
+    || comparison.data.ahead_by < 1
+    || comparison.data.behind_by !== 0
+  ) {
+    throw new ManagedSetupTrustViolation("Current main is not a proven descendant of the managed setup provenance base; recovery was blocked.");
+  }
 }
 
 export async function verifyManagedSetupPullRequest(
@@ -503,15 +709,16 @@ async function createTree(
 async function createCommit(
   github: GitHubRequester,
   repository: ManagedRepository,
-  parentSha: string,
-  treeSha: string
+  parents: string[],
+  treeSha: string,
+  message = "Update Dark Factory managed repository setup"
 ): Promise<{ sha: string }> {
   const response = await github.request("POST /repos/{owner}/{repo}/git/commits", {
     owner: repository.owner,
     repo: repository.repo,
-    message: "Update Dark Factory managed repository setup",
+    message,
     tree: treeSha,
-    parents: [parentSha]
+    parents
   });
 
   if (!isRecord(response.data) || typeof response.data.sha !== "string") {
@@ -565,7 +772,8 @@ async function assertManagedSetupPullRequest(
   github: GitHubRequester,
   repository: ManagedRepository,
   pullRequest: unknown,
-  plan: PreparedManagedSetupPlan
+  plan: PreparedManagedSetupPlan,
+  options: { observedBaseSha?: string; allowLegacyProvenance?: boolean } = {}
 ): Promise<void> {
   if (plan.changedPaths.length === 0) {
     throw new ManagedSetupTrustViolation("Managed setup pull request has no canonical managed-only change to admit.");
@@ -584,14 +792,20 @@ async function assertManagedSetupPullRequest(
   const expectedMarker = provenance ? managedSetupProvenanceMarker(provenance) : null;
   const body = typeof pull.body === "string" ? pull.body : "";
   const provenanceMarkers = body.match(/<!-- dark-factory:managed-setup-provenance\b[^>]*-->/g) ?? [];
+  const provenanceIsExact = provenanceMarkers.length === 1 && provenanceMarkers[0] === expectedMarker;
+  const legacyProvenanceIsAdmissible = options.allowLegacyProvenance === true
+    && provenanceMarkers.length === 0
+    && body === managedSetupPullRequestBody(plan.changedPaths);
 
   if (
     pull.state !== "open"
     || pull.draft !== false
     || pull.title !== MANAGED_SETUP_TITLE
-    || pull.commits !== 1
+    || typeof pull.commits !== "number"
+    || !Number.isInteger(pull.commits)
+    || pull.commits < 1
     || base?.ref !== plan.baseBranch
-    || base?.sha !== plan.baseSha
+    || base?.sha !== (options.observedBaseSha ?? plan.baseSha)
     || String(baseRepository?.full_name || "").toLowerCase() !== repositoryName
     || head?.ref !== MANAGED_SETUP_BRANCH
     || typeof headSha !== "string"
@@ -600,8 +814,7 @@ async function assertManagedSetupPullRequest(
     || user.login.toLowerCase() !== actor.login.toLowerCase()
     || user.type !== "Bot"
     || body.split(MANAGED_SETUP_COMMENT_MARKER).length !== 2
-    || provenanceMarkers.length !== 1
-    || provenanceMarkers[0] !== expectedMarker
+    || (!provenanceIsExact && !legacyProvenanceIsAdmissible)
   ) {
     throw new ManagedSetupTrustViolation("Managed setup pull request is not the exact expected App-owned target, head, parent, and provenance plan.");
   }
@@ -610,10 +823,10 @@ async function assertManagedSetupPullRequest(
   if (
     commit.treeSha !== plan.expectedTreeSha
     || !commit.parents
-    || commit.parents.length !== 1
-    || commit.parents[0] !== plan.baseSha
+    || ![1, 2].includes(commit.parents.length)
+    || !commit.parents.includes(plan.baseSha)
   ) {
-    throw new ManagedSetupTrustViolation("Managed setup pull request head is not the exact canonical managed-only one-commit diff.");
+    throw new ManagedSetupTrustViolation("Managed setup pull request head is not the exact canonical managed-only diff on its admitted base.");
   }
   await assertManagedSetupHeadOwnedByApp(github, repository, headSha, actor);
 }
@@ -718,4 +931,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isRequestError(error: unknown): error is { status: number } {
   return isRecord(error) && typeof error.status === "number";
+}
+
+function requestStatus(error: unknown): number | undefined {
+  return isRequestError(error) ? error.status : undefined;
 }

@@ -295,6 +295,26 @@ test("initial managed setup arms auto-merge only behind an exact temporary boots
   assert.ok(receipts.some((entry) => entry.action === "managed-bootstrap-automerge" && entry.status === "applied"));
 });
 
+test("managed bootstrap accepts the exact non-force two-parent base-advance recovery head", async () => {
+  const pull = managedBootstrapPull();
+  pull.commits = 2;
+  const { github, calls, graphql } = managedBootstrapRequester({
+    pull,
+    headParents: ["f".repeat(40), BOOTSTRAP_BASE_SHA]
+  });
+
+  const receipts = await armManagedSetupBootstrap(
+    github,
+    repo,
+    "https://github.com/marius-patrik/example/pull/9",
+    BOOTSTRAP_FILES
+  );
+
+  assert.equal(graphql[0]?.variables?.pullRequestId, "PR_node");
+  assert.equal(calls.some((call) => call.route === "PUT /repos/{owner}/{repo}/branches/{branch}/protection"), true);
+  assert.ok(receipts.some((entry) => entry.action === "managed-bootstrap-automerge" && entry.status === "applied"));
+});
+
 test("managed bootstrap rejects a fork or competing branch before protection mutation", async () => {
   const pull = managedBootstrapPull();
   pull.head = { ref: "attacker", sha: BOOTSTRAP_HEAD_SHA, repo: { full_name: "someone/fork" } };
@@ -327,7 +347,7 @@ test("managed bootstrap rejects non-canonical head content before protection mut
     ),
     (error: unknown) => error instanceof SetupOwnerActionRequired
       && error.action === "managed-bootstrap-pr"
-      && /exact canonical managed-only one-commit diff/.test(error.message)
+      && /exact canonical managed-only diff/.test(error.message)
   );
   assert.equal(calls.some((call) => call.route.includes("/protection")), false);
   assert.deepEqual(graphql, []);
@@ -356,7 +376,11 @@ function managedBootstrapPull(): Record<string, unknown> {
   };
 }
 
-function managedBootstrapRequester(options: { pull?: Record<string, unknown>; headTreeSha?: string } = {}) {
+function managedBootstrapRequester(options: {
+  pull?: Record<string, unknown>;
+  headTreeSha?: string;
+  headParents?: string[];
+} = {}) {
   const notFound = Object.assign(new Error("not found"), { status: 404 });
   const pull = options.pull ?? managedBootstrapPull();
   const calls: Array<{ route: string; parameters: Record<string, unknown> }> = [];
@@ -378,7 +402,9 @@ function managedBootstrapRequester(options: { pull?: Record<string, unknown>; he
         return {
           data: {
             tree: { sha: isHead ? (options.headTreeSha ?? BOOTSTRAP_EXPECTED_TREE_SHA) : BOOTSTRAP_BASE_TREE_SHA },
-            parents: isHead ? [{ sha: BOOTSTRAP_BASE_SHA }] : []
+            parents: isHead
+              ? (options.headParents ?? [BOOTSTRAP_BASE_SHA]).map((sha) => ({ sha }))
+              : []
           }
         };
       }

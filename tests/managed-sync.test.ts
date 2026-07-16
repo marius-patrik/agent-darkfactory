@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -96,6 +97,16 @@ const RECOVERY_FILES: ManagedFile[] = [
   }
 ];
 
+const ADVANCE_PRIOR_BASE_SHA = "7".repeat(40);
+const ADVANCE_CURRENT_BASE_SHA = "8".repeat(40);
+const ADVANCE_OLD_HEAD_SHA = "9".repeat(40);
+const ADVANCE_RECOVERY_HEAD_SHA = "a".repeat(40);
+const ADVANCE_PRIOR_BASE_TREE_SHA = "b".repeat(40);
+const ADVANCE_CURRENT_BASE_TREE_SHA = "c".repeat(40);
+const ADVANCE_PRIOR_EXPECTED_TREE_SHA = "d".repeat(40);
+const ADVANCE_CURRENT_EXPECTED_TREE_SHA = "e".repeat(40);
+const ADVANCE_CHANGED_PATHS = ["AGENTS.md", DARK_FACTORY_MANAGED_CONFIG_PATH];
+
 function managedRecoveryRequester(branchTreeSha: string): {
   requester: GitHubRequester;
   calls: Array<{ route: string; parameters: Record<string, unknown> }>;
@@ -143,6 +154,138 @@ function managedRecoveryRequester(branchTreeSha: string): {
       if (route === "GET /repos/{owner}/{repo}/pulls") return { data: [] };
       if (route === "POST /repos/{owner}/{repo}/pulls") {
         return { data: { html_url: "https://github.com/marius-patrik/example/pull/9" } };
+      }
+      throw new Error(`Unexpected route ${route}`);
+    }
+  };
+  return { requester, calls };
+}
+
+function managedBaseAdvanceRequester(options: { updateConflict?: boolean } = {}): {
+  requester: GitHubRequester;
+  calls: Array<{ route: string; parameters: Record<string, unknown> }>;
+} {
+  const calls: Array<{ route: string; parameters: Record<string, unknown> }> = [];
+  let setupHead = ADVANCE_OLD_HEAD_SHA;
+  let pullBody = managedSetupPullRequestBody(ADVANCE_CHANGED_PATHS, {
+    schemaVersion: 1,
+    baseBranch: "main",
+    baseSha: ADVANCE_PRIOR_BASE_SHA,
+    headSha: ADVANCE_OLD_HEAD_SHA,
+    treeSha: ADVANCE_PRIOR_EXPECTED_TREE_SHA,
+    changedPathsDigest: createHash("sha256")
+      .update(JSON.stringify([...ADVANCE_CHANGED_PATHS].sort()))
+      .digest("hex")
+  });
+  const pull = () => ({
+    state: "open",
+    draft: false,
+    title: "Update Dark Factory managed repository setup",
+    commits: setupHead === ADVANCE_RECOVERY_HEAD_SHA ? 2 : 1,
+    body: pullBody,
+    user: { login: "darkfactory-agent[bot]", type: "Bot" },
+    base: {
+      ref: "main",
+      sha: ADVANCE_CURRENT_BASE_SHA,
+      repo: { full_name: "marius-patrik/example" }
+    },
+    head: {
+      ref: MANAGED_SETUP_BRANCH,
+      sha: setupHead,
+      repo: { full_name: "marius-patrik/example" }
+    }
+  });
+  const requester: GitHubRequester = {
+    async request(route, parameters) {
+      calls.push({ route, parameters });
+      if (route === "GET /repos/{owner}/{repo}") {
+        return { data: { default_branch: "main", archived: false } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/git/ref/{ref}") {
+        return {
+          data: {
+            object: {
+              sha: parameters.ref === `heads/${MANAGED_SETUP_BRANCH}`
+                ? setupHead
+                : ADVANCE_CURRENT_BASE_SHA
+            }
+          }
+        };
+      }
+      if (route === "GET /repos/{owner}/{repo}/contents/{path}") throw { status: 404 };
+      if (route === "GET /repos/{owner}/{repo}/git/commits/{commit_sha}") {
+        if (parameters.commit_sha === ADVANCE_PRIOR_BASE_SHA) {
+          return { data: { tree: { sha: ADVANCE_PRIOR_BASE_TREE_SHA }, parents: [] } };
+        }
+        if (parameters.commit_sha === ADVANCE_CURRENT_BASE_SHA) {
+          return {
+            data: {
+              tree: { sha: ADVANCE_CURRENT_BASE_TREE_SHA },
+              parents: [{ sha: ADVANCE_PRIOR_BASE_SHA }]
+            }
+          };
+        }
+        if (parameters.commit_sha === ADVANCE_OLD_HEAD_SHA) {
+          return {
+            data: {
+              tree: { sha: ADVANCE_PRIOR_EXPECTED_TREE_SHA },
+              parents: [{ sha: ADVANCE_PRIOR_BASE_SHA }]
+            }
+          };
+        }
+        if (parameters.commit_sha === ADVANCE_RECOVERY_HEAD_SHA) {
+          return {
+            data: {
+              tree: { sha: ADVANCE_CURRENT_EXPECTED_TREE_SHA },
+              parents: [{ sha: ADVANCE_OLD_HEAD_SHA }, { sha: ADVANCE_CURRENT_BASE_SHA }]
+            }
+          };
+        }
+        throw new Error(`Unexpected commit ${String(parameters.commit_sha)}`);
+      }
+      if (route === "GET /repos/{owner}/{repo}/git/trees/{tree_sha}") {
+        return { data: { tree: [], truncated: false } };
+      }
+      if (route === "POST /repos/{owner}/{repo}/git/trees") {
+        if (parameters.base_tree === ADVANCE_PRIOR_BASE_TREE_SHA) {
+          return { data: { sha: ADVANCE_PRIOR_EXPECTED_TREE_SHA } };
+        }
+        assert.equal(parameters.base_tree, ADVANCE_CURRENT_BASE_TREE_SHA);
+        return { data: { sha: ADVANCE_CURRENT_EXPECTED_TREE_SHA } };
+      }
+      if (route === "GET /installation") {
+        return { data: { app_slug: "darkfactory-agent", app_id: 12345 } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/commits/{ref}") {
+        return { data: { author: { login: "darkfactory-agent[bot]", type: "Bot" } } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/pulls") {
+        return { data: [{ number: 9, html_url: "https://github.com/marius-patrik/example/pull/9" }] };
+      }
+      if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}") {
+        assert.equal(parameters.pull_number, 9);
+        return { data: pull() };
+      }
+      if (route === "GET /repos/{owner}/{repo}/compare/{basehead}") {
+        assert.equal(parameters.basehead, `${ADVANCE_PRIOR_BASE_SHA}...${ADVANCE_CURRENT_BASE_SHA}`);
+        return { data: { status: "ahead", ahead_by: 1, behind_by: 0 } };
+      }
+      if (route === "POST /repos/{owner}/{repo}/git/commits") {
+        assert.deepEqual(parameters.parents, [ADVANCE_OLD_HEAD_SHA, ADVANCE_CURRENT_BASE_SHA]);
+        assert.equal(parameters.tree, ADVANCE_CURRENT_EXPECTED_TREE_SHA);
+        return { data: { sha: ADVANCE_RECOVERY_HEAD_SHA } };
+      }
+      if (route === "PATCH /repos/{owner}/{repo}/git/refs/{ref}") {
+        assert.equal(parameters.ref, `heads/${MANAGED_SETUP_BRANCH}`);
+        assert.equal(parameters.sha, ADVANCE_RECOVERY_HEAD_SHA);
+        assert.equal(parameters.force, false);
+        if (options.updateConflict) throw Object.assign(new Error("conflict"), { status: 409 });
+        setupHead = ADVANCE_RECOVERY_HEAD_SHA;
+        return { data: {} };
+      }
+      if (route === "PATCH /repos/{owner}/{repo}/pulls/{pull_number}") {
+        pullBody = String(parameters.body);
+        return { data: {} };
       }
       throw new Error(`Unexpected route ${route}`);
     }
@@ -360,7 +503,7 @@ test("managed setup recovery preserves and blocks a partial predictable branch",
       RECOVERY_FILES
     ),
     (error: unknown) => error instanceof ManagedSetupTrustViolation
-      && /preserved existing branch work and blocked adoption/.test(error.message)
+      && /unknown or conflicting work/.test(error.message)
   );
 
   assert.equal(calls.some((call) => /^(PATCH .*git\/refs|POST .*git\/commits|POST .*git\/refs|POST .*pulls)/.test(call.route)), false);
@@ -376,10 +519,54 @@ test("managed setup recovery preserves and blocks an exact-looking branch with a
       RECOVERY_FILES
     ),
     (error: unknown) => error instanceof ManagedSetupTrustViolation
-      && /not the exact canonical one-commit plan/.test(error.message)
+      && /unknown or conflicting work/.test(error.message)
   );
 
   assert.equal(calls.some((call) => /^(PATCH .*git\/refs|POST .*git\/commits|POST .*git\/refs|POST .*pulls)/.test(call.route)), false);
+});
+
+test("managed setup safely recovers an exact App-owned pull request after main advances", async () => {
+  const { requester, calls } = managedBaseAdvanceRequester();
+
+  const result = await ensureManagedRepositorySetup(
+    requester,
+    { owner: "marius-patrik", repo: "example" },
+    RECOVERY_FILES
+  );
+
+  assert.equal(result.status, "updated");
+  assert.equal(result.pullRequestUrl, "https://github.com/marius-patrik/example/pull/9");
+  const commit = calls.find((call) => call.route === "POST /repos/{owner}/{repo}/git/commits");
+  assert.ok(commit);
+  assert.deepEqual(commit.parameters.parents, [ADVANCE_OLD_HEAD_SHA, ADVANCE_CURRENT_BASE_SHA]);
+  assert.equal(commit.parameters.tree, ADVANCE_CURRENT_EXPECTED_TREE_SHA);
+  const refUpdate = calls.find((call) => call.route === "PATCH /repos/{owner}/{repo}/git/refs/{ref}");
+  assert.ok(refUpdate);
+  assert.equal(refUpdate.parameters.force, false);
+  const pullUpdate = calls.find((call) => call.route === "PATCH /repos/{owner}/{repo}/pulls/{pull_number}");
+  assert.ok(pullUpdate);
+  assert.match(String(pullUpdate.parameters.body), new RegExp(`base=${ADVANCE_CURRENT_BASE_SHA}`));
+  assert.match(String(pullUpdate.parameters.body), new RegExp(`head=${ADVANCE_RECOVERY_HEAD_SHA}`));
+  assert.ok(calls.filter((call) => call.route === "GET /repos/{owner}/{repo}/pulls/{pull_number}").length >= 2);
+  assert.ok(calls.filter((call) => call.route === "GET /repos/{owner}/{repo}/git/ref/{ref}").length >= 6);
+});
+
+test("managed setup fails closed when its non-force base-advance update conflicts", async () => {
+  const { requester, calls } = managedBaseAdvanceRequester({ updateConflict: true });
+
+  await assert.rejects(
+    ensureManagedRepositorySetup(
+      requester,
+      { owner: "marius-patrik", repo: "example" },
+      RECOVERY_FILES
+    ),
+    (error: unknown) => error instanceof ManagedSetupTrustViolation
+      && /update conflicted; preserved the existing branch and blocked recovery \(409\)/.test(error.message)
+  );
+
+  assert.equal(calls.some((call) => call.route === "PATCH /repos/{owner}/{repo}/git/refs/{ref}"), true);
+  assert.equal(calls.some((call) => call.route === "PATCH /repos/{owner}/{repo}/pulls/{pull_number}"), false);
+  assert.equal(calls.some((call) => call.route === "POST /repos/{owner}/{repo}/pulls"), false);
 });
 
 test("control managed sync refuses contradictory release-control removals before GitHub reads or writes", async () => {
