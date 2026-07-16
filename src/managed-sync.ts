@@ -435,7 +435,7 @@ export function managedSetupPullRequestBody(changedPaths: string[]): string {
     "## Notes",
     "",
     "- Shared Agent OS identity, memory, roles, skills, provider state, and sessions remain under `$AGENTS_HOME`; DarkFactory never copies them into repositories.",
-    "- `.agents/.project` is managed only when a repo-specific `agents-data` overlay exists.",
+    "- `.agents/.project` is managed only when a repo-specific Andromeda-data overlay exists.",
     "- `AGENTS.md` is the repository entrypoint into project-local context and `$AGENTS_HOME`.",
     "- `.darkfactory` policy files define labels, branching, installer, and orchestration behavior.",
     "- `.github/workflows/ci.yml` provides the managed validation baseline.",

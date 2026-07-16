@@ -83,7 +83,7 @@ test("managedSetupPullRequestBody lists changed files and documents Agent OS-own
   assert.doesNotMatch(body, /\.agents\/\.global/);
   assert.match(body, /\.github\/workflows\/ci\.yml/);
   assert.match(body, /\.github\/workflows\/dark-factory-bootstrap\.yml/);
-  assert.match(body, /\.agents\/.project` is managed only when a repo-specific `agents-data` overlay exists/);
+  assert.match(body, /\.agents\/.project` is managed only when a repo-specific Andromeda-data overlay exists/);
   assert.match(body, /Shared Agent OS identity/);
   assert.match(body, /labels, branching, installer, and orchestration behavior/);
   assert.match(body, /dark-factory-autoupdate\.yml/);

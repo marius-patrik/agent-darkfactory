@@ -75,7 +75,7 @@ export function formatRepositorySetupComment(report: RepositorySetupReport): str
     "",
     `Bootstrap \`${GITHUB_BOOTSTRAP_WORKFLOW_PATH}\`, \`${DARK_FACTORY_AUTOUPDATE_WORKFLOW_PATH}\`, and \`${CODEX_REVIEW_WORKFLOW_PATH}\` when GitHub workflow scaffolding is missing.`,
     "Keep repository-local `AGENTS.md` and `.agents/.project` context aligned with the Agent OS authority in `$AGENTS_HOME`.",
-    "Keep `.darkfactory` policy files from the `agents-data` repository so installer, updater, and orchestration expectations stay consistent.",
+    "Keep `.darkfactory` policy files from canonical Andromeda-data so installer, updater, and orchestration expectations stay consistent.",
     "Configure the repository secret `CODEX_AUTH_JSON` so the Codex reviewer can run."
   );
 

@@ -725,6 +725,17 @@ test("repository doctor workflow schedules trusted diagnosis with explicit repor
   assert.doesNotMatch(workflow, /DF_DATA_REPO/);
 });
 
+test("managed repository sync binds the canonical Andromeda-data checkout to AGENTS_HOME", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/sync-managed-repos.yml", import.meta.url), "utf8");
+
+  assert.match(workflow, /repository:\s+marius-patrik\/Andromeda-data\b/);
+  assert.match(workflow, /AGENTS_HOME:\s+\$\{\{ github\.workspace \}\}\/\.andromeda-data/);
+  assert.match(workflow, /repo:'marius-patrik\/Andromeda-data'/);
+  assert.match(workflow, /path:process\.env\.AGENTS_HOME/);
+  assert.doesNotMatch(workflow, /repository:\s+marius-patrik\/agents-data\b/);
+  assert.doesNotMatch(workflow, /process\.env\.AGENTS_ROOT\s*\+\s*['"]\/data\/agent-os/);
+});
+
 test("df-follow-through workflow validates trusted refs before privileged tokens", async () => {
   const workflow = await readFile(new URL("../.github/workflows/df-follow-through.yml", import.meta.url), "utf8");
   const gate = workflow.indexOf("Validate trusted control ref");

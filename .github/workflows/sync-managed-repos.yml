@@ -24,21 +24,21 @@ jobs:
           private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - name: Check out agents-data repo
+      - name: Check out canonical Andromeda-data state
         uses: actions/checkout@v4
         with:
-          repository: marius-patrik/agents-data
+          repository: marius-patrik/Andromeda-data
           token: ${{ steps.app-token.outputs.token }}
-          path: data/agent-os
+          path: .andromeda-data
 
       - name: Register canonical Agent OS data checkout
         env:
           AGENTS_DATA_REPOS: ${{ runner.temp }}/agent-os-data-repos.json
-          AGENTS_ROOT: ${{ github.workspace }}
+          AGENTS_HOME: ${{ github.workspace }}/.andromeda-data
         run: >-
           node -e "require('node:fs').writeFileSync(process.env.AGENTS_DATA_REPOS,
-          JSON.stringify([{id:'agent-os-data',repo:'marius-patrik/agents-data',
-          path:process.env.AGENTS_ROOT + '/data/agent-os',branch:'main',
+          JSON.stringify([{id:'agent-os-data',repo:'marius-patrik/Andromeda-data',
+          path:process.env.AGENTS_HOME,branch:'main',
           env:'AGENTS_SYSTEM_DATA_ROOT',configuredAt:new Date().toISOString()}],
           null, 2) + '\n')"
 
@@ -54,7 +54,7 @@ jobs:
       - name: Sync installed repositories
         env:
           AGENTS_DATA_REPOS: ${{ runner.temp }}/agent-os-data-repos.json
-          AGENTS_ROOT: ${{ github.workspace }}
+          AGENTS_HOME: ${{ github.workspace }}/.andromeda-data
           GITHUB_APP_ID: ${{ secrets.DARK_FACTORY_APP_ID }}
           GITHUB_PRIVATE_KEY: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
         run: npm run sync:managed

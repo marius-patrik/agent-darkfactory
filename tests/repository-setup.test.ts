@@ -67,6 +67,8 @@ test("checkRepositorySetup reports missing repository policy without a version m
   assert.ok(comment?.includes(".github/workflows/codex-review.yml"));
   assert.ok(comment?.includes(".darkfactory/enforcement-rules.json"));
   assert.ok(comment?.includes(".darkfactory/managed-repository.json"));
+  assert.ok(comment?.includes("canonical Andromeda-data"));
+  assert.ok(!comment?.includes("agents-data"));
 });
 
 function createRequester(files: Record<string, string>): GitHubRequester {
