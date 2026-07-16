@@ -279,9 +279,9 @@ async function auditTargetRepository(github, repository, metadata, options) {
   const branches = await listBranches(github, repository);
   const branchNames = new Set(branches.map((branch) => branch.name));
   const pulls = await listOpenPullRequests(github, repository);
-  const issues = await listDoctorIssues(github, repository, "all");
+  const issues = isData ? [] : await listDoctorIssues(github, repository, "all");
   const openIssues = issues.filter((issue) => issue.state === "open");
-  const tree = defaultBranch ? await getRecursiveTree(github, repository, defaultBranch) : null;
+  const tree = !isData && defaultBranch ? await getRecursiveTree(github, repository, defaultBranch) : null;
   const findings = [];
   const observations = [];
 
@@ -295,19 +295,23 @@ async function auditTargetRepository(github, repository, metadata, options) {
   findings.push(...branchAudit.findings);
   observations.push(...branchAudit.observations);
 
-  findings.push(...await auditManagedFileDrift(github, repository, defaultBranch, options.controlRepo));
-  findings.push(...await auditRepositoryTree(repository, tree, { isData }));
-  findings.push(...await auditRootLayout(github, repository, defaultBranch, tree));
-  findings.push(...await auditRuntimeAuthority(github, repository, defaultBranch, options.controlRepo));
-  findings.push(...await auditPrerequisites(github, repository, defaultBranch, options));
-  findings.push(...auditIssueLane(repository, issues, { now: options.now }));
-  findings.push(...await auditPrdDrift(github, repository, defaultBranch, openIssues));
-  findings.push(...await auditDocStaleness(repository, metadata, defaultBranch, github));
-  findings.push(...await auditRetiredAuthorityNames(github, repository, defaultBranch));
+  if (isData) {
+    observations.push("Canonical data repository was inspected only under the main-only protection, administration, force-push, deletion, and branch-hygiene policy; managed-code, workflow, PRD, and submodule requirements do not apply.");
+  } else {
+    findings.push(...await auditManagedFileDrift(github, repository, defaultBranch, options.controlRepo));
+    findings.push(...await auditRepositoryTree(repository, tree, { isData: false }));
+    findings.push(...await auditRootLayout(github, repository, defaultBranch, tree));
+    findings.push(...await auditRuntimeAuthority(github, repository, defaultBranch, options.controlRepo));
+    findings.push(...await auditPrerequisites(github, repository, defaultBranch, options));
+    findings.push(...auditIssueLane(repository, issues, { now: options.now }));
+    findings.push(...await auditPrdDrift(github, repository, defaultBranch, openIssues));
+    findings.push(...await auditDocStaleness(repository, metadata, defaultBranch, github));
+    findings.push(...await auditRetiredAuthorityNames(github, repository, defaultBranch));
 
-  for (const branch of ["main", "dev"].filter((name) => branchNames.has(name))) {
-    findings.push(...await auditHealth(repository, branch, branchSha(branches, branch), github, { now: options.now }));
-    findings.push(...await auditSubmoduleState(github, repository, branch));
+    for (const branch of ["main", "dev"].filter((name) => branchNames.has(name))) {
+      findings.push(...await auditHealth(repository, branch, branchSha(branches, branch), github, { now: options.now }));
+      findings.push(...await auditSubmoduleState(github, repository, branch));
+    }
   }
 
   if (options.localPath) {
@@ -1771,19 +1775,43 @@ async function getRecursiveTree(github, repository, ref) {
 }
 
 async function listRemoteDirectoryFiles(github, repository, dir, ref) {
-  let entries;
-  try {
-    entries = await github.request("GET", `/repos/${repoName(repository)}/contents/${encodePath(dir)}?ref=${encodeURIComponent(ref)}`);
-  } catch (error) {
-    if (error.status === 404) return [];
-    throw error;
-  }
-  if (!Array.isArray(entries)) return [];
   const files = [];
-  for (const entry of entries) {
-    if (entry.type === "file") files.push(entry);
-    if (entry.type === "dir") files.push(...await listRemoteDirectoryFiles(github, repository, entry.path, ref));
+  const visited = new Set();
+
+  async function walk(currentDir, allowMissing) {
+    if (visited.has(currentDir)) {
+      throw new Error(`Repository doctor observed a repeated managed project overlay directory in ${repoName(repository)}.`);
+    }
+    visited.add(currentDir);
+    let entries;
+    try {
+      entries = await github.request("GET", `/repos/${repoName(repository)}/contents/${encodePath(currentDir)}?ref=${encodeURIComponent(ref)}`);
+    } catch (error) {
+      if (allowMissing && error.status === 404) return;
+      if (error.status === 404) {
+        throw new Error(`Repository doctor could not complete managed project overlay enumeration for ${repoName(repository)}.`);
+      }
+      throw error;
+    }
+    if (!Array.isArray(entries)) {
+      throw new Error(`Repository doctor received a malformed managed project overlay directory listing for ${repoName(repository)}.`);
+    }
+    const childPaths = new Set();
+    for (const entry of entries) {
+      const entryPath = entry && typeof entry === "object" && !Array.isArray(entry) ? entry.path : null;
+      const type = entry && typeof entry === "object" && !Array.isArray(entry) ? entry.type : null;
+      const prefix = `${currentDir}/`;
+      const relative = typeof entryPath === "string" && entryPath.startsWith(prefix) ? entryPath.slice(prefix.length) : "";
+      if (!relative || relative.includes("/") || !["file", "dir"].includes(type) || childPaths.has(entryPath)) {
+        throw new Error(`Repository doctor received a malformed managed project overlay entry for ${repoName(repository)}.`);
+      }
+      childPaths.add(entryPath);
+      if (type === "file") files.push(entry);
+      else await walk(entryPath, false);
+    }
   }
+
+  await walk(dir, true);
   return files;
 }
 

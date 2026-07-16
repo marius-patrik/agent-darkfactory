@@ -512,6 +512,31 @@ test("doctor lifecycle admits exact canonical data repositories without making a
   assert.equal(doctor.doctorLifecycleState({ owner: "another-owner", repo: "Andromeda-data" }, repo, registry), "removed");
 });
 
+test("canonical data repositories run only the main-only protection and branch policy", async () => {
+  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const { gh, calls } = mockGh((method, requestPath) => {
+    assert.equal(method, "GET");
+    if (requestPath === "/repos/marius-patrik/Andromeda-data") {
+      return { default_branch: "main", archived: false, disabled: false };
+    }
+    if (requestPath.includes("/branches?")) return [{ name: "main", commit: { sha: "a" } }];
+    if (requestPath.includes("/pulls?state=open")) return [];
+    if (requestPath.endsWith("/branches/main/protection")) return protectedBranch();
+    throw new Error(`managed-code audit escaped the data policy: ${requestPath}`);
+  });
+
+  const reports = await doctor.runRepositoryDoctor(gh, {
+    mode: "diagnose",
+    controlRepo: repo,
+    target: dataRepo,
+    registry: { schemaVersion: 1, repositories: {} }
+  });
+
+  assert.deepEqual(reports[0].findings, []);
+  assert.ok(reports[0].observations.some((item: string) => /main-only protection/.test(item)));
+  assert.equal(calls.some((call) => /\/issues|\/contents|\/git\/trees|\/actions|\/commits/.test(call.path)), false);
+});
+
 test("the #241 shape remains diagnosed while its active head branch is exempt", async () => {
   const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "a" } }, { name: "dark-factory/managed-repository-setup", commit: { sha: "b" } }];
   const pull = { number: 241, head: { ref: "dark-factory/managed-repository-setup", sha: "b", repo: { full_name: "marius-patrik/DarkFactory" } }, base: { ref: "main" } };
@@ -769,6 +794,32 @@ test("managed baseline audit detects drift and files that must be removed", asyn
   const ids = new Set(findings.map((finding) => finding.id));
   assert.ok(ids.has("managed-file-drift-managed-txt"));
   assert.ok(ids.has("managed-removed-file-retired-txt"));
+});
+
+test("managed project overlay enumeration fails closed on malformed or disappearing directory evidence", async () => {
+  const target = { owner: "marius-patrik", repo: "Andromeda" };
+  const manifest = JSON.stringify({ schemaVersion: 1, requiredFiles: [], packageFiles: [], removedFiles: [] });
+  const prefix = "managed-repository/repositories/marius-patrik/Andromeda/.agents/.project";
+  const cases = [
+    ["file returned for directory", { type: "file", path: "C:/private/overlay" }, /malformed managed project overlay directory listing/],
+    ["unsupported entry type", [{ type: "submodule", path: `${prefix}/private-name` }], /malformed managed project overlay entry/],
+    ["child disappears", [{ type: "dir", path: `${prefix}/nested` }], /could not complete managed project overlay enumeration/]
+  ] as const;
+
+  for (const [label, rootResponse, expected] of cases) {
+    const { gh } = mockGh((_method, requestPath) => {
+      if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/.darkfactory/managed-repository.json")) return content(manifest);
+      if (requestPath.includes(`/contents/${prefix}/nested?`)) throw notFound();
+      if (requestPath.includes(`/contents/${prefix}?`)) return rootResponse;
+      throw new Error(`unexpected ${requestPath}`);
+    });
+    await assert.rejects(() => doctor.auditManagedFileDrift(gh, target, "main", repo), expected, label);
+    await assert.rejects(
+      () => doctor.auditManagedFileDrift(gh, target, "main", repo),
+      (error: Error) => !/C:\/private|private-name/.test(error.message),
+      `${label} redaction`
+    );
+  }
 });
 
 test("submodule audit distinguishes invalid URLs, missing gitlinks, and released-pointer drift", async () => {
