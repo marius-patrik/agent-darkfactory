@@ -1,5 +1,6 @@
 import type { OperatorGitHubRequester, RepositoryRef } from "./clean-evidence.js";
-import { MANAGED_SETUP_BRANCH } from "./managed-sync.js";
+import { verifyManagedSetupPullRequest } from "./managed-sync.js";
+import type { ManagedFile } from "./managed-files.js";
 import { isMainOnlyDataRepository } from "./operator.js";
 
 export interface LabelDefinition {
@@ -284,7 +285,8 @@ export async function convergeBranchProtection(
 export async function armManagedSetupBootstrap(
   github: OperatorGitHubRequester,
   repository: RepositoryRef,
-  pullRequestUrl: string
+  pullRequestUrl: string,
+  files?: ManagedFile[]
 ): Promise<SetupReceipt[]> {
   const escaped = `${repository.owner}/${repository.repo}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(`^https://github\\.com/${escaped}/pull/(\\d+)$`, "i").exec(pullRequestUrl);
@@ -294,18 +296,7 @@ export async function armManagedSetupBootstrap(
     ...repository,
     pull_number: pullNumber
   })).data, "managed setup pull request");
-  const base = record(pull.base, "managed setup pull request base");
-  const head = record(pull.head, "managed setup pull request head");
-  const headRepository = record(head.repo, "managed setup pull request head repository");
-  if (
-    pull.state !== "open"
-    || pull.draft === true
-    || base.ref !== "main"
-    || head.ref !== MANAGED_SETUP_BRANCH
-    || String(headRepository.full_name || "").toLowerCase() !== `${repository.owner}/${repository.repo}`.toLowerCase()
-  ) {
-    throw new SetupOwnerActionRequired("managed-bootstrap-pr", "Managed setup pull request identity drifted; bootstrap protection and auto-merge were not authorized.");
-  }
+  await verifyManagedBootstrapCandidate(github, repository, pull, files);
 
   let protection: Record<string, unknown> | null = null;
   try {
@@ -357,7 +348,16 @@ export async function armManagedSetupBootstrap(
   if (typeof github.graphql !== "function") {
     throw new SetupOwnerActionRequired("managed-bootstrap-automerge", "GitHub auto-merge authority is unavailable; setup refused a direct merge.");
   }
-  const nodeId = text(pull.node_id, "managed setup pull request node ID");
+  const refreshedPull = record((await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+    ...repository,
+    pull_number: pullNumber
+  })).data, "managed setup pull request before auto-merge");
+  await verifyManagedBootstrapCandidate(github, repository, refreshedPull, files);
+  if (refreshedPull.auto_merge) {
+    receipts.push(receipt("managed-bootstrap-automerge", `#${pullNumber}`, "current", "Managed setup pull request acquired auto-merge behind branch protection during revalidation."));
+    return receipts;
+  }
+  const nodeId = text(refreshedPull.node_id, "managed setup pull request node ID");
   await github.graphql(
     `mutation EnableManagedSetupAutoMerge($pullRequestId: ID!) {
       enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
@@ -368,6 +368,23 @@ export async function armManagedSetupBootstrap(
   ).catch((error) => { throw wrapOwnerBoundary("managed-bootstrap-automerge", error); });
   receipts.push(receipt("managed-bootstrap-automerge", `#${pullNumber}`, "applied", "Armed squash auto-merge; GitHub can land the bootstrap only after the exact protected gate is green."));
   return receipts;
+}
+
+async function verifyManagedBootstrapCandidate(
+  github: OperatorGitHubRequester,
+  repository: RepositoryRef,
+  pull: Record<string, unknown>,
+  files?: ManagedFile[]
+): Promise<void> {
+  try {
+    await verifyManagedSetupPullRequest(github, repository, pull, files);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Managed setup trust evidence was invalid.";
+    throw new SetupOwnerActionRequired(
+      "managed-bootstrap-pr",
+      `${detail} Bootstrap protection and auto-merge were not authorized.`
+    );
+  }
 }
 
 async function optionalRefHead(

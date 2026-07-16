@@ -1,11 +1,48 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { armManagedSetupBootstrap, convergeBranchProtection, convergeRepositoryFoundation, convergeRepositorySettings, SetupOwnerActionRequired } from "../src/setup.js";
+import {
+  managedSetupPullRequestBody,
+  MANAGED_SETUP_BRANCH,
+  MANAGED_SETUP_TITLE,
+  type ManagedSetupProvenance
+} from "../src/managed-sync.js";
+import { DARK_FACTORY_MANAGED_CONFIG_PATH, type ManagedFile } from "../src/managed-files.js";
 
 const repo = { owner: "marius-patrik", repo: "example" };
 const labels = [{ name: "df:ready", color: "0E8A16", description: "Machine-evaluated" }];
 const workflows = [".github/workflows/ci.yml"];
+const BOOTSTRAP_BASE_SHA = "a".repeat(40);
+const BOOTSTRAP_HEAD_SHA = "b".repeat(40);
+const BOOTSTRAP_BASE_TREE_SHA = "c".repeat(40);
+const BOOTSTRAP_EXPECTED_TREE_SHA = "d".repeat(40);
+const BOOTSTRAP_FILES: ManagedFile[] = [
+  { path: "AGENTS.md", content: "# Canonical managed entrypoint\n" },
+  {
+    path: DARK_FACTORY_MANAGED_CONFIG_PATH,
+    content: `${JSON.stringify({
+      schemaVersion: 1,
+      dataRepo: "marius-patrik/Andromeda-data",
+      ledgerRepo: "marius-patrik/darkfactory-data",
+      packageFiles: [],
+      requiredFiles: [],
+      removedFiles: []
+    })}\n`
+  }
+];
+const BOOTSTRAP_CHANGED_PATHS = BOOTSTRAP_FILES.map((file) => file.path);
+const BOOTSTRAP_PROVENANCE: ManagedSetupProvenance = {
+  schemaVersion: 1,
+  baseBranch: "main",
+  baseSha: BOOTSTRAP_BASE_SHA,
+  headSha: BOOTSTRAP_HEAD_SHA,
+  treeSha: BOOTSTRAP_EXPECTED_TREE_SHA,
+  changedPathsDigest: createHash("sha256")
+    .update(JSON.stringify([...BOOTSTRAP_CHANGED_PATHS].sort()))
+    .digest("hex")
+};
 
 test("setup settings convergence is a proven no-op when repository state is healthy", async () => {
   const calls: Array<{ route: string; parameters: Record<string, unknown> }> = [];
@@ -240,21 +277,123 @@ test("setup replaces the retired Codex Review gate with exact DarkFactory Autore
 });
 
 test("initial managed setup arms auto-merge only behind an exact temporary bootstrap gate", async () => {
+  const { github, calls, graphql } = managedBootstrapRequester();
+
+  const receipts = await armManagedSetupBootstrap(
+    github,
+    repo,
+    "https://github.com/marius-patrik/example/pull/9",
+    BOOTSTRAP_FILES
+  );
+  const write = calls.find((call) => call.route === "PUT /repos/{owner}/{repo}/branches/{branch}/protection")!;
+  assert.deepEqual(write.parameters.required_status_checks, { strict: true, checks: [{ context: "Managed setup", app_id: 15368 }] });
+  assert.equal(write.parameters.enforce_admins, true);
+  assert.equal(write.parameters.allow_force_pushes, false);
+  assert.equal(write.parameters.allow_deletions, false);
+  assert.equal(graphql[0]?.variables?.pullRequestId, "PR_node");
+  assert.equal(calls.filter((call) => call.route === "GET /repos/{owner}/{repo}/pulls/{pull_number}").length, 2);
+  assert.ok(receipts.some((entry) => entry.action === "managed-bootstrap-automerge" && entry.status === "applied"));
+});
+
+test("managed bootstrap rejects a fork or competing branch before protection mutation", async () => {
+  const pull = managedBootstrapPull();
+  pull.head = { ref: "attacker", sha: BOOTSTRAP_HEAD_SHA, repo: { full_name: "someone/fork" } };
+  const { github, calls, graphql } = managedBootstrapRequester({ pull });
+
+  await assert.rejects(
+    armManagedSetupBootstrap(
+      github,
+      repo,
+      "https://github.com/marius-patrik/example/pull/9",
+      BOOTSTRAP_FILES
+    ),
+    (error: unknown) => error instanceof SetupOwnerActionRequired
+      && error.action === "managed-bootstrap-pr"
+      && /exact expected App-owned target, head, parent, and provenance plan/.test(error.message)
+  );
+  assert.equal(calls.some((call) => call.route.includes("/protection")), false);
+  assert.deepEqual(graphql, []);
+});
+
+test("managed bootstrap rejects non-canonical head content before protection mutation", async () => {
+  const { github, calls, graphql } = managedBootstrapRequester({ headTreeSha: "e".repeat(40) });
+
+  await assert.rejects(
+    armManagedSetupBootstrap(
+      github,
+      repo,
+      "https://github.com/marius-patrik/example/pull/9",
+      BOOTSTRAP_FILES
+    ),
+    (error: unknown) => error instanceof SetupOwnerActionRequired
+      && error.action === "managed-bootstrap-pr"
+      && /exact canonical managed-only one-commit diff/.test(error.message)
+  );
+  assert.equal(calls.some((call) => call.route.includes("/protection")), false);
+  assert.deepEqual(graphql, []);
+});
+
+function managedBootstrapPull(): Record<string, unknown> {
+  return {
+    state: "open",
+    draft: false,
+    title: MANAGED_SETUP_TITLE,
+    commits: 1,
+    node_id: "PR_node",
+    auto_merge: null,
+    body: managedSetupPullRequestBody(BOOTSTRAP_CHANGED_PATHS, BOOTSTRAP_PROVENANCE),
+    user: { login: "darkfactory-agent[bot]", type: "Bot" },
+    base: {
+      ref: "main",
+      sha: BOOTSTRAP_BASE_SHA,
+      repo: { full_name: "marius-patrik/example" }
+    },
+    head: {
+      ref: MANAGED_SETUP_BRANCH,
+      sha: BOOTSTRAP_HEAD_SHA,
+      repo: { full_name: "marius-patrik/example" }
+    }
+  };
+}
+
+function managedBootstrapRequester(options: { pull?: Record<string, unknown>; headTreeSha?: string } = {}) {
   const notFound = Object.assign(new Error("not found"), { status: 404 });
+  const pull = options.pull ?? managedBootstrapPull();
   const calls: Array<{ route: string; parameters: Record<string, unknown> }> = [];
-  let installed: Record<string, unknown> | null = null;
   const graphql: Array<{ query: string; variables?: Record<string, unknown> }> = [];
+  let installed: Record<string, unknown> | null = null;
   const github = {
     async request(route: string, parameters: Record<string, unknown>) {
       calls.push({ route, parameters });
-      if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}") return { data: {
-        state: "open",
-        draft: false,
-        node_id: "PR_node",
-        auto_merge: null,
-        base: { ref: "main" },
-        head: { ref: "dark-factory/managed-repository-setup", repo: { full_name: "marius-patrik/example" } }
-      } };
+      if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}") return { data: pull };
+      if (route === "GET /repos/{owner}/{repo}") {
+        return { data: { default_branch: "main", archived: false } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/git/ref/{ref}") {
+        return { data: { object: { sha: BOOTSTRAP_BASE_SHA } } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/contents/{path}") throw notFound;
+      if (route === "GET /repos/{owner}/{repo}/git/commits/{commit_sha}") {
+        const isHead = parameters.commit_sha === BOOTSTRAP_HEAD_SHA;
+        return {
+          data: {
+            tree: { sha: isHead ? (options.headTreeSha ?? BOOTSTRAP_EXPECTED_TREE_SHA) : BOOTSTRAP_BASE_TREE_SHA },
+            parents: isHead ? [{ sha: BOOTSTRAP_BASE_SHA }] : []
+          }
+        };
+      }
+      if (route === "GET /repos/{owner}/{repo}/git/trees/{tree_sha}") {
+        return { data: { tree: [], truncated: false } };
+      }
+      if (route === "POST /repos/{owner}/{repo}/git/trees") {
+        return { data: { sha: BOOTSTRAP_EXPECTED_TREE_SHA } };
+      }
+      if (route === "GET /installation") {
+        return { data: { app_slug: "darkfactory-agent", app_id: 12345 } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/commits/{ref}") {
+        return { data: { author: { login: "darkfactory-agent[bot]", type: "Bot" } } };
+      }
       if (route === "GET /repos/{owner}/{repo}/branches/{branch}/protection") {
         if (!installed) throw notFound;
         return { data: installed };
@@ -275,35 +414,8 @@ test("initial managed setup arms auto-merge only behind an exact temporary boots
       return { enablePullRequestAutoMerge: { pullRequest: { id: "PR_node" } } };
     }
   };
-
-  const receipts = await armManagedSetupBootstrap(github, repo, "https://github.com/marius-patrik/example/pull/9");
-  const write = calls.find((call) => call.route === "PUT /repos/{owner}/{repo}/branches/{branch}/protection")!;
-  assert.deepEqual(write.parameters.required_status_checks, { strict: true, checks: [{ context: "Managed setup", app_id: 15368 }] });
-  assert.equal(write.parameters.enforce_admins, true);
-  assert.equal(write.parameters.allow_force_pushes, false);
-  assert.equal(write.parameters.allow_deletions, false);
-  assert.equal(graphql[0]?.variables?.pullRequestId, "PR_node");
-  assert.ok(receipts.some((entry) => entry.action === "managed-bootstrap-automerge" && entry.status === "applied"));
-});
-
-test("managed bootstrap rejects a fork or competing branch before protection mutation", async () => {
-  let mutated = false;
-  const github = {
-    async request(route: string) {
-      if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}") return { data: {
-        state: "open",
-        draft: false,
-        node_id: "PR_node",
-        base: { ref: "main" },
-        head: { ref: "attacker", repo: { full_name: "someone/fork" } }
-      } };
-      mutated = true;
-      return { data: {} };
-    }
-  };
-  await assert.rejects(armManagedSetupBootstrap(github, repo, "https://github.com/marius-patrik/example/pull/9"), /identity drifted/);
-  assert.equal(mutated, false);
-});
+  return { github, calls, graphql };
+}
 
 function requester(
   calls: Array<{ route: string; parameters: Record<string, unknown> }>,

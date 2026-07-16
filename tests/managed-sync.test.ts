@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 
 import {
   ensureManagedRepositorySetup,
+  ManagedSetupTrustViolation,
   ManagedSourcePolicyContradiction,
   managedSetupPullRequestBody,
   MANAGED_SETUP_BRANCH,
@@ -75,6 +76,79 @@ const PACKAGE_MANAGED_PATHS = new Set([
   DARK_FACTORY_SWEEP_SCRIPT_PATH,
   DARK_FACTORY_WORK_SCRIPT_PATH
 ]);
+
+const RECOVERY_BASE_SHA = "1".repeat(40);
+const RECOVERY_HEAD_SHA = "2".repeat(40);
+const RECOVERY_BASE_TREE_SHA = "3".repeat(40);
+const RECOVERY_EXPECTED_TREE_SHA = "4".repeat(40);
+const RECOVERY_FILES: ManagedFile[] = [
+  { path: "AGENTS.md", content: "# Canonical managed entrypoint\n" },
+  {
+    path: DARK_FACTORY_MANAGED_CONFIG_PATH,
+    content: `${JSON.stringify({
+      schemaVersion: 1,
+      dataRepo: "marius-patrik/Andromeda-data",
+      ledgerRepo: "marius-patrik/darkfactory-data",
+      packageFiles: [],
+      requiredFiles: [],
+      removedFiles: []
+    })}\n`
+  }
+];
+
+function managedRecoveryRequester(branchTreeSha: string): {
+  requester: GitHubRequester;
+  calls: Array<{ route: string; parameters: Record<string, unknown> }>;
+} {
+  const calls: Array<{ route: string; parameters: Record<string, unknown> }> = [];
+  const requester: GitHubRequester = {
+    async request(route, parameters) {
+      calls.push({ route, parameters });
+      if (route === "GET /repos/{owner}/{repo}") {
+        return { data: { default_branch: "main", archived: false } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/git/ref/{ref}") {
+        return {
+          data: {
+            object: {
+              sha: parameters.ref === `heads/${MANAGED_SETUP_BRANCH}`
+                ? RECOVERY_HEAD_SHA
+                : RECOVERY_BASE_SHA
+            }
+          }
+        };
+      }
+      if (route === "GET /repos/{owner}/{repo}/contents/{path}") throw { status: 404 };
+      if (route === "GET /repos/{owner}/{repo}/git/commits/{commit_sha}") {
+        const isHead = parameters.commit_sha === RECOVERY_HEAD_SHA;
+        return {
+          data: {
+            tree: { sha: isHead ? branchTreeSha : RECOVERY_BASE_TREE_SHA },
+            parents: isHead ? [{ sha: RECOVERY_BASE_SHA }] : []
+          }
+        };
+      }
+      if (route === "GET /repos/{owner}/{repo}/git/trees/{tree_sha}") {
+        return { data: { tree: [], truncated: false } };
+      }
+      if (route === "POST /repos/{owner}/{repo}/git/trees") {
+        return { data: { sha: RECOVERY_EXPECTED_TREE_SHA } };
+      }
+      if (route === "GET /installation") {
+        return { data: { app_slug: "darkfactory-agent", app_id: 12345 } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/commits/{ref}") {
+        return { data: { author: { login: "darkfactory-agent[bot]", type: "Bot" } } };
+      }
+      if (route === "GET /repos/{owner}/{repo}/pulls") return { data: [] };
+      if (route === "POST /repos/{owner}/{repo}/pulls") {
+        return { data: { html_url: "https://github.com/marius-patrik/example/pull/9" } };
+      }
+      throw new Error(`Unexpected route ${route}`);
+    }
+  };
+  return { requester, calls };
+}
 
 async function seedCanonicalManagedSource(root: string): Promise<{ managedRoot: string; registryPath: string }> {
   const dataRoot = root;
@@ -253,6 +327,59 @@ test("ensureManagedRepositorySetup creates a managed PR when files are missing",
           entry.sha === null
       )
   );
+});
+
+test("managed setup recovery creates the missing PR only for the exact App-owned canonical branch", async () => {
+  const { requester, calls } = managedRecoveryRequester(RECOVERY_EXPECTED_TREE_SHA);
+
+  const result = await ensureManagedRepositorySetup(
+    requester,
+    { owner: "marius-patrik", repo: "example" },
+    RECOVERY_FILES
+  );
+
+  assert.equal(result.status, "created");
+  assert.equal(result.pullRequestUrl, "https://github.com/marius-patrik/example/pull/9");
+  assert.equal(calls.some((call) => call.route === "PATCH /repos/{owner}/{repo}/git/refs/{ref}"), false);
+  assert.equal(calls.some((call) => call.route === "POST /repos/{owner}/{repo}/git/commits"), false);
+  assert.equal(calls.some((call) => call.route === "POST /repos/{owner}/{repo}/git/refs"), false);
+  const createPull = calls.find((call) => call.route === "POST /repos/{owner}/{repo}/pulls");
+  assert.ok(createPull);
+  assert.match(String(createPull.parameters.body), new RegExp(`base=${RECOVERY_BASE_SHA}`));
+  assert.match(String(createPull.parameters.body), new RegExp(`head=${RECOVERY_HEAD_SHA}`));
+  assert.match(String(createPull.parameters.body), new RegExp(`tree=${RECOVERY_EXPECTED_TREE_SHA}`));
+});
+
+test("managed setup recovery preserves and blocks a partial predictable branch", async () => {
+  const { requester, calls } = managedRecoveryRequester("5".repeat(40));
+
+  await assert.rejects(
+    ensureManagedRepositorySetup(
+      requester,
+      { owner: "marius-patrik", repo: "example" },
+      RECOVERY_FILES
+    ),
+    (error: unknown) => error instanceof ManagedSetupTrustViolation
+      && /preserved existing branch work and blocked adoption/.test(error.message)
+  );
+
+  assert.equal(calls.some((call) => /^(PATCH .*git\/refs|POST .*git\/commits|POST .*git\/refs|POST .*pulls)/.test(call.route)), false);
+});
+
+test("managed setup recovery preserves and blocks an exact-looking branch with a malicious extra file", async () => {
+  const { requester, calls } = managedRecoveryRequester("6".repeat(40));
+
+  await assert.rejects(
+    ensureManagedRepositorySetup(
+      requester,
+      { owner: "marius-patrik", repo: "example" },
+      RECOVERY_FILES
+    ),
+    (error: unknown) => error instanceof ManagedSetupTrustViolation
+      && /not the exact canonical one-commit plan/.test(error.message)
+  );
+
+  assert.equal(calls.some((call) => /^(PATCH .*git\/refs|POST .*git\/commits|POST .*git\/refs|POST .*pulls)/.test(call.route)), false);
 });
 
 test("control managed sync refuses contradictory release-control removals before GitHub reads or writes", async () => {
