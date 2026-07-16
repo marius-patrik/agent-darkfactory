@@ -82,13 +82,19 @@ export interface NativeCliLaunch {
   stdinPiped: boolean;
 }
 
-function defaultParseResult(stdout: string, stderr: string, code: number): TurnResult {
+function providerExecutionFailure(): TurnResult {
+  return {
+    content: "",
+    role: "assistant",
+    error: "provider execution failed",
+  };
+}
+
+function defaultParseResult(stdout: string, _stderr: string, code: number): TurnResult {
   if (code !== 0) {
-    return {
-      content: "",
-      role: "assistant",
-      error: stderr.trim() || `provider exited with code ${code}`,
-    };
+    // Provider stderr is untrusted and may contain prompts, paths, or
+    // credentials. Canonical session errors retain only this fixed result.
+    return providerExecutionFailure();
   }
   return {
     content: stdout.trim(),

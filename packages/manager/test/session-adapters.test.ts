@@ -318,6 +318,16 @@ describe("provider CLI session arguments", () => {
     const secret = "PROVIDER_SECRET_STDERR";
     expect(parseCodexJsonResult("not-json", secret, 0).error).toBe("provider returned malformed structured output");
     expect(parseClaudeJsonResult("not-json", secret, 0).error).toBe("provider returned malformed structured output");
+    expect(parseCodexJsonResult("", secret, 1)).toEqual({
+      content: "",
+      role: "assistant",
+      error: "provider execution failed",
+    });
+    expect(parseClaudeJsonResult("", secret, 1)).toEqual({
+      content: "",
+      role: "assistant",
+      error: "provider execution failed",
+    });
   });
 });
 
@@ -3152,15 +3162,16 @@ describe("managed Agy provider boundary (issue #252)", () => {
         workdir: root,
       });
       const normalResult = await runSessionTurn(state, adapter, normalDescriptor, { prompt: "normal error" });
-      expect(normalResult.error).toContain(providerError);
+      expect(normalResult.error).toBe("provider execution failed");
+      expect(JSON.stringify(normalResult)).not.toContain(providerError);
       expect(normalResult.receipt).toEqual(expectedReceipt);
       const normalTranscript = await loadTranscript(state, normalDescriptor.sessionId);
       const normalAssistant = normalTranscript?.messages.find((message) => message.role === "assistant");
       expect(normalAssistant?.metadata?.error).toBe(true);
       expect(normalAssistant?.metadata?.receipt).toEqual(expectedReceipt);
-      expect(completedTurnEvent(await loadSessionEvents(state, normalDescriptor.sessionId)).data.receipt).toEqual(
-        expectedReceipt,
-      );
+      const normalEvents = await loadSessionEvents(state, normalDescriptor.sessionId);
+      expect(completedTurnEvent(normalEvents).data.receipt).toEqual(expectedReceipt);
+      expect(JSON.stringify(normalEvents)).not.toContain(providerError);
 
       const streamDescriptor = await createSession(state, {
         provider: "agy",
@@ -3172,14 +3183,15 @@ describe("managed Agy provider boundary (issue #252)", () => {
       for await (const chunk of streamSessionTurn(state, adapter, streamDescriptor, { prompt: "stream error" })) {
         chunks.push(chunk);
       }
-      expect(chunks.some((chunk) => chunk.type === "error" && chunk.error?.includes(providerError))).toBe(true);
+      expect(chunks.some((chunk) => chunk.type === "error" && chunk.error === "provider execution failed")).toBe(true);
+      expect(JSON.stringify(chunks)).not.toContain(providerError);
       const streamTranscript = await loadTranscript(state, streamDescriptor.sessionId);
       const streamAssistant = streamTranscript?.messages.find((message) => message.role === "assistant");
       expect(streamAssistant?.metadata?.error).toBe(true);
       expect(streamAssistant?.metadata?.receipt).toEqual(expectedReceipt);
-      expect(completedTurnEvent(await loadSessionEvents(state, streamDescriptor.sessionId)).data.receipt).toEqual(
-        expectedReceipt,
-      );
+      const streamEvents = await loadSessionEvents(state, streamDescriptor.sessionId);
+      expect(completedTurnEvent(streamEvents).data.receipt).toEqual(expectedReceipt);
+      expect(JSON.stringify(streamEvents)).not.toContain(providerError);
 
       const captured = parseCapture(await readFile(capture, "utf8"));
       expect(captured.startupUpdaterDecision).toBe("disabled");
