@@ -432,7 +432,16 @@ export function validateReleaseReceipt(receipt, child, policy, now = Date.now())
   if (receipt.kind !== "df-release" || receipt.status !== "verified") blockers.push("child-release-receipt-not-verified");
   if (String(receipt.target_repo || "").toLowerCase() !== expected
       || String(receipt.repository || "").toLowerCase() !== expected) blockers.push("child-release-receipt-repository-mismatch");
-  if (!isSha(receipt.main_sha) || receipt.main_sha !== receipt.dev_sha) blockers.push("child-release-receipt-sha-invalid");
+  const exactCommitIdentity = isSha(receipt.main_sha)
+    && isSha(receipt.dev_sha)
+    && receipt.main_sha === receipt.dev_sha;
+  const exactTreeIdentity = isSha(receipt.main_sha)
+    && isSha(receipt.dev_sha)
+    && receipt.main_sha !== receipt.dev_sha
+    && isSha(receipt.main_tree_sha)
+    && isSha(receipt.dev_tree_sha)
+    && receipt.main_tree_sha === receipt.dev_tree_sha;
+  if (!exactCommitIdentity && !exactTreeIdentity) blockers.push("child-release-receipt-sha-invalid");
   const created = Date.parse(receipt.created_at || "");
   const maximumAge = policy.releaseReceiptMaxAgeHours * 60 * 60 * 1000;
   if (!Number.isFinite(created) || created > Number(now) + 5 * 60 * 1000 || Number(now) - created > maximumAge) {

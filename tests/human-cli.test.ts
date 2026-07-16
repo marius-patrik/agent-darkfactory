@@ -12,7 +12,13 @@ import {
   humanJsonResult,
   parseHumanCliArgs
 } from "../src/human-cli.js";
-import { runCli } from "../src/cli.js";
+import {
+  executeSubmoduleEngine,
+  parseSubmoduleCliArgs,
+  runCli,
+  submoduleGithubPermissions,
+  submoduleJsonResult
+} from "../src/cli.js";
 
 test("human CLI registry covers every owner-approved command family and both executable aliases", async () => {
   const ids = new Set(HUMAN_COMMANDS.map((entry) => entry.id));
@@ -89,8 +95,53 @@ test("JSON issue drafting never falls through to interactive prompts", async () 
   );
 });
 
-test("the remaining dependency-owned submodule family fails explicitly instead of falling through as unknown", async () => {
-  await assert.rejects(() => runCli(["submodules", "status", "marius-patrik/Andromeda", "--json"]), /submodule convergence engine from #43/);
+test("submodule CLI preserves status/update/verify parity with the shared engine", async () => {
+  const status = parseSubmoduleCliArgs(["status", "marius-patrik/DarkFactory", "--watch", "--json"]);
+  assert.deepEqual(status, { mode: "status", child: "marius-patrik/DarkFactory", watch: true, json: true });
+  assert.ok(Object.values(submoduleGithubPermissions("status")).every((permission) => permission === "read"));
+  assert.equal(submoduleGithubPermissions("update").contents, "write");
+  assert.equal(submoduleGithubPermissions("verify").pull_requests, "write");
+
+  const calls: Array<{ mode: string; child: string }> = [];
+  const results = [
+    { schemaVersion: 1, mode: "update", status: "waiting-for-validation", plan: { action: "update" } },
+    { schemaVersion: 1, mode: "update", status: "released", plan: { action: "released" } }
+  ];
+  let waits = 0;
+  const updated = await executeSubmoduleEngine(
+    parseSubmoduleCliArgs(["update", "marius-patrik/DarkFactory", "--watch"]),
+    { async run(input) { calls.push(input); return results.shift()!; } },
+    { maxPasses: 3, wait: async () => { waits += 1; } }
+  );
+  assert.equal(updated.status, "released");
+  assert.equal(waits, 1);
+  assert.deepEqual(calls, [
+    { mode: "update", child: "marius-patrik/DarkFactory" },
+    { mode: "update", child: "marius-patrik/DarkFactory" }
+  ]);
+
+  const verified = await executeSubmoduleEngine(
+    parseSubmoduleCliArgs(["verify", "marius-patrik/DarkFactory"]),
+    { async run(input) { calls.push(input); return { schemaVersion: 1, mode: input.mode, status: "current", plan: { action: "current" } }; } }
+  );
+  assert.equal(verified.mode, "verify");
+  assert.equal(calls.at(-1)?.mode, "verify");
+  assert.deepEqual(submoduleJsonResult(
+    parseSubmoduleCliArgs(["verify", "--json"]),
+    { schemaVersion: 1, mode: "verify", status: "blocked" }
+  ), {
+    schemaVersion: 1,
+    command: "submodules-verify",
+    status: "blocked",
+    data: { schemaVersion: 1, mode: "verify", status: "blocked" },
+    error: { code: "submodule_convergence_blocked", message: "Submodule convergence is blocked by current evidence" }
+  });
+});
+
+test("submodule CLI rejects ambiguous and bypassing mutation requests", () => {
+  assert.throws(() => parseSubmoduleCliArgs(["update", "owner/one", "owner/two"]), /at most one/);
+  assert.throws(() => parseSubmoduleCliArgs(["verify", "--force"]), /intentionally unavailable/);
+  assert.throws(() => parseSubmoduleCliArgs(["status", "not-a-repository"]), /invalid repository/i);
 });
 
 test("CLI and Actions invoke the same issue and PR Autoreview engine with exact version admission", async () => {

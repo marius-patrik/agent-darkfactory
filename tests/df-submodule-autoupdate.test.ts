@@ -62,6 +62,8 @@ function releaseReceipt(overrides = {}) {
     repository: "marius-patrik/DarkFactory",
     main_sha: NEW,
     dev_sha: NEW,
+    main_tree_sha: TREE,
+    dev_tree_sha: TREE,
     policy_mode: "branch-only",
     release: {
       green: true,
@@ -418,14 +420,44 @@ test("latest pointer receipt fails closed when complete Git tree evidence is tru
   );
 });
 
-test("release receipt requires exact repository, fresh identical SHA, green App-bound gates, and publication", () => {
+test("release receipt admits exact commit identity and targets the released main SHA", () => {
   const valid = submodules.validateReleaseReceipt(releaseReceipt(), CHILD, policy, Date.parse("2026-07-15T09:00:00Z"));
   assert.equal(valid.sha, NEW);
   assert.deepEqual(valid.blockers, []);
+});
+
+test("release receipt admits distinct commits only when their exact trees converge", () => {
+  const converged = submodules.validateReleaseReceipt(releaseReceipt({
+    main_sha: OLD,
+    dev_sha: NEW,
+    main_tree_sha: TREE,
+    dev_tree_sha: TREE
+  }), CHILD, policy, Date.parse("2026-07-15T09:00:00Z"));
+  assert.equal(converged.sha, OLD);
+  assert.deepEqual(converged.blockers, []);
+});
+
+test("release receipt rejects unequal or malformed tree evidence for distinct commits", () => {
+  for (const [label, trees] of [
+    ["unequal", { main_tree_sha: TREE, dev_tree_sha: "6".repeat(40) }],
+    ["malformed", { main_tree_sha: TREE, dev_tree_sha: "not-a-tree" }]
+  ] as const) {
+    const denied = submodules.validateReleaseReceipt(releaseReceipt({
+      main_sha: OLD,
+      dev_sha: NEW,
+      ...trees
+    }), CHILD, policy, Date.parse("2026-07-15T09:00:00Z"));
+    assert.ok(denied.blockers.includes("child-release-receipt-sha-invalid"), label);
+  }
+});
+
+test("release receipt still requires exact repository, green App-bound gates, and publication", () => {
 
   const malformed = releaseReceipt({
     main_sha: OLD,
     dev_sha: NEW,
+    main_tree_sha: TREE,
+    dev_tree_sha: "6".repeat(40),
     release: { ...releaseReceipt().release, checks: { green: true, checks: [{ name: "Validate", expectedAppId: 15368, actualAppId: 1, state: "green" }] } }
   });
   const denied = submodules.validateReleaseReceipt(malformed, CHILD, policy, Date.parse("2026-07-15T09:00:00Z"));

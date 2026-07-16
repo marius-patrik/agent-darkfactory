@@ -594,6 +594,116 @@ async function runRelease(args: string[]): Promise<void> {
   else printReleaseResult(result);
 }
 
+export type SubmoduleCliOptions = {
+  mode: "status" | "update" | "verify";
+  child: string;
+  watch: boolean;
+  json: boolean;
+};
+
+type SubmoduleEngine = {
+  run(options: { mode: SubmoduleCliOptions["mode"]; child: string }): Promise<Record<string, unknown>>;
+};
+
+export function parseSubmoduleCliArgs(args: string[]): SubmoduleCliOptions {
+  const options: SubmoduleCliOptions = { mode: "status", child: "", watch: false, json: false };
+  let index = 0;
+  if (["status", "update", "verify"].includes(args[0])) {
+    options.mode = args[0] as SubmoduleCliOptions["mode"];
+    index += 1;
+  }
+  let childSeen = false;
+  for (; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--watch") { options.watch = true; continue; }
+    if (argument === "--json") { options.json = true; continue; }
+    if (["--force", "--bypass", "--admin"].includes(argument)) throw new Error(`${argument} is intentionally unavailable for submodule convergence`);
+    if (argument.startsWith("-")) throw new Error(`unknown submodules option: ${argument}`);
+    if (childSeen) throw new Error("submodules accepts at most one released child owner/repo target");
+    options.child = validateRepository(argument);
+    childSeen = true;
+  }
+  return options;
+}
+
+export function submoduleGithubPermissions(mode: SubmoduleCliOptions["mode"]): Record<string, "read" | "write"> {
+  const mutating = mode !== "status";
+  return {
+    administration: "read",
+    actions: mutating ? "write" : "read",
+    checks: "read",
+    contents: mutating ? "write" : "read",
+    issues: mutating ? "write" : "read",
+    pull_requests: mutating ? "write" : "read",
+    statuses: "read"
+  };
+}
+
+function submoduleWatchSettled(result: Record<string, unknown>): boolean {
+  const status = typeof result.status === "string" ? result.status : "";
+  if (["blocked", "current", "released", "automerge-armed", "failed", "skipped"].includes(status)) return true;
+  const plan = isRecord(result.plan) ? result.plan : null;
+  return result.mode === "status" && plan !== null && ["block", "current", "released"].includes(String(plan.action || ""));
+}
+
+export async function executeSubmoduleEngine(
+  options: SubmoduleCliOptions,
+  engine: SubmoduleEngine,
+  runtime: { maxPasses?: number; wait?: (milliseconds: number) => Promise<void> } = {}
+): Promise<Record<string, unknown>> {
+  const maxPasses = options.watch ? (runtime.maxPasses ?? boundedInteger(process.env.DF_SUBMODULE_WATCH_PASSES, 40, 1, 240)) : 1;
+  const wait = runtime.wait ?? (async (milliseconds: number) => { await delay(milliseconds); });
+  let result: Record<string, unknown> = {};
+  for (let pass = 1; pass <= maxPasses; pass += 1) {
+    result = await engine.run({ mode: options.mode, child: options.child });
+    if (!options.watch || submoduleWatchSettled(result)) return result;
+    if (pass < maxPasses) await wait(15_000);
+  }
+  throw new Error(`Timed out waiting for submodule ${options.mode} convergence`);
+}
+
+export function submoduleJsonResult(options: SubmoduleCliOptions, result: Record<string, unknown>): ReturnType<typeof humanJsonResult> {
+  const blocked = result.status === "blocked";
+  return humanJsonResult(
+    `submodules-${options.mode}`,
+    blocked ? "blocked" : "ok",
+    result,
+    blocked ? { code: "submodule_convergence_blocked", message: "Submodule convergence is blocked by current evidence" } : null
+  );
+}
+
+async function runSubmodules(args: string[]): Promise<void> {
+  const options = parseSubmoduleCliArgs(args);
+  const credentials = loadAppCredentials();
+  const app = new App({ appId: credentials.appId, privateKey: credentials.privateKey });
+  const mutating = options.mode !== "status";
+  const github = createDoctorRequester(await getScopedInstallationOctokit(app, CONTROL_OWNER, submoduleGithubPermissions(options.mode)));
+  const ledgerGithub = mutating
+    ? createDoctorRequester(await getScopedInstallationOctokit(app, CONTROL_OWNER, { contents: "write" }, ["darkfactory-data"]))
+    : github;
+  const module = await import(new URL("../.github/scripts/df-submodule-autoupdate.mjs", import.meta.url).href) as unknown as {
+    configureSubmoduleRuntime(options: Record<string, unknown>): void;
+    runSubmoduleCommand(options: { mode: SubmoduleCliOptions["mode"]; child: string }): Promise<Record<string, unknown>>;
+  };
+  module.configureSubmoduleRuntime({
+    gh: github,
+    ledgerGh: ledgerGithub,
+    controlRepo: { owner: CONTROL_OWNER, repo: CONTROL_REPO },
+    root: fileURLToPath(new URL("..", import.meta.url))
+  });
+  const result = await executeSubmoduleEngine(options, { run: module.runSubmoduleCommand });
+  const blocked = result.status === "blocked";
+  if (options.json) {
+    console.log(JSON.stringify(submoduleJsonResult(options, result), null, 2));
+  } else {
+    const plan = isRecord(result.plan) ? result.plan : {};
+    console.log(`Submodule ${options.mode}: ${String(result.status || "observed")}.`);
+    console.log(`- Plan: ${String(plan.planId || "read-only")} (${String(plan.action || "observe")})`);
+    console.log("Rerun with --watch to observe the same evidence-bound lane; no force or bypass mode exists.");
+  }
+  if (blocked) process.exitCode = 1;
+}
+
 export function parseCleanCliArgs(args: string[]): CleanCliOptions {
   const options: CleanCliOptions = {
     mode: "plan",
@@ -969,8 +1079,15 @@ async function runHumanCommand(command: ParsedHumanCommand): Promise<boolean> {
     }
     case "submodules-status":
     case "submodules-update":
-    case "submodules-verify":
-      throw new Error(`${command.spec.path.join(" ")} requires the dependency-owned submodule convergence engine from #43`);
+    case "submodules-verify": {
+      await runSubmodules([
+        command.spec.id.slice("submodules-".length),
+        ...command.arguments,
+        ...(command.options["--watch"] === true ? ["--watch"] : []),
+        ...(command.options["--json"] === true ? ["--json"] : [])
+      ]);
+      return true;
+    }
     default:
       return false;
   }
