@@ -232,11 +232,15 @@ function resolveCanonicalDataRepoRoot(): string {
     const parsed = JSON.parse(readFileSync(dataReposFile, "utf8")) as unknown;
     if (!Array.isArray(parsed)) throw new Error(`Invalid Agent OS data repository registry: ${dataReposFile}`);
 
-    const matches = parsed.filter((entry) => isRecord(entry) && entry.id === "agent-os-data");
-    if (matches.length !== 1) {
+    const records = parsed.filter(isRecord);
+    if (records.length !== parsed.length) {
+      throw new Error(`Invalid Agent OS data repository registry record in ${dataReposFile}`);
+    }
+    const authorities = records.filter((record) => record.id === "agent-os-data");
+    if (authorities.length !== 1) {
       throw new Error(`Agent OS data repository registry must contain exactly one agent-os-data authority record: ${dataReposFile}`);
     }
-    const dataRepo = matches[0];
+    const dataRepo = authorities[0];
     if (dataRepo.repo !== "marius-patrik/Andromeda-data") {
       throw new Error(`agent-os-data must use repository marius-patrik/Andromeda-data in ${dataReposFile}`);
     }

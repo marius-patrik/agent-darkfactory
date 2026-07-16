@@ -14,6 +14,12 @@ const LABEL_POLICY = JSON.stringify({
   schemaVersion: 1,
   labels: doctor.DOCTOR_REPORT_LABEL_NAMES.map((name: string) => ({ name, color: "0E8A16", description: `label ${name}` }))
 });
+const controlRevision = "c".repeat(40);
+const agentOsDataRevision = "d".repeat(40);
+const targetRevision = "a".repeat(40);
+const releaseMainRevision = "1".repeat(40);
+const releaseDevRevision = "2".repeat(40);
+const releaseHeadRevision = "3".repeat(40);
 
 function content(text: string) {
   return { type: "file", encoding: "base64", content: Buffer.from(text).toString("base64") };
@@ -50,6 +56,12 @@ test("doctor modes are explicit and repair is fail-closed", () => {
   assert.equal(doctor.parseDoctorMode("report"), "report");
   assert.throws(() => doctor.parseDoctorMode("repair"), /repair mode is not implemented/i);
   assert.throws(() => doctor.parseDoctorMode("surprise"), /Unknown repository-doctor mode/);
+});
+
+test("doctor source authority accepts only exact immutable commit revisions", () => {
+  assert.equal(doctor.assertExactCommit(controlRevision.toUpperCase(), "trusted control"), controlRevision);
+  assert.throws(() => doctor.assertExactCommit("main", "trusted control"), /exact 40-character trusted control commit/);
+  assert.throws(() => doctor.assertExactCommit("a".repeat(39), "canonical Andromeda-data"), /exact 40-character canonical Andromeda-data commit/);
 });
 
 test("report mode requires a distinct ledger authority and diagnose needs none", () => {
@@ -97,6 +109,7 @@ test("report mode writes ledger-only skipped evidence for canonical parked and a
       mode: "report",
       trigger: "test",
       controlRepo: repo,
+      controlRevision,
       target,
       ledgerGithub: ledgerGh,
       registry: { schemaVersion: 1, repositories: { "marius-patrik/ArchivedProduct": { state: "active" } } }
@@ -112,8 +125,48 @@ test("report mode writes ledger-only skipped evidence for canonical parked and a
     const ledger = JSON.parse(Buffer.from((ledgerWrite.body as { content: string }).content, "base64").toString("utf8"));
     assert.equal(ledger.phase, "completion");
     assert.equal(ledger.mode, "report");
+    assert.equal(ledger.source_refs.control, `marius-patrik/DarkFactory@${controlRevision}`);
     assert.match(ledger.observations[0], variant === "parked" ? /parked/ : /read-only/);
     assert.deepEqual(ledger.actions, []);
+  }
+});
+
+test("report mode refuses unmanaged and removed targets before target inspection or mutation", async () => {
+  for (const [target, registry, expectedLifecycle] of [
+    [
+      { owner: "marius-patrik", repo: "UnmanagedProduct" },
+      { schemaVersion: 1, repositories: {} },
+      "removed"
+    ],
+    [
+      { owner: "marius-patrik", repo: "RemovedProduct" },
+      { schemaVersion: 1, repositories: { "marius-patrik/RemovedProduct": { state: "removed" } } },
+      "removed"
+    ]
+  ] as const) {
+    const { gh: targetGh, calls: targetCalls } = mockGh((_method, requestPath) => {
+      throw new Error(`ineligible report target must not be inspected or mutated: ${requestPath}`);
+    });
+    const { gh: ledgerGh, calls: ledgerCalls } = mockGh((method) => {
+      if (method === "GET") throw notFound();
+      if (method === "PUT") return {};
+      throw new Error(`unexpected ledger method ${method}`);
+    });
+
+    const reports = await doctor.runRepositoryDoctor(targetGh, {
+      mode: "report",
+      trigger: "test",
+      controlRepo: repo,
+      controlRevision,
+      target,
+      ledgerGithub: ledgerGh,
+      registry
+    });
+
+    assert.equal(reports[0].skipped, true);
+    assert.match(reports[0].reason, new RegExp(`lifecycle is ${expectedLifecycle}`));
+    assert.equal(targetCalls.length, 0);
+    assert.equal(ledgerCalls.filter((call) => call.method === "PUT").length, 1);
   }
 });
 
@@ -250,11 +303,11 @@ test("branch policy accepts protected identical main/dev and exempts active PR h
     base: { ref: "dev" }
   };
   const { gh } = mockGh((method, requestPath) => {
-    if (requestPath.endsWith("/compare/main...dev")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+    if (requestPath.endsWith("/compare/a...a")) return { status: "identical", ahead_by: 0, behind_by: 0 };
     if (requestPath.endsWith("/branches/main/protection") || requestPath.endsWith("/branches/dev/protection")) return protectedBranch();
     if (requestPath.endsWith("/pulls/10")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://github.com/marius-patrik/DarkFactory/pull/10" };
-    if (requestPath.includes("/commits/b/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/commits/b/status")) return { statuses: [] };
+    if (requestPath.includes("/commits/b/check-runs")) return { total_count: 1, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/commits/b/status")) return { total_count: 0, statuses: [] };
     throw new Error(`unexpected ${method} ${requestPath}`);
   });
   const result = await doctor.auditBranchAndReleaseState(gh, repo, { default_branch: "main", allow_auto_merge: true }, {
@@ -278,12 +331,12 @@ test("an open PR exempts only the exact same-repository branch head SHA", async 
     head: { ref: "feature/moved", sha: "stale-pr-head", repo: { full_name: "marius-patrik/DarkFactory" } },
     base: { ref: "dev" }
   };
-  const { gh } = mockGh((_method, requestPath) => {
-    if (requestPath.endsWith("/compare/main...dev")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+  const { gh, calls } = mockGh((_method, requestPath) => {
+    if (requestPath.endsWith("/compare/a...a")) return { status: "identical", ahead_by: 0, behind_by: 0 };
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.endsWith("/pulls/11")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://example.test/11" };
-    if (requestPath.includes("/commits/stale-pr-head/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/commits/stale-pr-head/status")) return { statuses: [] };
+    if (requestPath.includes("/commits/stale-pr-head/check-runs")) return { total_count: 1, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/commits/stale-pr-head/status")) return { total_count: 0, statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
   const result = await doctor.auditBranchAndReleaseState(gh, repo, { default_branch: "main", allow_auto_merge: true }, {
@@ -295,22 +348,22 @@ test("an open PR exempts only the exact same-repository branch head SHA", async 
 test("release PRs satisfy the lane only when their same-repository head contains current dev", async () => {
   for (const [relation, eligible] of [["behind", false], ["ahead", true]] as const) {
     const branches = [
-      { name: "main", commit: { sha: "main-sha" } },
-      { name: "dev", commit: { sha: "dev-sha" } },
-      { name: "release/test", commit: { sha: "release-sha" } }
+      { name: "main", commit: { sha: releaseMainRevision } },
+      { name: "dev", commit: { sha: releaseDevRevision } },
+      { name: "release/test", commit: { sha: releaseHeadRevision } }
     ];
     const pull = {
       number: 20,
-      head: { ref: "release/test", sha: "release-sha", repo: { full_name: "marius-patrik/DarkFactory" } },
+      head: { ref: "release/test", sha: releaseHeadRevision, repo: { full_name: "marius-patrik/DarkFactory" } },
       base: { ref: "main" }
     };
     const { gh } = mockGh((_method, requestPath) => {
-      if (requestPath.endsWith("/compare/main...dev")) return { status: "ahead", ahead_by: 1, behind_by: 0 };
-      if (requestPath.endsWith("/compare/dev...release-sha")) return { status: relation, ahead_by: relation === "ahead" ? 1 : 0, behind_by: relation === "behind" ? 1 : 0 };
+      if (requestPath.endsWith(`/compare/${releaseMainRevision}...${releaseDevRevision}`)) return { status: "ahead", ahead_by: 1, behind_by: 0 };
+      if (requestPath.endsWith(`/compare/${releaseDevRevision}...${releaseHeadRevision}`)) return { status: relation, ahead_by: relation === "ahead" ? 1 : 0, behind_by: relation === "behind" ? 1 : 0 };
       if (requestPath.includes("/protection")) return protectedBranch();
       if (requestPath.endsWith("/pulls/20")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://example.test/20" };
-      if (requestPath.includes("/commits/release-sha/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success" }] };
-      if (requestPath.includes("/commits/release-sha/status")) return { statuses: [] };
+      if (requestPath.includes(`/commits/${releaseHeadRevision}/check-runs`)) return { total_count: 1, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+      if (requestPath.includes(`/commits/${releaseHeadRevision}/status`)) return { total_count: 0, statuses: [] };
       throw new Error(`unexpected ${requestPath}`);
     });
     const result = await doctor.auditBranchAndReleaseState(gh, repo, { default_branch: "main", allow_auto_merge: true }, {
@@ -323,22 +376,22 @@ test("release PRs satisfy the lane only when their same-repository head contains
 
 test("release PR lineage fails closed when GitHub omits comparison counts", async () => {
   const branches = [
-    { name: "main", commit: { sha: "main-sha" } },
-    { name: "dev", commit: { sha: "dev-sha" } },
-    { name: "release/test", commit: { sha: "release-sha" } }
+    { name: "main", commit: { sha: releaseMainRevision } },
+    { name: "dev", commit: { sha: releaseDevRevision } },
+    { name: "release/test", commit: { sha: releaseHeadRevision } }
   ];
   const pull = {
     number: 21,
-    head: { ref: "release/test", sha: "release-sha", repo: { full_name: "marius-patrik/DarkFactory" } },
+    head: { ref: "release/test", sha: releaseHeadRevision, repo: { full_name: "marius-patrik/DarkFactory" } },
     base: { ref: "main" }
   };
   const { gh } = mockGh((_method, requestPath) => {
-    if (requestPath.endsWith("/compare/main...dev")) return { status: "ahead", ahead_by: 1, behind_by: 0 };
-    if (requestPath.endsWith("/compare/dev...release-sha")) return { status: "ahead" };
+    if (requestPath.endsWith(`/compare/${releaseMainRevision}...${releaseDevRevision}`)) return { status: "ahead", ahead_by: 1, behind_by: 0 };
+    if (requestPath.endsWith(`/compare/${releaseDevRevision}...${releaseHeadRevision}`)) return { status: "ahead" };
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.endsWith("/pulls/21")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://example.test/21" };
-    if (requestPath.includes("/commits/release-sha/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/commits/release-sha/status")) return { statuses: [] };
+    if (requestPath.includes(`/commits/${releaseHeadRevision}/check-runs`)) return { total_count: 1, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes(`/commits/${releaseHeadRevision}/status`)) return { total_count: 0, statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
 
@@ -359,8 +412,8 @@ test("post-branch health is bound to current head runs and checks and fails clos
       { name: "Validate", head_sha: "old-head", status: "completed", conclusion: "success" },
       { name: "Validate", head_sha: "current-head", status: "completed", conclusion: "failure", html_url: "https://example.test/run" }
     ] };
-    if (requestPath.includes("/commits/current-head/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "failure", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
-    if (requestPath.includes("/commits/current-head/status")) return { statuses: [] };
+    if (requestPath.includes("/commits/current-head/check-runs")) return { total_count: 2, check_runs: [{ name: "Validate", status: "completed", conclusion: "failure", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/commits/current-head/status")) return { total_count: 0, statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
   const red = await doctor.auditHealth(repo, "main", "current-head", redGh, { now });
@@ -371,8 +424,8 @@ test("post-branch health is bound to current head runs and checks and fails clos
   const { gh: pendingGh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: "current-head", status: "in_progress", conclusion: null, run_started_at: "2026-07-13T00:00:00Z" }] };
-    if (requestPath.includes("/check-runs")) return { check_runs: [{ name: "Validate", status: "in_progress", conclusion: null, started_at: "2026-07-13T00:00:00Z", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
-    if (requestPath.includes("/status")) return { statuses: [] };
+    if (requestPath.includes("/check-runs")) return { total_count: 2, check_runs: [{ name: "Validate", status: "in_progress", conclusion: null, started_at: "2026-07-13T00:00:00Z", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/status")) return { total_count: 0, statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
   const pending = await doctor.auditHealth(repo, "main", "current-head", pendingGh, { now });
@@ -383,8 +436,8 @@ test("post-branch health is bound to current head runs and checks and fails clos
   const { gh: missingGh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: "current-head", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }] };
-    if (requestPath.includes("/status")) return { statuses: [] };
+    if (requestPath.includes("/check-runs")) return { total_count: 1, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/status")) return { total_count: 0, statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
   const missing = await doctor.auditHealth(repo, "main", "current-head", missingGh, { now });
@@ -401,14 +454,14 @@ test("base-branch health still requires branch CI while leaving PR-only review g
   const { gh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: "current-head", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/check-runs")) return { check_runs: [{ name: "Codex Review", status: "completed", conclusion: "success", app: { id: 15368 } }] };
-    if (requestPath.includes("/status")) return { statuses: [] };
+    if (requestPath.includes("/check-runs")) return { total_count: 1, check_runs: [{ name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes("/status")) return { total_count: 0, statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
 
   const findings = await doctor.auditHealth(repo, "dev", "current-head", gh);
   assert.ok(findings.some((finding) => finding.id === "workflow-dev-head-required-checks-missing" && /Validate@app:15368/.test(finding.message)));
-  assert.equal(findings.some((finding) => /Codex Review@app:15368/.test(finding.message)), false);
+  assert.equal(findings.some((finding) => /DarkFactory Autoreview@app:15368/.test(finding.message)), false);
 });
 
 test("auto-merge observation uses REST, falls back to GraphQL, and fails closed when both are unobservable", async () => {
@@ -425,7 +478,7 @@ test("branch policy classifies behind, diverged, missing, and main-only data rep
   for (const status of ["behind", "diverged"]) {
     const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "b" } }];
     const { gh } = mockGh((_method, requestPath) => {
-      if (requestPath.endsWith("/compare/main...dev")) return { status, ahead_by: 1, behind_by: 1 };
+      if (requestPath.endsWith("/compare/a...b")) return { status, ahead_by: 1, behind_by: 1 };
       if (requestPath.includes("/protection")) return protectedBranch();
       throw new Error(`unexpected ${requestPath}`);
     });
@@ -457,7 +510,7 @@ test("malformed branch comparisons fail closed instead of appearing converged", 
   ]) {
     const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "b" } }];
     const { gh } = mockGh((_method, requestPath) => {
-      if (requestPath.endsWith("/compare/main...dev")) return comparison;
+      if (requestPath.endsWith("/compare/a...b")) return comparison;
       if (requestPath.includes("/protection")) return protectedBranch();
       throw new Error(`unexpected ${requestPath}`);
     });
@@ -717,15 +770,50 @@ test("main-only policy is restricted to the two canonical data repositories", ()
   assert.equal(doctor.isMainOnlyDataRepository({ owner: "another-owner", repo: "Andromeda-data" }), false);
 });
 
+test("doctor lifecycle admits exact canonical data repositories without making arbitrary data repos active", () => {
+  const registry = { schemaVersion: 1, repositories: {} };
+  assert.equal(doctor.doctorLifecycleState(repo, repo, registry), "active");
+  assert.equal(doctor.doctorLifecycleState({ owner: "marius-patrik", repo: "Andromeda-data" }, repo, registry), "active");
+  assert.equal(doctor.doctorLifecycleState({ owner: "marius-patrik", repo: "darkfactory-data" }, repo, registry), "active");
+  assert.equal(doctor.doctorLifecycleState({ owner: "marius-patrik", repo: "other-data" }, repo, registry), "removed");
+  assert.equal(doctor.doctorLifecycleState({ owner: "another-owner", repo: "Andromeda-data" }, repo, registry), "removed");
+});
+
+test("canonical data repositories run only the main-only protection and branch policy", async () => {
+  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const { gh, calls } = mockGh((method, requestPath) => {
+    assert.equal(method, "GET");
+    if (requestPath === "/repos/marius-patrik/Andromeda-data") {
+      return { default_branch: "main", archived: false, disabled: false, private: true, visibility: "private" };
+    }
+    if (requestPath.includes("/branches?")) return [{ name: "main", commit: { sha: targetRevision } }];
+    if (requestPath.includes("/pulls?state=open")) return [];
+    if (requestPath.endsWith("/branches/main/protection")) return protectedBranch();
+    throw new Error(`managed-code audit escaped the data policy: ${requestPath}`);
+  });
+
+  const reports = await doctor.runRepositoryDoctor(gh, {
+    mode: "diagnose",
+    controlRepo: repo,
+    controlRevision,
+    target: dataRepo,
+    registry: { schemaVersion: 1, repositories: {} }
+  });
+
+  assert.deepEqual(reports[0].findings, []);
+  assert.ok(reports[0].observations.some((item: string) => /main-only protection/.test(item)));
+  assert.equal(calls.some((call) => /\/issues|\/contents|\/git\/trees|\/actions|\/commits/.test(call.path)), false);
+});
+
 test("the #241 shape remains diagnosed while its active head branch is exempt", async () => {
   const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "a" } }, { name: "dark-factory/managed-repository-setup", commit: { sha: "b" } }];
   const pull = { number: 241, head: { ref: "dark-factory/managed-repository-setup", sha: "b", repo: { full_name: "marius-patrik/DarkFactory" } }, base: { ref: "main" } };
   const { gh } = mockGh((_method, requestPath) => {
-    if (requestPath.endsWith("/compare/main...dev")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+    if (requestPath.endsWith("/compare/a...a")) return { status: "identical", ahead_by: 0, behind_by: 0 };
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.endsWith("/pulls/241")) return { ...pull, updated_at: "2026-07-01T00:00:00Z", mergeable: false, mergeable_state: "dirty", html_url: "https://github.com/marius-patrik/DarkFactory/pull/241" };
-    if (requestPath.includes("/commits/b/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "failure", html_url: "https://example.test/validate" }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "failure" }] };
-    if (requestPath.includes("/commits/b/status")) return { statuses: [] };
+    if (requestPath.includes("/commits/b/check-runs")) return { total_count: 2, check_runs: [{ name: "Validate", status: "completed", conclusion: "failure", html_url: "https://example.test/validate" }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "failure" }] };
+    if (requestPath.includes("/commits/b/status")) return { total_count: 0, statuses: [] };
     throw new Error(`unexpected ${requestPath}`);
   });
   const result = await doctor.auditBranchAndReleaseState(gh, repo, { default_branch: "main", allow_auto_merge: true }, {
@@ -736,25 +824,98 @@ test("the #241 shape remains diagnosed while its active head branch is exempt", 
   assert.equal(result.findings.some((finding) => finding.id.includes("extra-branch-dark-factory")), false);
 });
 
-test("unknown completed check conclusions and malformed check payloads never become healthy", async () => {
-  for (const checkRuns of [
-    { check_runs: [{ name: "Validate", status: "completed", conclusion: "mystery" }] },
-    { check_runs: "malformed" }
-  ]) {
+test("unknown completed check conclusions never become healthy", async () => {
+  const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "a" } }];
+  const pull = { number: 77, head: { ref: "feature/check", sha: "c", repo: { full_name: "marius-patrik/DarkFactory" } }, base: { ref: "dev" } };
+  const { gh } = mockGh((_method, requestPath) => {
+    if (requestPath.endsWith("/compare/a...a")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+    if (requestPath.includes("/protection")) return protectedBranch();
+    if (requestPath.endsWith("/pulls/77")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://example.test/77" };
+    if (requestPath.includes("/commits/c/check-runs")) return { total_count: 1, check_runs: [{ name: "Validate", status: "completed", conclusion: "mystery" }] };
+    if (requestPath.includes("/commits/c/status")) return { total_count: 0, statuses: [] };
+    throw new Error(`unexpected ${requestPath}`);
+  });
+  const result = await doctor.auditBranchAndReleaseState(gh, repo, { default_branch: "main", allow_auto_merge: true }, {
+    branches, branchNames: new Set(["main", "dev"]), pulls: [pull], isData: false, now: "2026-07-13T01:00:00Z"
+  });
+  assert.ok(result.findings.some((finding) => finding.id === "pr-77-checks-unobservable"));
+});
+
+test("pull request trusted gate names require the exact GitHub Actions app", async () => {
+  for (const [label, appId, expectsMismatch] of [
+    ["trusted", 15368, false],
+    ["wrong-app", 99999, true],
+    ["unbound", null, true]
+  ] as const) {
     const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "a" } }];
-    const pull = { number: 77, head: { ref: "feature/check", sha: "c", repo: { full_name: "marius-patrik/DarkFactory" } }, base: { ref: "dev" } };
+    const pull = { number: 79, head: { ref: `feature/${label}`, sha: `sha-${label}`, repo: { full_name: "marius-patrik/DarkFactory" } }, base: { ref: "dev" } };
     const { gh } = mockGh((_method, requestPath) => {
-      if (requestPath.endsWith("/compare/main...dev")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+      if (requestPath.endsWith("/compare/a...a")) return { status: "identical", ahead_by: 0, behind_by: 0 };
       if (requestPath.includes("/protection")) return protectedBranch();
-      if (requestPath.endsWith("/pulls/77")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://example.test/77" };
-      if (requestPath.includes("/commits/c/check-runs")) return checkRuns;
-      if (requestPath.includes("/commits/c/status")) return { statuses: [] };
+      if (requestPath.endsWith("/pulls/79")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://example.test/79" };
+      if (requestPath.includes(`/commits/sha-${label}/check-runs`)) {
+        return { total_count: 1, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", ...(appId === null ? {} : { app: { id: appId } }) }] };
+      }
+      if (requestPath.includes(`/commits/sha-${label}/status`)) return { total_count: 0, statuses: [] };
       throw new Error(`unexpected ${requestPath}`);
     });
     const result = await doctor.auditBranchAndReleaseState(gh, repo, { default_branch: "main", allow_auto_merge: true }, {
       branches, branchNames: new Set(["main", "dev"]), pulls: [pull], isData: false, now: "2026-07-13T01:00:00Z"
     });
-    assert.ok(result.findings.some((finding) => finding.id === "pr-77-checks-unobservable"));
+    assert.equal(result.findings.some((finding) => finding.id === "pr-79-trusted-gate-app-mismatch"), expectsMismatch, label);
+  }
+});
+
+test("current-SHA checks paginate completely and reject unstable or capped evidence", async () => {
+  const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "a" } }];
+  const pull = { number: 80, head: { ref: "feature/pages", sha: "paged-sha", repo: { full_name: "marius-patrik/DarkFactory" } }, base: { ref: "dev" } };
+  const baseResponse = (requestPath: string) => {
+    if (requestPath.endsWith("/compare/a...a")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+    if (requestPath.includes("/protection")) return protectedBranch();
+    if (requestPath.endsWith("/pulls/80")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://example.test/80" };
+    return null;
+  };
+
+  const { gh: completeGh } = mockGh((_method, requestPath) => {
+    const base = baseResponse(requestPath);
+    if (base) return base;
+    if (requestPath.includes("/check-runs") && requestPath.endsWith("page=1")) {
+      return { total_count: 101, check_runs: Array.from({ length: 100 }, (_, index) => ({ name: `Other ${index}`, status: "completed", conclusion: "success", app: { id: 15368 } })) };
+    }
+    if (requestPath.includes("/check-runs") && requestPath.endsWith("page=2")) {
+      return { total_count: 101, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 99999 } }] };
+    }
+    if (requestPath.includes("/status") && requestPath.endsWith("page=1")) {
+      return { total_count: 101, statuses: Array.from({ length: 100 }, (_, index) => ({ context: `status-${index}`, state: "success" })) };
+    }
+    if (requestPath.includes("/status") && requestPath.endsWith("page=2")) return { total_count: 101, statuses: [{ context: "status-final", state: "success" }] };
+    throw new Error(`unexpected ${requestPath}`);
+  });
+  const complete = await doctor.auditBranchAndReleaseState(completeGh, repo, { default_branch: "main", allow_auto_merge: true }, {
+    branches, branchNames: new Set(["main", "dev"]), pulls: [pull], isData: false, now: "2026-07-13T01:00:00Z"
+  });
+  assert.ok(complete.findings.some((finding) => finding.id === "pr-80-trusted-gate-app-mismatch" && /99999/.test(finding.message)));
+
+  for (const variant of ["changing", "capped", "malformed"] as const) {
+    const { gh } = mockGh((_method, requestPath) => {
+      const base = baseResponse(requestPath);
+      if (base) return base;
+      if (requestPath.includes("/check-runs") && requestPath.endsWith("page=1")) {
+        if (variant === "capped") return { total_count: 2001, check_runs: [] };
+        if (variant === "malformed") return { check_runs: [] };
+        return { total_count: 101, check_runs: Array.from({ length: 100 }, (_, index) => ({ name: `Other ${index}`, status: "completed", conclusion: "success", app: { id: 15368 } })) };
+      }
+      if (requestPath.includes("/check-runs") && requestPath.endsWith("page=2")) return { total_count: 102, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+      if (requestPath.includes("/status")) return { total_count: 0, statuses: [] };
+      throw new Error(`unexpected ${requestPath}`);
+    });
+    await assert.rejects(
+      () => doctor.auditBranchAndReleaseState(gh, repo, { default_branch: "main", allow_auto_merge: true }, {
+        branches, branchNames: new Set(["main", "dev"]), pulls: [pull], isData: false, now: "2026-07-13T01:00:00Z"
+      }),
+      variant === "changing" ? /changing check runs totals/ : variant === "capped" ? /cannot prove complete check runs enumeration/ : /malformed check runs page/,
+      variant
+    );
   }
 });
 
@@ -763,17 +924,17 @@ test("inaccessible and individually malformed check evidence fails closed", asyn
     const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "a" } }];
     const pull = { number: 78, head: { ref: "feature/check", sha: "d", repo: { full_name: "marius-patrik/DarkFactory" } }, base: { ref: "dev" } };
     const { gh } = mockGh((_method, requestPath) => {
-      if (requestPath.endsWith("/compare/main...dev")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+      if (requestPath.endsWith("/compare/a...a")) return { status: "identical", ahead_by: 0, behind_by: 0 };
       if (requestPath.includes("/protection")) return protectedBranch();
       if (requestPath.endsWith("/pulls/78")) return { ...pull, updated_at: "2026-07-13T00:00:00Z", mergeable: true, mergeable_state: "clean", html_url: "https://example.test/78" };
       if (requestPath.includes("/commits/d/check-runs")) {
         if (variant === "inaccessible") throw Object.assign(new Error("forbidden"), { status: 403 });
-        return { check_runs: [{ ...(variant === "missing-name" ? {} : { name: "Validate" }), status: "completed", conclusion: "success" }] };
+        return { total_count: 1, check_runs: [{ ...(variant === "missing-name" ? {} : { name: "Validate" }), status: "completed", conclusion: "success" }] };
       }
       if (requestPath.includes("/commits/d/status")) {
         return variant === "missing-context"
-          ? { statuses: [{ state: "success" }] }
-          : { statuses: [] };
+          ? { total_count: 1, statuses: [{ state: "success" }] }
+          : { total_count: 0, statuses: [] };
       }
       throw new Error(`unexpected ${requestPath}`);
     });
@@ -926,14 +1087,14 @@ test("label taxonomy audit accepts exact state and reports missing or drifted la
     ];
     throw new Error(`unexpected ${requestPath}`);
   });
-  assert.deepEqual(await doctor.auditLabelTaxonomy(exact.gh, repo, repo), []);
+  assert.deepEqual(await doctor.auditLabelTaxonomy(exact.gh, repo, repo, controlRevision), []);
 
   const drift = mockGh((_method, requestPath) => {
     if (requestPath.includes("/contents/managed-repository/.darkfactory/labels.json")) return content(policy);
     if (requestPath.includes("/labels?")) return [{ name: "df:ready", color: "ffffff", description: "wrong" }];
     throw new Error(`unexpected ${requestPath}`);
   });
-  const ids = new Set((await doctor.auditLabelTaxonomy(drift.gh, repo, repo)).map((finding: { id: string }) => finding.id));
+  const ids = new Set((await doctor.auditLabelTaxonomy(drift.gh, repo, repo, controlRevision)).map((finding: { id: string }) => finding.id));
   assert.ok(ids.has("label-df-ready-drift"));
   assert.ok(ids.has("label-df-no-dispatch-missing"));
 });
@@ -1001,7 +1162,7 @@ test("managed baseline audit detects drift and files that must be removed", asyn
     packageFiles: ["managed.txt"],
     removedFiles: ["retired.txt"]
   });
-  const { gh } = mockGh((_method, requestPath) => {
+  const { gh, calls } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/.darkfactory/managed-repository.json")) return content(manifest);
     if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/managed.txt")) return content("expected\n");
     if (requestPath.includes("/repos/marius-patrik/Andromeda/contents/managed.txt")) return content("actual\n");
@@ -1009,10 +1170,80 @@ test("managed baseline audit detects drift and files that must be removed", asyn
     if (requestPath.includes("/repos/marius-patrik/Andromeda-data/contents/managed-repository/repositories/")) throw notFound();
     throw new Error(`unexpected ${requestPath}`);
   });
-  const findings = await doctor.auditManagedFileDrift(gh, target, "main", repo);
+  const findings = await doctor.auditManagedFileDrift(gh, target, "main", repo, { controlRevision, agentOsDataRevision });
   const ids = new Set(findings.map((finding) => finding.id));
   assert.ok(ids.has("managed-file-drift-managed-txt"));
   assert.ok(ids.has("managed-removed-file-retired-txt"));
+  const sourceReads = calls.filter((call) => /\/repos\/marius-patrik\/(?:DarkFactory|Andromeda-data)\/contents\//.test(call.path));
+  assert.ok(sourceReads.some((call) => call.path.includes(`ref=${controlRevision}`)));
+  assert.ok(sourceReads.some((call) => call.path.includes(`ref=${agentOsDataRevision}`)));
+});
+
+test("managed project overlay enumeration fails closed on malformed or disappearing directory evidence", async () => {
+  const target = { owner: "marius-patrik", repo: "Andromeda" };
+  const manifest = JSON.stringify({ schemaVersion: 1, requiredFiles: [], packageFiles: [], removedFiles: [] });
+  const prefix = "managed-repository/repositories/marius-patrik/Andromeda/.agents/.project";
+  const cases = [
+    ["file returned for directory", { type: "file", path: "C:/private/overlay" }, /malformed managed project overlay directory listing/],
+    ["unsupported entry type", [{ type: "submodule", path: `${prefix}/private-name` }], /malformed managed project overlay entry/],
+    ["unsafe child path", [{ type: "file", path: `${prefix}/C:\\Users\\private-user`, sha: "a".repeat(40) }], /malformed managed project overlay entry/],
+    ["child disappears", [{ type: "dir", path: `${prefix}/nested` }], /could not complete managed project overlay enumeration/]
+  ] as const;
+
+  for (const [label, rootResponse, expected] of cases) {
+    const { gh } = mockGh((_method, requestPath) => {
+      if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/.darkfactory/managed-repository.json")) return content(manifest);
+      if (requestPath.includes(`/contents/${prefix}/nested?`)) throw notFound();
+      if (requestPath.includes(`/contents/${prefix}?`)) return rootResponse;
+      throw new Error(`unexpected ${requestPath}`);
+    });
+    await assert.rejects(() => doctor.auditManagedFileDrift(gh, target, "main", repo, { controlRevision, agentOsDataRevision }), expected, label);
+    await assert.rejects(
+      () => doctor.auditManagedFileDrift(gh, target, "main", repo, { controlRevision, agentOsDataRevision }),
+      (error: Error) => !/C:\/private|private-name|private-user/.test(error.message),
+      `${label} redaction`
+    );
+  }
+});
+
+test("managed project overlay re-attests every listed file before comparing target content", async () => {
+  const target = { owner: "marius-patrik", repo: "Andromeda" };
+  const manifest = JSON.stringify({ schemaVersion: 1, requiredFiles: [], packageFiles: [], removedFiles: [] });
+  const prefix = "managed-repository/repositories/marius-patrik/Andromeda/.agents/.project";
+  const sourcePath = `${prefix}/STATUS.md`;
+  const listedSha = "a".repeat(40);
+
+  const { gh: validGh } = mockGh((_method, requestPath) => {
+    if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/.darkfactory/managed-repository.json")) return content(manifest);
+    if (requestPath.includes(`/contents/${sourcePath}?`)) return { ...content("expected\n"), sha: listedSha };
+    if (requestPath.includes(`/contents/${prefix}?`)) return [{ type: "file", path: sourcePath, sha: listedSha }];
+    if (requestPath.includes("/repos/marius-patrik/Andromeda/contents/.agents/.project/STATUS.md")) return content("expected\n");
+    throw new Error(`unexpected ${requestPath}`);
+  });
+  assert.deepEqual(
+    await doctor.auditManagedFileDrift(validGh, target, "main", repo, { controlRevision, agentOsDataRevision }),
+    []
+  );
+
+  for (const [label, sourceResponse] of [
+    ["listed file disappears", notFound()],
+    ["listed file identity changes", { ...content("expected\n"), sha: "b".repeat(40) }]
+  ] as const) {
+    const { gh } = mockGh((_method, requestPath) => {
+      if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/.darkfactory/managed-repository.json")) return content(manifest);
+      if (requestPath.includes(`/contents/${sourcePath}?`)) {
+        if (sourceResponse instanceof Error) throw sourceResponse;
+        return sourceResponse;
+      }
+      if (requestPath.includes(`/contents/${prefix}?`)) return [{ type: "file", path: sourcePath, sha: listedSha }];
+      throw new Error(`target comparison escaped source re-attestation: ${requestPath}`);
+    });
+    await assert.rejects(
+      () => doctor.auditManagedFileDrift(gh, target, "main", repo, { controlRevision, agentOsDataRevision }),
+      /could not re-attest a listed managed project overlay file/,
+      label
+    );
+  }
 });
 
 test("managed baseline reports a release-control source contradiction without authorizing target deletion", async () => {
@@ -1034,7 +1265,7 @@ test("managed baseline reports a release-control source contradiction without au
     throw new Error(`release-control target must not be read while source policy contradicts #41: ${requestPath}`);
   });
 
-  const findings = await doctor.auditManagedFileDrift(gh, repo, "main", repo, { issues: [laneIssue] });
+  const findings = await doctor.auditManagedFileDrift(gh, repo, "main", repo, { controlRevision, agentOsDataRevision, issues: [laneIssue] });
 
   assert.ok(findings.some((finding) => finding.id === "source-policy-contradiction-release-controls" && finding.repair_class === "blocked"));
   assert.equal(findings.some((finding) => finding.id === "managed-removed-file-github-workflows-df-release-yml"), false);
@@ -1223,7 +1454,11 @@ test("submodule audit distinguishes invalid URLs, missing gitlinks, and released
   const { gh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/repos/marius-patrik/Andromeda/contents/.gitmodules")) return content(modules);
     if (requestPath.includes("/contents/plugins/missing")) throw notFound();
-    if (requestPath.includes("/contents/plugins/drift")) return { type: "submodule", sha: oldSha };
+    if (requestPath.includes("/contents/plugins/drift")) return {
+      type: "file",
+      sha: oldSha,
+      submodule_git_url: "git://github.com/marius-patrik/Child.git"
+    };
     if (requestPath === "/repos/marius-patrik/Child") return { default_branch: "main" };
     if (requestPath.endsWith("/repos/marius-patrik/Child/commits/main")) return { sha: newSha };
     throw new Error(`unexpected ${requestPath}`);
@@ -1234,11 +1469,66 @@ test("submodule audit distinguishes invalid URLs, missing gitlinks, and released
   assert.ok(ids.has("submodule-plugins-missing-gitlink-missing-main"));
   assert.ok(ids.has("submodule-plugins-drift-branch-drift"));
   assert.ok(ids.has("submodule-plugins-drift-pointer-drift-main"));
+  assert.match(findings.find((finding) => finding.id === "submodule-plugins-bad-url-invalid")?.message || "", /machine-local file URL/);
+  assert.doesNotMatch(JSON.stringify(findings), /file:\/\/\/machine\/local|\/machine\/local/);
 });
 
-test("root-layout and naming fixtures catch Andromeda and DarkFactory contract drift", async () => {
+test("submodule gitlink admission accepts both REST representations and rejects a plain file", async () => {
+  const parent = { owner: "marius-patrik", repo: "Andromeda" };
+  const sha = "3".repeat(40);
+  const gitmodules = '[submodule "child"]\n path = plugins/child\n url = https://github.com/marius-patrik/Child.git\n';
+  const cases = [
+    ["current file representation", { type: "file", sha, submodule_git_url: "git://github.com/marius-patrik/Child.git" }, false],
+    ["legacy submodule representation", { type: "submodule", sha }, false],
+    ["plain file", { type: "file", sha }, true],
+    ["malformed submodule sha", { type: "submodule", sha: "not-a-commit" }, true]
+  ] as const;
+
+  for (const [label, response, missing] of cases) {
+    const { gh } = mockGh((_method, requestPath) => {
+      if (requestPath.includes("/contents/.gitmodules")) return content(gitmodules);
+      if (requestPath.includes("/contents/plugins/child")) return response;
+      if (requestPath === "/repos/marius-patrik/Child") return { default_branch: "main" };
+      if (requestPath.endsWith("/repos/marius-patrik/Child/commits/main")) return { sha };
+      throw new Error(`unexpected ${requestPath}`);
+    });
+
+    const findings = await doctor.auditSubmoduleState(gh, parent, "main");
+    assert.equal(findings.some((finding) => finding.id === "submodule-plugins-child-gitlink-missing-main"), missing, label);
+  }
+});
+
+test("submodule audit correlates tree gitlinks and redacts malformed declaration paths", async () => {
+  const parent = { owner: "marius-patrik", repo: "Andromeda" };
+  const { gh: undeclaredGh } = mockGh((_method, requestPath) => {
+    if (requestPath.includes("/contents/.gitmodules")) throw notFound();
+    if (requestPath.includes("/git/trees/main?recursive=1")) {
+      return { truncated: false, tree: [{ type: "commit", path: "plugins/Undeclared" }] };
+    }
+    throw new Error(`unexpected ${requestPath}`);
+  });
+  const undeclared = await doctor.auditSubmoduleState(undeclaredGh, parent, "main");
+  assert.ok(undeclared.some((finding) => finding.id === "submodule-plugins-undeclared-undeclared-main"));
+
+  const privatePath = "C:\\Users\\private-user\\private-child";
+  for (const [label, gitmodules] of [
+    ["malformed section", `[submodule \"broken\"\n path = ${privatePath}\n`],
+    ["unsafe declared path", `[submodule \"${privatePath}\"]\n path = ${privatePath}\n url = file:///private-machine/child\n`]
+  ] as const) {
+    const { gh } = mockGh((_method, requestPath) => {
+      if (requestPath.includes("/contents/.gitmodules")) return content(gitmodules);
+      if (requestPath.includes("/git/trees/main?recursive=1")) return { truncated: false, tree: [] };
+      throw new Error(`unexpected ${requestPath}`);
+    });
+    const findings = await doctor.auditSubmoduleState(gh, parent, "main");
+    assert.ok(findings.some((finding) => /submodule-(?:metadata|declaration)-main/.test(finding.id)), label);
+    assert.doesNotMatch(JSON.stringify(findings), /private-user|private-child|C:\\\\Users|private-machine/, label);
+  }
+});
+
+test("root-layout and naming fixtures catch Andromeda and DarkFactory contract drift without exposing local submodule URLs", async () => {
   const andromeda = { owner: "marius-patrik", repo: "Andromeda" };
-  const modules = '[submodule "Wrong"]\n path = plugins/DarkFactory\n url = https://github.com/marius-patrik/Wrong.git\n[submodule "Extra"]\n path = extras/Extra\n url = https://github.com/marius-patrik/Extra.git\n';
+  const modules = '[submodule "Wrong"]\n path = plugins/DarkFactory\n url = C:\\Users\\private-user\\private-repo\n[submodule "Extra"]\n path = extras/Extra\n url = https://github.com/marius-patrik/Extra.git\n[submodule "C:\\Users\\private-local"]\n path = C:\\Users\\private-local\\child\n url = file:///private-local/child\n';
   const { gh: andromedaGh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/.gitmodules")) return content(modules);
     if (requestPath.includes("/README.md")) return content("# Wrong\n");
@@ -1252,7 +1542,10 @@ test("root-layout and naming fixtures catch Andromeda and DarkFactory contract d
   assert.ok(andromedaIds.has("andromeda-submodule-plugins-darkfactory-identity"));
   assert.ok(andromedaIds.has("andromeda-submodule-plugins-darkfactory-mode"));
   assert.ok(andromedaIds.has("andromeda-submodule-unexpected-extras-extra"));
+  assert.ok(andromedaIds.has("andromeda-submodule-declaration-3-invalid"));
   assert.ok(andromedaIds.has("andromeda-product-name"));
+  assert.match(andromedaFindings.find((finding) => finding.id === "andromeda-submodule-plugins-darkfactory-identity")?.message || "", /machine-local path/);
+  assert.doesNotMatch(JSON.stringify(andromedaFindings), /private-user|private-repo|private-local|C:\\\\Users/i);
 
   const { gh: darkFactoryGh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/README.md")) return content("# Wrong\n");
@@ -1273,7 +1566,7 @@ test("runtime authority and prerequisites fail closed on direct providers, missi
     if (requestPath.includes("/actions/runners")) return { runners: [{ status: "offline", labels: [{ name: "df-local" }] }] };
     throw new Error(`unexpected ${requestPath}`);
   });
-  const authority = await doctor.auditRuntimeAuthority(gh, repo, "main", repo);
+  const authority = await doctor.auditRuntimeAuthority(gh, repo, "main", repo, controlRevision);
   const prerequisites = await doctor.auditPrerequisites(gh, repo, "main", { controlRepo: repo });
   const ids = new Set([...authority, ...prerequisites].map((finding) => finding.id));
   assert.ok(ids.has("canonical-launcher-binding-invalid"));
@@ -1360,21 +1653,24 @@ test("worker session isolation reads canonical state and catches escaped cwd", a
   }
 });
 
-test("diagnose mode performs no GitHub writes", async () => {
+test("diagnose mode performs no GitHub writes and pins target reads when a branch name moves after enumeration", async () => {
   const { gh, calls } = mockGh((method, requestPath) => {
     if (method !== "GET") throw new Error(`unexpected write ${method} ${requestPath}`);
     if (requestPath === "/repos/marius-patrik/DarkFactory") return { default_branch: "main", allow_auto_merge: true, archived: false, disabled: false, pushed_at: "2026-07-13T00:00:00Z" };
-    if (requestPath.includes("/branches?")) return requestPath.endsWith("page=1") ? [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "a" } }] : [];
+    if (requestPath.includes("/branches?")) return requestPath.endsWith("page=1") ? [{ name: "main", commit: { sha: targetRevision } }, { name: "dev", commit: { sha: targetRevision } }] : [];
+    if (requestPath.startsWith("/repos/marius-patrik/DarkFactory/contents/") && requestPath.includes("ref=main")) return content("branch moved after enumeration\n");
+    if (requestPath.endsWith("/git/trees/main?recursive=1")) return { truncated: false, tree: [{ path: "MOVED_AFTER_ENUMERATION", type: "blob" }] };
+    if (requestPath.includes("/commits?sha=main&path=")) return [{ sha: "b".repeat(40), commit: { committer: { date: "2026-07-13T00:00:00Z" } } }];
     if (requestPath.includes("/pulls?state=open")) return [];
     if (requestPath.includes("/issues?state=all")) return [];
-    if (requestPath.endsWith("/git/trees/main?recursive=1")) return { truncated: false, tree: [{ path: "README.md", type: "blob" }] };
-    if (requestPath.endsWith("/compare/main...dev")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+    if (requestPath.endsWith(`/git/trees/${targetRevision}?recursive=1`)) return { truncated: false, tree: [{ path: "README.md", type: "blob" }] };
+    if (requestPath.endsWith(`/compare/${targetRevision}...${targetRevision}`)) return { status: "identical", ahead_by: 0, behind_by: 0 };
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.includes("/actions/secrets")) return { secrets: [] };
     if (requestPath.includes("/actions/runners")) return { runners: [{ status: "online", labels: [{ name: "df-local" }] }] };
-    if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: "a", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/commits/a/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
-    if (requestPath.includes("/commits/a/status")) return { statuses: [] };
+    if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: targetRevision, status: "completed", conclusion: "success" }] };
+    if (requestPath.includes(`/commits/${targetRevision}/check-runs`)) return { total_count: 2, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes(`/commits/${targetRevision}/status`)) return { total_count: 0, statuses: [] };
     if (requestPath.includes("/commits?sha=")) return [];
     if (requestPath.includes("/contents/.github/workflows/df-work.yml")) return content("AGENTS_HOME bin\\agents.ps1 state doctor --json");
     if (requestPath.includes("/contents/AGENTS.md")) return content("Use AGENTS_HOME.");
@@ -1391,12 +1687,47 @@ test("diagnose mode performs no GitHub writes", async () => {
     mode: "diagnose",
     trigger: "test",
     controlRepo: repo,
+    controlRevision,
+    agentOsDataRevision,
     target: repo,
     registry: { schemaVersion: 1, repositories: { "marius-patrik/DarkFactory": { state: "active" } } }
   });
   assert.equal(reports[0].read_only, true);
   assert.equal(reports[0].trigger, "test");
+  assert.equal(reports[0].source_refs.default_branch_revision, targetRevision);
   assert.equal(calls.every((call) => call.method === "GET"), true);
+  const targetSnapshotReads = calls.filter((call) => (
+    call.path.startsWith("/repos/marius-patrik/DarkFactory/contents/") ||
+    call.path.startsWith("/repos/marius-patrik/DarkFactory/git/trees/") ||
+    call.path.startsWith("/repos/marius-patrik/DarkFactory/compare/") ||
+    (call.path.startsWith("/repos/marius-patrik/DarkFactory/commits?") && call.path.includes("path="))
+  ) && !call.path.includes(controlRevision));
+  assert.ok(targetSnapshotReads.length > 0);
+  assert.equal(targetSnapshotReads.every((call) => call.path.includes(targetRevision)), true);
+  assert.equal(targetSnapshotReads.some((call) => /(?:ref|sha)=main(?:&|$)/.test(call.path) || call.path.includes("/git/trees/main?") || call.path.includes("/compare/main...dev")), false);
+});
+
+test("missing default-branch snapshot skips all mutable target content reads", async () => {
+  const { gh, calls } = mockGh((_method, requestPath) => {
+    if (requestPath === "/repos/marius-patrik/DarkFactory") {
+      return { default_branch: "missing", allow_auto_merge: false, archived: false, disabled: false };
+    }
+    if (requestPath.includes("/branches?")) return [];
+    if (requestPath.includes("/pulls?state=open")) return [];
+    if (requestPath.includes("/issues?state=all")) return [];
+    throw new Error(`unexpected mutable target read ${requestPath}`);
+  });
+  const reports = await doctor.runRepositoryDoctor(gh, {
+    mode: "diagnose",
+    controlRepo: repo,
+    controlRevision,
+    agentOsDataRevision,
+    target: repo,
+    registry: { schemaVersion: 1, repositories: { "marius-patrik/DarkFactory": { state: "active" } } }
+  });
+  assert.ok(reports[0].findings.some((finding) => finding.id === "default-branch-head-missing"));
+  assert.ok(reports[0].observations.some((observation) => /audits were skipped/.test(observation)));
+  assert.equal(calls.some((call) => /\/contents\/|\/git\/trees\//.test(call.path)), false);
 });
 
 test("report mode routes issue writes to target authority and contents writes only to scoped ledger authority", async () => {
@@ -1410,18 +1741,18 @@ test("report mode routes issue writes to target authority and contents writes on
     }
     if (method !== "GET") throw new Error(`unexpected target write ${method} ${requestPath}`);
     if (requestPath === "/repos/marius-patrik/DarkFactory") return { default_branch: "main", allow_auto_merge: true, archived: false, disabled: false, pushed_at: "2026-07-13T00:00:00Z" };
-    if (requestPath.includes("/branches?")) return requestPath.endsWith("page=1") ? [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "a" } }] : [];
+    if (requestPath.includes("/branches?")) return requestPath.endsWith("page=1") ? [{ name: "main", commit: { sha: targetRevision } }, { name: "dev", commit: { sha: targetRevision } }] : [];
     if (requestPath.includes("/pulls?state=open")) return [];
     if (requestPath.includes("/issues?state=all")) return [];
     if (requestPath.includes("/labels?") && requestPath.endsWith("page=1")) return JSON.parse(LABEL_POLICY).labels;
-    if (requestPath.endsWith("/git/trees/main?recursive=1")) return { truncated: false, tree: [{ path: "README.md", type: "blob" }] };
-    if (requestPath.endsWith("/compare/main...dev")) return { status: "identical", ahead_by: 0, behind_by: 0 };
+    if (requestPath.endsWith(`/git/trees/${targetRevision}?recursive=1`)) return { truncated: false, tree: [{ path: "README.md", type: "blob" }] };
+    if (requestPath.endsWith(`/compare/${targetRevision}...${targetRevision}`)) return { status: "identical", ahead_by: 0, behind_by: 0 };
     if (requestPath.includes("/protection")) return protectedBranch();
     if (requestPath.includes("/actions/secrets")) return { secrets: [] };
     if (requestPath.includes("/actions/runners")) return { runners: [{ status: "online", labels: [{ name: "df-local" }] }] };
-    if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: "a", status: "completed", conclusion: "success" }] };
-    if (requestPath.includes("/commits/a/check-runs")) return { check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
-    if (requestPath.includes("/commits/a/status")) return { statuses: [] };
+    if (requestPath.includes("/actions/runs?")) return { workflow_runs: [{ name: "Validate", head_sha: targetRevision, status: "completed", conclusion: "success" }] };
+    if (requestPath.includes(`/commits/${targetRevision}/check-runs`)) return { total_count: 2, check_runs: [{ name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }, { name: "DarkFactory Autoreview", status: "completed", conclusion: "success", app: { id: 15368 } }] };
+    if (requestPath.includes(`/commits/${targetRevision}/status`)) return { total_count: 0, statuses: [] };
     if (requestPath.includes("/commits?sha=")) return [];
     if (requestPath.includes("/contents/.github/workflows/df-work.yml")) return content("AGENTS_HOME bin\\agents.ps1 state doctor --json");
     if (requestPath.includes("/contents/AGENTS.md")) return content("Use AGENTS_HOME.");
@@ -1446,6 +1777,8 @@ test("report mode routes issue writes to target authority and contents writes on
     mode: "report",
     trigger: "test",
     controlRepo: repo,
+    controlRevision,
+    agentOsDataRevision,
     target: repo,
     ledgerGithub: ledgerGh,
     registry: { schemaVersion: 1, repositories: { "marius-patrik/DarkFactory": { state: "active" } } }
@@ -1465,9 +1798,12 @@ test("report mode routes issue writes to target authority and contents writes on
   const ledgers = ledgerWrites.map((call) => JSON.parse(Buffer.from((call.body as { content: string }).content, "base64").toString("utf8")));
   const admission = ledgers.find((ledger) => ledger.phase === "admission");
   const completion = ledgers.find((ledger) => ledger.phase === "completion");
+  assert.equal(admission.source_refs.control, `marius-patrik/DarkFactory@${controlRevision}`);
+  assert.equal(admission.source_refs.agent_os_data, `marius-patrik/Andromeda-data@${agentOsDataRevision}`);
   assert.ok(admission.planned_actions.some((action: { action: string }) => action.action === "retire-legacy-audit-issues"));
   assert.ok(admission.actions.some((action: { action: string; state: string }) => action.action === "retire-legacy-audit-issues" && action.state === "admitted"));
   assert.ok(completion.actions.some((action: { action: string }) => action.action === "create-repair-issue"));
+  assert.equal(completion.publication_status, "complete");
 });
 
 test("ledger failure leaves legacy aggregate audit issues untouched", async () => {
@@ -1566,6 +1902,51 @@ test("completion ledger records legacy retirement after admitted issue mutations
   assert.equal(report.actions.at(-1).action, "write-doctor-ledger");
 });
 
+test("partial completion ledger records confirmed issue mutations before a later write fails", async () => {
+  let creates = 0;
+  const failureSentinel = "SECOND_MUTATION_FAILURE_SENTINEL";
+  const { gh: targetGh } = mockGh((method, requestPath) => {
+    if (method === "GET" && requestPath.includes("/labels?")) {
+      return doctor.DOCTOR_REPORT_LABEL_NAMES.map((name) => ({ name }));
+    }
+    if (method === "GET" && requestPath.includes("issues?state=all")) return [];
+    if (method === "POST" && requestPath === "/repos/marius-patrik/DarkFactory/issues") {
+      creates += 1;
+      if (creates === 1) return { number: 71, html_url: "https://example.test/71" };
+      throw Object.assign(new Error(failureSentinel), { status: 500 });
+    }
+    throw new Error(`unexpected ${method} ${requestPath}`);
+  });
+  const { gh: ledgerGh, calls: ledgerCalls } = mockGh((method) => {
+    if (method === "GET") throw notFound();
+    if (method === "PUT") return {};
+    throw new Error(`unexpected ledger method ${method}`);
+  });
+  const report = {
+    mode: "report",
+    trigger: "test",
+    source_refs: {},
+    findings: [
+      doctor.doctorFinding("first-confirmed", "health", "first"),
+      doctor.doctorFinding("second-fails", "health", "second")
+    ],
+    observations: [],
+    actions: [],
+    token_usage: { model_calls: 0 }
+  };
+
+  await assert.rejects(() => doctor.publishDoctorReport(targetGh, ledgerGh, repo, report), new RegExp(failureSentinel));
+
+  const writes = ledgerCalls.filter((call) => call.method === "PUT");
+  assert.equal(writes.length, 2);
+  const ledgers = writes.map((call) => JSON.parse(Buffer.from((call.body as { content: string }).content, "base64").toString("utf8")));
+  const completion = ledgers.find((ledger) => ledger.phase === "completion");
+  assert.equal(completion.publication_status, "partial");
+  assert.ok(completion.actions.some((action: { action: string; finding?: string }) => action.action === "create-repair-issue" && action.finding === "first-confirmed"));
+  assert.equal(completion.actions.some((action: { finding?: string }) => action.finding === "second-fails"), false);
+  assert.doesNotMatch(JSON.stringify(completion), new RegExp(failureSentinel));
+});
+
 test("report issue reconciliation is marker-idempotent and closes resolved findings", async () => {
   const current = doctor.doctorFinding("current-drift", "branch policy", "current");
   const existing = { number: 7, state: "open", body: "<!-- df-doctor:marius-patrik-darkfactory:current-drift -->", user: { login: "mp-agents[bot]" }, html_url: "https://example.test/7" };
@@ -1637,7 +2018,7 @@ test("live DarkFactory App actor creates, updates, then closes one stable issue 
   assert.equal(issues.length, 1);
 
   const closed = await doctor.reconcileDoctorIssues(gh, repo, []);
-  assert.deepEqual(closed.map((action) => action.action), ["close-resolved-repair-issue"]);
+  assert.deepEqual(closed.map((action) => action.action), ["comment-resolved-repair-issue", "close-resolved-repair-issue"]);
   assert.equal(issues[0].state, "closed");
   assert.equal(calls.filter((call) => call.method === "POST" && call.path === "/repos/marius-patrik/DarkFactory/issues").length, 1);
 });
@@ -1668,4 +2049,20 @@ test("human and JSON formats preserve deterministic zero-token evidence", () => 
   assert.match(rendered, /\[accepted_residue\].*not healthy protection/);
   assert.match(rendered, /Andromeda\/pull\/190/);
   assert.doesNotMatch(rendered, /HEALTHY \(diagnose/);
+});
+
+test("retired authority audit includes repository-local project rules", async () => {
+  const { gh, calls } = mockGh((_method, requestPath) => {
+    if (requestPath.includes("/contents/.agents/.project/DECISIONS.md")) {
+      return content("The managed source is $AGENTS_ROOT/data/agent-os.\n");
+    }
+    throw notFound();
+  });
+
+  const findings = await doctor.auditRetiredAuthorityNames(gh, repo, "main");
+
+  assert.ok(findings.some((finding) => finding.id === "retired-agent-os-data-path"));
+  for (const name of ["AGENTS.md", "COMMANDS.md", "DECISIONS.md", "HANDOFF.md", "PROJECT.md", "STATUS.md", "STRUCTURE.md"]) {
+    assert.ok(calls.some((call) => call.path.includes(`/contents/.agents/.project/${name}`)), name);
+  }
 });

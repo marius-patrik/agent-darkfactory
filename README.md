@@ -345,9 +345,11 @@ agents packages run darkfactory -- serve
 
 Canonical policy/state authority is the root `$AGENTS_HOME` checkout of
 `marius-patrik/Andromeda-data`; DarkFactory reads only its
-`managed-repository` child. Runtime action receipts remain independently
-written to `marius-patrik/darkfactory-data`; the managed source and runtime
-ledger are deliberately distinct authorities.
+`managed-repository` child. The managed-sync adapter requires exactly one
+`agent-os-data` registry authority at `$AGENTS_HOME`, bound to
+`marius-patrik/Andromeda-data`; unrelated data-repository registrations remain
+valid and the separate `marius-patrik/darkfactory-data` checkout remains the
+operational ledger authority.
 
 The service requires these settings or Agent OS-managed secrets:
 

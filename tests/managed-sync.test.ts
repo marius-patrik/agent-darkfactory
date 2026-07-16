@@ -497,6 +497,8 @@ test("readManagedFiles rejects wrong repository, path, or conflicting canonical 
       JSON.stringify([{ id: "agent-os-data", repo: "wrong/data", path: root }])
     );
     assert.throws(() => readManagedFiles(), /must use repository marius-patrik\/Andromeda-data/);
+    await writeFile(registryPath, JSON.stringify([]));
+    assert.throws(() => readManagedFiles(), /exactly one agent-os-data authority record/);
 
     await writeFile(
       registryPath,
@@ -506,6 +508,27 @@ test("readManagedFiles rejects wrong repository, path, or conflicting canonical 
       ])
     );
     assert.throws(() => readManagedFiles(), /conflicting Andromeda-data authority/);
+
+    await writeFile(
+      registryPath,
+      JSON.stringify([
+        { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root },
+        { id: "other-data", repo: "marius-patrik/other", path: join(root, "other") }
+      ])
+    );
+    assert.ok(readManagedFiles().some((file) => file.path === "AGENTS.md"));
+
+    await writeFile(
+      registryPath,
+      JSON.stringify([
+        { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root },
+        { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root }
+      ])
+    );
+    assert.throws(() => readManagedFiles(), /exactly one agent-os-data authority record/);
+
+    await writeFile(registryPath, JSON.stringify([null]));
+    assert.throws(() => readManagedFiles(), /Invalid Agent OS data repository registry record/);
   } finally {
     if (previousRegistry === undefined) delete process.env.AGENTS_DATA_REPOS;
     else process.env.AGENTS_DATA_REPOS = previousRegistry;

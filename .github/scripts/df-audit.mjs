@@ -34,10 +34,14 @@ export const STALE_PR_DAYS = 7;
 export const STALE_ISSUE_DAYS = 30;
 export const PENDING_CHECK_HOURS = 2;
 export const WORKER_SESSION_LOOKBACK_DAYS = 14;
+const COMMIT_EVIDENCE_PAGE_SIZE = 100;
+const MAX_COMMIT_EVIDENCE_PAGES = 20;
+const EXACT_COMMIT_PATTERN = /^[0-9a-f]{40}$/i;
 // Managed Validate and review workflows are GitHub Actions check suites. GitHub's
 // public Actions App ID is stable across repositories and prevents a same-name
 // status/check from an arbitrary App from satisfying repository-doctor policy.
 export const TRUSTED_GATE_APP_ID = 15368;
+const TRUSTED_GATE_NAMES = new Set(["Validate", "Codex Review", "DarkFactory Autoreview"]);
 
 export const ANDROMEDA_LAYOUT = [
   { name: "DarkFactory", path: "plugins/DarkFactory", repo: "marius-patrik/DarkFactory" },
@@ -100,6 +104,7 @@ async function main() {
   const target = process.env.DF_TARGET_REPO?.trim() || "";
   const reports = await runRepositoryDoctor(createGithubClient(token, "darkfactory-repository-doctor"), {
     controlRepo,
+    controlRevision: requiredEnv("DF_CONTROL_REVISION"),
     all: process.env.DF_DOCTOR_ALL === "true",
     target: target || repoName(controlRepo),
     trigger: process.env.DF_TRIGGER || "unknown",
@@ -190,6 +195,10 @@ export async function runRepositoryDoctor(github, options = {}) {
     ? validateDataRepositoryPolicy(options.dataRepositoryPolicy)
     : loadDataRepositoryPolicy(options.dataRepositoryPolicyPath);
   const controlRepo = options.controlRepo || CONTROL_REPO;
+  const controlRevision = await resolvePinnedRevision(github, controlRepo, options.controlRevision, "main", "trusted control");
+  let agentOsDataRevision = options.agentOsDataRevision
+    ? assertExactCommit(options.agentOsDataRevision, "canonical Andromeda-data")
+    : null;
   const registry = options.registry || await readManagedRepoRegistry(options.root || process.cwd());
   const targets = await resolveDoctorTargets(github, controlRepo, registry, options);
   if (options.localPath && targets.length !== 1) {
@@ -198,12 +207,30 @@ export async function runRepositoryDoctor(github, options = {}) {
   const reports = [];
 
   for (const repository of targets) {
-    const lifecycle = normalizedName(repository) === normalizedName(controlRepo)
-      ? "active"
-      : managedRepoLifecycleState(repository, registry);
+    const lifecycle = doctorLifecycleState(repository, controlRepo, registry);
     if (isParkedRepo(repository) || lifecycle === "parked") {
-      const report = skippedReport(repository, mode, "Repository is parked; doctor performed no target-repository writes or repair work.");
+      const report = skippedReport(repository, mode, "Repository is parked; doctor performed no target-repository writes or repair work.", {
+        trigger: options.trigger,
+        controlRepo,
+        controlRevision
+      });
       if (mode === "report") await publishSkippedDoctorReport(options.ledgerGithub, repository, report);
+      reports.push(report);
+      continue;
+    }
+
+    if (
+      mode === "report"
+      && normalizedName(repository) !== normalizedName(controlRepo)
+      && lifecycle !== "active"
+    ) {
+      const report = skippedReport(
+        repository,
+        mode,
+        `Repository lifecycle is ${lifecycle}; report mode is restricted to the control repository and active managed repositories. No target-repository write was attempted.`,
+        { trigger: options.trigger, controlRepo, controlRevision }
+      );
+      await publishSkippedDoctorReport(options.ledgerGithub, repository, report);
       reports.push(report);
       continue;
     }
@@ -213,17 +240,30 @@ export async function runRepositoryDoctor(github, options = {}) {
       const report = skippedReport(
         repository,
         mode,
-        `Repository is read-only (archived=${metadata.archived === true}, disabled=${metadata.disabled === true}, lifecycle=${lifecycle}).`
+        `Repository is read-only (archived=${metadata.archived === true}, disabled=${metadata.disabled === true}, lifecycle=${lifecycle}).`,
+        { trigger: options.trigger, controlRepo, controlRevision }
       );
       if (mode === "report") await publishSkippedDoctorReport(options.ledgerGithub, repository, report);
       reports.push(report);
       continue;
     }
 
+    if (!isMainOnlyDataRepository(repository) && !agentOsDataRevision) {
+      agentOsDataRevision = await resolvePinnedRevision(
+        github,
+        parseRepo(AGENT_OS_DATA_REPO),
+        null,
+        "main",
+        "canonical Andromeda-data"
+      );
+    }
+
     const report = await auditTargetRepository(github, repository, metadata, {
       ...options,
       dataRepositoryPolicy,
       controlRepo,
+      controlRevision,
+      agentOsDataRevision,
       lifecycle,
       mode
     });
@@ -235,6 +275,16 @@ export async function runRepositoryDoctor(github, options = {}) {
   }
 
   return reports;
+}
+
+export function doctorLifecycleState(repository, controlRepo, registry) {
+  if (
+    normalizedName(repository) === normalizedName(controlRepo)
+    || isMainOnlyDataRepository(repository)
+  ) {
+    return "active";
+  }
+  return managedRepoLifecycleState(repository, registry);
 }
 
 export function assertDoctorReportAuthorities(mode, targetGithub, ledgerGithub) {
@@ -263,9 +313,31 @@ export async function publishDoctorReport(github, ledgerGithub, repository, repo
   const issues = await listDoctorIssues(github, repository, "all");
   const plannedActions = planDoctorReportActions(report.findings);
   report.actions.push(await writeDoctorLedger(ledgerGithub, repository, report, { phase: "admission", plannedActions }));
-  report.actions.push(...await reconcileDoctorIssues(github, repository, report.findings, issues));
-  report.actions.push(...await retireLegacyAuditIssues(github, repository, issues));
-  report.actions.push(await writeDoctorLedger(ledgerGithub, repository, report, { phase: "completion", plannedActions }));
+  let mutationError = null;
+  try {
+    await reconcileDoctorIssues(github, repository, report.findings, issues, report.actions);
+    await retireLegacyAuditIssues(github, repository, issues, report.actions);
+  } catch (error) {
+    mutationError = error;
+  }
+
+  let completionError = null;
+  try {
+    report.actions.push(await writeDoctorLedger(ledgerGithub, repository, report, {
+      phase: "completion",
+      plannedActions,
+      publicationStatus: mutationError ? "partial" : "complete"
+    }));
+  } catch (error) {
+    completionError = error;
+  }
+  if (mutationError) {
+    if (completionError) {
+      throw new Error("Repository-doctor target publication failed and its completion ledger could not be written.", { cause: mutationError });
+    }
+    throw mutationError;
+  }
+  if (completionError) throw completionError;
   return report;
 }
 
@@ -293,22 +365,50 @@ async function resolveDoctorTargets(github, controlRepo, registry, options) {
   return [typeof options.target === "string" ? parseRepo(options.target) : (options.target || controlRepo)];
 }
 
+export function assertExactCommit(value, authority) {
+  const revision = typeof value === "string" ? value.trim() : "";
+  if (!EXACT_COMMIT_PATTERN.test(revision)) {
+    throw new Error(`Repository doctor requires an exact 40-character ${authority} commit revision.`);
+  }
+  return revision.toLowerCase();
+}
+
+async function resolvePinnedRevision(github, repository, provided, branch, authority) {
+  if (provided) return assertExactCommit(provided, authority);
+  const commit = await github.request(
+    "GET",
+    `/repos/${repoName(repository)}/commits/${encodeURIComponent(branch)}`
+  );
+  return assertExactCommit(commit?.sha, authority);
+}
+
 async function auditTargetRepository(github, repository, metadata, options) {
   const observedAt = new Date(options.now || Date.now()).toISOString();
   const isData = isMainOnlyDataRepository(repository);
   const defaultBranch = metadata.default_branch || "";
   const branches = await listBranches(github, repository);
   const branchNames = new Set(branches.map((branch) => branch.name));
+  const defaultRevision = defaultBranch ? immutableBranchRevision(branches, defaultBranch) : null;
+  const mainRevision = branchNames.has("main") ? immutableBranchRevision(branches, "main") : null;
+  const devRevision = branchNames.has("dev") ? immutableBranchRevision(branches, "dev") : null;
   const pulls = await listOpenPullRequests(github, repository);
-  const issues = await listDoctorIssues(github, repository, "all");
+  const issues = isData ? [] : await listDoctorIssues(github, repository, "all");
   const openIssues = issues.filter((issue) => issue.state === "open");
-  const tree = defaultBranch ? await getRecursiveTree(github, repository, defaultBranch) : null;
+  const tree = !isData && defaultRevision ? await getRecursiveTree(github, repository, defaultRevision) : null;
   const findings = [];
   const observations = [];
+
+  if (!defaultRevision) {
+    findings.push(doctorFinding("default-branch-head-missing", "branch policy", `The declared default branch \`${defaultBranch || "missing"}\` was not present in the complete branch snapshot, so target content cannot be audited immutably.`, {
+      severity: "critical"
+    }));
+  }
 
   const branchAudit = await auditBranchAndReleaseState(github, repository, metadata, {
     branches,
     branchNames,
+    mainRevision,
+    devRevision,
     pulls,
     isData,
     dataRepositoryPolicy: options.dataRepositoryPolicy,
@@ -317,21 +417,34 @@ async function auditTargetRepository(github, repository, metadata, options) {
   findings.push(...branchAudit.findings);
   observations.push(...branchAudit.observations);
 
-  findings.push(...await auditManagedFileDrift(github, repository, defaultBranch, options.controlRepo, { issues }));
-  findings.push(...await auditRepositoryTree(repository, tree, { isData }));
-  findings.push(...await auditRootLayout(github, repository, defaultBranch, tree));
-  findings.push(...await auditRuntimeAuthority(github, repository, defaultBranch, options.controlRepo));
-  findings.push(...await auditPrerequisites(github, repository, defaultBranch, options));
-  findings.push(...await auditLabelTaxonomy(github, repository, options.controlRepo));
-  findings.push(...auditIssueLane(repository, issues, { now: options.now }));
-  findings.push(...await auditIssueReality(github, repository, openIssues));
-  findings.push(...await auditPrdDrift(github, repository, defaultBranch, issues, { tree }));
-  findings.push(...await auditDocStaleness(repository, metadata, defaultBranch, github));
-  findings.push(...await auditRetiredAuthorityNames(github, repository, defaultBranch));
+  if (isData) {
+    observations.push("Canonical data repository was inspected only under the main-only protection, administration, force-push, deletion, and branch-hygiene policy; managed-code, workflow, PRD, and submodule requirements do not apply.");
+  } else if (defaultRevision) {
+    findings.push(...await auditManagedFileDrift(github, repository, defaultRevision, options.controlRepo, {
+      controlRevision: options.controlRevision,
+      agentOsDataRevision: options.agentOsDataRevision,
+      issues
+    }));
+    findings.push(...await auditRepositoryTree(repository, tree, { isData: false }));
+    findings.push(...await auditRootLayout(github, repository, defaultRevision, tree));
+    findings.push(...await auditRuntimeAuthority(github, repository, defaultRevision, options.controlRepo, options.controlRevision));
+    findings.push(...await auditPrerequisites(github, repository, defaultRevision, options));
+    findings.push(...await auditLabelTaxonomy(github, repository, options.controlRepo, options.controlRevision));
+    findings.push(...auditIssueLane(repository, issues, { now: options.now }));
+    findings.push(...await auditIssueReality(github, repository, openIssues));
+    findings.push(...await auditPrdDrift(github, repository, defaultRevision, issues, { tree }));
+    findings.push(...await auditDocStaleness(repository, metadata, defaultRevision, github));
+    findings.push(...await auditRetiredAuthorityNames(github, repository, defaultRevision));
+  } else {
+    observations.push("Target content, tree, document, and submodule audits were skipped because no immutable default-branch revision was available.");
+  }
 
-  for (const branch of ["main", "dev"].filter((name) => branchNames.has(name))) {
-    findings.push(...await auditHealth(repository, branch, branchSha(branches, branch), github, { now: options.now }));
-    findings.push(...await auditSubmoduleState(github, repository, branch));
+  if (!isData) {
+    for (const branch of ["main", "dev"].filter((name) => branchNames.has(name))) {
+      const revision = branch === "main" ? mainRevision : devRevision;
+      findings.push(...await auditHealth(repository, branch, revision, github, { now: options.now }));
+      if (defaultRevision) findings.push(...await auditSubmoduleState(github, repository, branch, revision));
+    }
   }
 
   if (options.localPath) {
@@ -366,9 +479,13 @@ async function auditTargetRepository(github, repository, metadata, options) {
     observed_at: observedAt,
     source_refs: {
       default_branch: defaultBranch,
-      main: branchNames.has("main") ? branchSha(branches, "main") : null,
-      dev: branchNames.has("dev") ? branchSha(branches, "dev") : null,
-      control: `${repoName(options.controlRepo)}@main`
+      default_branch_revision: defaultRevision,
+      main: mainRevision,
+      dev: devRevision,
+      control: `${repoName(options.controlRepo)}@${options.controlRevision}`,
+      agent_os_data: options.agentOsDataRevision
+        ? `${AGENT_OS_DATA_REPO}@${options.agentOsDataRevision}`
+        : null
     },
     machine_evidence_schema: normalizedName(repository) === normalizedName(options.controlRepo) && options.agentsHome ? 1 : 0,
     read_only: options.mode === "diagnose",
@@ -390,6 +507,8 @@ export async function auditBranchAndReleaseState(github, repository, metadata, c
   const observations = [];
   const acceptedResidue = [];
   const { branches, branchNames, pulls, isData } = context;
+  const mainRevision = context.mainRevision ?? branchSha(branches, "main");
+  const devRevision = context.devRevision ?? branchSha(branches, "dev");
   const dataRepositoryPolicy = isData
     ? validateDataRepositoryPolicy(context.dataRepositoryPolicy || loadDataRepositoryPolicy())
     : null;
@@ -433,7 +552,7 @@ export async function auditBranchAndReleaseState(github, repository, metadata, c
 
   let comparison = null;
   if (!isData && branchNames.has("main") && branchNames.has("dev")) {
-    const observedComparison = await compareBranches(github, repository, "main", "dev");
+    const observedComparison = await compareBranches(github, repository, mainRevision, devRevision);
     if (!isValidBranchComparison(observedComparison)) {
       findings.push(doctorFinding("main-dev-comparison-malformed", "branch convergence", "The main...dev comparison response is malformed or incomplete, so branch convergence is unobservable.", {
         severity: "critical",
@@ -507,7 +626,7 @@ export async function auditBranchAndReleaseState(github, repository, metadata, c
   findings.push(...pullAudit.findings);
 
   if (!isData && comparison) {
-    findings.push(...await auditReleaseLane(github, repository, comparison, pullAudit.pulls));
+    findings.push(...await auditReleaseLane(github, repository, comparison, pullAudit.pulls, devRevision));
   }
   return { findings, observations, acceptedResidue };
 }
@@ -672,6 +791,7 @@ async function auditPullRequests(github, repository, pulls, options = {}) {
     const red = checks.filter((check) => check.state === "red");
     const pending = checks.filter((check) => check.state === "pending");
     const unknown = checks.filter((check) => check.state === "unknown");
+    const wrongApp = checks.filter((check) => TRUSTED_GATE_NAMES.has(check.name) && check.appId !== TRUSTED_GATE_APP_ID);
 
     if (ageDays >= STALE_PR_DAYS) {
       findings.push(doctorFinding(`pr-${pull.number}-stale`, "pull request health", `PR #${pull.number} has not changed for ${ageDays} days.`, {
@@ -690,6 +810,13 @@ async function auditPullRequests(github, repository, pulls, options = {}) {
         severity: "critical",
         evidence,
         repair: ["Re-fetch checks from the trusted API and repair the check producer/schema; never treat an unknown conclusion as green."]
+      }));
+    }
+    if (wrongApp.length) {
+      findings.push(doctorFinding(`pr-${pull.number}-trusted-gate-app-mismatch`, "pull request health", `PR #${pull.number} has trusted gate names produced by an untrusted or unobservable App: ${wrongApp.map((check) => `${check.name}@app:${check.appId ?? "unbound"}`).join(", ")}; GitHub Actions app_id ${TRUSTED_GATE_APP_ID} is required.`, {
+        severity: "critical",
+        evidence: [...evidence, ...wrongApp.flatMap((check) => check.url ? [{ label: `${check.name}@app:${check.appId ?? "unbound"}`, url: check.url }] : [])],
+        repair: ["Restore the base-trusted managed workflow producer; never accept a same-name gate from another App or an unbound commit status."]
       }));
     }
     const oldPending = pending.filter((check) => ageIn(now, check.startedAt, 60 * 60 * 1000) >= PENDING_CHECK_HOURS);
@@ -713,7 +840,7 @@ async function auditPullRequests(github, repository, pulls, options = {}) {
   return { findings, pulls: enriched };
 }
 
-async function auditReleaseLane(github, repository, comparison, pulls) {
+async function auditReleaseLane(github, repository, comparison, pulls, devRevision) {
   const findings = [];
   const releaseCandidates = pulls.filter((pull) => pull.base?.ref === "main" && (pull.head?.ref === "dev" || pull.head?.ref?.startsWith("release/")));
   const trustedCandidates = releaseCandidates.filter((pull) => sameRepositoryPullHead(pull, repository));
@@ -735,9 +862,16 @@ async function auditReleaseLane(github, repository, comparison, pulls) {
       continue;
     }
 
+    if (!EXACT_COMMIT_PATTERN.test(pull.head?.sha || "")) {
+      findings.push(doctorFinding(`release-pr-${pull.number}-head-revision-malformed`, "release lane", `Release PR #${pull.number} has no exact head revision and cannot satisfy release policy.`, {
+        severity: "critical", evidence: [{ label: `PR #${pull.number}`, url: pull.html_url }]
+      }));
+      continue;
+    }
+
     let relation;
     try {
-      relation = await compareBranches(github, repository, "dev", pull.head?.sha || pull.head?.ref);
+      relation = await compareBranches(github, repository, devRevision, pull.head.sha);
     } catch (error) {
       if (![403, 404, 409, 422].includes(error?.status)) throw error;
       findings.push(doctorFinding(`release-pr-${pull.number}-dev-lineage-unobservable`, "release lane", `Current-dev ancestry for release PR #${pull.number} is unobservable; it cannot satisfy release policy.`, {
@@ -782,8 +916,10 @@ async function auditReleaseLane(github, repository, comparison, pulls) {
 
 export async function auditManagedFileDrift(github, repository, targetRef, controlRepo = CONTROL_REPO, options = {}) {
   if (!targetRef) return [doctorFinding("managed-target-ref-missing", "managed file drift", "Cannot inspect managed files without a target ref.", { severity: "critical" })];
+  const controlRevision = assertExactCommit(options.controlRevision, "trusted control");
+  const agentOsDataRevision = assertExactCommit(options.agentOsDataRevision, "canonical Andromeda-data");
   const findings = [];
-  const manifestText = await getOptionalFileContent(github, controlRepo, ".darkfactory/managed-repository.json", "main");
+  const manifestText = await getOptionalFileContent(github, controlRepo, ".darkfactory/managed-repository.json", controlRevision);
   const manifest = parseManagedManifest(manifestText);
   if (!manifest.ok) {
     return [doctorFinding("managed-baseline-invalid", "managed file drift", manifest.error, {
@@ -795,7 +931,8 @@ export async function auditManagedFileDrift(github, repository, targetRef, contr
     const packageOwned = manifest.value.packageFiles.includes(filePath);
     const sourceRepo = packageOwned ? controlRepo : parseRepo(AGENT_OS_DATA_REPO);
     const sourcePath = packageOwned ? filePath : `managed-repository/${filePath}`;
-    const expected = await getOptionalFileContent(github, sourceRepo, sourcePath, "main");
+    const sourceRevision = packageOwned ? controlRevision : agentOsDataRevision;
+    const expected = await getOptionalFileContent(github, sourceRepo, sourcePath, sourceRevision);
     if (expected === null) {
       findings.push(doctorFinding(`managed-source-missing-${slug(filePath)}`, "managed file drift", `Authoritative source \`${repoName(sourceRepo)}:${sourcePath}\` is missing.`, {
         severity: "critical", repair: ["Restore the baseline source; do not infer or copy from the target repository."]
@@ -848,7 +985,7 @@ export async function auditManagedFileDrift(github, repository, targetRef, contr
     }
   }
 
-  findings.push(...await auditProjectOverlay(github, repository, targetRef));
+  findings.push(...await auditProjectOverlay(github, repository, targetRef, agentOsDataRevision));
   return findings;
 }
 
@@ -870,15 +1007,15 @@ function parseManagedManifest(text) {
   }
 }
 
-async function auditProjectOverlay(github, repository, targetRef) {
+async function auditProjectOverlay(github, repository, targetRef, agentOsDataRevision) {
   const findings = [];
   const dataRepo = parseRepo(AGENT_OS_DATA_REPO);
   const prefix = `managed-repository/repositories/${repository.owner}/${repository.repo}/.agents/.project`;
-  const files = await listRemoteDirectoryFiles(github, dataRepo, prefix, "main");
+  const files = await listRemoteDirectoryFiles(github, dataRepo, prefix, agentOsDataRevision);
   for (const source of files) {
     const relative = source.path.slice(prefix.length + 1);
     const targetPath = `.agents/.project/${relative}`;
-    const expected = await getOptionalFileContent(github, dataRepo, source.path, "main");
+    const expected = await readListedRemoteFile(github, dataRepo, source, agentOsDataRevision);
     const actual = await getOptionalFileContent(github, repository, targetPath, targetRef);
     if (actual === null || normalizeText(actual) !== normalizeText(expected)) {
       findings.push(doctorFinding(`managed-project-overlay-${slug(targetPath)}`, "managed file drift", `Project overlay \`${targetPath}\` is ${actual === null ? "missing" : "drifted"}.`, {
@@ -960,13 +1097,30 @@ export async function auditRootLayout(github, repository, ref, tree) {
       }
       const resolved = resolveSubmoduleRepo(repository, actual.url);
       if (actual.name !== expected.name || !resolved || normalizedName(resolved) !== expected.repo.toLowerCase()) {
-        findings.push(doctorFinding(`andromeda-submodule-${slug(expected.path)}-identity`, "product layout", `Gitlink \`${expected.path}\` has name/url \`${actual.name}\` / \`${actual.url}\`; expected \`${expected.name}\` / \`${expected.repo}\`.`, { severity: "critical" }));
+        const observedRepository = resolved
+          ? `GitHub repository \`${repoName(resolved)}\``
+          : describeSubmoduleUrl(actual.url);
+        findings.push(doctorFinding(`andromeda-submodule-${slug(expected.path)}-identity`, "product layout", `Gitlink \`${expected.path}\` has a mismatched name or repository identity (${observedRepository}); expected \`${expected.name}\` / \`${expected.repo}\`.`, { severity: "critical" }));
       }
       if (paths.get(expected.path)?.type !== "commit") {
         findings.push(doctorFinding(`andromeda-submodule-${slug(expected.path)}-mode`, "product layout", `Path \`${expected.path}\` is not a gitlink (tree type commit).`, { severity: "critical" }));
       }
     }
-    for (const actual of entries) {
+    for (const [index, actual] of entries.entries()) {
+      if (
+        !isSafeSubmoduleName(actual.name) ||
+        !isSafeSubmodulePath(actual.path) ||
+        !actual.url ||
+        !isSafeSubmoduleBranch(actual.branch)
+      ) {
+        findings.push(doctorFinding(
+          `andromeda-submodule-declaration-${index + 1}-invalid`,
+          "product layout",
+          `Andromeda submodule declaration #${index + 1} has an invalid or missing name, repository-relative path, URL, or branch.`,
+          { severity: "critical" }
+        ));
+        continue;
+      }
       if (!ANDROMEDA_LAYOUT.some((expected) => expected.path === actual.path)) {
         findings.push(doctorFinding(`andromeda-submodule-unexpected-${slug(actual.path)}`, "product layout", `Unexpected Andromeda submodule declaration \`${actual.name}\` at \`${actual.path}\`.`, { severity: "error" }));
       }
@@ -994,10 +1148,11 @@ export async function auditRootLayout(github, repository, ref, tree) {
   return findings;
 }
 
-export async function auditRuntimeAuthority(github, repository, ref, controlRepo = CONTROL_REPO) {
+export async function auditRuntimeAuthority(github, repository, ref, controlRepo = CONTROL_REPO, controlRevision) {
   if (!ref) return [];
+  const exactControlRevision = assertExactCommit(controlRevision, "trusted control");
   const findings = [];
-  const work = await getOptionalFileContent(github, controlRepo, ".github/workflows/df-work.yml", "main");
+  const work = await getOptionalFileContent(github, controlRepo, ".github/workflows/df-work.yml", exactControlRevision);
   if (!work) {
     return [doctorFinding("canonical-worker-workflow-missing", "runtime authority", "Trusted control df-work workflow is missing.", { severity: "critical" })];
   }
@@ -1203,9 +1358,10 @@ function emptyMachineRuntimeEvidence(overrides = {}) {
   };
 }
 
-export async function auditLabelTaxonomy(github, repository, controlRepo = CONTROL_REPO) {
-  const source = await getOptionalFileContent(github, controlRepo, "managed-repository/.darkfactory/labels.json", "main")
-    ?? await getOptionalFileContent(github, controlRepo, ".darkfactory/labels.json", "main");
+export async function auditLabelTaxonomy(github, repository, controlRepo = CONTROL_REPO, controlRevision) {
+  const exactControlRevision = assertExactCommit(controlRevision, "trusted control");
+  const source = await getOptionalFileContent(github, controlRepo, "managed-repository/.darkfactory/labels.json", exactControlRevision)
+    ?? await getOptionalFileContent(github, controlRepo, ".darkfactory/labels.json", exactControlRevision);
   if (!source) {
     return [doctorFinding("label-taxonomy-source-missing", "configuration prerequisites", "Canonical label taxonomy is missing or inaccessible.", { severity: "critical" })];
   }
@@ -1736,17 +1892,17 @@ export async function auditRetiredAuthorityNames(github, repository, ref) {
     "README.md",
     "PRD.md",
     "AGENTS.md",
+    ".agents/.project/AGENTS.md",
+    ".agents/.project/COMMANDS.md",
+    ".agents/.project/DECISIONS.md",
+    ".agents/.project/HANDOFF.md",
+    ".agents/.project/PROJECT.md",
+    ".agents/.project/STATUS.md",
+    ".agents/.project/STRUCTURE.md",
     ".darkfactory/branching-policy.md",
     ".darkfactory/installer-policy.json",
     ".darkfactory/managed-repository.json",
     ".github/workflows/sync-managed-repos.yml",
-    ".agents/.project/AGENTS.md",
-    ".agents/.project/PROJECT.md",
-    ".agents/.project/COMMANDS.md",
-    ".agents/.project/STATUS.md",
-    ".agents/.project/HANDOFF.md",
-    ".agents/.project/DECISIONS.md",
-    ".agents/.project/STRUCTURE.md",
     "src/managed-files.ts"
   ];
   const documents = [];
@@ -1807,16 +1963,37 @@ export function activeAuthorityText(content) {
   return active.join("\n");
 }
 
-export async function auditSubmoduleState(github, repository, branch) {
+export async function auditSubmoduleState(github, repository, branch, revision = branch) {
   const findings = [];
-  const gitmodules = await getOptionalFileContent(github, repository, ".gitmodules", branch);
-  if (!gitmodules) return findings;
-  const submodules = parseGitmodules(gitmodules);
+  const gitmodules = await getOptionalFileContent(github, repository, ".gitmodules", revision);
+  const parsed = parseGitmodulesDocument(gitmodules);
+  const submodules = parsed.submodules;
   const seenPaths = new Set();
+  const declaredPaths = new Set();
 
-  for (const submodule of submodules) {
-    if (!submodule.name || !submodule.path || !submodule.url) {
-      findings.push(doctorFinding(`submodule-declaration-${slug(submodule.name || submodule.path || "unknown")}-invalid`, "submodule metadata", `Submodule declaration \`${submodule.name || "unknown"}\` is missing name, path, or URL.`, { severity: "critical" }));
+  if (gitmodules !== null && (parsed.malformed || submodules.length === 0)) {
+    findings.push(doctorFinding(
+      `submodule-metadata-${slug(branch)}-invalid`,
+      "submodule metadata",
+      `The .gitmodules file on \`${branch}\` is malformed or contains no complete submodule declarations.`,
+      { severity: "critical" }
+    ));
+  }
+
+  for (const [index, submodule] of submodules.entries()) {
+    if (isSafeSubmodulePath(submodule.path)) declaredPaths.add(submodule.path);
+    if (
+      !isSafeSubmoduleName(submodule.name) ||
+      !isSafeSubmodulePath(submodule.path) ||
+      !submodule.url ||
+      !isSafeSubmoduleBranch(submodule.branch)
+    ) {
+      findings.push(doctorFinding(
+        `submodule-declaration-${slug(branch)}-${index + 1}-invalid`,
+        "submodule metadata",
+        `Submodule declaration #${index + 1} on \`${branch}\` has an invalid or missing name, repository-relative path, URL, or branch.`,
+        { severity: "critical" }
+      ));
       continue;
     }
     if (seenPaths.has(submodule.path)) {
@@ -1826,10 +2003,10 @@ export async function auditSubmoduleState(github, repository, branch) {
     seenPaths.add(submodule.path);
     const childRepo = resolveSubmoduleRepo(repository, submodule.url);
     if (!childRepo) {
-      findings.push(doctorFinding(`submodule-${slug(submodule.path)}-url-invalid`, "submodule metadata", `Submodule \`${submodule.path}\` uses unsupported URL \`${submodule.url}\`.`, { severity: "critical" }));
+      findings.push(doctorFinding(`submodule-${slug(submodule.path)}-url-invalid`, "submodule metadata", `Submodule \`${submodule.path}\` uses an unsupported ${describeSubmoduleUrl(submodule.url)}.`, { severity: "critical" }));
       continue;
     }
-    const recorded = await getSubmoduleCommit(github, repository, submodule.path, branch);
+    const recorded = await getSubmoduleCommit(github, repository, submodule.path, revision);
     if (!recorded) {
       findings.push(doctorFinding(`submodule-${slug(submodule.path)}-gitlink-missing-${slug(branch)}`, "submodule pointer", `Submodule \`${submodule.path}\` is declared but has no gitlink on \`${branch}\`.`, { severity: "critical" }));
       continue;
@@ -1850,30 +2027,130 @@ export async function auditSubmoduleState(github, repository, branch) {
       }));
     }
   }
+
+  let tree;
+  try {
+    tree = await getRecursiveTree(github, repository, revision);
+  } catch (error) {
+    findings.push(doctorFinding(
+      `submodule-tree-${slug(branch)}-unavailable`,
+      "submodule pointer",
+      `The recursive tree on \`${branch}\` is unavailable, so declared and actual gitlinks cannot be correlated.`,
+      { severity: "critical" }
+    ));
+    return findings;
+  }
+  if (tree?.truncated === true || !Array.isArray(tree?.tree)) {
+    findings.push(doctorFinding(
+      `submodule-tree-${slug(branch)}-incomplete`,
+      "submodule pointer",
+      `The recursive tree on \`${branch}\` is incomplete, so declared and actual gitlinks cannot be correlated.`,
+      { severity: "critical" }
+    ));
+    return findings;
+  }
+  const observedGitlinks = new Set();
+  let malformedGitlink = false;
+  for (const entry of tree.tree) {
+    if (entry?.type !== "commit") continue;
+    if (!isSafeSubmodulePath(entry.path) || observedGitlinks.has(entry.path)) {
+      malformedGitlink = true;
+      continue;
+    }
+    observedGitlinks.add(entry.path);
+  }
+  if (malformedGitlink) {
+    findings.push(doctorFinding(
+      `submodule-tree-${slug(branch)}-entry-invalid`,
+      "submodule pointer",
+      `The recursive tree on \`${branch}\` contains an invalid or duplicate gitlink entry.`,
+      { severity: "critical" }
+    ));
+  }
+  for (const gitlinkPath of observedGitlinks) {
+    if (declaredPaths.has(gitlinkPath)) continue;
+    findings.push(doctorFinding(
+      `submodule-${slug(gitlinkPath)}-undeclared-${slug(branch)}`,
+      "submodule metadata",
+      `Gitlink \`${gitlinkPath}\` exists on \`${branch}\` but is not declared by .gitmodules.`,
+      { severity: "critical" }
+    ));
+  }
   return findings;
 }
 
 export function parseGitmodules(content) {
+  return parseGitmodulesDocument(content).submodules;
+}
+
+function parseGitmodulesDocument(content) {
   const submodules = [];
-  if (typeof content !== "string") return submodules;
+  if (content === null) return { submodules, malformed: false };
+  if (typeof content !== "string") return { submodules, malformed: true };
   let current = null;
+  let malformed = false;
+  let observedContent = false;
+  const seenKeys = new Set();
   for (const rawLine of content.replace(/\r\n/g, "\n").split("\n")) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+    observedContent = true;
     const section = line.match(/^\[submodule\s+"([^"]+)"\]\s*$/);
     if (section) {
       if (current) submodules.push(current);
       current = { name: section[1], path: "", url: "", branch: "" };
+      seenKeys.clear();
       continue;
     }
-    if (!current) continue;
+    if (line.startsWith("[")) {
+      if (current) submodules.push(current);
+      current = null;
+      seenKeys.clear();
+      malformed = true;
+      continue;
+    }
+    if (!current) {
+      malformed = true;
+      continue;
+    }
     const pair = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.*)$/);
-    if (!pair) continue;
+    if (!pair) {
+      malformed = true;
+      continue;
+    }
     const key = pair[1].toLowerCase();
-    if (["path", "url", "branch"].includes(key)) current[key] = pair[2].trim();
+    if (["path", "url", "branch"].includes(key)) {
+      if (seenKeys.has(key)) malformed = true;
+      seenKeys.add(key);
+      current[key] = pair[2].trim();
+    }
   }
   if (current) submodules.push(current);
-  return submodules;
+  return { submodules, malformed: malformed || (observedContent && submodules.length === 0) };
+}
+
+function isSafeSubmoduleName(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 200 && /^[A-Za-z0-9._/-]+$/.test(value) && !hasUnsafePathSegment(value);
+}
+
+function isSafeSubmodulePath(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 1024 && /^[A-Za-z0-9._/-]+$/.test(value) && !value.startsWith("/") && !value.endsWith("/") && !hasUnsafePathSegment(value);
+}
+
+function isSafeSubmoduleBranch(value) {
+  return value === "" || (
+    typeof value === "string" &&
+    value.length <= 255 &&
+    /^[A-Za-z0-9._/-]+$/.test(value) &&
+    !value.startsWith("/") &&
+    !value.endsWith("/") &&
+    !value.includes("..") &&
+    !value.includes("@{")
+  );
+}
+
+function hasUnsafePathSegment(value) {
+  return value.split("/").some((segment) => !segment || segment === "." || segment === "..");
 }
 
 export function resolveSubmoduleRepo(parentRepo, url) {
@@ -1893,6 +2170,20 @@ export function resolveSubmoduleRepo(parentRepo, url) {
     }
   }
   return null;
+}
+
+function describeSubmoduleUrl(url) {
+  if (typeof url !== "string" || !url.trim()) return "missing URL";
+  const value = url.trim();
+  if (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(value)) return "machine-local path";
+  if (/^file:/i.test(value)) return "machine-local file URL";
+  if (value.startsWith("./") || value.startsWith("../")) return "relative repository URL";
+  if (/^(?:https?:\/\/github\.com\/|git@github\.com:|github\.com:)/i.test(value)) return "malformed GitHub repository URL";
+  const scheme = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/i)?.[1]?.toLowerCase();
+  if (scheme === "http" || scheme === "https") return "non-GitHub web URL";
+  if (scheme === "ssh" || scheme === "git") return "non-GitHub remote URL";
+  if (scheme) return "URL with an unsupported scheme";
+  return "unrecognized repository URL";
 }
 
 export function auditLocalCheckout(localPath, repository) {
@@ -2123,8 +2414,9 @@ function isTrustedDoctorActor(issue) {
   return DOCTOR_ISSUE_AUTHORS.has(issue?.user?.login || issue?.author?.login || "");
 }
 
-export async function reconcileDoctorIssues(github, repository, findings, enumeratedIssues) {
-  const actions = [];
+export async function reconcileDoctorIssues(github, repository, findings, enumeratedIssues, recordedActions = []) {
+  const actions = recordedActions;
+  if (!Array.isArray(actions)) throw new Error("Repository-doctor action recorder must be an array.");
   const issues = enumeratedIssues || await listDoctorIssues(github, repository, "all");
   const prefix = `df-doctor:${slug(repoName(repository))}:`;
   const expected = new Set(findings.map((finding) => `${prefix}${finding.id}`));
@@ -2153,6 +2445,7 @@ export async function reconcileDoctorIssues(github, repository, findings, enumer
     for (const duplicate of matches.slice(1)) {
       if (duplicate.state === "open") {
         await github.request("POST", `/repos/${repoName(repository)}/issues/${duplicate.number}/comments`, { body: `Closing duplicate doctor marker; canonical issue is #${existing.number}.` });
+        actions.push({ action: "comment-duplicate-repair-issue", issue: issueRef(duplicate) });
         await github.request("PATCH", `/repos/${repoName(repository)}/issues/${duplicate.number}`, { state: "closed" });
         actions.push({ action: "close-duplicate-repair-issue", issue: issueRef(duplicate) });
       }
@@ -2163,6 +2456,7 @@ export async function reconcileDoctorIssues(github, repository, findings, enumer
     if (expected.has(marker)) continue;
     for (const issue of matches.filter((item) => item.state === "open")) {
       await github.request("POST", `/repos/${repoName(repository)}/issues/${issue.number}/comments`, { body: "Repository doctor no longer detects this stable finding ID." });
+      actions.push({ action: "comment-resolved-repair-issue", issue: issueRef(issue) });
       await github.request("PATCH", `/repos/${repoName(repository)}/issues/${issue.number}`, { state: "closed" });
       actions.push({ action: "close-resolved-repair-issue", issue: issueRef(issue) });
     }
@@ -2171,12 +2465,14 @@ export async function reconcileDoctorIssues(github, repository, findings, enumer
   return actions;
 }
 
-export async function retireLegacyAuditIssues(github, repository, enumeratedIssues) {
-  const actions = [];
+export async function retireLegacyAuditIssues(github, repository, enumeratedIssues, recordedActions = []) {
+  const actions = recordedActions;
+  if (!Array.isArray(actions)) throw new Error("Repository-doctor action recorder must be an array.");
   const issues = enumeratedIssues || await listDoctorIssues(github, repository, "all");
   const legacy = issues.filter((issue) => issue.state === "open" && isTrustedDoctorActor(issue) && findAuditMarker(issue.body || "") === `df-audit:${slug(repoName(repository))}`);
   for (const issue of legacy) {
     await github.request("POST", `/repos/${repoName(repository)}/issues/${issue.number}/comments`, { body: "Superseded by the per-finding repository doctor ([marius-patrik/DarkFactory#12](https://github.com/marius-patrik/DarkFactory/issues/12)); all replacement findings use stable `df-doctor:` markers." });
+    actions.push({ action: "comment-legacy-audit-issue", issue: issueRef(issue) });
     await github.request("PATCH", `/repos/${repoName(repository)}/issues/${issue.number}`, { state: "closed" });
     actions.push({ action: "close-legacy-audit-issue", issue: issueRef(issue) });
   }
@@ -2197,6 +2493,7 @@ async function writeDoctorLedger(ledgerGithub, repository, report, options) {
     findings: report.findings,
     accepted_residue: report.accepted_residue || [],
     observations: report.observations,
+    publication_status: phase === "admission" ? "admitted" : (options.publicationStatus || "complete"),
     actions: phase === "admission"
       ? options.plannedActions.map((action) => ({ ...action, state: "admitted" }))
       : report.actions,
@@ -2230,15 +2527,18 @@ export function formatDoctorReports(reports) {
   return lines.join("\n");
 }
 
-function skippedReport(repository, mode, reason) {
+function skippedReport(repository, mode, reason, options = {}) {
   return {
     schema_version: DOCTOR_SCHEMA_VERSION,
     mode,
+    trigger: options.trigger || "unknown",
     target_repository: repoName(repository),
     read_only: true,
     skipped: true,
     reason,
-    source_refs: {},
+    source_refs: {
+      control: `${repoName(options.controlRepo || CONTROL_REPO)}@${assertExactCommit(options.controlRevision, "trusted control")}`
+    },
     findings: [],
     accepted_residue: [],
     observations: [reason],
@@ -2326,8 +2626,8 @@ async function getPullRequest(github, repository, number) {
 async function getCommitChecks(github, repository, sha) {
   if (!sha) return [];
   const results = await Promise.allSettled([
-    github.request("GET", `/repos/${repoName(repository)}/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`),
-    github.request("GET", `/repos/${repoName(repository)}/commits/${encodeURIComponent(sha)}/status`)
+    listCompleteCommitEvidencePages(github, repository, sha, "check runs", "check_runs", "check-runs"),
+    listCompleteCommitEvidencePages(github, repository, sha, "commit statuses", "statuses", "status")
   ]);
   const latest = new Map();
   for (const [index, result] of results.entries()) {
@@ -2343,12 +2643,9 @@ async function getCommitChecks(github, repository, sha) {
       startedAt: ""
     });
   }
-  const checkRuns = results[0].status === "fulfilled" ? results[0].value : null;
-  const status = results[1].status === "fulfilled" ? results[1].value : null;
-  if (checkRuns !== null && !Array.isArray(checkRuns?.check_runs)) {
-    latest.set("malformed:check-runs", { name: "check-runs payload", state: "unknown", conclusion: "malformed", url: "", startedAt: "" });
-  }
-  for (const [index, run] of (Array.isArray(checkRuns?.check_runs) ? checkRuns.check_runs : []).entries()) {
+  const checkRuns = results[0].status === "fulfilled" ? results[0].value : [];
+  const statuses = results[1].status === "fulfilled" ? results[1].value : [];
+  for (const [index, run] of checkRuns.entries()) {
     const validName = typeof run?.name === "string" && !!run.name.trim();
     const name = validName ? run.name.trim() : "malformed check run";
     const completed = run?.status === "completed";
@@ -2368,10 +2665,7 @@ async function getCommitChecks(github, repository, sha) {
       startedAt: run?.started_at || run?.created_at || ""
     });
   }
-  if (status !== null && !Array.isArray(status?.statuses)) {
-    latest.set("malformed:statuses", { name: "commit status payload", state: "unknown", conclusion: "malformed", url: "", startedAt: "" });
-  }
-  for (const [index, item] of (Array.isArray(status?.statuses) ? status.statuses : []).entries()) {
+  for (const [index, item] of statuses.entries()) {
     const validContext = typeof item?.context === "string" && !!item.context.trim();
     const context = validContext ? item.context.trim() : "malformed status";
     const state = !validContext
@@ -2392,6 +2686,39 @@ async function getCommitChecks(github, repository, sha) {
   return [...latest.values()];
 }
 
+async function listCompleteCommitEvidencePages(github, repository, sha, evidenceKind, collectionKey, endpoint) {
+  const items = [];
+  let expectedTotal = null;
+  const encodedSha = encodeURIComponent(sha);
+
+  for (let page = 1; page <= MAX_COMMIT_EVIDENCE_PAGES; page += 1) {
+    const response = await github.request("GET", `/repos/${repoName(repository)}/commits/${encodedSha}/${endpoint}?per_page=${COMMIT_EVIDENCE_PAGE_SIZE}&page=${page}`);
+    const total = response?.total_count;
+    const batch = response?.[collectionKey];
+    if (!Number.isInteger(total) || total < 0 || !Array.isArray(batch) || batch.length > COMMIT_EVIDENCE_PAGE_SIZE) {
+      throw new Error(`Repository doctor received a malformed ${evidenceKind} page for ${repoName(repository)} at ${sha}.`);
+    }
+    if (expectedTotal === null) expectedTotal = total;
+    else if (total !== expectedTotal) {
+      throw new Error(`Repository doctor observed changing ${evidenceKind} totals for ${repoName(repository)} at ${sha}.`);
+    }
+    if (expectedTotal > COMMIT_EVIDENCE_PAGE_SIZE * MAX_COMMIT_EVIDENCE_PAGES) {
+      throw new Error(`Repository doctor cannot prove complete ${evidenceKind} enumeration for ${repoName(repository)} at ${sha} within ${MAX_COMMIT_EVIDENCE_PAGES} pages.`);
+    }
+
+    items.push(...batch);
+    if (items.length > expectedTotal) {
+      throw new Error(`Repository doctor received excess ${evidenceKind} evidence for ${repoName(repository)} at ${sha}.`);
+    }
+    if (items.length === expectedTotal) return items;
+    if (batch.length < COMMIT_EVIDENCE_PAGE_SIZE) {
+      throw new Error(`Repository doctor received incomplete ${evidenceKind} evidence for ${repoName(repository)} at ${sha}.`);
+    }
+  }
+
+  throw new Error(`Repository doctor cannot prove complete ${evidenceKind} enumeration for ${repoName(repository)} at ${sha} within ${MAX_COMMIT_EVIDENCE_PAGES} pages.`);
+}
+
 async function getRecursiveTree(github, repository, ref) {
   try {
     return await github.request("GET", `/repos/${repoName(repository)}/git/trees/${encodeURIComponent(ref)}?recursive=1`);
@@ -2405,20 +2732,77 @@ async function getRecursiveTree(github, repository, ref) {
 }
 
 async function listRemoteDirectoryFiles(github, repository, dir, ref) {
-  let entries;
+  const files = [];
+  const visited = new Set();
+
+  async function walk(currentDir, allowMissing) {
+    if (visited.has(currentDir)) {
+      throw new Error(`Repository doctor observed a repeated managed project overlay directory in ${repoName(repository)}.`);
+    }
+    visited.add(currentDir);
+    let entries;
+    try {
+      entries = await github.request("GET", `/repos/${repoName(repository)}/contents/${encodePath(currentDir)}?ref=${encodeURIComponent(ref)}`);
+    } catch (error) {
+      if (allowMissing && error.status === 404) return;
+      if (error.status === 404) {
+        throw new Error(`Repository doctor could not complete managed project overlay enumeration for ${repoName(repository)}.`);
+      }
+      throw error;
+    }
+    if (!Array.isArray(entries)) {
+      throw new Error(`Repository doctor received a malformed managed project overlay directory listing for ${repoName(repository)}.`);
+    }
+    const childPaths = new Set();
+    for (const entry of entries) {
+      const entryPath = entry && typeof entry === "object" && !Array.isArray(entry) ? entry.path : null;
+      const type = entry && typeof entry === "object" && !Array.isArray(entry) ? entry.type : null;
+      const prefix = `${currentDir}/`;
+      const relative = typeof entryPath === "string" && entryPath.startsWith(prefix) ? entryPath.slice(prefix.length) : "";
+      if (
+        !relative ||
+        relative.includes("/") ||
+        !/^[A-Za-z0-9._-]+$/.test(relative) ||
+        relative === "." ||
+        relative === ".." ||
+        !["file", "dir"].includes(type) ||
+        (type === "file" && !EXACT_COMMIT_PATTERN.test(entry?.sha || "")) ||
+        childPaths.has(entryPath)
+      ) {
+        throw new Error(`Repository doctor received a malformed managed project overlay entry for ${repoName(repository)}.`);
+      }
+      childPaths.add(entryPath);
+      if (type === "file") files.push(entry);
+      else await walk(entryPath, false);
+    }
+  }
+
+  await walk(dir, true);
+  return files;
+}
+
+async function readListedRemoteFile(github, repository, source, ref) {
+  let data;
   try {
-    entries = await github.request("GET", `/repos/${repoName(repository)}/contents/${encodePath(dir)}?ref=${encodeURIComponent(ref)}`);
+    data = await github.request(
+      "GET",
+      `/repos/${repoName(repository)}/contents/${encodePath(source.path)}?ref=${encodeURIComponent(ref)}`
+    );
   } catch (error) {
-    if (error.status === 404) return [];
+    if (error.status === 404) {
+      throw new Error(`Repository doctor could not re-attest a listed managed project overlay file in ${repoName(repository)}.`);
+    }
     throw error;
   }
-  if (!Array.isArray(entries)) return [];
-  const files = [];
-  for (const entry of entries) {
-    if (entry.type === "file") files.push(entry);
-    if (entry.type === "dir") files.push(...await listRemoteDirectoryFiles(github, repository, entry.path, ref));
+  if (
+    data?.type !== "file" ||
+    data.sha !== source.sha ||
+    data.encoding !== "base64" ||
+    typeof data.content !== "string"
+  ) {
+    throw new Error(`Repository doctor could not re-attest a listed managed project overlay file in ${repoName(repository)}.`);
   }
-  return files;
+  return Buffer.from(data.content.replace(/\n/g, ""), "base64").toString("utf8").replace(/\r\n/g, "\n");
 }
 
 async function listWorkflowRuns(repository, branch, github) {
@@ -2444,7 +2828,9 @@ async function getLatestCommitForPath(repository, filePath, branch, github) {
 async function getSubmoduleCommit(github, repository, submodulePath, branch) {
   try {
     const data = await github.request("GET", `/repos/${repoName(repository)}/contents/${encodePath(submodulePath)}?ref=${encodeURIComponent(branch)}`);
-    return data?.type === "submodule" && typeof data.sha === "string" ? data.sha : null;
+    const legacySubmodule = data?.type === "submodule";
+    const currentSubmodule = data?.type === "file" && typeof data?.submodule_git_url === "string" && Boolean(data.submodule_git_url.trim());
+    return (legacySubmodule || currentSubmodule) && /^[0-9a-f]{40}$/i.test(data?.sha || "") ? data.sha : null;
   } catch (error) {
     if (error.status === 403 || error.status === 404) return null;
     throw error;
@@ -2494,6 +2880,11 @@ function sameRepositoryPullHead(pull, repository) {
 
 function branchSha(branches, name) {
   return branches.find((branch) => branch.name === name)?.commit?.sha || null;
+}
+
+function immutableBranchRevision(branches, name) {
+  const revision = branchSha(branches, name);
+  return revision === null ? null : assertExactCommit(revision, `target ${name} branch`);
 }
 
 function compareEvidence(repository, base, head) {

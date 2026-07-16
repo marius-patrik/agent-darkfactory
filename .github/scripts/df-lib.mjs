@@ -135,13 +135,45 @@ export function normalizeInstallationRepository(repository) {
 
 export async function listInstallationRepositories(gh) {
   const repositories = [];
+  const seen = new Set();
+  let totalCount = null;
   for (let page = 1; page <= 20; page += 1) {
     const data = await gh.request("GET", `/installation/repositories?per_page=100&page=${page}`);
-    if (!Array.isArray(data.repositories) || data.repositories.length === 0) break;
-    repositories.push(...data.repositories);
-    if (data.repositories.length < 100) break;
+    if (
+      !data ||
+      typeof data !== "object" ||
+      !Number.isSafeInteger(data.total_count) ||
+      data.total_count < 0 ||
+      !Array.isArray(data.repositories) ||
+      data.repositories.length > 100
+    ) {
+      throw new Error("DarkFactory received malformed installation repository enumeration evidence.");
+    }
+    if (totalCount === null) totalCount = data.total_count;
+    if (data.total_count !== totalCount) {
+      throw new Error("DarkFactory observed installation repository enumeration drift between pages.");
+    }
+    for (const installationRepository of data.repositories) {
+      const normalized = normalizeInstallationRepository(installationRepository);
+      if (!normalized) {
+        throw new Error("DarkFactory received a malformed installation repository entry.");
+      }
+      const identity = normalizedRepoName(normalized.repository);
+      if (seen.has(identity)) {
+        throw new Error("DarkFactory received a duplicate installation repository entry.");
+      }
+      seen.add(identity);
+      repositories.push(installationRepository);
+    }
+    if (repositories.length > totalCount) {
+      throw new Error("DarkFactory received more installation repositories than the declared total.");
+    }
+    if (repositories.length === totalCount) return repositories;
+    if (data.repositories.length < 100) {
+      throw new Error("DarkFactory received an incomplete installation repository enumeration.");
+    }
   }
-  return repositories;
+  throw new Error("DarkFactory cannot prove complete installation repository enumeration within 20 pages.");
 }
 
 export async function listActiveManagedRepos(gh, controlRepo, options = {}) {
@@ -149,11 +181,19 @@ export async function listActiveManagedRepos(gh, controlRepo, options = {}) {
   const installationRepositories = options.repositories ?? await listInstallationRepositories(gh);
   const warn = options.warn ?? console.warn;
   const active = [];
+  const seen = new Set();
 
   for (const installationRepository of installationRepositories) {
     const normalized = normalizeInstallationRepository(installationRepository);
-    if (!normalized) continue;
+    if (!normalized) {
+      throw new Error("DarkFactory received a malformed installation repository entry.");
+    }
     const { repository, archived, disabled } = normalized;
+    const identity = normalizedRepoName(repository);
+    if (seen.has(identity)) {
+      throw new Error("DarkFactory received a duplicate installation repository entry.");
+    }
+    seen.add(identity);
     if (repository.owner !== controlRepo.owner) continue;
 
     const state = managedRepoLifecycleState(repository, registry);

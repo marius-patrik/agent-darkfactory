@@ -86,6 +86,8 @@ test("checkRepositorySetup reports missing repository policy without a version m
   assert.ok(comment?.includes(".darkfactory/release-policy.json"));
   assert.ok(comment?.includes(".darkfactory/data-repository-policy.json"));
   assert.ok(comment?.includes(".darkfactory/submodule-policy.json"));
+  assert.ok(comment?.includes("canonical Andromeda-data"));
+  assert.ok(!comment?.includes("agents-data"));
 });
 
 function createRequester(files: Record<string, string>): GitHubRequester {

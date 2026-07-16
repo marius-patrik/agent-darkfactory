@@ -116,6 +116,7 @@ jobs:
           DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
           DF_LEDGER_TOKEN: ${{ steps.ledger-token.outputs.token }}
           DF_CONTROL_REPO: marius-patrik/DarkFactory
+          DF_CONTROL_REVISION: ${{ github.sha }}
           DF_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || github.repository }}
           DF_DOCTOR_ALL: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.repo)) && 'true' || 'false' }}
           DF_DOCTOR_MODE: ${{ (github.event_name == 'schedule' || github.event_name == 'push' || inputs.write_issues) && 'report' || 'diagnose' }}

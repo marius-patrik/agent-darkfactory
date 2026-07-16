@@ -28,6 +28,7 @@ const {
   isParkedRepo,
   isVerifiedWorkerIssue,
   listActiveManagedRepos,
+  listInstallationRepositories,
   listPackagePaths,
   normalizeWorkerPullRequestActor,
   parsePrdItems,
@@ -409,6 +410,63 @@ test("listActiveManagedRepos excludes archived, disabled, and non-active lifecyc
   assert.ok(warnings.some((warning) => warning.includes("disabled=true")));
   assert.ok(warnings.some((warning) => warning.includes("managed lifecycle state is 'parked'")));
   assert.ok(warnings.some((warning) => warning.includes("managed lifecycle state is 'removed'")));
+});
+
+test("installation repository enumeration is total-bound, strict, and fail-closed", async () => {
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({
+    full_name: `marius-patrik/repo-${index}`,
+    archived: false,
+    disabled: false
+  }));
+  const secondPage = [{ full_name: "marius-patrik/repo-100", archived: false, disabled: false }];
+  const calls: string[] = [];
+  const repositories = await listInstallationRepositories({
+    async request(_method: string, requestPath: string) {
+      calls.push(requestPath);
+      return requestPath.endsWith("page=1")
+        ? { total_count: 101, repositories: firstPage }
+        : { total_count: 101, repositories: secondPage };
+    }
+  });
+  assert.equal(repositories.length, 101);
+  assert.equal(calls.length, 2);
+
+  await assert.rejects(
+    () => listInstallationRepositories({ request: async () => ({ repositories: [] }) }),
+    /malformed installation repository enumeration evidence/
+  );
+  await assert.rejects(
+    () => listInstallationRepositories({
+      request: async (_method: string, requestPath: string) => requestPath.endsWith("page=1")
+        ? { total_count: 101, repositories: firstPage }
+        : { total_count: 101, repositories: [] }
+    }),
+    /incomplete installation repository enumeration/
+  );
+  let cappedPage = 0;
+  await assert.rejects(
+    () => listInstallationRepositories({
+      async request() {
+        cappedPage += 1;
+        return {
+          total_count: 2001,
+          repositories: Array.from({ length: 100 }, (_, index) => ({
+            full_name: `marius-patrik/capped-${cappedPage}-${index}`
+          }))
+        };
+      }
+    }),
+    /cannot prove complete installation repository enumeration/
+  );
+  assert.equal(cappedPage, 20);
+  await assert.rejects(
+    () => listActiveManagedRepos(
+      { request: async () => ({ total_count: 0, repositories: [] }) },
+      { owner: "marius-patrik", repo: "DarkFactory" },
+      { repositories: [{ full_name: "marius-patrik/valid" }, { unexpected: true }], registry: { repositories: {} } }
+    ),
+    /malformed installation repository entry/
+  );
 });
 
 test("canonical Andromeda installation names resolve through the live managed registry", async () => {
@@ -911,6 +969,17 @@ test("repository doctor workflow schedules trusted diagnosis with explicit repor
   assert.match(workflow, /repository-doctor-report\.json/);
   assert.match(workflow, /model_calls=0/);
   assert.doesNotMatch(workflow, /DF_DATA_REPO/);
+});
+
+test("managed repository sync binds the canonical Andromeda-data checkout to AGENTS_HOME", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/sync-managed-repos.yml", import.meta.url), "utf8");
+
+  assert.match(workflow, /repository:\s+marius-patrik\/Andromeda-data\b/);
+  assert.match(workflow, /AGENTS_HOME:\s+\$\{\{ github\.workspace \}\}\/\.andromeda-data/);
+  assert.match(workflow, /repo:'marius-patrik\/Andromeda-data'/);
+  assert.match(workflow, /path:process\.env\.AGENTS_HOME/);
+  assert.doesNotMatch(workflow, /repository:\s+marius-patrik\/agents-data\b/);
+  assert.doesNotMatch(workflow, /process\.env\.AGENTS_ROOT\s*\+\s*['"]\/data\/agent-os/);
 });
 
 test("df-follow-through workflow validates trusted refs before privileged tokens", async () => {
