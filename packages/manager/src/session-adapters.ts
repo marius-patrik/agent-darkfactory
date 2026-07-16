@@ -433,15 +433,18 @@ export interface NativeInvocationAttestation {
   effort: "low" | "medium" | "high" | null;
 }
 
-/** Reconstruct Agy authority exclusively from the exact provider argv that was spawned. */
+/** Reconstruct only Agy's attestable read-only model and effort from exact spawned argv. */
 export function attestAgyNativeInvocation(launch: NativeCliLaunch): NativeInvocationAttestation {
   const args = launch.providerArgs;
+  if (args[0] === "--sandbox" && args[1] === "--mode" && args[2] === "accept-edits") {
+    throw new Error("Agy workspace-write cannot be attested from provider argv alone");
+  }
   if (
     launch.stdinPiped ||
     args.length !== 7 ||
     args[0] !== "--sandbox" ||
     args[1] !== "--mode" ||
-    (args[2] !== "plan" && args[2] !== "accept-edits") ||
+    args[2] !== "plan" ||
     args[3] !== "--model" ||
     typeof args[4] !== "string" ||
     !args[4]!.trim() ||
@@ -454,7 +457,7 @@ export function attestAgyNativeInvocation(launch: NativeCliLaunch): NativeInvoca
   }
   const resolution = resolveAgyModel(args[4]!);
   return {
-    executionPolicy: args[2] === "plan" ? "read-only" : "workspace-write",
+    executionPolicy: "read-only",
     model: resolution.concreteModel,
     effort: resolution.effort,
   };
@@ -557,6 +560,9 @@ export function buildProviderArgs(
       ];
     }
     case "agy": {
+      if (executionPolicy === "workspace-write") {
+        throw new Error("Agy workspace-write is unsupported without provider-native physical authority evidence");
+      }
       // Agy's --print consumes the immediately-following argv token as the
       // prompt, so any flag placed after it is swallowed as user input and the
       // model silently falls back to the default. Bind "--model <concrete>"
@@ -566,7 +572,7 @@ export function buildProviderArgs(
       return [
         "--sandbox",
         "--mode",
-        executionPolicy === "read-only" ? "plan" : "accept-edits",
+        "plan",
         "--model",
         concreteModel,
         "--print",

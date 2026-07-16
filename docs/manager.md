@@ -280,6 +280,10 @@ no completed-turn or manager-owned physical-worktree containment proof for
 Edit/Write, so `max` plus `workspace-write` fails before provider spawn instead
 of claiming unsupported write authority.
 
+Agy's low route also admits `read-only` only. Its native `accept-edits` flag is
+a request, not completed evidence of the effective cwd, sandbox, or writable
+roots, so low-tier `workspace-write` likewise fails before provider spawn.
+
 Model tier and model effort are independent axes. Every invocation must also
 declare either `read-only` or `workspace-write`; the provider adapter must attest
 that exact effective policy before a successful result is accepted. Exactly one

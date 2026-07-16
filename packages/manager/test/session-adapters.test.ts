@@ -178,7 +178,7 @@ describe("provider CLI session arguments", () => {
     expect(buildProviderArgs("codex", "gpt-test", request, current)).not.toContain(prompt);
   });
 
-  test("maps independent effort and narrow execution policy without putting Codex or Claude prompts in argv", () => {
+  test("maps Codex narrow policy and rejects unsupported provider writes without putting prompts in argv", () => {
     const current = transcript([{ role: "user", content: "SECRET_PROMPT_SENTINEL" }]);
     const implementation: TurnRequest = {
       prompt: "SECRET_PROMPT_SENTINEL",
@@ -216,16 +216,9 @@ describe("provider CLI session arguments", () => {
       "workspace-write is unsupported without a manager-owned physical containment boundary",
     );
 
-    const lowEffort = buildProviderArgs(
-      "agy",
-      "Gemini 3.5 Flash (Low)",
-      { ...implementation, effort: "low" },
-      current,
+    expect(() => buildProviderArgs("agy", "Gemini 3.5 Flash (Low)", implementation, current)).toThrow(
+      "Agy workspace-write is unsupported without provider-native physical authority evidence",
     );
-    const highEffort = buildProviderArgs("agy", "Gemini 3.5 Flash (Low)", implementation, current);
-    expect(lowEffort).toContain("accept-edits");
-    expect(lowEffort[4]).toBe("Gemini 3.5 Flash (Low)");
-    expect(highEffort[4]).toBe("Gemini 3.5 Flash (High)");
   });
 
   test("Agy native effort varies independently while the provider route stays Agy", () => {
@@ -254,6 +247,12 @@ describe("provider CLI session arguments", () => {
   });
 
   test("native invocation attestation rejects malformed Agy and Claude authority", () => {
+    expect(() =>
+      attestAgyNativeInvocation({
+        providerArgs: ["--sandbox", "--mode", "accept-edits", "--model", AGY_LOW_MODEL, "--print", "fixture"],
+        stdinPiped: false,
+      }),
+    ).toThrow("Agy workspace-write cannot be attested from provider argv alone");
     expect(() =>
       attestAgyNativeInvocation({
         providerArgs: ["--sandbox", "--mode", "auto", "--model", AGY_LOW_MODEL, "--print", "fixture"],
@@ -2365,6 +2364,32 @@ describe("managed Agy provider boundary (issue #252)", () => {
       expect(completedTurnEvent(await loadSessionEvents(state, descriptor.sessionId)).data.receipt).toEqual(
         expectedReceipt,
       );
+    } finally {
+      restore();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  test("denied: workspace-write fails before Agy spawn without provider-native physical authority", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-workspace-denied-"));
+    const stateDir = path.join(root, ".agents");
+    const userHome = path.join(root, "user-home");
+    const capture = path.join(root, "agy-capture.txt");
+    const restore = withDisposableHome(stateDir, userHome);
+    try {
+      const state = sharedStateAt(root, stateDir, userHome);
+      await seedCanonicalStartup(state, stateDir);
+      const binary = await pinFakeAgy(state, stateDir, capture);
+      await Bun.write(path.join(stateDir, "clis", "agy", ".gemini", "oauth_creds.json"), '{"token":"redacted"}');
+      const descriptor = await createSession(state, { provider: "agy", model: "low", mode: "task", workdir: root });
+
+      await expect(
+        runSessionTurn(state, agySessionAdapter(binary), descriptor, {
+          prompt: "Attempt a workspace write.",
+          executionPolicy: "workspace-write",
+        }),
+      ).rejects.toThrow("Agy workspace-write is unsupported without provider-native physical authority evidence");
+      expect(await pathExists(capture)).toBe(false);
     } finally {
       restore();
       await rm(root, { recursive: true, force: true });

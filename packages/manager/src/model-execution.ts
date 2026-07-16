@@ -531,6 +531,14 @@ export async function executeModelRequest(
       await reservation.commit(finalReceipt);
       return { ok: false, content, sessionId, receipt: finalReceipt };
     }
+    // Agy exposes an accept-edits request flag but no completed provider-native
+    // receipt for the effective cwd, sandbox, or writable-root set. Do not turn
+    // manager-built argv back into claimed resolved authority.
+    if (route.provider === "agy" && executionPolicy === "workspace-write") {
+      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, "execution_policy_unsupported");
+      await reservation.commit(finalReceipt);
+      return { ok: false, content, sessionId, receipt: finalReceipt };
+    }
     // Agy 1.1.1 has no stdin/file prompt transport: --print consumes the
     // prompt as the next argv token. Low-tier positional text is already
     // caller-visible argv and remains suitable for trivial work, but content

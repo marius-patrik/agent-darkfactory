@@ -268,6 +268,21 @@ describe("canonical model execution route and receipt", () => {
     expect(result.receipt.resolved.model).toBe("agy-fast");
   });
 
+  test("Agy workspace-write is unsupported and never spawns low without physical authority evidence", async () => {
+    const { root, state, receiptDir } = await fixture();
+    const captured: Parameters<typeof successfulDependencies>[0] = [];
+    const result = await executeModelRequest(
+      state,
+      request(root, receiptDir, "low", "high", "workspace-write"),
+      successfulDependencies(captured),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.content).toBe("");
+    expect(result.sessionId).toBeNull();
+    expect(result.receipt.blockReason).toBe("execution_policy_unsupported");
+    expect(captured).toEqual([]);
+  });
+
   test("provider policy without native attestation blocks as unsupported", async () => {
     const { root, state, receiptDir } = await fixture();
     const result = await executeModelRequest(
