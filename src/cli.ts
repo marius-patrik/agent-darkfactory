@@ -792,7 +792,7 @@ export function parseSubmoduleCliArgs(args: string[]): SubmoduleCliOptions {
 }
 
 export function submoduleGithubPermissions(mode: SubmoduleCliOptions["mode"]): Record<string, "read" | "write"> {
-  const mutating = mode !== "status";
+  const mutating = mode === "update";
   return {
     administration: "read",
     actions: mutating ? "write" : "read",
@@ -841,7 +841,7 @@ async function runSubmodules(args: string[]): Promise<void> {
   const options = parseSubmoduleCliArgs(args);
   const credentials = loadAppCredentials();
   const app = new App({ appId: credentials.appId, privateKey: credentials.privateKey });
-  const mutating = options.mode !== "status";
+  const mutating = options.mode === "update";
   const github = createDoctorRequester(await getScopedInstallationOctokit(app, CONTROL_OWNER, submoduleGithubPermissions(options.mode)));
   const ledgerGithub = mutating
     ? createDoctorRequester(await getScopedInstallationOctokit(app, CONTROL_OWNER, { contents: "write" }, ["darkfactory-data"]))

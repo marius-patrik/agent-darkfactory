@@ -100,7 +100,7 @@ test("submodule CLI preserves status/update/verify parity with the shared engine
   assert.deepEqual(status, { mode: "status", child: "marius-patrik/DarkFactory", watch: true, json: true });
   assert.ok(Object.values(submoduleGithubPermissions("status")).every((permission) => permission === "read"));
   assert.equal(submoduleGithubPermissions("update").contents, "write");
-  assert.equal(submoduleGithubPermissions("verify").pull_requests, "write");
+  assert.ok(Object.values(submoduleGithubPermissions("verify")).every((permission) => permission === "read"));
 
   const calls: Array<{ mode: string; child: string }> = [];
   const results = [

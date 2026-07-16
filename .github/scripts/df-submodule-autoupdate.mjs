@@ -179,6 +179,25 @@ export async function runSubmoduleCommand({ mode, child = "", localPath = "", va
     return { schemaVersion: 1, mode, status: plan.action === "block" ? "blocked" : "observed", plan, observation: publicObservation(observation) };
   }
 
+  if (mode === "verify") {
+    const verified = ["current", "released"].includes(plan.action);
+    return {
+      schemaVersion: 1,
+      mode,
+      status: verified ? "verified" : "blocked",
+      plan,
+      observation: publicObservation(observation),
+      receipt: {
+        kind: "submodule-verification",
+        plan_id: plan.planId,
+        verified,
+        action: plan.action,
+        evidence: plan.evidence,
+        blockers: plan.blockers
+      }
+    };
+  }
+
   await writeSubmoduleLedger(plan, "submodule-update-admission", {
     status: "admitted",
     mode,
@@ -193,8 +212,8 @@ export async function runSubmoduleCommand({ mode, child = "", localPath = "", va
   else if (plan.action === "current") action = { status: "current", state: observation.pointerState };
   else if (plan.action === "released") action = await completeReleasedPointer(observation, plan);
   else if (plan.action === "release-parent") action = await dispatchParentRelease(observation, plan);
-  else if (mode === "update") action = await ensureSubmoduleUpdatePull(observation, plan);
-  else action = await finalizeSubmoduleUpdate(observation, plan, validation);
+  else if (validation) action = await finalizeSubmoduleUpdate(observation, plan, validation);
+  else action = await ensureSubmoduleUpdatePull(observation, plan);
 
   const result = {
     schemaVersion: 1,

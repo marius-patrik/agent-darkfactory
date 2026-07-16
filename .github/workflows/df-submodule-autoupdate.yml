@@ -272,7 +272,9 @@ jobs:
           DARK_FACTORY_TOKEN: ${{ steps.target-token.outputs.token }}
           DF_LEDGER_TOKEN: ${{ steps.ledger-token.outputs.token }}
           DF_CONTROL_REPO: ${{ github.repository }}
-          DF_SUBMODULE_MODE: verify
+          # Finalization is an admitted update transition. The public `verify`
+          # command remains target-read-only and only returns evidence.
+          DF_SUBMODULE_MODE: update
           DF_SUBMODULE_REPO: ${{ needs.plan.outputs.child }}
           DF_SUBMODULE_VALIDATION_SHA: ${{ needs.validate-pointer.outputs.head_sha }}
           DF_SUBMODULE_VALIDATION_URL: ${{ needs.validate-pointer.outputs.run_url }}

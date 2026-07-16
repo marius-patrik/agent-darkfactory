@@ -811,6 +811,16 @@ test("public and durable plan output summarizes private ancestry without compare
   assert.doesNotMatch(JSON.stringify(result), /private-commit-payload|private-ledger-patch/);
 });
 
+test("verify is observation-only and never writes target or ledger state", async () => {
+  const { calls } = observationRuntime();
+  const result = await submodules.runSubmoduleCommand({ mode: "verify", child: "marius-patrik/DarkFactory" });
+  assert.equal(result.mode, "verify");
+  assert.equal(result.status, "blocked");
+  assert.equal(result.receipt.kind, "submodule-verification");
+  assert.equal(result.receipt.verified, false);
+  assert.equal(calls.some((call) => ["POST", "PATCH", "PUT", "DELETE"].includes(call.method)), false);
+});
+
 test("merged dev pointer with unchanged main dispatches the parent release lane", async () => {
   observationRuntime({ mainPointer: OLD, devPointer: NEW, relation: { status: "identical", ahead_by: 0, behind_by: 0 } });
   const observation = await submodules.observeSubmoduleUpdate({ child: "marius-patrik/DarkFactory", policy });
@@ -1158,6 +1168,8 @@ test("managed workflow keeps trusted planning, mutation, and validation authorit
   assert.match(workflow, /permission-contents:\s+read/);
   assert.match(workflow, /persist-credentials:\s+false/);
   assert.match(workflow, /node control\/\.github\/scripts\/df-submodule-checkout\.mjs/);
+  assert.match(workflow, /DF_SUBMODULE_MODE:\s+update[\s\S]+DF_SUBMODULE_VALIDATION_SHA/);
+  assert.doesNotMatch(workflow, /DF_SUBMODULE_MODE:\s+verify/);
   assert.match(workflow, /needs\.plan\.outputs\.action != 'current'/);
   assert.doesNotMatch(workflow, /needs\.plan\.outputs\.action != 'block'/);
   assert.doesNotMatch(workflow, /npm (?:ci|test|run)|bun |python |go test/);

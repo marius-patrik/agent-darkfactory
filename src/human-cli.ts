@@ -121,7 +121,7 @@ export const HUMAN_COMMANDS: readonly CommandSpec[] = Object.freeze([
   })),
   ...(["status", "update", "verify"] as const).map((verb) => command({
     id: `submodules-${verb}`, path: ["submodules", verb], usage: `df submodules ${verb} [owner/repo] [--watch] [--json]`, purpose: `${verb === "status" ? "Observe" : verb === "update" ? "Apply" : "Verify"} released child-pointer convergence through the #43 engine.`,
-    defaults: "Control root; status is read-only.", model: "Deterministic; zero model tokens unless an explicit semantic conflict is escalated.", permissions: verb === "status" ? "Repositories, releases, trees, and receipts read." : "Exact pointer branch/PR and ledger authority.",
+    defaults: "Control root; status and verify are read-only.", model: "Deterministic; zero model tokens unless an explicit semantic conflict is escalated.", permissions: verb === "update" ? "Exact pointer branch/PR and ledger authority." : "Repositories, releases, trees, PRs, and receipts read.",
     mutations: verb === "update" ? "May open reviewed pointer-update PRs for released child SHAs only." : "None except a verification receipt.", trust: "Verified child release receipts and exact gitlink SHAs are authoritative; nested target code never executes.",
     examples: [`df submodules ${verb} marius-patrik/Andromeda --json`], failures: "Unreleased child, stale parent, recursive cycle, parked scope, or incomplete receipt blocks closed.", options: [WATCH_OPTION, JSON_OPTION], minimumArguments: 0, maximumArguments: 1, engine: `submodules-${verb}`
   })),

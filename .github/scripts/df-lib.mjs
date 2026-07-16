@@ -573,18 +573,39 @@ export async function getRequiredStatusCheckContexts(gh, repository, branch) {
       "GET",
       `/repos/${repoName(repository)}/branches/${encodeURIComponent(branch)}/protection`
     );
-    const checks = data?.required_status_checks;
-    if (!checks) return [];
-
-    if (Array.isArray(checks.checks)) {
-      return checks.checks.map((check) => check.context).filter(Boolean);
-    }
-
-    if (Array.isArray(checks.contexts)) return checks.contexts;
-    return [];
+    const policy = inspectManagedBranchProtection({ configured: true, data });
+    return Object.freeze({
+      observable: true,
+      configured: true,
+      healthy: policy.ok,
+      contexts: Object.freeze([...policy.requiredChecks]),
+      findings: Object.freeze([...policy.findings]),
+      status: 200,
+      reason: ""
+    });
   } catch (error) {
-    if (error.status === 404) return [];
-    if (error.status === 403) return [];
+    if (error.status === 404) {
+      return Object.freeze({
+        observable: true,
+        configured: false,
+        healthy: false,
+        contexts: Object.freeze([]),
+        findings: Object.freeze(["branch protection is absent"]),
+        status: 404,
+        reason: error.message || String(error)
+      });
+    }
+    if (error.status === 403) {
+      return Object.freeze({
+        observable: false,
+        configured: null,
+        healthy: false,
+        contexts: Object.freeze([]),
+        findings: Object.freeze(["branch protection is inaccessible"]),
+        status: 403,
+        reason: error.message || String(error)
+      });
+    }
     throw error;
   }
 }

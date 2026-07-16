@@ -204,7 +204,23 @@ async function main() {
       await ensureLabels(gh, repository, WORK_LABELS);
       const pulls = await listOpenPullRequests(gh, repository);
       for (const pull of pulls) {
-        const requiredContexts = await getRequiredStatusCheckContexts(gh, repository, pull.baseRefName);
+        const requiredStatus = await getRequiredStatusCheckContexts(gh, repository, pull.baseRefName);
+        if (requiredStatus.healthy !== true) {
+          ledger.actions.push({
+            repo: repoName(repository),
+            pr: `${repoName(repository)}#${pull.number}`,
+            action: "blocked",
+            reason: requiredStatus.observable === false
+              ? "branch-protection-inaccessible"
+              : requiredStatus.configured === false
+                ? "branch-protection-missing"
+                : "managed-gates-unhealthy",
+            protection_status: requiredStatus.status,
+            findings: requiredStatus.findings
+          });
+          continue;
+        }
+        const requiredContexts = requiredStatus.contexts;
         const classification = classifyFixCandidate(pull, repository, requiredContexts, { maxRounds });
 
         if (classification.action === "fix") {
@@ -236,7 +252,7 @@ async function main() {
     console.warn(sanitize(`DarkFactory ledger warning: ${error.message || String(error)}`, token));
   }
 
-  const regenerated = ledger.actions.filter((action) => action.action === "redispatch").length;
+  const regenerated = ledger.actions.filter((action) => action.action === "reevaluate").length;
   const escalated = ledger.actions.filter((action) => action.action === "escalate").length;
   console.log(`DarkFactory fix cycle processed ${repositories.length} repos; regenerated=${regenerated} escalated=${escalated}.`);
 }
@@ -363,16 +379,16 @@ export async function fixPullRequestByRedispatch(gh, controlRepo, repository, pu
   const findings = await residualFindings(gh, repository, freshPull, requiredContexts, token);
   const revision = await postRevisionRequest(gh, repository, issue, freshPull, round, maxRounds, findings);
   await updateIssueFixRound(gh, repository, issue, round);
-  await resetIssueForWorker(gh, repository, issueNumber);
+  await resetIssueForEvaluation(gh, repository, issueNumber);
   await closeSupersededPullRequest(gh, repository, freshPull, round);
   const branchDeletion = await deleteHeadBranch(gh, repository, freshPull.headRefName);
-  await dispatchWorker(gh, controlRepo, repository, issueNumber, freshPull.baseRefName);
+  await dispatchOrchestratorEvaluation(gh, controlRepo, repository, issueNumber);
 
   return {
     repo: repoName(repository),
     pr: ref,
     url: freshPull.url || pull.url,
-    action: "redispatch",
+    action: "reevaluate",
     issue: `#${issueNumber}`,
     round,
     max_rounds: maxRounds,
@@ -382,7 +398,7 @@ export async function fixPullRequestByRedispatch(gh, controlRepo, repository, pu
     head_branch_deleted: branchDeletion.deleted,
     head_branch: freshPull.headRefName,
     head_branch_delete_reason: branchDeletion.reason,
-    dispatched_workflow: "df-work.yml"
+    dispatched_workflow: "df-orchestrate.yml"
   };
 }
 
@@ -475,8 +491,8 @@ async function updateIssueFixRound(gh, repository, issue, round) {
   }
 }
 
-async function resetIssueForWorker(gh, repository, issueNumber) {
-  await replaceIssueLabels(gh, repository, issueNumber, ["df:ready"], ["df:running", "df:blocked", "df:done", "df:ask-owner"]);
+async function resetIssueForEvaluation(gh, repository, issueNumber) {
+  await replaceIssueLabels(gh, repository, issueNumber, [], ["df:ready", "df:running", "df:blocked", "df:done", "df:ask-owner"]);
 }
 
 async function closeSupersededPullRequest(gh, repository, pull, round) {
@@ -506,13 +522,13 @@ async function deleteHeadBranch(gh, repository, branch) {
   }
 }
 
-async function dispatchWorker(gh, controlRepo, repository, issueNumber, baseRefName) {
-  await gh.request("POST", `/repos/${repoName(controlRepo)}/actions/workflows/df-work.yml/dispatches`, {
+async function dispatchOrchestratorEvaluation(gh, controlRepo, repository, issueNumber) {
+  await gh.request("POST", `/repos/${repoName(controlRepo)}/actions/workflows/df-orchestrate.yml/dispatches`, {
     ref: "main",
     inputs: {
       repo: repoName(repository),
       issue_number: String(issueNumber),
-      base_ref: baseRefName || ""
+      source_event: "df-fix"
     }
   });
 }

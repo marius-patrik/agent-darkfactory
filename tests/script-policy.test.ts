@@ -334,21 +334,34 @@ test("DarkFactory Autoreview is added to required contexts only after provisioni
   );
 });
 
-test("getRequiredStatusCheckContexts treats inaccessible branch protection as no native requirements", async () => {
-  const error: Error & { status?: number } = new Error("Resource not accessible by integration");
-  error.status = 403;
-
-  const contexts = await getRequiredStatusCheckContexts(
-    {
-      request: async () => {
-        throw error;
-      }
-    },
+test("getRequiredStatusCheckContexts distinguishes healthy, absent, and inaccessible protection", async () => {
+  const healthy = await getRequiredStatusCheckContexts(
+    { request: async () => managedProtection() },
     { owner: "marius-patrik", repo: "example" },
     "main"
   );
+  assert.equal(healthy.observable, true);
+  assert.equal(healthy.configured, true);
+  assert.equal(healthy.healthy, true);
+  assert.deepEqual([...healthy.contexts], ["Validate", "DarkFactory Autoreview"]);
 
-  assert.deepEqual(contexts, []);
+  for (const [status, observable, configured] of [[403, false, null], [404, true, false]] as const) {
+    const result = await getRequiredStatusCheckContexts(
+      {
+        request: async () => {
+          const error: Error & { status?: number } = new Error(`${status} protection unavailable`);
+          error.status = status;
+          throw error;
+        }
+      },
+      { owner: "marius-patrik", repo: "example" },
+      "main"
+    );
+    assert.equal(result.observable, observable);
+    assert.equal(result.configured, configured);
+    assert.equal(result.healthy, false);
+    assert.deepEqual([...result.contexts], []);
+  }
 });
 
 test("getBranchProtection treats 403 and 404 as not configured without swallowing other errors", async () => {
@@ -1141,7 +1154,7 @@ test("df-fix workflow validates trusted refs before privileged tokens", async ()
   assert.match(workflow, /darkfactory-control\/\.github\/scripts\/df-fix\.mjs/);
 });
 
-test("df-fix script is deterministic and only redispatches red worker PRs", async () => {
+test("df-fix is deterministic and routes red worker PR recovery through the orchestrator", async () => {
   const source = await readFile(new URL("../.github/scripts/df-fix.mjs", import.meta.url), "utf8");
 
   assert.match(source, /listActiveManagedRepos\(gh, controlRepo, \{ root: CONTROL_ROOT \}\)/);
@@ -1149,8 +1162,10 @@ test("df-fix script is deterministic and only redispatches red worker PRs", asyn
   assert.match(source, /df:fix-round:/);
   assert.match(source, /df:ask-owner/);
   assert.match(source, /df-fix-revision/);
-  assert.match(source, /\/actions\/workflows\/df-work\.yml\/dispatches/);
-  assert.match(source, /base_ref: baseRefName \|\| ""/);
+  assert.match(source, /\/actions\/workflows\/df-orchestrate\.yml\/dispatches/);
+  assert.match(source, /source_event: "df-fix"/);
+  assert.doesNotMatch(source, /\/actions\/workflows\/df-work\.yml\/dispatches/);
+  assert.doesNotMatch(source, /\["df:ready"\]/);
   assert.match(source, /pageInfo/);
   assert.match(source, /hasNextPage/);
   assert.match(source, /while \(cursor\)/);
@@ -1444,7 +1459,7 @@ test("df-fix selects only red worker PRs from active repositories", async () => 
   assert.deepEqual(fixable, ["marius-patrik/active:marius-patrik/active#10"]);
 });
 
-test("df-fix posts a trusted revision request, closes the red PR, deletes the branch, and redispatches df-work", async () => {
+test("df-fix posts a trusted revision request, closes the red PR, deletes the branch, and requests orchestrator re-evaluation", async () => {
   const controlRepo = { owner: "marius-patrik", repo: "DarkFactory" };
   const repository = { owner: "marius-patrik", repo: "active" };
   const pull = workerPull({ number: 10, checkConclusion: "FAILURE" });
@@ -1485,7 +1500,7 @@ test("df-fix posts a trusted revision request, closes the red PR, deletes the br
       if (method === "POST" && pathName === "/repos/marius-patrik/active/issues/10/comments") return {};
       if (method === "PATCH" && pathName === "/repos/marius-patrik/active/pulls/10") return {};
       if (method === "DELETE" && pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker") return {};
-      if (method === "POST" && pathName === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches") return {};
+      if (method === "POST" && pathName === "/repos/marius-patrik/DarkFactory/actions/workflows/df-orchestrate.yml/dispatches") return {};
       throw new Error(`unexpected mocked request: ${method} ${pathName}`);
     }
   };
@@ -1505,12 +1520,14 @@ test("df-fix posts a trusted revision request, closes the red PR, deletes the br
     { maxRounds: 3, token: "token" }
   );
 
-  assert.equal(result.action, "redispatch");
+  assert.equal(result.action, "reevaluate");
   assert.equal(result.round, 1);
   assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/10/comments" && call.body.body.includes("<!-- df-fix-revision -->")));
   assert.ok(calls.some((call) => call.method === "PATCH" && call.pathName === "/repos/marius-patrik/active/pulls/10" && call.body.state === "closed"));
   assert.ok(calls.some((call) => call.method === "DELETE" && call.pathName === "/repos/marius-patrik/active/git/refs/heads/df/10-worker"));
-  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/DarkFactory/actions/workflows/df-work.yml/dispatches" && call.body.inputs.repo === "marius-patrik/active" && call.body.inputs.issue_number === "10" && call.body.inputs.base_ref === "dev"));
+  assert.equal(calls.some((call) => call.method === "POST" && call.pathName.endsWith("/df-work.yml/dispatches")), false);
+  assert.equal(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/active/issues/10/labels" && call.body.labels?.includes("df:ready")), false);
+  assert.ok(calls.some((call) => call.method === "POST" && call.pathName === "/repos/marius-patrik/DarkFactory/actions/workflows/df-orchestrate.yml/dispatches" && call.body.inputs.repo === "marius-patrik/active" && call.body.inputs.issue_number === "10" && call.body.inputs.source_event === "df-fix"));
 });
 
 test("df-fix does not close, delete, or redispatch when the fresh PR head trust check fails", async () => {
