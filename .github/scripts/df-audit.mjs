@@ -2433,12 +2433,11 @@ export async function reconcileDoctorIssues(github, repository, findings, enumer
     const existing = matches[0];
     const body = doctorIssueBody(repoName(repository), finding);
     const title = `[repo doctor] ${finding.category}: ${finding.id}`;
-    const labels = [priorityForFinding(finding), "df:doctor", "df:class:mechanical"];
     if (existing) {
-      await github.request("PATCH", `/repos/${repoName(repository)}/issues/${existing.number}`, { title, body, state: "open", labels });
+      await github.request("PATCH", `/repos/${repoName(repository)}/issues/${existing.number}`, { title, body, state: "open" });
       actions.push({ action: "update-repair-issue", finding: finding.id, issue: issueRef(existing) });
     } else {
-      const created = await github.request("POST", `/repos/${repoName(repository)}/issues`, { title, body, labels });
+      const created = await github.request("POST", `/repos/${repoName(repository)}/issues`, { title, body });
       actions.push({ action: "create-repair-issue", finding: finding.id, issue: issueRef(created) });
     }
     for (const duplicate of matches.slice(1)) {

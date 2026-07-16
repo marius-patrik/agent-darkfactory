@@ -1949,7 +1949,7 @@ test("partial completion ledger records confirmed issue mutations before a later
 
 test("report issue reconciliation is marker-idempotent and closes resolved findings", async () => {
   const current = doctor.doctorFinding("current-drift", "branch policy", "current");
-  const existing = { number: 7, state: "open", body: "<!-- df-doctor:marius-patrik-darkfactory:current-drift -->", user: { login: "mp-agents[bot]" }, html_url: "https://example.test/7" };
+  const existing = { number: 7, state: "open", body: "<!-- df-doctor:marius-patrik-darkfactory:current-drift -->", labels: ["P1", "df:doctor"], user: { login: "mp-agents[bot]" }, html_url: "https://example.test/7" };
   const resolved = { number: 8, state: "open", body: "<!-- df-doctor:marius-patrik-darkfactory:old-drift -->", user: { login: "mp-agents[bot]" }, html_url: "https://example.test/8" };
   const { gh, calls } = mockGh((method, requestPath) => {
     if (method === "GET" && requestPath.includes("issues?state=all") && requestPath.endsWith("page=1")) return [existing, resolved];
@@ -1959,6 +1959,9 @@ test("report issue reconciliation is marker-idempotent and closes resolved findi
   });
   const actions = await doctor.reconcileDoctorIssues(gh, repo, [current]);
   assert.equal(calls.some((call) => call.method === "POST" && call.path === "/repos/marius-patrik/DarkFactory/issues"), false);
+  const update = calls.find((call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/DarkFactory/issues/7");
+  assert.ok(update);
+  assert.equal(Object.hasOwn(update.body, "labels"), false);
   assert.ok(actions.some((action) => action.action === "update-repair-issue"));
   assert.ok(actions.some((action) => action.action === "close-resolved-repair-issue"));
 });
@@ -2011,10 +2014,16 @@ test("live DarkFactory App actor creates, updates, then closes one stable issue 
 
   const created = await doctor.reconcileDoctorIssues(gh, repo, [finding]);
   assert.deepEqual(created.map((action) => action.action), ["create-repair-issue"]);
+  const createCall = calls.find((call) => call.method === "POST" && call.path === "/repos/marius-patrik/DarkFactory/issues");
+  assert.ok(createCall);
+  assert.equal(Object.hasOwn(createCall.body, "labels"), false);
   assert.equal(doctor.isTrustedDoctorIssue(issues[0]), true);
 
   const updated = await doctor.reconcileDoctorIssues(gh, repo, [finding]);
   assert.deepEqual(updated.map((action) => action.action), ["update-repair-issue"]);
+  const updateCall = calls.find((call) => call.method === "PATCH" && call.path === "/repos/marius-patrik/DarkFactory/issues/10");
+  assert.ok(updateCall);
+  assert.equal(Object.hasOwn(updateCall.body, "labels"), false);
   assert.equal(issues.length, 1);
 
   const closed = await doctor.reconcileDoctorIssues(gh, repo, []);
