@@ -112,6 +112,14 @@ test("setup command registry exposes and the adapter forwards exact local eviden
   assert.match(source, /command\.options\["--agents-home"\][\s\S]{0,220}\["--agents-home", command\.options\["--agents-home"\]/);
 });
 
+test("setup dispatches typed hygiene and released-pointer findings only through trusted main workflows", async () => {
+  const source = await readFile(path.resolve(import.meta.dirname, "..", "src", "cli.ts"), "utf8");
+  assert.match(source, /operations\.has\("converge-clean"\)[\s\S]{0,900}workflow_id: "df-clean\.yml"[\s\S]{0,300}ref: "main"/);
+  assert.match(source, /operations\.has\("converge-submodules"\)[\s\S]{0,900}workflow_id: "df-submodule-autoupdate\.yml"[\s\S]{0,300}ref: "main"/);
+  assert.match(source, /observeReviewFindings: async \(\) => await collectCleanReviewFindings/);
+  assert.doesNotMatch(source, /workflow_id: "df-submodule-autoupdate\.yml"[\s\S]{0,300}inputs: \{ repo: report\.target_repository \}/);
+});
+
 test("repo init is an exact-target alias of setup rather than baseline sync", () => {
   const repoInit = parseHumanCliArgs(["repo", "init", "marius-patrik/example", "--json"]);
   const setup = parseHumanCliArgs(["setup", "marius-patrik/example", "--json"]);

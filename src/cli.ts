@@ -381,6 +381,8 @@ async function runSetup(args: string[], commandId = "setup"): Promise<void> {
   const dispatchedReadinessPlans = new Set<string>();
   const dispatchedRegistrationSyncs = new Set<string>();
   const dispatchedReleasePlans = new Set<string>();
+  const dispatchedCleanPlans = new Set<string>();
+  const dispatchedSubmodulePlans = new Set<string>();
   const maxPasses = options.watch ? boundedInteger(process.env.DF_SETUP_WATCH_PASSES, 120, 1, 240) : 1;
   let finalPlan = planSetupConvergence([]);
   let previousEvidenceHash = "";
@@ -410,6 +412,8 @@ async function runSetup(args: string[], commandId = "setup"): Promise<void> {
       dispatchedReadinessPlans,
       dispatchedRegistrationSyncs,
       dispatchedReleasePlans,
+      dispatchedCleanPlans,
+      dispatchedSubmodulePlans,
       { agentsHome: options.agentsHome, packageRoot: fileURLToPath(new URL("..", import.meta.url)) }
     );
     receipts.push(...passReceipts);
@@ -439,7 +443,9 @@ async function runSetup(args: string[], commandId = "setup"): Promise<void> {
       "reconcile-issue-lane",
       "evaluate-readiness",
       "reconcile-branches",
-      "converge-release"
+      "converge-release",
+      "converge-clean",
+      "converge-submodules"
     ].includes(action.operation));
     if (stableEvidencePasses >= 2 && !asynchronous) {
       stopReason = "stable-evidence";
@@ -476,6 +482,8 @@ async function executeSetupPlan(
   dispatchedReadinessPlans: Set<string>,
   dispatchedRegistrationSyncs: Set<string>,
   dispatchedReleasePlans: Set<string>,
+  dispatchedCleanPlans: Set<string>,
+  dispatchedSubmodulePlans: Set<string>,
   machine: { agentsHome: string; packageRoot: string }
 ): Promise<SetupReceipt[]> {
   const receipts: SetupReceipt[] = [];
@@ -623,6 +631,42 @@ async function executeSetupPlan(
       }
     }
 
+    if (operations.has("converge-clean")) {
+      const dispatchKey = `${plan.planId}:${report.target_repository}:clean`;
+      if (!dispatchedCleanPlans.has(dispatchKey)) {
+        const control = await getScopedInstallationOctokit(app, CONTROL_OWNER, { actions: "write", contents: "read" }, [CONTROL_REPO]);
+        await control.request("POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches", {
+          owner: CONTROL_OWNER,
+          repo: CONTROL_REPO,
+          workflow_id: "df-clean.yml",
+          ref: "main",
+          inputs: { repo: report.target_repository }
+        });
+        dispatchedCleanPlans.add(dispatchKey);
+        receipts.push({ action: "repository-hygiene", target: report.target_repository, status: "applied", detail: "Dispatched the trusted evidence-bound clean lane; ambiguous or non-atomic cleanup remains preserved." });
+      } else {
+        receipts.push({ action: "repository-hygiene", target: report.target_repository, status: "current", detail: "This exact evidence plan already dispatched repository hygiene; waiting for its trusted run." });
+      }
+    }
+
+    if (operations.has("converge-submodules")) {
+      const dispatchKey = `${plan.planId}:${report.target_repository}:submodules`;
+      if (!dispatchedSubmodulePlans.has(dispatchKey)) {
+        const control = await getScopedInstallationOctokit(app, CONTROL_OWNER, { actions: "write", contents: "read" }, [CONTROL_REPO]);
+        await control.request("POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches", {
+          owner: CONTROL_OWNER,
+          repo: CONTROL_REPO,
+          workflow_id: "df-submodule-autoupdate.yml",
+          ref: "main",
+          inputs: { repo: "" }
+        });
+        dispatchedSubmodulePlans.add(dispatchKey);
+        receipts.push({ action: "submodule-convergence", target: report.target_repository, status: "applied", detail: "Dispatched the trusted released-child scan; only an exact policy-owned gitlink may enter a reviewed pointer PR." });
+      } else {
+        receipts.push({ action: "submodule-convergence", target: report.target_repository, status: "current", detail: "This exact evidence plan already dispatched released pointer convergence; waiting for its trusted run." });
+      }
+    }
+
     for (const [operation, mode] of [["reconcile-branches", "reconcile"], ["converge-release", "run"]] as const) {
       if (!operations.has(operation)) continue;
       // Reconciliation changes the release predicate. Never enqueue a release
@@ -646,7 +690,7 @@ async function executeSetupPlan(
     }
 
     for (const operation of operations) {
-      if (["converge-machine-runtime", "converge-registration", "initialize-repository", "open-managed-setup-pr", "converge-settings", "reconcile-issue-lane", "evaluate-readiness", "reconcile-branches", "converge-release"].includes(operation)) continue;
+      if (["converge-machine-runtime", "converge-registration", "initialize-repository", "open-managed-setup-pr", "converge-settings", "reconcile-issue-lane", "evaluate-readiness", "reconcile-branches", "converge-release", "converge-clean", "converge-submodules"].includes(operation)) continue;
       receipts.push({ action: operation, target: report.target_repository, status: "owner-required", detail: "The owning prerequisite has not yet exposed a trusted setup executor; setup refused to improvise." });
     }
   }
@@ -982,6 +1026,7 @@ async function runClean(args: string[], commandId?: string): Promise<void> {
   });
   const receipt = await applyCleanPlan(github, { owner, repo }, saved, evidence, {
     localPath: options.localPath,
+    observeReviewFindings: async () => await collectCleanReviewFindings(app, options, target),
     ...(remoteDeletion ? {
       deleteRemoteBranchExact: async (branch: string, expectedHead: string) => {
         await deleteRemoteBranchWithLease(

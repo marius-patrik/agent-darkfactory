@@ -151,23 +151,7 @@ export async function collectCleanEvidence(
     };
   });
 
-  const stableReviewFindings = reviewFindings.map((finding) => ({
-    id: finding.id,
-    category: finding.category,
-    severity: finding.severity,
-    repairClass: finding.repair_class,
-    message: finding.message,
-    evidence: finding.evidence || [],
-    fingerprint: stableHash({
-      id: finding.id,
-      category: finding.category,
-      severity: finding.severity,
-      repairClass: finding.repair_class,
-      message: finding.message,
-      evidence: finding.evidence || [],
-      repair: finding.repair || []
-    })
-  })).sort((a, b) => a.id.localeCompare(b.id));
+  const stableReviewFindings = normalizeCleanReviewFindings(reviewFindings);
   const openPulls: CleanEvidence["pullRequests"] = [];
   for (const pull of normalizedPulls.filter((candidate) => candidate.state === "open")) {
     const findingIds = reviewFindings.filter((finding) => findingTouchesPull(finding, pull.number)).map((finding) => finding.id).sort();
@@ -236,7 +220,7 @@ export async function collectCleanEvidence(
     });
   }
   assignIssueFoldEvidence(openIssues, stableReviewFindings, effectiveIssues);
-  const findingSetFingerprint = stableHash(stableReviewFindings.map((finding) => ({ id: finding.id, fingerprint: finding.fingerprint })));
+  const findingSetFingerprint = cleanFindingSetFingerprint(stableReviewFindings);
   const markerIssues = collectMarkerIssueEvidence(effectiveIssues, stableReviewFindings, repository, findingSetFingerprint);
   const artifactRepairs = await collectArtifactRepairEvidence(github, repository, branchHeads, normalizedPulls, stableReviewFindings);
   const managedLabels = await collectManagedLabelEvidence(github, repository, branchHeads, stableReviewFindings);
@@ -280,6 +264,30 @@ export async function collectCleanEvidence(
     managedLabels,
     markerIssues
   };
+}
+
+function normalizeCleanReviewFindings(reviewFindings: DoctorFinding[]): CleanEvidence["reviewFindings"] {
+  return reviewFindings.map((finding) => ({
+    id: finding.id,
+    category: finding.category,
+    severity: finding.severity,
+    repairClass: finding.repair_class,
+    message: finding.message,
+    evidence: finding.evidence || [],
+    fingerprint: stableHash({
+      id: finding.id,
+      category: finding.category,
+      severity: finding.severity,
+      repairClass: finding.repair_class,
+      message: finding.message,
+      evidence: finding.evidence || [],
+      repair: finding.repair || []
+    })
+  })).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function cleanFindingSetFingerprint(findings: CleanEvidence["reviewFindings"]): string {
+  return stableHash(findings.map((finding) => ({ id: finding.id, fingerprint: finding.fingerprint })));
 }
 
 interface IssueScopeEvidence {
@@ -737,6 +745,13 @@ export interface CleanApplyReceipt {
 interface CleanApplyOptions {
   localPath?: string;
   deleteRemoteBranchExact?: (branch: string, expectedHead: string) => Promise<void>;
+  observeReviewFindings?: () => Promise<DoctorFinding[]>;
+  mutateExact?: (mutation: {
+    kind: "close-pull-request" | "close-issue" | "delete-label";
+    route: string;
+    parameters: Record<string, unknown>;
+    expectedVersion: string;
+  }) => Promise<{ data: unknown }>;
   onAdmission?: (receipt: CleanApplyReceipt["actions"][number]) => Promise<void>;
   onCompletion?: (receipt: CleanApplyReceipt["actions"][number]) => Promise<void>;
 }
@@ -801,8 +816,9 @@ export async function applyCleanPlan(
   for (const entry of saved.entries.filter((candidate) => candidate.kind === "worktree" && candidate.action === "remove")) {
     const rawPath = local.rawWorktreeById.get(entry.target);
     if (!options.localPath || !rawPath) throw new Error(`clean worktree ${entry.target} is no longer observable; apply aborted`);
+    const plannedRef = plannedWorktreeRef(saved, entry);
     await recordAdmission({ kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "admitted exact clean preserved worktree removal" }, options.onAdmission);
-    revalidateWorktreeRemoval(options.localPath, rawPath, entry);
+    revalidateWorktreeRemoval(options.localPath, rawPath, entry, plannedRef);
     runGit(options.localPath, ["worktree", "remove", "--", rawPath]);
     await recordCompleted(actions, { kind: entry.kind, target: entry.target, head: entry.head, status: "applied", reason: "exact clean preserved worktree removed" }, options.onCompletion);
   }
@@ -1022,6 +1038,7 @@ async function applyPullClosureAction(
   if (!entry.version || !entry.successor || (entry.classification !== "superseded" && entry.classification !== "abandoned")) {
     throw new Error(`clean pull-request closure ${entry.target} lacks exact successor authority`);
   }
+  requireExactMutator(options, `pull request ${entry.target}`);
   const number = cleanTargetNumber(entry);
   await revalidatePullClosure(github, repository, number, entry);
   await recordAdmission(
@@ -1044,11 +1061,12 @@ async function applyPullClosureAction(
     });
   }
 
-  await revalidatePullClosure(github, repository, number, entry);
-  await github.request("PATCH /repos/{owner}/{repo}/pulls/{pull_number}", {
-    ...repository,
-    pull_number: number,
-    state: "closed"
+  const expectedVersion = await revalidatePullClosure(github, repository, number, entry);
+  await options.mutateExact!({
+    kind: "close-pull-request",
+    route: "PATCH /repos/{owner}/{repo}/pulls/{pull_number}",
+    parameters: { ...repository, pull_number: number, state: "closed" },
+    expectedVersion
   });
   const closed = normalizePull((await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
     ...repository,
@@ -1067,6 +1085,7 @@ interface ExactIssueObservation {
   issue: Record<string, unknown>;
   comments: Record<string, unknown>[];
   effective: ReturnType<typeof resolveEffectiveIssueContent>;
+  mutationVersion: string;
 }
 
 async function readExactOpenIssue(
@@ -1075,16 +1094,22 @@ async function readExactOpenIssue(
   number: number,
   label: string
 ): Promise<ExactIssueObservation> {
-  const issue = asRecord((await github.request("GET /repos/{owner}/{repo}/issues/{issue_number}", {
+  const response = await github.request("GET /repos/{owner}/{repo}/issues/{issue_number}", {
     ...repository,
     issue_number: number
-  })).data, label);
+  });
+  const issue = asRecord(response.data, label);
   const comments = (await listPages(github, "GET /repos/{owner}/{repo}/issues/{issue_number}/comments", {
     ...repository,
     issue_number: number
   })).map((comment, index) => asRecord(comment, `${label} comment ${index}`));
   if (issue.pull_request !== undefined || issue.state !== "open") throw new Error(`${label} is no longer an open issue`);
-  return { issue, comments, effective: resolveEffectiveIssueContent(issue, comments) };
+  return {
+    issue,
+    comments,
+    effective: resolveEffectiveIssueContent(issue, comments),
+    mutationVersion: stableHash({ issue, comments })
+  };
 }
 
 async function revalidateIssueFold(
@@ -1149,6 +1174,7 @@ async function applyIssueFoldAction(
   actions: CleanApplyReceipt["actions"],
   options: CleanApplyOptions
 ): Promise<void> {
+  requireExactMutator(options, `issue ${entry.target}`);
   await revalidateIssueFold(github, repository, entry);
   await recordAdmission(
     actionReceipt(entry, "applied", `Admitted exact scope-preserving fold into #${entry.issueFold!.successorNumber}.`),
@@ -1167,10 +1193,11 @@ async function applyIssueFoldAction(
   if (!observed.source.comments.some((comment) => isTrustedIssueFoldComment(comment, entry))) {
     throw new Error(`issue ${entry.target} fold receipt was not durably re-observed`);
   }
-  await github.request("PATCH /repos/{owner}/{repo}/issues/{issue_number}", {
-    ...repository,
-    issue_number: cleanTargetNumber(entry),
-    state: "closed"
+  await options.mutateExact!({
+    kind: "close-issue",
+    route: "PATCH /repos/{owner}/{repo}/issues/{issue_number}",
+    parameters: { ...repository, issue_number: cleanTargetNumber(entry), state: "closed" },
+    expectedVersion: observed.source.mutationVersion
   });
   const closedIssue = asRecord((await github.request("GET /repos/{owner}/{repo}/issues/{issue_number}", {
     ...repository,
@@ -1238,8 +1265,10 @@ async function applyMarkerIssueClosure(
   actions: CleanApplyReceipt["actions"],
   options: CleanApplyOptions
 ): Promise<void> {
+  requireExactMutator(options, `marker issue ${entry.target}`);
   await revalidateMarkerIssue(github, repository, entry);
   await recordAdmission(actionReceipt(entry, "applied", `Admitted exact trusted ${entry.markerIssue!.reason} marker closure.`), options.onAdmission);
+  await assertCurrentMarkerFindingSet(entry, options);
   let observed = await revalidateMarkerIssue(github, repository, entry);
   if (!observed.comments.some((comment) => isTrustedMarkerIssueClosureComment(comment, entry))) {
     const body = [markerIssueClosureMarker(entry), "## DarkFactory marker cleanup", "", "This exact machine-owned marker issue is stale and is closed without mutating any human-owned issue."].join("\n");
@@ -1254,10 +1283,12 @@ async function applyMarkerIssueClosure(
   if (!observed.comments.some((comment) => isTrustedMarkerIssueClosureComment(comment, entry))) {
     throw new Error(`marker issue ${entry.target} closure receipt was not durably re-observed`);
   }
-  await github.request("PATCH /repos/{owner}/{repo}/issues/{issue_number}", {
-    ...repository,
-    issue_number: entry.markerIssue!.number,
-    state: "closed"
+  await assertCurrentMarkerFindingSet(entry, options);
+  await options.mutateExact!({
+    kind: "close-issue",
+    route: "PATCH /repos/{owner}/{repo}/issues/{issue_number}",
+    parameters: { ...repository, issue_number: entry.markerIssue!.number, state: "closed" },
+    expectedVersion: observed.mutationVersion
   });
   const closed = asRecord((await github.request("GET /repos/{owner}/{repo}/issues/{issue_number}", {
     ...repository,
@@ -1269,11 +1300,25 @@ async function applyMarkerIssueClosure(
   await recordCompleted(actions, actionReceipt(entry, "applied", `Closed exact trusted ${entry.markerIssue!.reason} marker issue.`), options.onCompletion);
 }
 
+async function assertCurrentMarkerFindingSet(entry: CleanPlanEntry, options: CleanApplyOptions): Promise<void> {
+  const expected = entry.markerIssue?.findingSetFingerprint;
+  if (!expected || !/^[0-9a-f]{64}$/.test(expected)) {
+    throw new Error(`marker issue ${entry.target} lacks an exact finding-set fingerprint`);
+  }
+  if (!options.observeReviewFindings) {
+    throw new Error(`marker issue ${entry.target} requires current doctor finding-set observation; closure preserved`);
+  }
+  const observed = cleanFindingSetFingerprint(normalizeCleanReviewFindings(await options.observeReviewFindings()));
+  if (observed !== expected) {
+    throw new Error(`marker issue ${entry.target} doctor finding set drifted; closure preserved`);
+  }
+}
+
 async function revalidateManagedLabel(
   github: OperatorGitHubRequester,
   repository: RepositoryRef,
   entry: CleanPlanEntry
-): Promise<void> {
+): Promise<string> {
   const label = entry.managedLabel;
   if (!label || entry.target !== label.name || !label.name.startsWith("df:")) {
     throw new Error(`clean managed label ${entry.target} lacks exact policy ownership evidence`);
@@ -1293,15 +1338,23 @@ async function revalidateManagedLabel(
       && String((candidate as Record<string, unknown>).name).toLowerCase() === label.name.toLowerCase();
   });
   if (desired) throw new Error(`managed label ${entry.target} became part of the canonical taxonomy`);
-  const current = asRecord((await github.request("GET /repos/{owner}/{repo}/labels/{name}", {
+  const response = await github.request("GET /repos/{owner}/{repo}/labels/{name}", {
     ...repository,
     name: label.name
-  })).data, `managed label ${entry.target}`);
+  });
+  const current = asRecord(response.data, `managed label ${entry.target}`);
   if (String(current.name).toLowerCase() !== label.name.toLowerCase()
     || String(current.color).toLowerCase() !== label.color
     || String(current.description ?? "") !== label.description) {
     throw new Error(`managed label ${entry.target} drifted from its exact identity`);
   }
+  return stableHash({
+    policyRevision: label.policyRevision,
+    policyBlob: label.policyBlob,
+    name: String(current.name).toLowerCase(),
+    color: String(current.color).toLowerCase(),
+    description: String(current.description ?? "")
+  });
 }
 
 async function applyManagedLabelDeletion(
@@ -1311,10 +1364,16 @@ async function applyManagedLabelDeletion(
   actions: CleanApplyReceipt["actions"],
   options: CleanApplyOptions
 ): Promise<void> {
+  requireExactMutator(options, `managed label ${entry.target}`);
   await revalidateManagedLabel(github, repository, entry);
   await recordAdmission(actionReceipt(entry, "applied", "Admitted deletion of an exact orphaned df: label after current policy proof."), options.onAdmission);
-  await revalidateManagedLabel(github, repository, entry);
-  await github.request("DELETE /repos/{owner}/{repo}/labels/{name}", { ...repository, name: entry.target });
+  const expectedVersion = await revalidateManagedLabel(github, repository, entry);
+  await options.mutateExact!({
+    kind: "delete-label",
+    route: "DELETE /repos/{owner}/{repo}/labels/{name}",
+    parameters: { ...repository, name: entry.target },
+    expectedVersion
+  });
   try {
     await github.request("GET /repos/{owner}/{repo}/labels/{name}", { ...repository, name: entry.target });
   } catch (error) {
@@ -1823,7 +1882,24 @@ function normalizeGithubRepository(remote: string): string {
   return match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
 }
 
-function revalidateWorktreeRemoval(root: string, rawPath: string, entry: { target: string; head: string }): void {
+function plannedWorktreeRef(saved: CleanPlan, entry: { target: string; head: string }): string {
+  const matches = [...saved.evidence.branches, ...saved.evidence.localBranches]
+    .flatMap((branch) => branch.worktrees)
+    .filter((worktree) => worktree.pathId === entry.target && worktree.head === entry.head)
+    .map((worktree) => worktree.branch);
+  const branches = [...new Set(matches)];
+  if (branches.length !== 1 || !branches[0] || branches[0] === "(detached)") {
+    throw new Error(`clean worktree ${entry.target} lacks one exact planned branch identity; apply aborted`);
+  }
+  return `refs/heads/${branches[0]}`;
+}
+
+function revalidateWorktreeRemoval(
+  root: string,
+  rawPath: string,
+  entry: { target: string; head: string },
+  plannedRef: string
+): void {
   const resolvedRoot = resolve(root).toLowerCase();
   const resolvedWorktree = resolve(rawPath).toLowerCase();
   if (resolvedRoot === resolvedWorktree) {
@@ -1836,8 +1912,8 @@ function revalidateWorktreeRemoval(root: string, rawPath: string, entry: { targe
     throw new Error(`clean worktree ${entry.target} became dirty immediately before removal; apply aborted`);
   }
   const branch = runGit(rawPath, ["symbolic-ref", "-q", "HEAD"]).trim();
-  if (!branch.startsWith("refs/heads/")) {
-    throw new Error(`clean worktree ${entry.target} became detached immediately before removal; apply aborted`);
+  if (branch !== plannedRef) {
+    throw new Error(`clean worktree ${entry.target} branch drifted from ${plannedRef} immediately before removal; apply aborted`);
   }
 }
 
@@ -2160,7 +2236,7 @@ async function revalidatePullClosure(
   repository: RepositoryRef,
   number: number,
   entry: CleanPlanEntry
-): Promise<void> {
+): Promise<string> {
   if (!entry.successor) throw new Error(`clean pull-request closure ${entry.target} lacks a successor`);
   const [sourceValue, successorValue] = await Promise.all([
     github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", { ...repository, pull_number: number }),
@@ -2189,6 +2265,7 @@ async function revalidatePullClosure(
     ]);
     if (sourceTree !== successorTree) throw new Error(`pull request ${entry.target} successor tree proof drifted`);
   }
+  return stableHash(source);
 }
 
 function assertPullIdentity(pull: NormalizedPull, entry: CleanPlanEntry, requireOpen: boolean): void {
@@ -2376,6 +2453,12 @@ function normalizePull(value: unknown, index: number, repository: RepositoryRef)
 function asRecord(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} is malformed or unobservable`);
   return value as Record<string, unknown>;
+}
+
+function requireExactMutator(options: CleanApplyOptions, label: string): void {
+  if (!options.mutateExact) {
+    throw new Error(`${label} requires an atomic conditional mutator that GitHub does not currently expose; target preserved`);
+  }
 }
 
 function requiredString(value: unknown, label: string): string {

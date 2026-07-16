@@ -19,6 +19,14 @@ import {
 } from "../src/issue-spec.js";
 import { buildCleanPlan, stableHash, type CleanEvidence, type DoctorFinding } from "../src/operator.js";
 
+type ExactMutationRequest = {
+  kind: "close-pull-request" | "close-issue" | "delete-label";
+  route: string;
+  parameters: Record<string, unknown>;
+  expectedVersion: string;
+};
+type ExactMutator = (mutation: ExactMutationRequest) => Promise<{ data: unknown }>;
+
 test("clean evidence binds the checkout identity and preserves detached worktrees and non-cleanup refs", async () => {
   const parent = await mkdtemp(join(tmpdir(), "df-clean-evidence-"));
   const root = join(parent, "repo");
@@ -59,6 +67,61 @@ test("clean evidence binds the checkout identity and preserves detached worktree
     );
   } finally {
     await rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("clean worktree removal succeeds only for the exact planned symbolic ref", async () => {
+  const fixture = await createCleanWorktreeFixture();
+  try {
+    const evidence = await collectCleanEvidence(fixture.github, REPOSITORY, fixture.root);
+    const plan = buildCleanPlan(evidence, new Date("2026-07-16T12:00:00Z"));
+    await applyCleanPlan(fixture.github, REPOSITORY, plan, evidence, {
+      localPath: fixture.root,
+      deleteRemoteBranchExact: async () => undefined
+    });
+
+    assert.doesNotMatch(git(fixture.root, ["worktree", "list", "--porcelain"]), new RegExp(escapeRegExp(fixture.linked.replaceAll("\\", "/"))));
+  } finally {
+    await rm(fixture.parent, { recursive: true, force: true });
+  }
+});
+
+test("clean worktree removal blocks a same-head branch switch after admission", async () => {
+  const fixture = await createCleanWorktreeFixture();
+  try {
+    const evidence = await collectCleanEvidence(fixture.github, REPOSITORY, fixture.root);
+    const plan = buildCleanPlan(evidence, new Date("2026-07-16T12:00:00Z"));
+    await assert.rejects(applyCleanPlan(fixture.github, REPOSITORY, plan, evidence, {
+      localPath: fixture.root,
+      deleteRemoteBranchExact: async () => undefined,
+      onAdmission: async (action) => {
+        if (action.kind === "worktree") git(fixture.linked, ["switch", "alternate"]);
+      }
+    }), /branch drifted from refs\/heads\/cleanup/);
+
+    assert.equal(git(fixture.linked, ["symbolic-ref", "--short", "HEAD"]).trim(), "alternate");
+    assert.match(git(fixture.root, ["worktree", "list", "--porcelain"]), new RegExp(escapeRegExp(fixture.linked.replaceAll("\\", "/"))));
+  } finally {
+    await rm(fixture.parent, { recursive: true, force: true });
+  }
+});
+
+test("clean worktree removal still blocks new dirty state after admission", async () => {
+  const fixture = await createCleanWorktreeFixture();
+  try {
+    const evidence = await collectCleanEvidence(fixture.github, REPOSITORY, fixture.root);
+    const plan = buildCleanPlan(evidence, new Date("2026-07-16T12:00:00Z"));
+    await assert.rejects(applyCleanPlan(fixture.github, REPOSITORY, plan, evidence, {
+      localPath: fixture.root,
+      deleteRemoteBranchExact: async () => undefined,
+      onAdmission: async (action) => {
+        if (action.kind === "worktree") await writeFile(join(fixture.linked, "owner-note.txt"), "preserve me\n");
+      }
+    }), /became dirty immediately before removal/);
+
+    assert.match(git(fixture.root, ["worktree", "list", "--porcelain"]), new RegExp(escapeRegExp(fixture.linked.replaceAll("\\", "/"))));
+  } finally {
+    await rm(fixture.parent, { recursive: true, force: true });
   }
 });
 
@@ -342,7 +405,9 @@ test("clean duplicate issue fold publishes an exact receipt and revalidates befo
   const github = duplicateIssueGithub(state);
   const evidence = await collectCleanEvidence(github, REPOSITORY, "", [duplicateIssueFinding()]);
   const plan = buildCleanPlan(evidence, new Date("2026-07-16T11:30:00Z"));
-  const receipt = await applyCleanPlan(github, REPOSITORY, plan, evidence);
+  const receipt = await applyCleanPlan(github, REPOSITORY, plan, evidence, {
+    mutateExact: duplicateIssueMutator(state)
+  });
 
   assert.equal(state.issues[0]!.state, "closed");
   assert.equal(state.comments.some((comment) => String(comment.body).startsWith("<!-- darkfactory:clean-issue-fold schema=1")), true);
@@ -356,10 +421,39 @@ test("clean duplicate issue fold blocks successor scope drift after admission", 
   const plan = buildCleanPlan(evidence, new Date("2026-07-16T11:30:00Z"));
 
   await assert.rejects(applyCleanPlan(github, REPOSITORY, plan, evidence, {
-    onAdmission: async () => { state.issues[1]!.body = "# Goal\n\nConcurrent owner replacement."; }
+    onAdmission: async () => { state.issues[1]!.body = "# Goal\n\nConcurrent owner replacement."; },
+    mutateExact: duplicateIssueMutator(state)
   }), /drifted from its exact version/);
   assert.equal(state.issues[0]!.state, "open");
   assert.equal(state.comments.length, 0);
+});
+
+test("clean destructive GitHub actions fail closed before admission without an atomic mutator", async () => {
+  const state = duplicateIssueState(false);
+  const github = duplicateIssueGithub(state);
+  const evidence = await collectCleanEvidence(github, REPOSITORY, "", [duplicateIssueFinding()]);
+  const plan = buildCleanPlan(evidence, new Date("2026-07-16T11:30:00Z"));
+  let admitted = false;
+
+  await assert.rejects(applyCleanPlan(github, REPOSITORY, plan, evidence, {
+    onAdmission: async () => { admitted = true; }
+  }), /requires an atomic conditional mutator.*target preserved/);
+  assert.equal(admitted, false);
+  assert.equal(state.issues[0]!.state, "open");
+  assert.deepEqual(state.comments, []);
+});
+
+test("clean issue fold rejects a race at the atomic mutation boundary", async () => {
+  const state = duplicateIssueState(false);
+  const github = duplicateIssueGithub(state);
+  const evidence = await collectCleanEvidence(github, REPOSITORY, "", [duplicateIssueFinding()]);
+  const plan = buildCleanPlan(evidence, new Date("2026-07-16T11:30:00Z"));
+
+  await assert.rejects(applyCleanPlan(github, REPOSITORY, plan, evidence, {
+    mutateExact: duplicateIssueMutator(state, { raceAtMutation: true })
+  }), /atomic issue version precondition failed/);
+  assert.equal(state.issues[0]!.state, "open");
+  assert.equal(state.comments.some((comment) => String(comment.body).startsWith("<!-- darkfactory:clean-issue-fold schema=1")), true);
 });
 
 test("clean successor proof admits same-repository same-base head ancestry", async () => {
@@ -499,7 +593,8 @@ test("clean PR closure re-proves the exact successor before its pointer comment 
   const state = { sourceHead: SOURCE_SHA, sourceState: "open" };
   const receipt = await applyCleanPlan(pullClosureGithub(state, events), REPOSITORY, plan, evidence, {
     onAdmission: async (action) => { events.push(`admission:${action.target}`); },
-    onCompletion: async (action) => { events.push(`completion:${action.target}:${action.status}`); }
+    onCompletion: async (action) => { events.push(`completion:${action.target}:${action.status}`); },
+    mutateExact: pullClosureMutator(state, events)
   });
 
   const admission = events.indexOf("admission:#1");
@@ -527,7 +622,8 @@ test("clean PR closure re-fetches after admission and blocks successor/source dr
         state.sourceHead = "9".repeat(40);
         events.push("admission");
       },
-      onCompletion: async () => { events.push("completion"); }
+      onCompletion: async () => { events.push("completion"); },
+      mutateExact: pullClosureMutator(state, events)
     }),
     /drifted from its exact base\/head identity/
   );
@@ -535,6 +631,20 @@ test("clean PR closure re-fetches after admission and blocks successor/source dr
   assert.equal(events.includes("closure-comment"), false);
   assert.equal(events.includes("close"), false);
   assert.equal(events.includes("completion"), false);
+});
+
+test("clean PR closure rejects a race at the atomic mutation boundary", async () => {
+  const evidence = pullClosureEvidence();
+  const plan = buildCleanPlan(evidence, new Date("2026-07-16T11:00:00Z"));
+  const events: string[] = [];
+  const state = { sourceHead: SOURCE_SHA, sourceState: "open" };
+
+  await assert.rejects(applyCleanPlan(pullClosureGithub(state, events), REPOSITORY, plan, evidence, {
+    mutateExact: pullClosureMutator(state, events, { raceAtMutation: true })
+  }), /atomic pull-request version precondition failed/);
+  assert.equal(state.sourceState, "open");
+  assert.equal(events.includes("closure-comment"), true);
+  assert.equal(events.includes("close"), false);
 });
 
 test("clean artifact repair opens one exact dev PR and arms only protected green auto-merge", async () => {
@@ -577,7 +687,9 @@ test("clean managed-label deletion revalidates exact policy and label identity b
   const state = managedLabelState();
   const evidence = managedLabelEvidence();
   const plan = buildCleanPlan(evidence, new Date("2026-07-16T12:00:00Z"));
-  const receipt = await applyCleanPlan(managedLabelGithub(state), REPOSITORY, plan, evidence);
+  const receipt = await applyCleanPlan(managedLabelGithub(state), REPOSITORY, plan, evidence, {
+    mutateExact: managedLabelMutator(state)
+  });
 
   assert.equal(state.exists, false);
   assert.deepEqual(state.events, ["delete:df:old"]);
@@ -589,18 +701,34 @@ test("clean managed-label deletion blocks identity drift and never touches human
   const evidence = managedLabelEvidence();
   const plan = buildCleanPlan(evidence, new Date("2026-07-16T12:00:00Z"));
   await assert.rejects(applyCleanPlan(managedLabelGithub(state), REPOSITORY, plan, evidence, {
-    onAdmission: async () => { state.color = "123456"; }
+    onAdmission: async () => { state.color = "123456"; },
+    mutateExact: managedLabelMutator(state)
   }), /drifted from its exact identity/);
   assert.equal(state.exists, true);
   assert.deepEqual(state.events, []);
   assert.equal(plan.entries.some((entry) => entry.kind === "managed-label" && !entry.target.startsWith("df:")), false);
 });
 
+test("clean managed-label deletion rejects a race at the atomic mutation boundary", async () => {
+  const state = managedLabelState();
+  const evidence = managedLabelEvidence();
+  const plan = buildCleanPlan(evidence, new Date("2026-07-16T12:00:00Z"));
+
+  await assert.rejects(applyCleanPlan(managedLabelGithub(state), REPOSITORY, plan, evidence, {
+    mutateExact: managedLabelMutator(state, { raceAtMutation: true })
+  }), /atomic label version precondition failed/);
+  assert.equal(state.exists, true);
+  assert.deepEqual(state.events, []);
+});
+
 test("clean marker issue closure accepts only an exact trusted marker and blocks actor drift", async () => {
   const first = markerIssueState();
   const evidence = markerIssueEvidence(first.issue);
   const plan = buildCleanPlan(evidence, new Date("2026-07-16T12:00:00Z"));
-  await applyCleanPlan(markerIssueGithub(first), REPOSITORY, plan, evidence);
+  await applyCleanPlan(markerIssueGithub(first), REPOSITORY, plan, evidence, {
+    observeReviewFindings: async () => [],
+    mutateExact: markerIssueMutator(first)
+  });
   assert.equal(first.issue.state, "closed");
   assert.equal(first.comments.some((comment) => String(comment.body).startsWith("<!-- darkfactory:clean-marker-issue-closure schema=1")), true);
 
@@ -608,10 +736,34 @@ test("clean marker issue closure accepts only an exact trusted marker and blocks
   const driftEvidence = markerIssueEvidence(drift.issue);
   const driftPlan = buildCleanPlan(driftEvidence, new Date("2026-07-16T12:00:00Z"));
   await assert.rejects(applyCleanPlan(markerIssueGithub(drift), REPOSITORY, driftPlan, driftEvidence, {
-    onAdmission: async () => { drift.issue.user = { login: "octocat", type: "User" }; }
+    onAdmission: async () => { drift.issue.user = { login: "octocat", type: "User" }; },
+    observeReviewFindings: async () => [],
+    mutateExact: markerIssueMutator(drift)
   }), /actor, marker, or exact version drifted/);
   assert.equal(drift.issue.state, "open");
   assert.equal(drift.comments.length, 0);
+});
+
+test("clean marker issue closure revalidates the finding set and rejects an atomic close race", async () => {
+  const findingDrift = markerIssueState();
+  const driftEvidence = markerIssueEvidence(findingDrift.issue);
+  const driftPlan = buildCleanPlan(driftEvidence, new Date("2026-07-16T12:00:00Z"));
+  await assert.rejects(applyCleanPlan(markerIssueGithub(findingDrift), REPOSITORY, driftPlan, driftEvidence, {
+    observeReviewFindings: async () => [reviewableIssueFinding()],
+    mutateExact: markerIssueMutator(findingDrift)
+  }), /doctor finding set drifted/);
+  assert.equal(findingDrift.issue.state, "open");
+  assert.deepEqual(findingDrift.comments, []);
+
+  const race = markerIssueState();
+  const evidence = markerIssueEvidence(race.issue);
+  const plan = buildCleanPlan(evidence, new Date("2026-07-16T12:00:00Z"));
+  await assert.rejects(applyCleanPlan(markerIssueGithub(race), REPOSITORY, plan, evidence, {
+    observeReviewFindings: async () => [],
+    mutateExact: markerIssueMutator(race, { raceAtMutation: true })
+  }), /atomic marker issue version precondition failed/);
+  assert.equal(race.issue.state, "open");
+  assert.equal(race.comments.some((comment) => String(comment.body).startsWith("<!-- darkfactory:clean-marker-issue-closure schema=1")), true);
 });
 
 const REPOSITORY = { owner: "marius-patrik", repo: "example" } as const;
@@ -709,7 +861,9 @@ function duplicateIssueState(uniqueSource: boolean): {
   };
 }
 
-function duplicateIssueGithub(state: { issues: Array<Record<string, unknown>>; comments: Array<Record<string, unknown>> }): OperatorGitHubRequester {
+function duplicateIssueGithub(
+  state: { issues: Array<Record<string, unknown>>; comments: Array<Record<string, unknown>> }
+): OperatorGitHubRequester {
   let nextComment = 500;
   return {
     async request(route, parameters) {
@@ -744,12 +898,29 @@ function duplicateIssueGithub(state: { issues: Array<Record<string, unknown>>; c
         return { data: comment };
       }
       if (route === "PATCH /repos/{owner}/{repo}/issues/{issue_number}") {
-        const issue = state.issues.find((candidate) => candidate.number === parameters.issue_number)!;
-        issue.state = parameters.state;
-        return { data: { ...issue } };
+        throw new Error("unconditional issue mutation is forbidden");
       }
       throw new Error(`unexpected route ${route}`);
     }
+  };
+}
+
+function duplicateIssueMutator(
+  state: ReturnType<typeof duplicateIssueState>,
+  options: { raceAtMutation?: boolean } = {}
+): ExactMutator {
+  return async (mutation) => {
+    assert.equal(mutation.kind, "close-issue");
+    assert.equal(mutation.route, "PATCH /repos/{owner}/{repo}/issues/{issue_number}");
+    const number = Number(mutation.parameters.issue_number);
+    const issue = state.issues.find((candidate) => candidate.number === number)!;
+    if (options.raceAtMutation) issue.updated_at = "2026-07-16T12:00:01.000Z";
+    const comments = state.comments.filter((comment) => String(comment.issue_url).endsWith(`/issues/${number}`));
+    if (mutation.expectedVersion !== stableHash({ issue, comments })) {
+      throw Object.assign(new Error("atomic issue version precondition failed"), { status: 412 });
+    }
+    issue.state = mutation.parameters.state;
+    return { data: { ...issue } };
   };
 }
 
@@ -990,18 +1161,18 @@ function pullClosureGithub(
         const number = Number(parameters.pull_number);
         events.push(`refetch:pr-${number}`);
         if (number === 1) {
-          return {
-            data: pullFixture(1, {
-              state: state.sourceState,
-              head: {
-                ref: "feature/source",
-                sha: state.sourceHead,
-                repo: { name: "example", owner: { login: "marius-patrik" } }
-              }
-            })
-          };
+          const source = pullFixture(1, {
+            state: state.sourceState,
+            head: {
+              ref: "feature/source",
+              sha: state.sourceHead,
+              repo: { name: "example", owner: { login: "marius-patrik" } }
+            }
+          });
+          return { data: source };
         }
-        return { data: pullFixture(2) };
+        const successor = pullFixture(2);
+        return { data: successor };
       }
       if (route === "GET /repos/{owner}/{repo}/compare/{basehead}") {
         events.push("compare");
@@ -1026,12 +1197,48 @@ function pullClosureGithub(
         return { data: comment };
       }
       if (route === "PATCH /repos/{owner}/{repo}/pulls/{pull_number}") {
-        events.push("close");
-        state.sourceState = "closed";
-        return { data: pullFixture(1, { state: "closed" }) };
+        throw new Error("unconditional pull-request mutation is forbidden");
       }
       throw new Error(`unexpected route ${route}`);
     }
+  };
+}
+
+function pullClosureMutationVersion(state: { sourceHead: string; sourceState: string }): string {
+  return stableHash({
+    number: 1,
+    state: state.sourceState,
+    merged: false,
+    body: "Superseded by: #2",
+    headRef: "feature/source",
+    headSha: state.sourceHead,
+    baseRef: "dev",
+    baseSha: BASE_SHA,
+    sameRepository: true,
+    trustedActor: false,
+    autoMerge: false,
+    nodeId: null,
+    draft: false,
+    title: "",
+    updatedAt: "2026-07-16T10:01:00Z"
+  });
+}
+
+function pullClosureMutator(
+  state: { sourceHead: string; sourceState: string },
+  events: string[],
+  options: { raceAtMutation?: boolean } = {}
+): ExactMutator {
+  return async (mutation) => {
+    assert.equal(mutation.kind, "close-pull-request");
+    assert.equal(mutation.route, "PATCH /repos/{owner}/{repo}/pulls/{pull_number}");
+    if (options.raceAtMutation) state.sourceHead = "9".repeat(40);
+    if (mutation.expectedVersion !== pullClosureMutationVersion(state)) {
+      throw Object.assign(new Error("atomic pull-request version precondition failed"), { status: 412 });
+    }
+    events.push("close");
+    state.sourceState = "closed";
+    return { data: pullFixture(1, { state: "closed" }) };
   };
 }
 
@@ -1226,15 +1433,38 @@ function managedLabelGithub(state: ReturnType<typeof managedLabelState>): Operat
       if (route === "GET /repos/{owner}/{repo}/contents/{path}") return { data: { sha: "3".repeat(40), encoding: "base64", content: Buffer.from(policy).toString("base64") } };
       if (route === "GET /repos/{owner}/{repo}/labels/{name}") {
         if (!state.exists) throw Object.assign(new Error("missing"), { status: 404 });
-        return { data: { name: "df:old", color: state.color, description: "old label" } };
+        const label = { name: "df:old", color: state.color, description: "old label" };
+        return { data: label };
       }
       if (route === "DELETE /repos/{owner}/{repo}/labels/{name}") {
-        state.events.push(`delete:${String(parameters.name)}`);
-        state.exists = false;
-        return { data: {} };
+        throw new Error("unconditional label mutation is forbidden");
       }
       throw new Error(`unexpected route ${route}`);
     }
+  };
+}
+
+function managedLabelMutator(
+  state: ReturnType<typeof managedLabelState>,
+  options: { raceAtMutation?: boolean } = {}
+): ExactMutator {
+  return async (mutation) => {
+    assert.equal(mutation.kind, "delete-label");
+    assert.equal(mutation.route, "DELETE /repos/{owner}/{repo}/labels/{name}");
+    if (options.raceAtMutation) state.color = "123456";
+    const currentVersion = stableHash({
+      policyRevision: ARTIFACT_BASE,
+      policyBlob: "3".repeat(40),
+      name: "df:old",
+      color: state.color,
+      description: "old label"
+    });
+    if (mutation.expectedVersion !== currentVersion) {
+      throw Object.assign(new Error("atomic label version precondition failed"), { status: 412 });
+    }
+    state.events.push(`delete:${String(mutation.parameters.name)}`);
+    state.exists = false;
+    return { data: {} };
   };
 }
 
@@ -1258,7 +1488,7 @@ function markerIssueEvidence(issue: Record<string, unknown>): CleanEvidence {
   return {
     repository: "marius-patrik/example", defaultBranch: "main", observedRefs: { main: MAIN_SHA }, branches: [], localBranches: [], orphanRefs: [], detachedWorktrees: [], pullRequests: [], issues: [], reviewFindings: [],
     pullRequestFingerprint: "prs-marker-v1", issueLaneFingerprint: "issues-marker-v1", prdFingerprint: "prd-v1",
-    markerIssues: [{ number: 55, version, marker: "df-dashboard:orchestration", reason: "duplicate-dashboard", findingSetFingerprint: "0".repeat(64), successor: { number: 56, version: issueVersion(successor) } }]
+    markerIssues: [{ number: 55, version, marker: "df-dashboard:orchestration", reason: "duplicate-dashboard", findingSetFingerprint: stableHash([]), successor: { number: 56, version: issueVersion(successor) } }]
   };
 }
 
@@ -1283,12 +1513,59 @@ function markerIssueGithub(state: ReturnType<typeof markerIssueState>): Operator
         return { data: comment };
       }
       if (route === "PATCH /repos/{owner}/{repo}/issues/{issue_number}") {
-        state.issue.state = "closed";
-        return { data: { ...state.issue } };
+        throw new Error("unconditional marker issue mutation is forbidden");
       }
       throw new Error(`unexpected route ${route}`);
     }
   };
+}
+
+function markerIssueMutator(
+  state: ReturnType<typeof markerIssueState>,
+  options: { raceAtMutation?: boolean } = {}
+): ExactMutator {
+  return async (mutation) => {
+    assert.equal(mutation.kind, "close-issue");
+    assert.equal(mutation.route, "PATCH /repos/{owner}/{repo}/issues/{issue_number}");
+    if (options.raceAtMutation) state.issue.updated_at = "2026-07-16T12:00:01.000Z";
+    const currentVersion = stableHash({ issue: state.issue, comments: state.comments });
+    if (mutation.expectedVersion !== currentVersion) {
+      throw Object.assign(new Error("atomic marker issue version precondition failed"), { status: 412 });
+    }
+    state.issue.state = "closed";
+    return { data: { ...state.issue } };
+  };
+}
+
+async function createCleanWorktreeFixture(): Promise<{
+  parent: string;
+  root: string;
+  linked: string;
+  github: OperatorGitHubRequester;
+}> {
+  const parent = await mkdtemp(join(tmpdir(), "df-clean-worktree-ref-"));
+  const root = join(parent, "repo");
+  const linked = join(parent, "linked");
+  await mkdir(root);
+  git(root, ["init", "--initial-branch=main"]);
+  git(root, ["config", "user.name", "DarkFactory Test"]);
+  git(root, ["config", "user.email", "darkfactory@example.invalid"]);
+  await writeFile(join(root, "README.md"), "# fixture\n");
+  git(root, ["add", "README.md"]);
+  git(root, ["commit", "-m", "fixture"]);
+  git(root, ["remote", "add", "origin", "https://github.com/marius-patrik/example.git"]);
+  const head = git(root, ["rev-parse", "HEAD"]).trim();
+  const tree = git(root, ["rev-parse", "HEAD^{tree}"]).trim();
+  git(root, ["update-ref", "refs/remotes/origin/main", head]);
+  git(root, ["branch", "dev", head]);
+  git(root, ["branch", "cleanup", head]);
+  git(root, ["branch", "alternate", head]);
+  git(root, ["worktree", "add", linked, "cleanup"]);
+  return { parent, root, linked, github: cleanEvidenceGithub(head, tree) };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function git(cwd: string, args: string[]): string {
