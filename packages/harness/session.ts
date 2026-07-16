@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import {
   chmod,
@@ -23,6 +24,25 @@ export interface SessionStateRoot {
   root: string;
   stateDir: string;
   sessionsDir: string;
+}
+
+export interface SessionEventBatch {
+  events: SessionEvent[];
+  bytes: number;
+}
+
+export interface SessionEventReadOptions {
+  maximumEvents?: number;
+  maximumBytes?: number;
+  maximumScannedEntries?: number;
+}
+
+export interface SessionCollectionReadOptions {
+  maximumSessions?: number;
+  maximumScannedEntries?: number;
+  maximumEvents?: number;
+  maximumBytes?: number;
+  maximumEventScannedEntries?: number;
 }
 
 export type SessionMode = "chat" | "task" | "orchestrator" | "default";
@@ -96,6 +116,12 @@ export interface TurnRequest {
   prompt: string;
   systemPrompt?: string;
   stream?: boolean;
+  /** Independent reasoning setting requested by the canonical caller. */
+  effort?: "low" | "medium" | "high";
+  /** Narrow manager-owned filesystem policy. Broader policies are not representable. */
+  executionPolicy?: "read-only" | "workspace-write";
+  /** Logical agent preset selected by the canonical tier route. */
+  agentPreset?: string;
 }
 
 export interface TurnResult {
@@ -105,6 +131,10 @@ export interface TurnResult {
   quota?: QuotaSurface;
   finishReason?: string;
   error?: string;
+  /** Manager-recorded description of the concrete request sent for this turn (model, effort, preset). */
+  receipt?: Record<string, unknown>;
+  /** Provider-attested effective policy for requested-vs-resolved enforcement. */
+  resolvedExecutionPolicy?: "read-only" | "workspace-write";
 }
 
 export interface TurnChunk {
@@ -164,6 +194,7 @@ export type SessionEvent = SessionEventBase &
           quota?: QuotaSurface;
           finishReason?: string;
           error?: string;
+          receipt?: Record<string, unknown>;
         };
       }
     | {
@@ -210,7 +241,7 @@ export interface SessionWriteTransaction {
   appendMessage(turnId: string, message: TranscriptMessage): Promise<SessionProjection>;
   completeTurn(
     turnId: string,
-    result?: Pick<TurnResult, "usage" | "quota" | "finishReason" | "error">,
+    result?: Pick<TurnResult, "usage" | "quota" | "finishReason" | "error" | "receipt">,
   ): Promise<SessionProjection>;
   switchProvider(provider: string, model: string): Promise<SessionDescriptor>;
 }
@@ -223,6 +254,132 @@ const MESSAGE_ROLES = new Set<MessageRole>(["system", "user", "assistant", "tool
 const LOCK_WAIT_MS = 30_000;
 const LOCK_LEASE_MS = 30 * 60_000;
 const LOCK_HEARTBEAT_MS = 60_000;
+const MAX_SESSION_EVENTS = 100_000;
+const MAX_SESSION_EVENT_BYTES = 64 * 1024 * 1024;
+const MAX_SESSION_EVENT_SCAN_ENTRIES = 200_000;
+const MAX_CANONICAL_SESSIONS = 100_000;
+const MAX_CANONICAL_SESSION_SCAN_ENTRIES = 200_000;
+
+function canonicalReadLimit(value: number | undefined, ceiling: number, field: string): number {
+  const limit = value ?? ceiling;
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error(`${field} must be a positive integer`);
+  }
+  if (limit > ceiling) {
+    throw new Error(`${field} cannot exceed canonical ceiling ${ceiling}`);
+  }
+  return limit;
+}
+
+function canonicalSessionEventReadLimits(
+  options: SessionEventReadOptions = {},
+): Required<SessionEventReadOptions> {
+  return {
+    maximumEvents: canonicalReadLimit(options.maximumEvents, MAX_SESSION_EVENTS, "maximumEvents"),
+    maximumBytes: canonicalReadLimit(options.maximumBytes, MAX_SESSION_EVENT_BYTES, "maximumBytes"),
+    maximumScannedEntries: canonicalReadLimit(
+      options.maximumScannedEntries,
+      MAX_SESSION_EVENT_SCAN_ENTRIES,
+      "maximumScannedEntries",
+    ),
+  };
+}
+
+function canonicalCollectionEventReadLimits(
+  options: SessionCollectionReadOptions,
+): Required<SessionEventReadOptions> {
+  return {
+    maximumEvents: canonicalReadLimit(options.maximumEvents, MAX_SESSION_EVENTS, "maximumEvents"),
+    maximumBytes: canonicalReadLimit(options.maximumBytes, MAX_SESSION_EVENT_BYTES, "maximumBytes"),
+    maximumScannedEntries: canonicalReadLimit(
+      options.maximumEventScannedEntries,
+      MAX_SESSION_EVENT_SCAN_ENTRIES,
+      "maximumEventScannedEntries",
+    ),
+  };
+}
+
+type SessionCollectionEventBudgetField = "maximumEvents" | "maximumBytes" | "maximumEventScannedEntries";
+
+interface SessionCollectionEventBudget {
+  maximumEvents: number;
+  maximumBytes: number;
+  maximumEventScannedEntries: number;
+  remainingEvents: number;
+  remainingBytes: number;
+  remainingEventScannedEntries: number;
+  exhausted?: SessionCollectionEventBudgetField;
+}
+
+function createSessionCollectionEventBudget(
+  limits: Required<SessionEventReadOptions>,
+): SessionCollectionEventBudget {
+  return {
+    maximumEvents: limits.maximumEvents,
+    maximumBytes: limits.maximumBytes,
+    maximumEventScannedEntries: limits.maximumScannedEntries,
+    remainingEvents: limits.maximumEvents,
+    remainingBytes: limits.maximumBytes,
+    remainingEventScannedEntries: limits.maximumScannedEntries,
+  };
+}
+
+function collectionEventBudgetError(
+  budget: SessionCollectionEventBudget,
+  field: SessionCollectionEventBudgetField,
+): Error {
+  budget.exhausted = field;
+  return new Error(`canonical session collection exceeds ${field} ${budget[field]}`);
+}
+
+function assertCollectionEventBudgetAvailable(budget: SessionCollectionEventBudget): void {
+  if (budget.remainingEvents < 1) throw collectionEventBudgetError(budget, "maximumEvents");
+  if (budget.remainingBytes < 1) throw collectionEventBudgetError(budget, "maximumBytes");
+  if (budget.remainingEventScannedEntries < 1) {
+    throw collectionEventBudgetError(budget, "maximumEventScannedEntries");
+  }
+}
+
+function reserveCollectionEvent(budget: SessionCollectionEventBudget | undefined): void {
+  if (!budget) return;
+  if (budget.remainingEvents < 1) throw collectionEventBudgetError(budget, "maximumEvents");
+  budget.remainingEvents -= 1;
+}
+
+function reserveCollectionEventBytes(budget: SessionCollectionEventBudget | undefined, size: bigint): void {
+  if (!budget) return;
+  if (size > BigInt(budget.remainingBytes)) throw collectionEventBudgetError(budget, "maximumBytes");
+  budget.remainingBytes -= Number(size);
+}
+
+function reserveCollectionEventScanEntry(budget: SessionCollectionEventBudget | undefined): void {
+  if (!budget) return;
+  if (budget.remainingEventScannedEntries < 1) {
+    throw collectionEventBudgetError(budget, "maximumEventScannedEntries");
+  }
+  budget.remainingEventScannedEntries -= 1;
+}
+
+/** Fixed canonical write preflight; callers cannot supply alternate limits. */
+export function assertSessionAppendWithinBounds(
+  existingEventCount: number,
+  existingBytes: number,
+  nextEventBytes: number,
+): void {
+  for (const [label, value] of [
+    ["existingEventCount", existingEventCount],
+    ["existingBytes", existingBytes],
+    ["nextEventBytes", nextEventBytes],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} must be a non-negative integer`);
+  }
+  if (existingEventCount + 1 > MAX_SESSION_EVENTS) {
+    throw new Error(`canonical session append exceeds maximumEvents ${MAX_SESSION_EVENTS}`);
+  }
+  if (existingBytes + nextEventBytes > MAX_SESSION_EVENT_BYTES) {
+    throw new Error(`canonical session append exceeds maximumBytes ${MAX_SESSION_EVENT_BYTES}`);
+  }
+}
 
 export function sessionsDir(state: SessionStateRoot): string {
   return state.sessionsDir;
@@ -485,6 +642,7 @@ function assertSessionEvent(value: unknown, filePath: string): asserts value is 
     assertTranscriptMessage(event.data.message, "message.appended message");
   } else if (event.type === "turn.completed") {
     requiredString(event.data.turnId, "turn.completed turnId");
+    if (event.data.receipt !== undefined) assertPlainRecord(event.data.receipt, "turn.completed receipt");
   } else if (event.type === "provider.switched") {
     requiredString(event.data.fromProvider, "provider.switched fromProvider");
     requiredString(event.data.fromModel, "provider.switched fromModel");
@@ -498,64 +656,393 @@ function assertSessionEvent(value: unknown, filePath: string): asserts value is 
   if (event.eventHash !== expected) throw new Error(`session event hash mismatch: ${filePath}`);
 }
 
+interface DirectoryIdentity {
+  device: number | bigint;
+  inode: number | bigint;
+  modifiedAtMs: number | bigint;
+  changedAtMs: number | bigint;
+}
+
+interface DirectoryAdmission {
+  admissionChanged?: boolean;
+  admissionWatcher?: FSWatcher;
+  directoryPath: string;
+  identity: DirectoryIdentity;
+}
+
+function directoryIdentity(
+  info: {
+    isDirectory(): boolean;
+    isSymbolicLink(): boolean;
+    dev: number | bigint;
+    ino: number | bigint;
+    mtimeMs: number | bigint;
+    ctimeMs: number | bigint;
+  },
+  directoryPath: string,
+): DirectoryIdentity {
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error(`canonical session directory must be physical: ${directoryPath}`);
+  }
+  return {
+    device: info.dev,
+    inode: info.ino,
+    modifiedAtMs: info.mtimeMs,
+    changedAtMs: info.ctimeMs,
+  };
+}
+
+function sameDirectoryIdentity(left: DirectoryIdentity, right: DirectoryIdentity): boolean {
+  return (
+    left.device === right.device &&
+    left.inode === right.inode &&
+    left.modifiedAtMs === right.modifiedAtMs &&
+    left.changedAtMs === right.changedAtMs
+  );
+}
+
+async function assertDirectoryIdentity(
+  directoryPath: string,
+  expected: DirectoryIdentity,
+): Promise<void> {
+  const current = await lstat(directoryPath);
+  const actual = directoryIdentity(current, directoryPath);
+  if (!sameDirectoryIdentity(actual, expected)) {
+    throw new Error(`canonical session directory changed during admission: ${directoryPath}`);
+  }
+}
+
+async function openDirectoryAdmission(
+  directoryPath: string,
+  admitted: Awaited<ReturnType<typeof lstat>>,
+): Promise<DirectoryAdmission> {
+  const identity = directoryIdentity(admitted, directoryPath);
+  // Retain a native watcher handle before traversal. Bun's FileHandle and Dir
+  // implementations can reuse one underlying descriptor, so a separate open()
+  // handle is not stable across opendir(). The watcher pins the admitted inode,
+  // reports replacement, and is paired with dev/inode checks at every read step.
+  const admission: DirectoryAdmission = {
+    admissionChanged: false,
+    directoryPath,
+    identity,
+  };
+  try {
+    admission.admissionWatcher = watch(directoryPath, { persistent: false }, (eventType) => {
+      if (eventType === "rename") admission.admissionChanged = true;
+    });
+    admission.admissionWatcher.on("error", () => {
+      admission.admissionChanged = true;
+    });
+    // Let Linux expose the inotify registration before any pathname traversal.
+    if (process.platform === "linux") await Bun.sleep(1);
+    await assertDirectoryIdentity(directoryPath, identity);
+    return admission;
+  } catch (error) {
+    admission.admissionWatcher?.close();
+    throw error;
+  }
+}
+
+async function openPinnedDirectory(
+  directoryPath: string,
+  admitted: Awaited<ReturnType<typeof lstat>>,
+) {
+  const admission = await openDirectoryAdmission(directoryPath, admitted);
+  let directory: Awaited<ReturnType<typeof opendir>> | undefined;
+  try {
+    directory = await opendir(directoryPath);
+    await assertPinnedDirectories(admission);
+    return Object.assign(admission, { directory });
+  } catch (error) {
+    try {
+      if (directory) await directory.close();
+    } finally {
+      await closeDirectoryAdmission(admission);
+    }
+    throw error;
+  }
+}
+
+async function assertPinnedDirectories(
+  ...directories: DirectoryAdmission[]
+): Promise<void> {
+  for (const directory of directories) {
+    if (directory.admissionChanged) {
+      throw new Error(`canonical session directory changed during admission: ${directory.directoryPath}`);
+    }
+    await assertDirectoryIdentity(directory.directoryPath, directory.identity);
+  }
+}
+
+async function closeDirectoryAdmission(directory: DirectoryAdmission): Promise<void> {
+  directory.admissionWatcher?.close();
+}
+
+interface AdmittedFileIdentity {
+  filePath: string;
+  device: bigint;
+  inode: bigint;
+  size: number;
+  modifiedAtNs: bigint;
+}
+
+interface SessionEventFileAdmission extends AdmittedFileIdentity {
+  machineId: string;
+  machineSequence: number;
+  eventId: string;
+  admissionContentHash: string;
+  machineDirectory: string;
+  machineIdentity: DirectoryIdentity;
+}
+
+function sessionEventContentHash(content: Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function isAdmittedFile(
+  info: {
+    isFile(): boolean;
+    dev: bigint;
+    ino: bigint;
+    size: bigint;
+    mtimeNs: bigint;
+  },
+  expected: AdmittedFileIdentity,
+): boolean {
+  return (
+    info.isFile() &&
+    info.dev === expected.device &&
+    info.ino === expected.inode &&
+    info.size === BigInt(expected.size) &&
+    info.mtimeNs === expected.modifiedAtNs
+  );
+}
+
+async function readAdmittedFile(
+  admittedFile: AdmittedFileIdentity,
+  assertTree: () => Promise<void>,
+  description: string,
+): Promise<Buffer> {
+  await assertTree();
+  const handle = await open(admittedFile.filePath, "r");
+  try {
+    await assertTree();
+    if (!isAdmittedFile(await handle.stat({ bigint: true }), admittedFile)) {
+      throw new Error(`${description} changed during admission: ${admittedFile.filePath}`);
+    }
+    const content = Buffer.alloc(admittedFile.size);
+    let offset = 0;
+    while (offset < content.length) {
+      const { bytesRead } = await handle.read(content, offset, content.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset !== admittedFile.size) {
+      throw new Error(`${description} changed during admission: ${admittedFile.filePath}`);
+    }
+    if (!isAdmittedFile(await handle.stat({ bigint: true }), admittedFile)) {
+      throw new Error(`${description} changed during admission: ${admittedFile.filePath}`);
+    }
+    await assertTree();
+    return content;
+  } finally {
+    await handle.close();
+  }
+}
+
 async function readSessionEventsUnlocked(
   state: SessionStateRoot,
   rawSessionId: string,
-  options: { allowEmpty?: boolean } = {},
-): Promise<SessionEvent[]> {
+  options: {
+    allowEmpty?: boolean;
+    sessionsRoot?: DirectoryAdmission;
+    sessionDirectory?: DirectoryAdmission;
+    collectionBudget?: SessionCollectionEventBudget;
+  } & SessionEventReadOptions = {},
+): Promise<SessionEventBatch> {
   const sessionId = validateSessionId(rawSessionId);
+  const { maximumEvents, maximumBytes, maximumScannedEntries } = canonicalSessionEventReadLimits(options);
   const paths = sessionPaths(state, sessionId);
-  if (!(await pathExists(paths.dir))) return [];
-  const sessionInfo = await lstat(paths.dir);
-  if (!sessionInfo.isDirectory() || sessionInfo.isSymbolicLink()) {
-    throw new Error(`canonical session path must be a regular directory: ${paths.dir}`);
+  const sessionAncestors = options.sessionsRoot ? [options.sessionsRoot] : [];
+  await assertPinnedDirectories(...sessionAncestors);
+  let pinnedSession: DirectoryAdmission;
+  let ownsSessionAdmission = false;
+  if (options.sessionDirectory) {
+    if (path.resolve(options.sessionDirectory.directoryPath) !== path.resolve(paths.dir)) {
+      throw new Error(`canonical session directory admission does not match session ${sessionId}`);
+    }
+    pinnedSession = options.sessionDirectory;
+    await assertPinnedDirectories(...sessionAncestors, pinnedSession);
+  } else {
+    if (!(await pathExists(paths.dir))) return { events: [], bytes: 0 };
+    await assertPinnedDirectories(...sessionAncestors);
+    const sessionInfo = await lstat(paths.dir);
+    await assertPinnedDirectories(...sessionAncestors);
+    pinnedSession = await openDirectoryAdmission(paths.dir, sessionInfo);
+    ownsSessionAdmission = true;
   }
-  if (!(await pathExists(paths.eventsDir))) {
-    if (options.allowEmpty) return [];
-    throw new Error(`canonical session events are missing; retired projections are not loadable: ${paths.eventsDir}`);
-  }
-  const eventsInfo = await lstat(paths.eventsDir);
-  if (!eventsInfo.isDirectory() || eventsInfo.isSymbolicLink()) {
-    throw new Error(`canonical session events path must be a regular directory: ${paths.eventsDir}`);
-  }
-
+  const assertSessionTree = (...descendants: DirectoryAdmission[]) =>
+    assertPinnedDirectories(...sessionAncestors, pinnedSession, ...descendants);
+  const eventFiles: SessionEventFileAdmission[] = [];
   const events: SessionEvent[] = [];
-  const machineEntries = await readdir(paths.eventsDir, { withFileTypes: true });
-  for (const machineEntry of machineEntries.sort((left, right) => left.name.localeCompare(right.name))) {
-    if (machineEntry.name.startsWith(".")) continue;
-    validateMachineId(machineEntry.name);
-    if (!machineEntry.isDirectory() || machineEntry.isSymbolicLink()) {
-      throw new Error(`invalid machine partition in canonical session events: ${machineEntry.name}`);
+  let totalBytes = 0;
+  let scannedEntries = 0;
+  try {
+    await assertSessionTree();
+    if (!(await pathExists(paths.eventsDir))) {
+      await assertSessionTree();
+      if (options.allowEmpty) return { events: [], bytes: 0 };
+      throw new Error(`canonical session events are missing; retired projections are not loadable: ${paths.eventsDir}`);
     }
-    const machineDirectory = path.join(paths.eventsDir, machineEntry.name);
-    const fileEntries = await readdir(machineDirectory, { withFileTypes: true });
-    for (const fileEntry of fileEntries.sort((left, right) => left.name.localeCompare(right.name))) {
-      if (fileEntry.name.startsWith(".")) continue;
-      if (!fileEntry.isFile() || fileEntry.isSymbolicLink()) {
-        throw new Error(`invalid canonical session event entry: ${path.join(machineDirectory, fileEntry.name)}`);
+    await assertSessionTree();
+    const eventsInfo = await lstat(paths.eventsDir);
+    const pinnedEvents = await openPinnedDirectory(paths.eventsDir, eventsInfo);
+    try {
+      for await (const machineEntry of pinnedEvents.directory) {
+        await assertSessionTree(pinnedEvents);
+        reserveCollectionEventScanEntry(options.collectionBudget);
+        scannedEntries += 1;
+        if (scannedEntries > maximumScannedEntries) {
+          throw new Error(`canonical session ${sessionId} exceeds maximumScannedEntries ${maximumScannedEntries}`);
+        }
+        if (machineEntry.name.startsWith(".")) continue;
+        validateMachineId(machineEntry.name);
+        if (!machineEntry.isDirectory() || machineEntry.isSymbolicLink()) {
+          throw new Error(`invalid machine partition in canonical session events: ${machineEntry.name}`);
+        }
+        await assertSessionTree(pinnedEvents);
+        const machineDirectory = path.join(paths.eventsDir, machineEntry.name);
+        const machineInfo = await lstat(machineDirectory);
+        const pinnedMachine = await openPinnedDirectory(machineDirectory, machineInfo);
+        try {
+          for await (const fileEntry of pinnedMachine.directory) {
+            await assertSessionTree(pinnedEvents, pinnedMachine);
+            reserveCollectionEventScanEntry(options.collectionBudget);
+            scannedEntries += 1;
+            if (scannedEntries > maximumScannedEntries) {
+              throw new Error(`canonical session ${sessionId} exceeds maximumScannedEntries ${maximumScannedEntries}`);
+            }
+            if (fileEntry.name.startsWith(".")) continue;
+            if (!fileEntry.isFile() || fileEntry.isSymbolicLink()) {
+              throw new Error(`invalid canonical session event entry: ${path.join(machineDirectory, fileEntry.name)}`);
+            }
+            const match = fileEntry.name.match(EVENT_FILE);
+            if (!match) throw new Error(`invalid canonical session event filename: ${fileEntry.name}`);
+            reserveCollectionEvent(options.collectionBudget);
+            if (eventFiles.length >= maximumEvents) {
+              throw new Error(`canonical session ${sessionId} exceeds maximumEvents ${maximumEvents}`);
+            }
+            await assertSessionTree(pinnedEvents, pinnedMachine);
+            const filePath = path.join(machineDirectory, fileEntry.name);
+            const fileInfo = await lstat(filePath, { bigint: true });
+            if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) {
+              throw new Error(`canonical session event must be a regular file: ${filePath}`);
+            }
+            await assertSessionTree(pinnedEvents, pinnedMachine);
+            reserveCollectionEventBytes(options.collectionBudget, fileInfo.size);
+            if (fileInfo.size > BigInt(maximumBytes - totalBytes)) {
+              throw new Error(`canonical session ${sessionId} exceeds maximumBytes ${maximumBytes}`);
+            }
+            const fileSize = Number(fileInfo.size);
+            totalBytes += fileSize;
+            const fileIdentity: AdmittedFileIdentity = {
+              filePath,
+              device: fileInfo.dev,
+              inode: fileInfo.ino,
+              size: fileSize,
+              modifiedAtNs: fileInfo.mtimeNs,
+            };
+            const admittedContent = await readAdmittedFile(
+              fileIdentity,
+              () => assertSessionTree(pinnedEvents, pinnedMachine),
+              "canonical session event",
+            );
+            eventFiles.push({
+              ...fileIdentity,
+              machineId: machineEntry.name,
+              machineSequence: Number(match[1]),
+              eventId: match[2],
+              admissionContentHash: sessionEventContentHash(admittedContent),
+              machineDirectory,
+              machineIdentity: pinnedMachine.identity,
+            });
+          }
+          await assertSessionTree(pinnedEvents, pinnedMachine);
+        } finally {
+          await closeDirectoryAdmission(pinnedMachine);
+        }
       }
-      const match = fileEntry.name.match(EVENT_FILE);
-      if (!match) throw new Error(`invalid canonical session event filename: ${fileEntry.name}`);
-      const filePath = path.join(machineDirectory, fileEntry.name);
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(await readFile(filePath, "utf8"));
-      } catch (error) {
-        throw new Error(`cannot parse canonical session event ${filePath}: ${String(error)}`);
+
+      await assertSessionTree(pinnedEvents);
+      const admittedMachines = new Map<
+        string,
+        { directoryPath: string; identity: DirectoryIdentity; files: typeof eventFiles }
+      >();
+      for (const eventFile of eventFiles) {
+        const admitted = admittedMachines.get(eventFile.machineDirectory);
+        if (admitted) {
+          if (!sameDirectoryIdentity(admitted.identity, eventFile.machineIdentity)) {
+            throw new Error(`canonical session machine identity is inconsistent: ${eventFile.machineDirectory}`);
+          }
+          admitted.files.push(eventFile);
+        } else {
+          admittedMachines.set(eventFile.machineDirectory, {
+            directoryPath: eventFile.machineDirectory,
+            identity: eventFile.machineIdentity,
+            files: [eventFile],
+          });
+        }
       }
-      assertSessionEvent(parsed, filePath);
-      if (parsed.sessionId !== sessionId || parsed.machineId !== machineEntry.name) {
-        throw new Error(`session event path identity mismatch: ${filePath}`);
+      for (const admittedMachine of admittedMachines.values()) {
+        await assertSessionTree(pinnedEvents, admittedMachine);
+        const pinnedMachine = await openDirectoryAdmission(
+          admittedMachine.directoryPath,
+          await lstat(admittedMachine.directoryPath),
+        );
+        try {
+          if (!sameDirectoryIdentity(pinnedMachine.identity, admittedMachine.identity)) {
+            throw new Error(`canonical session directory changed during admission: ${admittedMachine.directoryPath}`);
+          }
+          await assertSessionTree(pinnedEvents, pinnedMachine);
+          for (const eventFile of admittedMachine.files) {
+            const content = await readAdmittedFile(
+              eventFile,
+              () => assertSessionTree(pinnedEvents, pinnedMachine),
+              "canonical session event",
+            );
+            if (sessionEventContentHash(content) !== eventFile.admissionContentHash) {
+              throw new Error(`canonical session event content changed during admission: ${eventFile.filePath}`);
+            }
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(content.toString("utf8"));
+            } catch (error) {
+              throw new Error(`cannot parse canonical session event ${eventFile.filePath}: ${String(error)}`);
+            }
+            assertSessionEvent(parsed, eventFile.filePath);
+            if (parsed.sessionId !== sessionId || parsed.machineId !== eventFile.machineId) {
+              throw new Error(`session event path identity mismatch: ${eventFile.filePath}`);
+            }
+            if (parsed.machineSequence !== eventFile.machineSequence || parsed.id !== eventFile.eventId) {
+              throw new Error(`session event filename identity mismatch: ${eventFile.filePath}`);
+            }
+            events.push(parsed);
+          }
+          await assertSessionTree(pinnedEvents, pinnedMachine);
+        } finally {
+          await closeDirectoryAdmission(pinnedMachine);
+        }
       }
-      if (parsed.machineSequence !== Number(match[1]) || parsed.id !== match[2]) {
-        throw new Error(`session event filename identity mismatch: ${filePath}`);
-      }
-      events.push(parsed);
+      await assertSessionTree(pinnedEvents);
+    } finally {
+      await closeDirectoryAdmission(pinnedEvents);
     }
+  } finally {
+    if (ownsSessionAdmission) await closeDirectoryAdmission(pinnedSession);
   }
 
   if (events.length === 0) {
-    if (options.allowEmpty) return [];
+    if (options.allowEmpty) return { events: [], bytes: 0 };
     throw new Error(`canonical session event stream is empty: ${paths.eventsDir}`);
   }
   events.sort(
@@ -593,7 +1080,7 @@ async function readSessionEventsUnlocked(
       }
     }
   }
-  return events;
+  return { events, bytes: totalBytes };
 }
 
 function replayEvents(events: SessionEvent[], sessionId: string): SessionProjection {
@@ -671,10 +1158,12 @@ async function writeSessionProjections(state: SessionStateRoot, projection: Sess
 async function rebuildSessionProjectionsUnlocked(
   state: SessionStateRoot,
   sessionId: string,
+  options: SessionEventReadOptions = {},
 ): Promise<SessionProjection | null> {
+  const limits = canonicalSessionEventReadLimits(options);
   const paths = sessionPaths(state, sessionId);
   if (!(await pathExists(paths.dir))) return null;
-  const events = await readSessionEventsUnlocked(state, sessionId);
+  const { events } = await readSessionEventsUnlocked(state, sessionId, limits);
   const projection = replayEvents(events, sessionId);
   await writeSessionProjections(state, projection);
   return projection;
@@ -683,25 +1172,41 @@ async function rebuildSessionProjectionsUnlocked(
 export async function rebuildSessionProjections(
   state: SessionStateRoot,
   rawSessionId: string,
+  options: SessionEventReadOptions = {},
 ): Promise<SessionProjection | null> {
   const sessionId = validateSessionId(rawSessionId);
-  return withSessionWriteLock(state, sessionId, () => rebuildSessionProjectionsUnlocked(state, sessionId));
+  const limits = canonicalSessionEventReadLimits(options);
+  return withSessionWriteLock(state, sessionId, () => rebuildSessionProjectionsUnlocked(state, sessionId, limits));
 }
 
 export async function rebuildSessionProjectionsWhileLocked(
   state: SessionStateRoot,
   rawSessionId: string,
+  options: SessionEventReadOptions = {},
 ): Promise<SessionProjection | null> {
-  return rebuildSessionProjectionsUnlocked(state, validateSessionId(rawSessionId));
+  return rebuildSessionProjectionsUnlocked(state, validateSessionId(rawSessionId), options);
 }
 
-export async function loadSessionEvents(state: SessionStateRoot, rawSessionId: string): Promise<SessionEvent[]> {
+export async function loadSessionEventBatch(
+  state: SessionStateRoot,
+  rawSessionId: string,
+  options: SessionEventReadOptions = {},
+): Promise<SessionEventBatch> {
   const sessionId = validateSessionId(rawSessionId);
+  const limits = canonicalSessionEventReadLimits(options);
   return withSessionWriteLock(state, sessionId, async () => {
     const paths = sessionPaths(state, sessionId);
-    if (!(await pathExists(paths.dir))) return [];
-    return readSessionEventsUnlocked(state, sessionId);
+    if (!(await pathExists(paths.dir))) return { events: [], bytes: 0 };
+    return readSessionEventsUnlocked(state, sessionId, limits);
   });
+}
+
+export async function loadSessionEvents(
+  state: SessionStateRoot,
+  rawSessionId: string,
+  options: SessionEventReadOptions = {},
+): Promise<SessionEvent[]> {
+  return (await loadSessionEventBatch(state, rawSessionId, options)).events;
 }
 
 async function appendSessionEventUnlocked(
@@ -711,7 +1216,8 @@ async function appendSessionEventUnlocked(
   draft: SessionEventDraft,
   options: { allowEmpty?: boolean; at?: Date } = {},
 ): Promise<SessionProjection> {
-  const events = await readSessionEventsUnlocked(state, sessionId, { allowEmpty: options.allowEmpty });
+  const existing = await readSessionEventsUnlocked(state, sessionId, { allowEmpty: options.allowEmpty });
+  const { events } = existing;
   const machineEvents = events.filter((event) => event.machineId === machineId);
   const machineSequence = machineEvents.length + 1;
   const unsigned = {
@@ -727,10 +1233,12 @@ async function appendSessionEventUnlocked(
     data: canonicalClone(draft.data),
   } as Omit<SessionEvent, "eventHash">;
   const event = { ...unsigned, eventHash: eventDigest(unsigned) } as SessionEvent;
+  const eventContent = `${JSON.stringify(event, null, 2)}\n`;
+  assertSessionAppendWithinBounds(events.length, existing.bytes, Buffer.byteLength(eventContent));
   const machineDirectory = path.join(sessionPaths(state, sessionId).eventsDir, machineId);
   await ensurePrivateDirectory(machineDirectory);
   const eventFile = path.join(machineDirectory, `${String(machineSequence).padStart(16, "0")}-${event.id}.json`);
-  await writeImmutableEvent(eventFile, `${JSON.stringify(event, null, 2)}\n`);
+  await writeImmutableEvent(eventFile, eventContent);
   const nextEvents = [...events, event];
   const projection = replayEvents(nextEvents, sessionId);
   await writeSessionProjections(state, projection);
@@ -797,6 +1305,7 @@ export async function withSessionWriteTransaction<T>(
               quota: result.quota,
               finishReason: result.finishReason,
               error: result.error,
+              receipt: result.receipt,
             },
           }),
         switchProvider: async (provider, model) => {
@@ -875,43 +1384,133 @@ export async function createSession(
   return { sessionId, provider: options.provider, model: options.model, mode, workdir, stateDir: state.stateDir };
 }
 
-export async function loadTranscript(state: SessionStateRoot, rawSessionId: string): Promise<SessionTranscript | null> {
-  const projection = await rebuildSessionProjections(state, rawSessionId);
+export async function loadTranscript(
+  state: SessionStateRoot,
+  rawSessionId: string,
+  options: SessionEventReadOptions = {},
+): Promise<SessionTranscript | null> {
+  const projection = await rebuildSessionProjections(state, rawSessionId, options);
   return projection?.transcript ?? null;
 }
 
-export async function loadSessionState(state: SessionStateRoot, rawSessionId: string): Promise<SessionState | null> {
-  const projection = await rebuildSessionProjections(state, rawSessionId);
+export async function loadSessionState(
+  state: SessionStateRoot,
+  rawSessionId: string,
+  options: SessionEventReadOptions = {},
+): Promise<SessionState | null> {
+  const projection = await rebuildSessionProjections(state, rawSessionId, options);
   return projection?.state ?? null;
 }
 
-export async function listSessions(state: SessionStateRoot): Promise<SessionDescriptor[]> {
-  if (!(await pathExists(state.sessionsDir))) return [];
-  const sessionsInfo = await lstat(state.sessionsDir);
-  if (!sessionsInfo.isDirectory() || sessionsInfo.isSymbolicLink()) {
-    throw new Error(`canonical sessions path must be a regular directory: ${state.sessionsDir}`);
-  }
-  const output: SessionDescriptor[] = [];
-  for await (const entry of await opendir(state.sessionsDir)) {
+async function collectSessionIds(
+  pinnedRoot: DirectoryAdmission,
+  directory: Awaited<ReturnType<typeof opendir>>,
+  maximumSessions: number,
+  maximumScannedEntries: number,
+): Promise<string[]> {
+  const sessionIds: string[] = [];
+  let scannedEntries = 0;
+  for await (const entry of directory) {
+    scannedEntries += 1;
+    if (scannedEntries > maximumScannedEntries) {
+      throw new Error(`canonical session scan exceeds maximumScannedEntries ${maximumScannedEntries}`);
+    }
     if (entry.name.startsWith(".")) continue;
     if (!entry.isDirectory() || entry.isSymbolicLink()) {
       throw new Error(`invalid entry in canonical sessions directory: ${entry.name}`);
     }
-    const sessionState = await loadSessionState(state, entry.name);
-    if (!sessionState) continue;
-    output.push({
-      sessionId: sessionState.sessionId,
-      provider: sessionState.provider,
-      model: sessionState.model,
-      mode: sessionState.mode,
-      workdir: sessionState.workdir,
-      stateDir: state.stateDir,
-    });
+    await assertPinnedDirectories(pinnedRoot);
+    sessionIds.push(validateSessionId(entry.name));
+    if (sessionIds.length > maximumSessions) {
+      throw new Error(`canonical session scan exceeds maximumSessions ${maximumSessions}`);
+    }
   }
-  return output.sort((left, right) => left.sessionId.localeCompare(right.sessionId));
+  await assertPinnedDirectories(pinnedRoot);
+  return sessionIds.sort((left, right) => left.localeCompare(right));
 }
 
-export async function inspectSessionIntegrity(state: SessionStateRoot): Promise<SessionIntegrityInspection> {
+export async function listSessionIds(
+  state: SessionStateRoot,
+  options: { maximumSessions?: number; maximumScannedEntries?: number } = {},
+): Promise<string[]> {
+  const maximumSessions = canonicalReadLimit(options.maximumSessions, MAX_CANONICAL_SESSIONS, "maximumSessions");
+  const maximumScannedEntries = canonicalReadLimit(
+    options.maximumScannedEntries,
+    MAX_CANONICAL_SESSION_SCAN_ENTRIES,
+    "maximumScannedEntries",
+  );
+  if (!(await pathExists(state.sessionsDir))) return [];
+  const rootInfo = await lstat(state.sessionsDir);
+  const pinnedRoot = await openPinnedDirectory(state.sessionsDir, rootInfo);
+  try {
+    return collectSessionIds(pinnedRoot, pinnedRoot.directory, maximumSessions, maximumScannedEntries);
+  } finally {
+    await closeDirectoryAdmission(pinnedRoot);
+  }
+}
+
+export async function listSessions(
+  state: SessionStateRoot,
+  options: SessionCollectionReadOptions = {},
+): Promise<SessionDescriptor[]> {
+  const maximumSessions = canonicalReadLimit(options.maximumSessions, MAX_CANONICAL_SESSIONS, "maximumSessions");
+  const maximumScannedEntries = canonicalReadLimit(
+    options.maximumScannedEntries,
+    MAX_CANONICAL_SESSION_SCAN_ENTRIES,
+    "maximumScannedEntries",
+  );
+  const eventLimits = canonicalCollectionEventReadLimits(options);
+  const eventBudget = createSessionCollectionEventBudget(eventLimits);
+  if (!(await pathExists(state.sessionsDir))) return [];
+  const rootInfo = await lstat(state.sessionsDir);
+  const pinnedRoot = await openPinnedDirectory(state.sessionsDir, rootInfo);
+  const output: SessionDescriptor[] = [];
+  try {
+    const sessionIds = await collectSessionIds(
+      pinnedRoot,
+      pinnedRoot.directory,
+      maximumSessions,
+      maximumScannedEntries,
+    );
+    for (const sessionId of sessionIds) {
+      await assertPinnedDirectories(pinnedRoot);
+      assertCollectionEventBudgetAvailable(eventBudget);
+      const sessionState = await withSessionWriteLock(state, sessionId, async () => {
+        const { events } = await readSessionEventsUnlocked(state, sessionId, {
+          ...eventLimits,
+          sessionsRoot: pinnedRoot,
+          collectionBudget: eventBudget,
+        });
+        return replayEvents(events, sessionId).state;
+      });
+      await assertPinnedDirectories(pinnedRoot);
+      output.push({
+        sessionId: sessionState.sessionId,
+        provider: sessionState.provider,
+        model: sessionState.model,
+        mode: sessionState.mode,
+        workdir: sessionState.workdir,
+        stateDir: state.stateDir,
+      });
+    }
+    return output;
+  } finally {
+    await closeDirectoryAdmission(pinnedRoot);
+  }
+}
+
+export async function inspectSessionIntegrity(
+  state: SessionStateRoot,
+  options: SessionCollectionReadOptions = {},
+): Promise<SessionIntegrityInspection> {
+  const maximumSessions = canonicalReadLimit(options.maximumSessions, MAX_CANONICAL_SESSIONS, "maximumSessions");
+  const maximumScannedEntries = canonicalReadLimit(
+    options.maximumScannedEntries,
+    MAX_CANONICAL_SESSION_SCAN_ENTRIES,
+    "maximumScannedEntries",
+  );
+  const eventLimits = canonicalCollectionEventReadLimits(options);
+  const eventBudget = createSessionCollectionEventBudget(eventLimits);
   const issues: string[] = [];
   let sessionCount = 0;
   let eventCount = 0;
@@ -931,52 +1530,148 @@ export async function inspectSessionIntegrity(state: SessionStateRoot): Promise<
       issues: [`canonical sessions path must be a physical directory: ${state.sessionsDir}`],
     };
   }
-  const entries = (await readdir(state.sessionsDir, { withFileTypes: true })).sort((left, right) =>
-    left.name.localeCompare(right.name),
-  );
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) {
-      issues.push(`unexpected hidden entry in canonical sessions: ${entry.name}`);
-      projectionIntegrity = false;
-      continue;
-    }
-    try {
-      validateSessionId(entry.name);
-      if (!entry.isDirectory() || entry.isSymbolicLink()) {
-        throw new Error(`session entry must be a physical directory: ${entry.name}`);
+  let pinnedRoot: Awaited<ReturnType<typeof openPinnedDirectory>>;
+  try {
+    pinnedRoot = await openPinnedDirectory(state.sessionsDir, rootInfo);
+  } catch (error) {
+    return {
+      ok: false,
+      sessions: 0,
+      events: 0,
+      eventIntegrity: false,
+      projectionIntegrity: false,
+      issues: [`canonical sessions directory admission failed: ${(error as Error).message}`],
+    };
+  }
+  const sessionIds: string[] = [];
+  let scannedEntries = 0;
+  let rootAdmissionIntact = true;
+  try {
+    for await (const entry of pinnedRoot.directory) {
+      await assertPinnedDirectories(pinnedRoot);
+      scannedEntries += 1;
+      if (scannedEntries > maximumScannedEntries) {
+        issues.push(`canonical session integrity scan exceeds maximumScannedEntries ${maximumScannedEntries}`);
+        eventIntegrity = false;
+        break;
       }
-      sessionCount += 1;
-      const events = await readSessionEventsUnlocked(state, entry.name);
-      eventCount += events.length;
-      const projection = replayEvents(events, entry.name);
-      const paths = sessionPaths(state, entry.name);
-      for (const [label, filePath, expected] of [
-        ["state", paths.stateFile, `${JSON.stringify(projection.state, null, 2)}\n`],
-        ["transcript", paths.transcriptFile, `${JSON.stringify(projection.transcript, null, 2)}\n`],
-      ] as const) {
-        let info;
-        try {
-          info = await lstat(filePath);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            issues.push(`session ${entry.name} ${label} projection is missing`);
+      if (entry.name.startsWith(".")) {
+        issues.push(`unexpected hidden entry in canonical sessions: ${entry.name}`);
+        projectionIntegrity = false;
+        continue;
+      }
+      try {
+        validateSessionId(entry.name);
+        if (!entry.isDirectory() || entry.isSymbolicLink()) {
+          throw new Error(`session entry must be a physical directory: ${entry.name}`);
+        }
+        if (sessionCount >= maximumSessions) {
+          issues.push(`canonical session integrity scan exceeds maximumSessions ${maximumSessions}`);
+          eventIntegrity = false;
+          break;
+        }
+        sessionCount += 1;
+        sessionIds.push(entry.name);
+      } catch (error) {
+        eventIntegrity = false;
+        issues.push(`session ${entry.name}: ${(error as Error).message}`);
+      }
+      await assertPinnedDirectories(pinnedRoot);
+    }
+    await assertPinnedDirectories(pinnedRoot);
+  } catch (error) {
+    eventIntegrity = false;
+    projectionIntegrity = false;
+    rootAdmissionIntact = false;
+    issues.push(`canonical sessions directory changed during integrity inspection: ${(error as Error).message}`);
+  }
+  try {
+    if (rootAdmissionIntact) {
+      try {
+        for (const sessionId of sessionIds) {
+          await assertPinnedDirectories(pinnedRoot);
+          let collectionBudgetExhausted = false;
+          try {
+            assertCollectionEventBudgetAvailable(eventBudget);
+            const paths = sessionPaths(state, sessionId);
+            const sessionInfo = await lstat(paths.dir);
+            await assertPinnedDirectories(pinnedRoot);
+            const pinnedSession = await openDirectoryAdmission(paths.dir, sessionInfo);
+            try {
+              const assertIntegrityTree = () => assertPinnedDirectories(pinnedRoot, pinnedSession);
+              await assertIntegrityTree();
+              const { events } = await readSessionEventsUnlocked(state, sessionId, {
+                ...eventLimits,
+                sessionsRoot: pinnedRoot,
+                sessionDirectory: pinnedSession,
+                collectionBudget: eventBudget,
+              });
+              await assertIntegrityTree();
+              eventCount += events.length;
+              const projection = replayEvents(events, sessionId);
+              for (const [label, filePath, expected] of [
+                ["state", paths.stateFile, `${JSON.stringify(projection.state, null, 2)}\n`],
+                ["transcript", paths.transcriptFile, `${JSON.stringify(projection.transcript, null, 2)}\n`],
+              ] as const) {
+                await assertIntegrityTree();
+                let info;
+                try {
+                  info = await lstat(filePath, { bigint: true });
+                } catch (error) {
+                  if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+                  await assertIntegrityTree();
+                  issues.push(`session ${sessionId} ${label} projection is missing`);
+                  projectionIntegrity = false;
+                  continue;
+                }
+                await assertIntegrityTree();
+                const expectedContent = Buffer.from(expected);
+                if (!info.isFile() || info.isSymbolicLink()) {
+                  issues.push(`session ${sessionId} ${label} projection must be a physical file`);
+                  projectionIntegrity = false;
+                } else if (info.size !== BigInt(expectedContent.length)) {
+                  issues.push(`session ${sessionId} ${label} projection does not match immutable events`);
+                  projectionIntegrity = false;
+                } else {
+                  const admittedProjection: AdmittedFileIdentity = {
+                    filePath,
+                    device: info.dev,
+                    inode: info.ino,
+                    size: expectedContent.length,
+                    modifiedAtNs: info.mtimeNs,
+                  };
+                  const content = await readAdmittedFile(
+                    admittedProjection,
+                    assertIntegrityTree,
+                    `canonical session ${label} projection`,
+                  );
+                  if (!content.equals(expectedContent)) {
+                    issues.push(`session ${sessionId} ${label} projection does not match immutable events`);
+                    projectionIntegrity = false;
+                  }
+                }
+                await assertIntegrityTree();
+              }
+            } finally {
+              await closeDirectoryAdmission(pinnedSession);
+            }
+          } catch (error) {
+            eventIntegrity = false;
             projectionIntegrity = false;
-            continue;
+            issues.push(`session ${sessionId}: ${(error as Error).message}`);
+            collectionBudgetExhausted = eventBudget.exhausted !== undefined;
           }
-          throw error;
+          await assertPinnedDirectories(pinnedRoot);
+          if (collectionBudgetExhausted) break;
         }
-        if (!info.isFile() || info.isSymbolicLink()) {
-          issues.push(`session ${entry.name} ${label} projection must be a physical file`);
-          projectionIntegrity = false;
-        } else if ((await readFile(filePath, "utf8")) !== expected) {
-          issues.push(`session ${entry.name} ${label} projection does not match immutable events`);
-          projectionIntegrity = false;
-        }
+      } catch (error) {
+        eventIntegrity = false;
+        projectionIntegrity = false;
+        issues.push(`canonical sessions directory changed during integrity inspection: ${(error as Error).message}`);
       }
-    } catch (error) {
-      eventIntegrity = false;
-      issues.push(`session ${entry.name}: ${(error as Error).message}`);
     }
+  } finally {
+    await closeDirectoryAdmission(pinnedRoot);
   }
   return {
     ok: eventIntegrity && projectionIntegrity && issues.length === 0,
@@ -984,7 +1679,7 @@ export async function inspectSessionIntegrity(state: SessionStateRoot): Promise<
     events: eventCount,
     eventIntegrity,
     projectionIntegrity,
-    issues,
+    issues: issues.sort((left, right) => left.localeCompare(right)),
   };
 }
 
@@ -1011,7 +1706,7 @@ export async function completeSessionTurn(
   state: SessionStateRoot,
   sessionId: string,
   turnId: string,
-  result: Pick<TurnResult, "usage" | "quota" | "finishReason" | "error"> = {},
+  result: Pick<TurnResult, "usage" | "quota" | "finishReason" | "error" | "receipt"> = {},
 ): Promise<SessionProjection> {
   return appendSessionEvent(state, sessionId, {
     type: "turn.completed",
@@ -1021,6 +1716,7 @@ export async function completeSessionTurn(
       quota: result.quota,
       finishReason: result.finishReason,
       error: result.error,
+      receipt: result.receipt,
     },
   });
 }
@@ -1080,9 +1776,12 @@ export async function runSessionTurn(
     await transaction.appendMessage(turnId, {
       role: "assistant",
       content: result.error ?? result.content,
-      metadata: result.error
-        ? { error: true }
-        : { usage: result.usage, quota: result.quota, finishReason: result.finishReason },
+      metadata: {
+        ...(result.error
+          ? { error: true }
+          : { usage: result.usage, quota: result.quota, finishReason: result.finishReason }),
+        ...(result.receipt ? { receipt: result.receipt } : {}),
+      },
     });
     await transaction.completeTurn(turnId, result);
     return result;
@@ -1103,6 +1802,7 @@ export async function* streamSessionTurn(
   let usage: Usage | undefined;
   let quota: QuotaSurface | undefined;
   let finishReason: string | undefined;
+  let receipt: Record<string, unknown> | undefined;
   let error: string | undefined;
   let thrown: unknown;
 
@@ -1136,6 +1836,7 @@ export async function* streamSessionTurn(
         usage = result.usage;
         quota = result.quota;
         finishReason = result.finishReason;
+        receipt = result.receipt;
         error = result.error;
         if (error) yield { type: "error", error };
         else {
@@ -1167,14 +1868,14 @@ export async function* streamSessionTurn(
           data: {
             turnId,
             message: error
-              ? { role: "assistant", content: error, metadata: { error: true } }
-              : { role: "assistant", content, metadata: { usage, quota, finishReason } },
+              ? { role: "assistant", content: error, metadata: { error: true, ...(receipt ? { receipt } : {}) } }
+              : { role: "assistant", content, metadata: { usage, quota, finishReason, ...(receipt ? { receipt } : {}) } },
           },
         });
         await lock.verify();
         await appendSessionEventUnlocked(state, sessionId, machineId, {
           type: "turn.completed",
-          data: { turnId, usage, quota, finishReason, error },
+          data: { turnId, usage, quota, finishReason, error, receipt },
         });
       }
     } finally {

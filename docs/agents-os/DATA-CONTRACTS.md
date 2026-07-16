@@ -1,5 +1,9 @@
 # Agent OS Container Data Contracts
 
+Status: parked supporting design. The program plan and PRD park custom
+distro/container work; this document records evidence for a future
+owner-authorized issue and does not authorize implementation.
+
 This is the mount/environment contract for the future Agent OS image. Host
 paths are resolved by `agents-manager`; container processes consume only the
 projected container paths.

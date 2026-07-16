@@ -2,6 +2,10 @@
 	path = plugins/DarkFactory
 	url = https://github.com/marius-patrik/DarkFactory.git
 	branch = main
+[submodule "Memory"]
+	path = plugins/Memory
+	url = https://github.com/marius-patrik/Memory.git
+	branch = main
 [submodule "LifeQuest"]
 	path = plugins/LifeQuest
 	url = https://github.com/marius-patrik/LifeQuest.git

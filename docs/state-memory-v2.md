@@ -228,6 +228,10 @@ expiry. The orchestrator baton is a lease, not an unlocked Markdown file.
 Provider switching must preserve ordered user, assistant, tool, usage, and
 handoff events. Replaying a rendered transcript into a fresh CLI process is not
 equivalent to native continuation and is only an explicitly labelled fallback.
+Managed Kimi sessions use ACP native resume and persist only the non-secret
+provider session handle plus provider/model/transport in canonical turn
+receipts. If that receipt or the resumed model cannot be verified, continuation
+fails closed instead of creating a replacement provider session.
 
 ## Sync classes
 

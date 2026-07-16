@@ -1,10 +1,15 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import type { SharedState } from "./state";
 import { SYSTEM_DATA_REPOSITORY } from "./state";
 import { eventSyncStatus, exportEventBundle, importEventBundle, inspectEventBundle, type EventSyncResult } from "./event-sync";
-import { stateV2Paths } from "./state-v2";
+import {
+  publishFileExclusive,
+  retryWindowsFileOperation,
+  stateV2Paths,
+  type ExclusiveFilePublicationOperations,
+} from "./state-v2";
 
 const CANONICAL_BRANCH = "main";
 const BACKUP_DIRECTORY = path.join("backups", "events");
@@ -73,6 +78,10 @@ export interface StateRepositorySync {
   restored: StateRepositoryRestore;
   backup: StateRepositoryBackup;
   pushed: boolean;
+}
+
+export interface StateRepositoryBackupOptions {
+  publication?: Partial<ExclusiveFilePublicationOperations>;
 }
 
 interface GitResult {
@@ -249,7 +258,10 @@ async function machineId(state: SharedState): Promise<string> {
   return manifest.machineId;
 }
 
-export async function backupStateRepository(state: SharedState): Promise<StateRepositoryBackup> {
+export async function backupStateRepository(
+  state: SharedState,
+  options: StateRepositoryBackupOptions = {},
+): Promise<StateRepositoryBackup> {
   await requireStateRepository(state);
   const id = await machineId(state);
   const temporary = path.join(stateV2Paths(state).syncDir, `repository-backup-${randomUUID()}.bundle.json`);
@@ -260,16 +272,20 @@ export async function backupStateRepository(state: SharedState): Promise<StateRe
   await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
   await physicalPathUnderState(state, path.dirname(target));
   try {
-    await lstat(target);
-    await physicalPathUnderState(state, target);
-    const existing = await inspectEventBundle(state, target);
-    if (existing.payloadHash !== exported.payloadHash || existing.entries !== exported.entries) {
-      throw new Error(`immutable state backup collision: ${relative}`);
+    const published = await publishFileExclusive(temporary, target, options.publication);
+    if (!published) {
+      await physicalPathUnderState(state, target);
+      const existing = await inspectEventBundle(state, target);
+      if (existing.payloadHash !== exported.payloadHash || existing.entries !== exported.entries) {
+        throw new Error(`immutable state backup collision: ${relative}`);
+      }
     }
-    await rm(temporary, { force: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    await rename(temporary, target);
+  } finally {
+    await retryWindowsFileOperation(
+      () => rm(temporary, { force: true }),
+      options.publication?.platform ?? process.platform,
+      options.publication?.wait,
+    );
   }
 
   const gitPath = relative.split(path.sep).join("/");

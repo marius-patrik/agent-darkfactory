@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { discoverBunTests } from "./run-ci-suite.mjs";
+import { discoverBunTests, managerTestTimeoutMs } from "./run-ci-suite.mjs";
 import { inventoryIssues, parseIndexedGitlinks } from "./verify-test-inventory.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -67,6 +67,12 @@ test("success: new core and harness Bun tests join their suites automatically", 
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
+});
+
+test("success: serialized manager tests retain a bounded Windows filesystem timeout", () => {
+  assert.equal(managerTestTimeoutMs("linux"), 30_000);
+  assert.equal(managerTestTimeoutMs("darwin"), 30_000);
+  assert.equal(managerTestTimeoutMs("win32"), 90_000);
 });
 
 test("edge input: a missing manager-coupled harness test fails the inventory", () => {

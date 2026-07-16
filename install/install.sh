@@ -389,4 +389,6 @@ main() {
   echo "Add $AGENTS_HOME/bin to PATH to invoke agents by name."
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

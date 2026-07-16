@@ -14,6 +14,24 @@ are recorded in [Managed Enforcement](docs/managed-enforcement.md).
 The complete component, platform, real-process, and product-smoke gate is
 recorded in [CI Validation](docs/ci-validation.md).
 
+## Authority and planning
+
+Authority has two explicit dimensions. Current owner instruction is highest,
+and the owner-facing Andromeda-data `context/TASK.md` board records work
+authorization, high-level sequencing, and parked scopes; no plan, PRD, or issue
+can reopen a board-gated scope. Within authorized work, the program derivation
+chain recorded by [#219](https://github.com/marius-patrik/Andromeda/issues/219)
+is owner instruction → Andromeda-data `context/PLAN.md` → root [PRD](PRD.md) →
+GitHub issues. The plan records the consolidated program and feeds the PRD; the
+PRD is the repository's system specification; issues are executable contracts
+that implement it.
+
+Root `docs/` contains supporting implementation references, accepted contracts,
+runbooks, and explicitly labelled parked or retired design evidence. A document
+under `docs/` cannot authorize work or override the board, PRD, program plan, or
+its implementing issue. See the [documentation index](docs/README.md) for the
+status of each document family.
+
 ## Installation
 
 Requirements: Bun 1.1 or newer and Git. Provider CLIs (`codex`, `claude`,
@@ -56,7 +74,10 @@ ready. Do not use an old product checkout or installer as an update source.
 ## Product naming
 
 - **Agent OS** is the final product.
-- **Andromeda** is this repository. The npm package surface remains `@marius-patrik/agents-manager` as a recorded exception until a package rename is scheduled.
+- **Andromeda** is this repository. The root npm package remains
+  `@marius-patrik/agents-manager` as a recorded exception until a package rename
+  is scheduled; it is the only public JavaScript package and `agents` CLI
+  surface.
 - **agents** is the CLI.
 - `packages/` contains one direct child for each implementation domain.
 - `plugins/` contains the managed product plugins and is also the authored
@@ -66,6 +87,8 @@ ready. Do not use an old product checkout or installer as an update source.
 
 Older product and topology names are migration evidence only. They are not
 aliases, compatibility surfaces, install roots, or names for new work.
+Nested JavaScript manifests are private workspace metadata for their PRD layer;
+they do not publish another product or CLI.
 
 ## One state authority
 
@@ -110,6 +133,10 @@ agents cli doctor
 agents cli pin all
 agents cli env codex
 
+gh auth token | agents secrets set GITHUB_TOKEN
+agents runner install --json
+agents runner status --json
+
 agents run --mode orchestrator --provider codex "Review active work"
 agents tui --provider codex --mode orchestrator
 agents sessions list --json
@@ -125,6 +152,12 @@ agents installs --json
 agents identity activate <source-directory> --replace
 agents doctor
 ```
+
+The persistent DarkFactory `df-local` runner reads the repository-control
+credential only from the canonical `GITHUB_TOKEN` Agent OS secret. The
+registration token it obtains from GitHub is short lived and is never stored;
+runner install, enable, repair, and every process start remain gated on a green
+`agents state doctor` result.
 
 Cross-machine event exchange now satisfies the v2 tombstone, encrypted
 transport, deterministic merge, recovery, and secret/symlink rejection
@@ -145,8 +178,8 @@ older snapshot-sync or provider-adoption command to fall back to.
   [gateway documentation](docs/gateway-runtime.md).
 - `packages/inference/` — agent loop and inference runtime; see
   [inference documentation](docs/inference.md).
-- `plugins/DarkFactory/`, `plugins/LifeQuest/`, and `plugins/SkyAgent/` —
-  managed product plugins.
+- `plugins/DarkFactory/`, `plugins/Memory/`, `plugins/LifeQuest/`, and
+  `plugins/SkyAgent/` — managed product plugins.
 - `apps/Singularity/` and `apps/Fabrica/` — managed product applications.
 - `skills/`, `hooks/`, `roles/`, and `commands/` — authored capability roots;
   `persona.md` is the authored identity persona.

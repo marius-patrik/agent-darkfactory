@@ -15,6 +15,7 @@ succeeds. The same commands run locally through
 | `packages/inference` | `inference` | Ubuntu | uv lock sync, lint, types, all non-live tests, build, CLI/import/layering checks |
 | `packages/manager` | `manager` | Ubuntu, Windows | TypeScript types, all manager tests, compact-capsule regression |
 | `plugins/DarkFactory` | `darkfactory` | Ubuntu | pinned public submodule, npm clean install, full check including templates and build |
+| `plugins/Memory` | `memory` | Ubuntu, Windows | pinned public submodule, manager-integrated TypeScript and plugin behavior tests |
 
 Inventory `requiredPaths` are durable coverage anchors, not an exhaustive test
 allowlist. Core, harness, and manager recursively discover every Bun

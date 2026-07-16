@@ -53,6 +53,12 @@ jobs:
           - suite: darkfactory
             runner: ubuntu-latest
             label: DarkFactory plugin
+          - suite: memory
+            runner: ubuntu-latest
+            label: Memory plugin
+          - suite: memory
+            runner: windows-latest
+            label: Memory plugin platform
           - suite: release
             runner: ubuntu-latest
             label: installer and release smoke

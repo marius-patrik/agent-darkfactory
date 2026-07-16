@@ -2,9 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ensureSharedState, sharedState, sharedStateFromEnv, writeSessionConfig } from "../src/state";
+import {
+  ensureSharedState,
+  readSessionConfig,
+  sharedState,
+  sharedStateFromEnv,
+  writeSessionConfig,
+} from "../src/state";
 import {
   canonicalChildEnvironment,
+  overlayChildEnvironment,
   resolvePersonalAgentsHome,
   resolveRuntimeAgentsHome,
   resolveUserHome,
@@ -62,6 +69,38 @@ describe("shared state from environment", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test("validates canonical provider route status and policy-version state", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-config-route-policy-"));
+    try {
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await writeSessionConfig(state, {
+        schemaVersion: 1,
+        routePolicyVersion: "agent-os-tier-routes-v1",
+        providerRouteStatus: { kimi: "decommissioned", codex: "enabled" },
+      });
+      expect(await readSessionConfig(state)).toEqual({
+        schemaVersion: 1,
+        routePolicyVersion: "agent-os-tier-routes-v1",
+        providerRouteStatus: { kimi: "decommissioned", codex: "enabled" },
+      });
+      await expect(
+        writeSessionConfig(state, {
+          schemaVersion: 1,
+          providerRouteStatus: { unknown: "enabled" } as never,
+        }),
+      ).rejects.toThrow("unknown provider");
+      await expect(
+        writeSessionConfig(state, {
+          schemaVersion: 1,
+          providerRouteStatus: { kimi: "healthy" } as never,
+        }),
+      ).rejects.toThrow("providerRouteStatus.kimi is invalid");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("runtime path resolution", () => {
@@ -78,6 +117,15 @@ describe("runtime path resolution", () => {
         PATH: "/bin",
       }),
     ).toEqual({ AGENTS_HOME: "/canonical", PATH: "/bin" });
+  });
+
+  test("authoritative child overlays remove mixed-case aliases", () => {
+    expect(
+      overlayChildEnvironment(
+        { HOME: "/ambient", userprofile: "/ambient-profile", kimi_code_home: "/ambient-kimi", PATH: "/bin" },
+        { HOME: "/managed", USERPROFILE: "/managed", KIMI_CODE_HOME: "/managed/kimi" },
+      ),
+    ).toEqual({ HOME: "/managed", USERPROFILE: "/managed", KIMI_CODE_HOME: "/managed/kimi", PATH: "/bin" });
   });
 
   test("explicit user home wins over a provider-rooted HOME", () => {

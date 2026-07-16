@@ -14,7 +14,7 @@ suite contract as independent matrix legs and exposes one required `Validate`
 aggregator. A focused suite can be reproduced with:
 
 ```sh
-node scripts/run-ci-suite.mjs <inventory|core|gateway|gateway-real|engine-real|harness|inference|manager|darkfactory|release|sync|review>
+node scripts/run-ci-suite.mjs <inventory|core|gateway|gateway-real|engine-real|harness|inference|manager|darkfactory|memory|release|sync|review>
 ```
 
 Component-focused validation still runs from the repository root unless a
@@ -55,6 +55,9 @@ bun packages/inference/scripts/validate.mjs
 
 # Pinned DarkFactory plugin
 node scripts/run-ci-suite.mjs darkfactory
+
+# Pinned Memory plugin
+node scripts/run-ci-suite.mjs memory
 
 # Real gateway and inferctl seams
 node scripts/run-ci-suite.mjs gateway-real

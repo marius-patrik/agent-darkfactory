@@ -50,6 +50,31 @@ export function stateV2Paths(state: SharedState): StateV2Paths {
   };
 }
 
+const SAFE_RUNTIME_COMPONENT = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const WINDOWS_RESERVED_COMPONENT = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i;
+export const MAX_PLUGIN_RUNTIME_PROJECTION_BYTES = 16 * 1024 * 1024;
+
+function validateRuntimeComponent(value: string, label: string): void {
+  if (
+    !SAFE_RUNTIME_COMPONENT.test(value) ||
+    WINDOWS_RESERVED_COMPONENT.test(value) ||
+    value.endsWith(".") ||
+    value.endsWith(" ")
+  ) {
+    throw new Error(`plugin runtime projection ${label} is invalid`);
+  }
+}
+
+export function pluginRuntimeProjectionPath(
+  state: SharedState,
+  pluginId: string,
+  projectionName: string,
+): string {
+  validateRuntimeComponent(pluginId, "id");
+  validateRuntimeComponent(projectionName, "name");
+  return path.join(stateV2Paths(state).runtimeDir, "plugins", pluginId, `${projectionName}.json`);
+}
+
 async function exists(filePath: string): Promise<boolean> {
   try {
     await stat(filePath);
@@ -60,6 +85,21 @@ async function exists(filePath: string): Promise<boolean> {
 }
 
 const TRANSIENT_WINDOWS_PUBLICATION_ERRORS = new Set(["EACCES", "EBUSY", "ENOENT", "EPERM"]);
+
+interface WindowsFileOperationRetryPolicy {
+  readonly attempts: number;
+  readonly maxWaitMilliseconds: number;
+}
+
+const WINDOWS_PUBLICATION_ATTEMPTS = 10;
+const WINDOWS_FILE_OPERATION_RETRY_POLICY: WindowsFileOperationRetryPolicy = {
+  attempts: WINDOWS_PUBLICATION_ATTEMPTS,
+  maxWaitMilliseconds: 160,
+};
+const WINDOWS_ATOMIC_REPLACEMENT_RETRY_POLICY: WindowsFileOperationRetryPolicy = {
+  attempts: 12,
+  maxWaitMilliseconds: 1_000,
+};
 const atomicPublicationTails = new Map<string, Promise<void>>();
 
 async function serializeAtomicPublication(filePath: string, operation: () => Promise<void>): Promise<void> {
@@ -77,30 +117,49 @@ export async function retryWindowsFileOperation<T>(
   operation: () => Promise<T>,
   platform = process.platform,
   wait: (milliseconds: number) => Promise<void> = delay,
+  retryPolicy: WindowsFileOperationRetryPolicy = WINDOWS_FILE_OPERATION_RETRY_POLICY,
 ): Promise<T> {
   if (platform !== "win32") {
     return await operation();
   }
-  const attempts = 8;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  for (let attempt = 0; attempt < retryPolicy.attempts; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code ?? "";
-      if (!TRANSIENT_WINDOWS_PUBLICATION_ERRORS.has(code) || attempt === attempts - 1) throw error;
-      await wait(Math.min(80, 5 * 2 ** attempt));
+      if (
+        !TRANSIENT_WINDOWS_PUBLICATION_ERRORS.has(code) ||
+        attempt === retryPolicy.attempts - 1
+      ) throw error;
+      await wait(Math.min(retryPolicy.maxWaitMilliseconds, 10 * 2 ** attempt));
     }
   }
   throw new Error("unreachable Windows file-operation retry state");
 }
 
-interface AtomicReplacementOperations {
+export interface AtomicReplacementOperations {
   platform: NodeJS.Platform;
   rename: typeof rename;
-  rm: typeof rm;
-  stat: typeof stat;
   wait: (milliseconds: number) => Promise<void>;
-  randomId: () => string;
+}
+
+export interface ExclusiveFilePublicationOperations {
+  platform: NodeJS.Platform;
+  link: typeof link;
+  open: typeof open;
+  wait: (milliseconds: number) => Promise<void>;
+}
+
+async function syncDirectory(
+  directory: string,
+  openOperation: typeof open = open,
+): Promise<void> {
+  const directoryHandle = await openOperation(directory, "r");
+  try {
+    await directoryHandle.sync();
+  } finally {
+    await directoryHandle.close();
+  }
 }
 
 export async function publishAtomicReplacement(
@@ -111,48 +170,54 @@ export async function publishAtomicReplacement(
   const operations: AtomicReplacementOperations = {
     platform: process.platform,
     rename,
-    rm,
-    stat,
     wait: delay,
-    randomId: randomUUID,
     ...overrides,
   };
-  const retry = <T>(operation: () => Promise<T>) => (
-    retryWindowsFileOperation(operation, operations.platform, operations.wait)
+  // Keep replacement as one namespace operation. A destination-to-backup swap
+  // would make the prior complete state disappear between two renames.
+  await retryWindowsFileOperation(
+    () => operations.rename(temporary, filePath),
+    operations.platform,
+    operations.wait,
+    WINDOWS_ATOMIC_REPLACEMENT_RETRY_POLICY,
   );
-  try {
-    await retry(() => operations.rename(temporary, filePath));
-    return;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "";
-    if (operations.platform !== "win32" || !TRANSIENT_WINDOWS_PUBLICATION_ERRORS.has(code)) throw error;
-  }
-
-  // Windows can refuse rename-over-existing even after bounded retries. Keep
-  // the prior complete projection recoverable instead of deleting it.
-  await operations.stat(filePath);
-  const backup = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${process.pid}.${operations.randomId()}.bak`,
-  );
-  await retry(() => operations.rename(filePath, backup));
-  try {
-    await retry(() => operations.rename(temporary, filePath));
-  } catch (replacementError) {
-    try {
-      await retry(() => operations.rename(backup, filePath));
-    } catch (restoreError) {
-      throw new AggregateError(
-        [replacementError, restoreError],
-        `failed to publish or restore complete projection: ${filePath}`,
-      );
-    }
-    throw replacementError;
-  }
-  await retry(() => operations.rm(backup, { force: true }));
 }
 
-export async function writeTextAtomic(filePath: string, content: string, mode = 0o600): Promise<void> {
+export async function publishFileExclusive(
+  temporary: string,
+  filePath: string,
+  overrides: Partial<ExclusiveFilePublicationOperations> = {},
+): Promise<boolean> {
+  const operations: ExclusiveFilePublicationOperations = {
+    platform: process.platform,
+    link,
+    open,
+    wait: delay,
+    ...overrides,
+  };
+  try {
+    await retryWindowsFileOperation(
+      () => operations.link(temporary, filePath),
+      operations.platform,
+      operations.wait,
+    );
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "";
+    if (code === "EEXIST") return false;
+    throw error;
+  }
+  if (operations.platform !== "win32") {
+    await syncDirectory(path.dirname(filePath), operations.open);
+  }
+  return true;
+}
+
+export async function writeTextAtomic(
+  filePath: string,
+  content: string,
+  mode = 0o600,
+  overrides: Partial<AtomicReplacementOperations> = {},
+): Promise<void> {
   await serializeAtomicPublication(filePath, async () => {
     await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
     const temporary = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
@@ -164,15 +229,53 @@ export async function writeTextAtomic(filePath: string, content: string, mode = 
       } finally {
         await handle.close();
       }
-      await publishAtomicReplacement(temporary, filePath);
-      if (process.platform !== "win32") await chmod(filePath, mode);
+      await publishAtomicReplacement(temporary, filePath, overrides);
+      const platform = overrides.platform ?? process.platform;
+      if (platform !== "win32") {
+        await chmod(filePath, mode);
+        await syncDirectory(path.dirname(filePath));
+      }
     } finally {
-      await retryWindowsFileOperation(() => rm(temporary, { force: true }));
+      await retryWindowsFileOperation(
+        () => rm(temporary, { force: true }),
+        overrides.platform ?? process.platform,
+        overrides.wait ?? delay,
+      );
     }
   });
 }
 
-export async function writeTextExclusive(filePath: string, content: string, mode = 0o600): Promise<boolean> {
+/** Publish a reconstructible plugin cache through the manager-owned projection boundary. */
+export async function publishPluginRuntimeProjection(
+  state: SharedState,
+  pluginId: string,
+  projectionName: string,
+  value: unknown,
+): Promise<string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("plugin runtime projection must be an object");
+  }
+  const filePath = pluginRuntimeProjectionPath(state, pluginId, projectionName);
+  const serialized = JSON.stringify(value, null, 2);
+  if (serialized === undefined) throw new Error("plugin runtime projection must be JSON serializable");
+  if (!serialized.startsWith("{")) {
+    throw new Error("plugin runtime projection must serialize to a JSON object");
+  }
+  const content = `${serialized}\n`;
+  const contentBytes = Buffer.byteLength(content, "utf8");
+  if (contentBytes > MAX_PLUGIN_RUNTIME_PROJECTION_BYTES) {
+    throw new Error(`plugin runtime projection exceeds ${MAX_PLUGIN_RUNTIME_PROJECTION_BYTES} bytes`);
+  }
+  await writeTextAtomic(filePath, content);
+  return filePath;
+}
+
+export async function writeTextExclusive(
+  filePath: string,
+  content: string,
+  mode = 0o600,
+  overrides: Partial<ExclusiveFilePublicationOperations> = {},
+): Promise<boolean> {
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
@@ -184,24 +287,20 @@ export async function writeTextExclusive(filePath: string, content: string, mode
     } finally {
       await handle.close();
     }
-    try {
-      await retryWindowsFileOperation(() => link(temporary, filePath));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-      throw error;
-    }
-    if (process.platform !== "win32") {
+    const platform = overrides.platform ?? process.platform;
+    if (platform !== "win32") await chmod(temporary, mode);
+    const published = await publishFileExclusive(temporary, filePath, overrides);
+    if (!published) return false;
+    if (platform !== "win32") {
       await chmod(filePath, mode);
-      const directoryHandle = await open(directory, "r");
-      try {
-        await directoryHandle.sync();
-      } finally {
-        await directoryHandle.close();
-      }
     }
     return true;
   } finally {
-    await retryWindowsFileOperation(() => rm(temporary, { force: true }));
+    await retryWindowsFileOperation(
+      () => rm(temporary, { force: true }),
+      overrides.platform ?? process.platform,
+      overrides.wait ?? delay,
+    );
   }
 }
 

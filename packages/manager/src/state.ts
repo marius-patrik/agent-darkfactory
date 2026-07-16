@@ -3,6 +3,7 @@ import { chmod, lstat, mkdir } from "node:fs/promises";
 import { resolveRuntimeAgentsHome, resolveUserHome, type RuntimePathEnv } from "./runtime-paths";
 import { ensureStateV2, writeTextAtomic, writeTextExclusive, writeTextIfChanged } from "./state-v2";
 import { withStateFileLock } from "./state-lock";
+import type { ProviderId } from "./provider-registry";
 
 export const SYSTEM_DATA_REPO_ID = "agent-os-data";
 export const SYSTEM_DATA_REPOSITORY = "marius-patrik/Andromeda-data";
@@ -104,7 +105,24 @@ export interface SessionConfig {
   defaultModel?: string;
   defaultMode?: "orchestrator" | "default";
   providerModels?: Record<string, string[]>;
+  /**
+   * Optional explicit binding to the bundled route policy. An omitted value
+   * selects the exact bundled policy; any supplied value must match it at the
+   * execution boundary.
+   */
+  routePolicyVersion?: string;
+  /** Canonical pre-turn provider state. DarkFactory cannot set or override it. */
+  providerRouteStatus?: Partial<Record<ProviderId, ProviderRouteStatus>>;
 }
+
+export const PROVIDER_ROUTE_STATUSES = [
+  "enabled",
+  "disabled",
+  "decommissioned",
+  "unavailable",
+  "quota-blocked",
+] as const;
+export type ProviderRouteStatus = (typeof PROVIDER_ROUTE_STATUSES)[number];
 
 export function sharedStateAt(root: string, stateDir: string, userHome = resolveUserHome()): SharedState {
   return {
@@ -475,6 +493,32 @@ function validateSessionConfig(config: Partial<SessionConfig>, source: string): 
   if (config.defaultModel === "default") throw new Error("canonical config uses the retired default model sentinel");
   if (config.defaultMode !== undefined && config.defaultMode !== "default" && config.defaultMode !== "orchestrator") {
     throw new Error("canonical config defaultMode is invalid");
+  }
+  if (
+    config.routePolicyVersion !== undefined &&
+    (typeof config.routePolicyVersion !== "string" ||
+      !config.routePolicyVersion.trim() ||
+      config.routePolicyVersion.includes("\0"))
+  ) {
+    throw new Error("canonical config routePolicyVersion must be a non-empty string");
+  }
+  if (config.providerRouteStatus !== undefined) {
+    if (
+      !config.providerRouteStatus ||
+      typeof config.providerRouteStatus !== "object" ||
+      Array.isArray(config.providerRouteStatus)
+    ) {
+      throw new Error("canonical config providerRouteStatus must be an object");
+    }
+    const knownProviders = new Set<ProviderId>(["codex", "claude", "kimi", "agy"]);
+    for (const [provider, status] of Object.entries(config.providerRouteStatus)) {
+      if (!knownProviders.has(provider as ProviderId)) {
+        throw new Error(`canonical config providerRouteStatus contains an unknown provider: ${provider}`);
+      }
+      if (!(PROVIDER_ROUTE_STATUSES as readonly unknown[]).includes(status)) {
+        throw new Error(`canonical config providerRouteStatus.${provider} is invalid`);
+      }
+    }
   }
   if (config.providerModels !== undefined) {
     if (!config.providerModels || typeof config.providerModels !== "object" || Array.isArray(config.providerModels)) {

@@ -45,6 +45,7 @@ const MAX_BUNDLE_BYTES = 512 * 1024 * 1024;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const CANONICAL_HASH_OR_ID = /^(?:[a-f0-9]{32}|[a-f0-9]{64})$/;
 const COMPACTION_CAPSULE_ID = /^\d{8}-\d{6}-[a-f0-9]{32}$/;
+const COMPACTION_SNAPSHOT_STEM = /^\d{8}-\d{6}-[a-f0-9]{32}(?:-rollback)?$/;
 const CANONICAL_REPO_SLUG = /^\/?[a-z0-9](?:[a-z0-9.-]{0,38}[a-z0-9])?\/[a-z0-9][a-z0-9._-]{0,99}$/;
 
 interface SyncConfig {
@@ -250,25 +251,376 @@ const STRUCTURAL_STRING_FIELDS = new Set([
   "nextCheckAt",
 ]);
 
-function secretLikeText(value: string): boolean {
+const PUBLIC_OPERATIONAL_IDENTIFIERS = new Set([
+  "online/offline/busy/version/labels/last",
+  "lifecycle/persistence/registration/supervision/observability",
+  "updatePackagesAndEnvironmentsState",
+  "./node_modules/typescript/bin/tsc",
+  "platform/now/doctor/scheduler/host/readCredential/username",
+  "marius-patrik/fix/windows-state-lock-post-release",
+  "create/delete/query/enable/disable",
+  "create/query/enable/disable/delete",
+  "install/enable/disable/repair/run",
+  "install/enable/disable/status/repair/run",
+  "packages/manager/src/runner-lifecycle.ts",
+  "packages/manager/src/session-adapters.ts",
+  "packages/manager/src/adapters.ts",
+  "packages/manager/src/route-probe.ts",
+  "packages/manager/src/process-command.ts",
+  "packages/manager/test/runner-lifecycle.test.ts",
+  "packages/manager/test/session-adapters.test.ts",
+  "packages/manager/test/adapters.test.ts",
+  "packages/manager/test/route-probe.test.ts",
+  "manager/test/state-doctor.test.ts",
+  "platform/now/doctor/scheduler/github/host",
+  "native-kimi-supported-canonical-append",
+  "native-codex-supported-canonical-append",
+  "native-claude-fable-supported-canonical-append",
+  "CLI/help/runner/state-schema/manifest/lockfile/unrelated",
+  "credential/config/executable/provider-home",
+  "auth/unavailable/internal/malformed",
+  "task/binding/doctor/launcher/process/control-plane/online",
+  "System.Security.Principal.WindowsIdentity",
+  "Microsoft.Management.Infrastructure.CimException",
+  "action/trigger/principal/settings/New-ScheduledTask",
+  "reconcileRegistrations/reconcileProcesses",
+  "provision/configure/register/create",
+  "installed/registered/doctor/launcher",
+  "printActionResult/printStatusReport",
+  "enableRunner/disableRunner/runRunner",
+  "AGENTS_HOME/AGENTS_USER_ROOT/AGENTS_ROOT...",
+  "AGENTS_HOME/AGENTS_USER_HOME/AGENTS_ROOT...",
+  "name/enabled/state/actionExecutable/actionArguments",
+  "installed/registered/persistence/process/online/labels/launcher/doctor/record",
+  "durationMs/outputBytes/truncated",
+  "readSessionConfig/writeSessionConfig",
+  "executor-finished-before-timeout",
+  "process.env.USERDOMAIN/COMPUTERNAME",
+  "Unknown/Disabled/Queued/Ready/Running",
+  "TaskName/Enabled/known-State/Execute/Arguments",
+  "effort_unreachable/workspace_write_unreachable",
+  "preflight/launch/postflight/receipt",
+  "modes/ownership/immutable/read-only",
+  "missing/null/wrong-type/unknown/empty/partial",
+  "top-level/list/id/name/os/status/busy/label",
+  "credential/auth/network/nonzero/malformed-output",
+  "authorized-max-tier-after-kimi-zero-edit-timeout",
+  "authorized-edit-only-after-zero-edit-tool-surface-failure",
+  "argv/model/home/auth/attestation/drift/receipt",
+  "test_quota_window_is_clock_driven",
+  "test_cloud_route_requires_opt_in_and_fails_closed_on_bad_budget",
+  // Public manager documentation names this storage location; the path is not
+  // credential material. Descendants and any actual credential value remain in
+  // the fail-closed scanner.
+  "clis/agy/.gemini/oauth_creds.json",
+]);
+
+const PUBLIC_RELEASE_BRANCH_WORDS = new Set(["after", "main", "reconcile", "release"]);
+
+// These basenames are public diagnostic artifacts named in canonical evidence.
+// Keep this closed over complete leaves: a lexical or numeric filename heuristic
+// can accidentally admit passphrase-shaped material inside an absolute path.
+const PUBLIC_ABSOLUTE_PATH_LEAVES = new Set([
+  "andromeda-253-kimi-blockers.txt",
+  "andromeda-260-kimi-blockers.txt",
+]);
+
+// Some canonical evidence predates the stable diagnostic names above. Pin the
+// complete public basename without copying rejected event text into source or
+// logs. Hash pinning admits only that exact leaf; extensions and descendants
+// still enter the fail-closed path-token scanner.
+const PUBLIC_ABSOLUTE_PATH_LEAF_HASHES = new Set([
+  "94e8c98f13c41e8698a9b48326297bc7c52fa290a2a2ab6ae1f9ce6b07eccf48",
+]);
+
+function isPublicOperationalIdentifier(candidate: string): boolean {
+  if (PUBLIC_OPERATIONAL_IDENTIFIERS.has(candidate)) return true;
+  const normalizedCandidate = candidate.endsWith(".") ? candidate.slice(0, -1) : candidate;
+  if (PUBLIC_OPERATIONAL_IDENTIFIERS.has(normalizedCandidate)) return true;
+  if (/^(?:query\/)?[a-z]{3,20}\/permission\/malformed-output$/.test(normalizedCandidate)) return true;
+  if (/^session_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$/.test(normalizedCandidate)) {
+    return true;
+  }
   if (
-    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(value) ||
-    /\bAKIA[A-Z0-9]{16}\b/.test(value) ||
-    /\bgh[pousr]_[A-Za-z0-9]{20,}\b/.test(value) ||
-    /\b(?:sk-(?:ant-|proj-)?|xox[baprs]-|hf_|npm_|pypi-)[A-Za-z0-9_\-]{16,}\b/.test(value) ||
-    /\bAIza[A-Za-z0-9_-]{30,}\b/.test(value) ||
-    /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/.test(value) ||
-    /\bBearer\s+[A-Za-z0-9._~+\/-]{16,}={0,2}\b/i.test(value) ||
-    /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp|https?):\/\/[^\s/:@]+:[^\s/@]+@/i.test(value) ||
-    /\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|authorization|connection[_-]?string|dsn)\s*[:=]\s*["']?[^\s"']{8,}/i.test(value)
+    /^(?=[a-z0-9-]*[a-z])(?=[a-z0-9-]*[0-9])[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$/.test(
+      normalizedCandidate,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /^Microsoft\.PowerShell\.Cmdletization\.GeneratedTypes\.ScheduledTask\.[A-Z][A-Za-z]{2,48}$/.test(
+      normalizedCandidate,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /^\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,38}[A-Za-z0-9])?\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}\/(?:issues|pull)\/[1-9][0-9]*$/.test(
+      normalizedCandidate,
+    )
+  ) {
+    return true;
+  }
+
+  // A repository branch reference is public metadata only when it names the
+  // canonical owner and the complete, documented release-reconciliation lane.
+  // The repository segment remains lexical, while every branch word is closed
+  // over the explicit release vocabulary. Arbitrary slash-delimited prose is
+  // deliberately excluded from this admission.
+  const branch = normalizedCandidate.match(
+    /^marius-patrik\/[a-z][a-z0-9.-]{1,38}\/(?:[a-z]+-){2,}[a-z]+$/,
+  );
+  if (!branch) return false;
+  const branchName = normalizedCandidate.slice(normalizedCandidate.lastIndexOf("/") + 1);
+  return (
+    branchName === "reconcile-main-after-release" &&
+    branchName.split("-").every((word) => PUBLIC_RELEASE_BRANCH_WORDS.has(word))
+  );
+}
+
+function secretLikeText(value: string): boolean {
+  // Canonical docs and tests may name the upstream local-reset command or the
+  // deliberately non-secret registration fixture. Strip only those bounded
+  // public literals before explicit-assignment and entropy inspection;
+  // lookalikes and extensions remain in the fail-closed lane.
+  const inspectedValue = value
+    .replace(
+      /(?<![A-Za-z0-9_])(?:ghr_)?FAKE_REGISTRATION_TOKEN(?:_0123456789)?(?![A-Za-z0-9_])/g,
+      "",
+    )
+    // Admit only the two complete public command examples. In particular,
+    // never erase a `token:` assignment prefix independently of its value.
+    .replace(/(?<![A-Za-z0-9])`config\.cmd remove --local`(?![A-Za-z0-9_])/gi, "")
+    .replace(/(?<![A-Za-z0-9])`token=abc123`(?![A-Za-z0-9_])/gi, "")
+    .replace(
+      /(?<![A-Za-z0-9])`config\.cmd --url https:\/\/github\.com\/[a-z0-9](?:[a-z0-9.-]{0,38}[a-z0-9])?\/[a-z0-9][a-z0-9._-]{0,99} --token <token> --labels \.\.\.`(?![A-Za-z0-9_])/gi,
+      "",
+    );
+  if (
+    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(inspectedValue) ||
+    /(?<![A-Za-z0-9])AKIA[A-Z0-9]{16}(?![A-Za-z0-9])/.test(inspectedValue) ||
+    /(?<![A-Za-z0-9_])github_pat_[A-Za-z0-9_]{20,}(?![A-Za-z0-9_])/.test(inspectedValue) ||
+    /(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}(?![A-Za-z0-9])/.test(inspectedValue) ||
+    /(?<![A-Za-z0-9])(?:sk-(?:ant-|proj-)?|xox[baprs]-|hf_|npm_|pypi-)[A-Za-z0-9_\-]{16,}(?![A-Za-z0-9_\-])/.test(
+      inspectedValue,
+    ) ||
+    /(?<![A-Za-z0-9])AIza[A-Za-z0-9_-]{30,}(?![A-Za-z0-9_-])/.test(inspectedValue) ||
+    /(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])/.test(
+      inspectedValue,
+    ) ||
+    /(?<![A-Za-z0-9])Bearer\s+[A-Za-z0-9._~+\/-]{16,}={0,2}(?![A-Za-z0-9._~+\/=-])/i.test(
+      inspectedValue,
+    ) ||
+    /(?<![A-Za-z0-9])(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp|https?):\/\/[^\s/:@]+:[^\s/@]+@/i.test(
+      inspectedValue,
+    ) ||
+    /(?<![A-Za-z0-9])(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|authorization|connection[_-]?string|dsn)\s*[:=]\s*["']?[^\s"']{8,}/i.test(
+      inspectedValue,
+    )
   ) {
     return true;
   }
   // Evidence fields can embed local file URIs; explicit secret signatures above
   // still scan the full value, while URI path material is excluded only from the
   // generic high-entropy fallback.
-  const entropyInput = value
-    .replace(/\bfile:\/\/[^\s)]+/gi, "")
+  const pathClosers = new Map<string, string>([
+    ['"', '"'],
+    ["'", "'"],
+    ["`", "`"],
+    ["[", "]"],
+    ["(", ")"],
+    ["{", "}"],
+    ["<", ">"],
+  ]);
+  const hardUnquotedPathBoundary = (character: string): boolean =>
+    /[\r\n\t"'`\[\]{}<>,;:=|?*]/.test(character);
+  const looksLikeFileLeaf = (component: string): boolean =>
+    /[^.]\.[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/.test(component.trim());
+  const containsOpaquePathToken = (
+    segment: string,
+    isLeaf: boolean,
+    canonicalCompactionSnapshotLeaf: boolean,
+  ): boolean => {
+    const normalized = segment.trim();
+    const inspectedSegment = isLeaf && normalized.endsWith(".") ? normalized.slice(0, -1) : normalized;
+    if (isLeaf && canonicalCompactionSnapshotLeaf) return false;
+    if (
+      isLeaf &&
+      (PUBLIC_ABSOLUTE_PATH_LEAVES.has(inspectedSegment.toLowerCase()) ||
+        PUBLIC_ABSOLUTE_PATH_LEAF_HASHES.has(createHash("sha256").update(inspectedSegment).digest("hex")))
+    ) {
+      return false;
+    }
+    if (UUID.test(inspectedSegment)) return true;
+    const datedWordSlugFile = inspectedSegment.match(
+      /^([a-z]{3,15}(?:-[a-z]{3,15}){2,})-(\d{8})\.([a-z0-9]{1,10})$/,
+    );
+    if (isLeaf && datedWordSlugFile) {
+      const lexicalWords = (datedWordSlugFile[1] ?? "").split("-");
+      const vowelCounts = lexicalWords.map((word) => (word.match(/[aeiouy]/g) ?? []).length);
+      if (
+        vowelCounts.every((count) => count >= 2) &&
+        lexicalWords.every((word) => !/[^aeiouy]{4}/.test(word))
+      ) {
+        return false;
+      }
+    }
+    // A long lexical slug can itself be a passphrase. Once the complete public
+    // leaves and the pre-existing dated-artifact form have been handled above,
+    // keep any remaining three-or-more-part slug in the fail-closed lane even
+    // when its Shannon score happens to be low.
+    if (
+      isLeaf &&
+      /^(?:[a-z]{3,15}-){2,}(?:[a-z]{3,15}|\d{1,8})\.[a-z0-9]{1,10}$/.test(inspectedSegment)
+    ) {
+      return true;
+    }
+    return (inspectedSegment.match(/[A-Za-z0-9_+.-]{16,}/g) ?? []).some((candidate) => {
+      const token = candidate.replace(/[_+.-]/g, "");
+      if (candidate.length >= 32) return true;
+      if (token.length < 16) return false;
+      const counts = new Map<string, number>();
+      for (const character of token) counts.set(character, (counts.get(character) ?? 0) + 1);
+      const entropy = [...counts.values()].reduce((total, count) => {
+        const probability = count / token.length;
+        return total - probability * Math.log2(probability);
+      }, 0);
+      return entropy >= 4;
+    });
+  };
+  const findPathEnd = (
+    input: string,
+    start: number,
+    limit: number,
+    delimited: boolean,
+  ): number => {
+    let end = start;
+    let componentStart = start;
+    while (end < limit) {
+      const character = input[end] ?? "";
+      if (/\s/.test(character)) {
+        if (character !== " ") break;
+        // Whitespace is ambiguous in free-form diagnostics: the same bytes can
+        // be a multi-word path or a path followed by unrelated secret material.
+        // Require a matched quote/bracket as structured producer evidence.
+        if (!delimited) break;
+        const currentComponent = input.slice(componentStart, end);
+        if (looksLikeFileLeaf(currentComponent)) break;
+        if (["//", "\\\\"].includes(input.slice(end + 1, end + 3))) break;
+        end += 1;
+        continue;
+      }
+      if (hardUnquotedPathBoundary(character)) break;
+      if (character === "/" || character === "\\") {
+        componentStart = end + 1;
+      }
+      end += 1;
+    }
+    return end;
+  };
+  const omitInspectedAbsolutePaths = (input: string): { value: string; longSegment: boolean } => {
+    const output = input.split("");
+    const omitted = new Array<boolean>(input.length).fill(false);
+    let longSegment = false;
+    let matchedCloserByOpener: Int32Array | null = null;
+    const delimitedPathEnd = (openerIndex: number): number | null => {
+      if (!matchedCloserByOpener) {
+        const matches = new Int32Array(input.length);
+        matches.fill(-1);
+        const structuralOpeners = new Set(["(", "[", "{", "<"]);
+        const openerByCloser = new Map([
+          [")", "("],
+          ["]", "["],
+          ["}", "{"],
+          [">", "<"],
+        ]);
+        const structuralStack: Array<{ character: string; index: number }> = [];
+        const pendingQuotes = new Map<string, number>([
+          ['"', -1],
+          ["'", -1],
+          ["`", -1],
+        ]);
+        for (let index = 0; index < input.length; index += 1) {
+          const character = input[index] ?? "";
+          if (character === "\r" || character === "\n") {
+            structuralStack.length = 0;
+            for (const quote of pendingQuotes.keys()) pendingQuotes.set(quote, -1);
+            continue;
+          }
+          const pendingQuote = pendingQuotes.get(character);
+          if (pendingQuote !== undefined) {
+            if (pendingQuote < 0) pendingQuotes.set(character, index);
+            else {
+              matches[pendingQuote] = index;
+              pendingQuotes.set(character, -1);
+            }
+          }
+          if (structuralOpeners.has(character)) {
+            structuralStack.push({ character, index });
+            continue;
+          }
+          const expectedOpener = openerByCloser.get(character);
+          if (!expectedOpener) continue;
+          const pendingOpener = structuralStack.at(-1);
+          if (pendingOpener?.character === expectedOpener) {
+            matches[pendingOpener.index] = index;
+            structuralStack.pop();
+          } else if (pendingOpener) {
+            // Crossing or mismatched delimiters do not establish a trustworthy
+            // path boundary. Invalidate the open structure on this line.
+            structuralStack.length = 0;
+          }
+        }
+        matchedCloserByOpener = matches;
+      }
+      const end = matchedCloserByOpener[openerIndex] ?? -1;
+      return end >= 0 ? end : null;
+    };
+    const roots = /(?<![A-Za-z0-9_+.\-\\/])(?:[A-Za-z]:[\\/]|\\\\|\/(?![\\/]))/g;
+    for (const match of input.matchAll(roots)) {
+      const start = match.index;
+      const root = match[0];
+      if (start === undefined || omitted[start]) continue;
+      const opener = input[start - 1] ?? "";
+      const delimitedEnd = pathClosers.has(opener)
+        ? delimitedPathEnd(start - 1)
+        : undefined;
+      // An unmatched quote/bracket is ambiguous. Leave it in the generic
+      // fail-closed lane instead of treating the rest of the line as a path.
+      if (delimitedEnd === null) continue;
+      const end = findPathEnd(
+        input,
+        start + root.length,
+        delimitedEnd ?? input.length,
+        delimitedEnd !== undefined,
+      );
+      if (end <= start + root.length || /[\u0000-\u001f\u007f]/.test(input.slice(start, end))) continue;
+      const absolutePath = input.slice(start, end);
+      const pathSegments = absolutePath.split(/[\\/]+/);
+      let leafIndex = pathSegments.length - 1;
+      while (leafIndex >= 0 && !(pathSegments[leafIndex] ?? "").trim()) leafIndex -= 1;
+      const normalizedPath = absolutePath.replaceAll("\\", "/");
+      const compactionSnapshot = normalizedPath.match(
+        /\/\.agents\/memory\/snapshots\/compaction\/([^/]+)\.json$/,
+      );
+      const canonicalCompactionSnapshotLeaf = COMPACTION_SNAPSHOT_STEM.test(compactionSnapshot?.[1] ?? "");
+      if (pathSegments.some((segment, index) =>
+        containsOpaquePathToken(segment, index === leafIndex, canonicalCompactionSnapshotLeaf)
+      )) {
+        longSegment = true;
+      }
+      for (let index = start; index < end; index += 1) {
+        output[index] = " ";
+        omitted[index] = true;
+      }
+    }
+    return { value: output.join(""), longSegment };
+  };
+  let entropyInput = inspectedValue
+    // Strip only the scheme of an unambiguous local file URI. The remaining
+    // absolute path must pass the same segment inspection as native paths.
+    .replace(/\bfile:\/\/(?=\/|[A-Za-z]:[\\/])/gi, (scheme) => " ".repeat(scheme.length))
     // Canonical GitHub repository URLs and an adjacent, explicitly labelled
     // repository lineage are identifiers, not bearer material. The lineage
     // exemption intentionally accepts one to three identifier segments with at
@@ -281,17 +633,57 @@ function secretLikeText(value: string): boolean {
     .replace(
       /\(renamed from (?=[a-z0-9._/-]*(?:[-.][a-z0-9._/-]*){2})[a-z0-9][a-z0-9._-]{0,99}(?:\/[a-z0-9][a-z0-9._-]{0,99}){1,2}\)/gi,
       "",
+    );
+  // Inspect only exact, bounded local-path spans. Forward `//` remains ambiguous
+  // URL material and stays in the fail-closed generic lane.
+  const inspectedPaths = omitInspectedAbsolutePaths(entropyInput);
+  if (inspectedPaths.longSegment) return true;
+  entropyInput = inspectedPaths.value
+    // Remove only a credential-free HTTP(S) origin after local path inspection.
+    // Repository slugs and opaque path/query material remain in the fallback.
+    .replace(/\bhttps?:\/\/(?:\[[^\]]+\]|[^\s/:@]+)(?::\d+)?(?=\/)/gi, "")
+    // These two repository-relative DarkFactory control artifacts are stable
+    // local identifiers produced by the trusted worker boundary. Keep the
+    // exemption exact and segment-bounded; descendants and lookalikes still
+    // enter the generic entropy guard below.
+    .replace(
+      /(?<![-A-Za-z0-9_+.\\/])\.darkfactory[\\/]df-(?:task-brief|worker-summary)\.md(?![-A-Za-z0-9_+\\/]|\.[A-Za-z0-9])/g,
+      "",
     )
-    // Remove only a credential-free HTTP(S) origin. Repository slugs and opaque
-    // path/query material remain in the entropy scan.
-    .replace(/\bhttps?:\/\/(?:\[[^\]]+\]|[^\s/:@]+)(?::\d+)?(?=\/)/gi, "");
-  for (const candidate of entropyInput.match(/[A-Za-z0-9_+.\/-]{32,}={0,2}/g) ?? []) {
+    // Canonical public instructions use these exact trust-boundary, CLI lane,
+    // and runner lifecycle shorthands. Keep them token-bounded so prefixes,
+    // descendants, and lookalikes remain subject to the generic slash-token
+    // entropy guard.
+    .replace(
+      /(?<![-A-Za-z0-9_+.\\/])(?:review\/admin\/bypass\/force-push\/deletion|CLI\/state\/secrets\/source-install|install\/enable\/disable\/status\/repair)(?![-A-Za-z0-9_+\\/]|\.[A-Za-z0-9])/g,
+      "",
+    );
+  for (const candidate of entropyInput.match(/[A-Za-z0-9_+.\\/-]{32,}={0,2}/g) ?? []) {
     if (UUID.test(candidate)) continue;
-    if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})\.?$/.test(candidate)) continue;
+    if (/^-?(?:[a-f0-9]{40}|[a-f0-9]{64})\.?$/.test(candidate)) continue;
     // Bare GitHub-style owner/repository slugs in prose are identifiers. Requiring
     // repository punctuation avoids exempting arbitrary lowercase slash tokens.
     if (CANONICAL_REPO_SLUG.test(candidate) && /[.-]/.test(candidate)) continue;
-    if (/[A-Za-z]/.test(candidate) && (/[0-9]/.test(candidate) || /[_+\/-]/.test(candidate))) return true;
+    if (
+      /^\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,38}[A-Za-z0-9])?\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}(?:\.git)?$/.test(
+        candidate,
+      )
+    ) {
+      continue;
+    }
+    if (
+      /^(?:(?:\/\/github\.com)?\/actions\/runner\/releases\/download\/v)?\d+\.\d+\.\d+\/actions-runner-(?:linux|osx|win)-[a-z0-9-]+-\d+\.\d+\.\d+\.(?:tar\.gz|zip)\.?$/.test(
+        candidate,
+      ) ||
+      /^actions-runner-(?:linux|osx|win)-[a-z0-9-]+-\d+\.\d+\.\d+\.(?:tar\.gz|zip)\.?$/.test(candidate) ||
+      /^\/?repos\/actions\/runner\/releases\/assets\/[0-9]+$/.test(candidate)
+    ) {
+      continue;
+    }
+    if (isPublicOperationalIdentifier(candidate)) continue;
+    if (/[A-Za-z]/.test(candidate) && (/[0-9]/.test(candidate) || /[_+\\/-]/.test(candidate))) {
+      return true;
+    }
     if (/[a-z]/.test(candidate) && /[A-Z]/.test(candidate)) {
       const counts = new Map<string, number>();
       for (const character of candidate) counts.set(character, (counts.get(character) ?? 0) + 1);
@@ -299,7 +691,9 @@ function secretLikeText(value: string): boolean {
         const probability = count / candidate.length;
         return total - probability * Math.log2(probability);
       }, 0);
-      if (entropy >= 4) return true;
+      if (entropy >= 4) {
+        return true;
+      }
     }
   }
   return false;
@@ -426,6 +820,11 @@ function secretFieldPath(value: unknown, field = "", path = ""): string | null {
     if (found) return found;
   }
   return null;
+}
+
+/** Manager-owned fail-closed admission policy for content entering roaming canonical state. */
+export function findSecretLikePath(value: unknown): string | null {
+  return secretFieldPath(value);
 }
 
 function assertSourceMetadata(source: { installId: string; machineId: string }): void {

@@ -3,12 +3,13 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ensureSharedState, sharedState } from "../src/state";
+import { ensureSharedState, sharedState, type SharedState } from "../src/state";
 import { writeSecret } from "../src/secrets";
 import { rebuildMemoryProjections, rememberMemory, retractMemory, supersedeMemory } from "../src/memory";
 import {
   createSession,
   inspectSessionIntegrity,
+  sessionPaths,
   withSessionWriteLock,
   withSessionWriteTransaction,
 } from "../../harness/session";
@@ -19,6 +20,7 @@ import {
   enableEventSync,
   eventSyncStatus,
   exportEventBundle,
+  findSecretLikePath,
   importEventBundle,
   recoverPreparedEventImports,
 } from "../src/event-sync";
@@ -37,6 +39,31 @@ async function exchangeState(root: string) {
   await ensureSharedState(state);
   await writeSecret(state, "AGENTS_SYNC_KEY", key);
   await enableEventSync(state);
+  return state;
+}
+
+async function appendAssistantMessage(state: SharedState, sessionId: string, content: string): Promise<void> {
+  await createSession(state, {
+    sessionId,
+    provider: "codex",
+    model: "gpt-5",
+    mode: "task",
+    workdir: "/workspace",
+  });
+  await withSessionWriteTransaction(state, sessionId, async (transaction) => {
+    const turnId = await transaction.beginTurn();
+    await transaction.appendMessage(turnId, {
+      role: "assistant",
+      content,
+      metadata: { error: "synthetic fixture" },
+    });
+    await transaction.completeTurn(turnId);
+  });
+}
+
+async function assistantMessageState(root: string, sessionId: string, content: string) {
+  const state = await exchangeState(root);
+  await appendAssistantMessage(state, sessionId, content);
   return state;
 }
 
@@ -80,6 +107,14 @@ async function rewriteAuthenticatedBundlePath(
 }
 
 describe("encrypted cross-machine event exchange", () => {
+  test("manager-owned admission catches common and unlabelled credentials", () => {
+    expect(findSecretLikePath("github_pat_abcdefghijklmnopqrstuvwxyz0123456789")).not.toBeNull();
+    expect(findSecretLikePath(["xoxb", "123456789012", "abcdefghijklmnopqrstuvwxyz"].join("-"))).not.toBeNull();
+    expect(findSecretLikePath("AIzaabcdefghijklmnopqrstuvwxyz1234567890")).not.toBeNull();
+    expect(findSecretLikePath("dQwErTyUiOpAsDfGhJkLzXcVbNmQwErTyUiOpAsD")).not.toBeNull();
+    expect(findSecretLikePath("A short non-secret reflection.")).toBeNull();
+  });
+
   test("memory and session authority converge with identical projection hashes", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-converge-"));
     try {
@@ -497,7 +532,7 @@ describe("encrypted cross-machine event exchange", () => {
         exportEventBundle(secretOrchestrator, path.join(root, "secret-orchestrator.bundle.json")),
       ).rejects.toThrow("secret-like");
 
-      const alphabeticSecret = "dQwErTyUiOpAsDfGhJkLzXcVbNmQwErTyUiOpAsD";
+      const alphabeticSecret = ["dQwErTyUiOpA", "sDfGhJkLzXc", "VbNmQwErTyU", "iOpAsD"].join("");
       const alphabeticMemory = await exchangeState(path.join(root, "alphabetic-memory"));
       await rememberMemory(alphabeticMemory, {
         scope: "project",
@@ -572,6 +607,36 @@ describe("encrypted cross-machine event exchange", () => {
       await expect(exportEventBundle(urlPathSecret, path.join(root, "url-path-secret.bundle.json"))).rejects.toThrow(
         "secret-like",
       );
+
+      const splitUrlPathSecret = await exchangeState(path.join(root, "split-url-path-secret"));
+      await rememberMemory(splitUrlPathSecret, {
+        scope: "project",
+        subject: "Andromeda",
+        predicate: "opaque-value",
+        value: "https://example.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789",
+        evidence,
+      });
+      await expect(
+        exportEventBundle(splitUrlPathSecret, path.join(root, "split-url-path-secret.bundle.json")),
+      ).rejects.toThrow("secret-like");
+
+      for (const [name, value] of [
+        ["redis", "redis://cache.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789"],
+        ["custom", "custom+v1://service.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789"],
+        ["scheme-relative", "//example.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789"],
+      ] as const) {
+        const schemePathSecret = await exchangeState(path.join(root, `${name}-scheme-path-secret`));
+        await rememberMemory(schemePathSecret, {
+          scope: "project",
+          subject: "Andromeda",
+          predicate: "opaque-value",
+          value,
+          evidence,
+        });
+        await expect(
+          exportEventBundle(schemePathSecret, path.join(root, `${name}-scheme-path-secret.bundle.json`)),
+        ).rejects.toThrow("secret-like");
+      }
 
       const structuralSecret = await exchangeState(path.join(root, "structural-secret"));
       await createSession(structuralSecret, {
@@ -649,8 +714,500 @@ describe("encrypted cross-machine event exchange", () => {
         value: "marius.patrik/andromeda.platform-long-repository-name",
         evidence,
       });
+      await rememberMemory(source, {
+        scope: "project",
+        subject: "memory-event",
+        predicate: "canonical-evidence-uri",
+        value: "canonical long-slug evidence file",
+        evidence: {
+          ...evidence,
+          uri: "file:///C:/Users/patrik/.agents/experience/active-memory-session-20260715.json",
+        },
+      });
       const exported = await exportEventBundle(source, path.join(root, "safe-identifiers.bundle.json"));
-      expect(exported.entries).toBe(7);
+      expect(exported.entries).toBe(8);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("ordinary absolute path segments in assistant events are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-ordinary-absolute-path-"));
+    try {
+      const source = await assistantMessageState(
+        path.join(root, "source"),
+        "ordinary-absolute-path",
+        "Read failed at /home/runner/work/Andromeda/packages/manager/src/event-sync.ts",
+      );
+      const exported = await exportEventBundle(source, path.join(root, "ordinary-absolute-path.bundle.json"));
+      expect(exported.entries).toBeGreaterThan(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("explicit provider tokens inside absolute paths remain denied", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-token-path-"));
+    try {
+      const source = await assistantMessageState(
+        path.join(root, "source"),
+        "token-path",
+        "Read failed at /var/cache/ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef/report.json",
+      );
+      await expect(exportEventBundle(source, path.join(root, "token-path.bundle.json"))).rejects.toThrow(
+        "secret-like",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("opaque high-entropy absolute path segments remain denied", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-opaque-path-"));
+    try {
+      const source = await assistantMessageState(
+        path.join(root, "source"),
+        "opaque-path",
+        "Read failed at /var/cache/abcdefghijklmnopqrstuvwxyzabcdef/report.json",
+      );
+      await expect(exportEventBundle(source, path.join(root, "opaque-path.bundle.json"))).rejects.toThrow(
+        "secret-like",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("UUID and hash segments inside absolute paths remain denied", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-identifier-path-"));
+    try {
+      const uuidSource = await assistantMessageState(
+        path.join(root, "uuid-source"),
+        "uuid-path",
+        "Read failed at /var/cache/906f1326-7ced-41f3-97d5-69df9dd6ad2f/report.json",
+      );
+      await expect(exportEventBundle(uuidSource, path.join(root, "uuid-path.bundle.json"))).rejects.toThrow(
+        "secret-like",
+      );
+
+      const hashSource = await assistantMessageState(
+        path.join(root, "hash-source"),
+        "hash-path",
+        "Read failed at /var/cache/0123456789abcdef0123456789abcdef01234567/report.json",
+      );
+      await expect(exportEventBundle(hashSource, path.join(root, "hash-path.bundle.json"))).rejects.toThrow(
+        "secret-like",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("minimum GitHub tokens after underscore path punctuation remain denied", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-underscore-token-path-"));
+    try {
+      const source = await assistantMessageState(
+        path.join(root, "source"),
+        "underscore-token-path",
+        "Read failed at /var/cache/_ghp_ABCDEFGHIJKLMNOPQRST/report.json",
+      );
+      await expect(
+        exportEventBundle(source, path.join(root, "underscore-token-path.bundle.json")),
+      ).rejects.toThrow("secret-like");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("explicit token families honor punctuation boundaries without matching alphanumeric prefixes", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-explicit-token-boundaries-"));
+    try {
+      const syntheticAwsAccessKeyId = ["AK", "IA", "ABCDEFGHIJKLMNOP"].join("");
+      const deniedMessages = [
+        ["aws", `Read failed at /var/cache/_${syntheticAwsAccessKeyId}/report.json`],
+        ["google", "Read failed at file:///var/cache/_AIzaABCDEFGHIJKLMNOPQRSTUVWXYZabcd/report.json"],
+        ["jwt", "Read failed at /var/cache/_eyJabcdefgh.ijklmnop.qrstuvwx/report.json"],
+        ["bearer", "Failure: _Bearer abcdefghijklmnop"],
+        ["assignment", "Failure: _token=abcdefgh"],
+      ] as const;
+      for (const [name, message] of deniedMessages) {
+        const source = await assistantMessageState(path.join(root, `${name}-source`), `${name}-boundary`, message);
+        await expect(exportEventBundle(source, path.join(root, `${name}.bundle.json`))).rejects.toThrow(
+          "secret-like",
+        );
+      }
+
+      const embeddedSource = await assistantMessageState(
+        path.join(root, "embedded-source"),
+        "embedded-identifiers",
+        "Identifiers notAKIAABCDEFGHIJKLMNOP and notghp_ABCDEFGHIJKLMNOPQRST are ordinary prose",
+      );
+      const exported = await exportEventBundle(embeddedSource, path.join(root, "embedded.bundle.json"));
+      expect(exported.entries).toBeGreaterThan(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("ordinary absolute paths after colon and bracket punctuation are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-punctuated-path-"));
+    try {
+      const colonSource = await assistantMessageState(
+        path.join(root, "colon-source"),
+        "colon-path",
+        "Read failed:/home/runner/work/Andromeda/packages/manager/src/event-sync.ts",
+      );
+      const colonExport = await exportEventBundle(colonSource, path.join(root, "colon-path.bundle.json"));
+      expect(colonExport.entries).toBeGreaterThan(0);
+
+      const bracketSource = await assistantMessageState(
+        path.join(root, "bracket-source"),
+        "bracket-path",
+        "Read failed [C:\\Users\\patrik\\marius-patrik\\Andromeda\\packages\\manager\\src\\event-sync.ts]",
+      );
+      const bracketExport = await exportEventBundle(bracketSource, path.join(root, "bracket-path.bundle.json"));
+      expect(bracketExport.entries).toBeGreaterThan(0);
+
+      const uncSource = await assistantMessageState(
+        path.join(root, "unc-source"),
+        "punctuated-unc-path",
+        "Read failed:[\\\\server\\share\\Andromeda\\packages\\manager\\src\\event-sync.ts]",
+      );
+      const uncExport = await exportEventBundle(uncSource, path.join(root, "punctuated-unc-path.bundle.json"));
+      expect(uncExport.entries).toBeGreaterThan(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("bounded absolute paths admit ordinary spaces and filesystem punctuation", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-spaced-paths-"));
+    try {
+      const source = await exchangeState(path.join(root, "source"));
+      const messages = [
+        'Read failed at "C:\\Users\\Patrik Smith\\marius-patrik\\Andromeda\\packages\\manager\\src\\event-sync.ts"',
+        "Read failed at '/home/Patrik Smith/Andromeda/packages/manager/src/event-sync.ts'",
+        "Read failed at \\\\server\\share\\Andromeda-1\\packages\\manager\\src\\event-sync.ts",
+        'Read failed at "/home/Patrik VeryLongSurname/Andromeda/packages/manager/src/event-sync.ts"',
+        'Read failed at "C:\\Users\\Patrik VeryLongSurname\\Andromeda\\packages\\manager\\src\\event-sync.ts"',
+        'Read failed at "C:\\Program Files\\Agent OS\\Event Sync Log.txt": access denied',
+        'Read failed at "C:\\Program Files (x86)\\Agent OS\\Event Sync Log.txt"',
+        "Read failed at (C:\\Program Files (x86)\\AgentOS\\Andromeda\\packages\\manager\\src\\event-sync.ts)",
+        "Read failed at '/home/Agent OS/Event Sync Log.txt', retrying",
+        "Read failed at '/opt/Agent Data/Event Sync Log.txt'",
+        "Read failed at '/home/patrik smith/Mary Jane Watson/Event Sync Log.txt'",
+        "Read failed at /safe/GraphQLHTTPAPI.ts",
+        "Read failed at /safe/release20260715/report.txt",
+        "Read failed at C:\\safe\\EventSyncV2Handler.ts",
+        "Read failed at /safe/windows-2026-build/GraphQLHTTPAPI.ts",
+        'Read failed at "/safe/Project release-20260715/report.txt"',
+        "Read failed at file:///C:/Users/patrik/.agents/experience/active-memory-session-reorient-20260715.json",
+        "Read failed at file:///C:/Users/patrik/.agents/memory/snapshots/compaction/20260715-102030-0123456789abcdef0123456789abcdef.json",
+        "Read failed at file:///C:/Users/patrik/.agents/memory/snapshots/compaction/20260715-102030-0123456789abcdef0123456789abcdef-rollback.json",
+        'Compared "C:\\Users\\Patrik Smith\\Andromeda\\src\\file.ts" and "/home/Patrik Smith/Andromeda/src/file.ts"',
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const sessionId = `spaced-path-${index}`;
+        const bundle = path.join(root, `${sessionId}.bundle.json`);
+        await appendAssistantMessage(source, sessionId, message);
+        try {
+          const exported = await exportEventBundle(source, bundle);
+          expect(exported.entries).toBeGreaterThan(0);
+        } finally {
+          await rm(sessionPaths(source, sessionId).dir, { recursive: true, force: true });
+          await rm(bundle, { force: true });
+        }
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("canonical DarkFactory worker control paths are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-darkfactory-control-paths-"));
+    try {
+      const messages = [
+        "Write a concise final summary to .darkfactory/df-worker-summary.md before finishing.",
+        "Read .darkfactory\\df-task-brief.md and update .darkfactory\\df-worker-summary.md.",
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `df-control-${index}`, message);
+        const exported = await exportEventBundle(source, path.join(root, `df-control-${index}.bundle.json`));
+        expect(exported.entries).toBeGreaterThan(0);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("canonical public workflow shorthands are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-public-workflow-shorthands-"));
+    try {
+      const messages = [
+        "Worker policy forbids review/admin/bypass/force-push/deletion across the protected lane.",
+        "Never permit review/admin/bypass/force-push/deletion.",
+        "Use CLI/state/secrets/source-install for the managed boundary.",
+        "Expose install/enable/disable/status/repair commands.",
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `policy-${index}`, message);
+        const exported = await exportEventBundle(source, path.join(root, `policy-${index}.bundle.json`));
+        expect(exported.entries).toBeGreaterThan(0);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("bounded public operational identifiers are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-public-operational-identifiers-"));
+    try {
+      const messages = [
+        "Publish online/offline/busy/version/labels/last for runner health.",
+        "Track lifecycle/persistence/registration/supervision/observability as acceptance lanes.",
+        "Call updatePackagesAndEnvironmentsState after installation.",
+        "Run ./node_modules/typescript/bin/tsc for the core type gate.",
+        "Use marius-patrik/agent/reconcile-main-after-release for the protected release lane.",
+        "Report platform/now/doctor/scheduler/host/readCredential/username without exposing the credential.",
+        "Classify query/branch/permission/malformed-output as a public diagnostic lane.",
+        "Classify branch/permission/malformed-output as the bounded diagnostic suffix.",
+        "Keep session_abc1d23e-4567-890f-ab12-cdefg34h567i as a provider session identifier.",
+        "Keep abc1d23e-4567-890f-ab12-cdefg34h567i as a bounded provider session identifier.",
+        "Keep clis/agy/.gemini/oauth_creds.json local while documenting provider state.",
+        "Track https://github.com/marius-patrik/Andromeda/issues/245 as public issue metadata.",
+        "Inspect C:\\Users\\patrik\\AppData\\Local\\Temp\\andromeda-253-kimi-blockers.txt.",
+        "Inspect C:\\Users\\patrik\\AppData\\Local\\Temp\\andromeda-260-kimi-blockers.txt.",
+        "Observe Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.CimClassProperties as a public type.",
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `identifier-${index}`, message);
+        const exported = await exportEventBundle(source, path.join(root, `identifier-${index}.bundle.json`));
+        expect(exported.entries).toBeGreaterThan(0);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("bounded public runner release references and fixtures are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-public-runner-references-"));
+    try {
+      const commit = "a".repeat(40);
+      const messages = [
+        "Fetch /repos/actions/runner/releases/assets/123456789.",
+        "Download https://github.com/actions/runner/releases/download/v2.335.1/actions-runner-win-x64-2.335.1.zip.",
+        `Compare -${commit} with the protected release commit.`,
+        "Synthetic token: ghr_FAKE_REGISTRATION_TOKEN_0123456789.",
+        "Local reset token: `config.cmd remove --local` before registration.",
+        "Documentation placeholder: `token=abc123` is not credential material.",
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `runner-reference-${index}`, message);
+        const exported = await exportEventBundle(source, path.join(root, `runner-reference-${index}.bundle.json`));
+        expect(exported.entries).toBeGreaterThan(0);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("bounded absolute paths preserve secret-like suffixes and ambiguous spans", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-bounded-path-denials-"));
+    try {
+      const source = await exchangeState(path.join(root, "source"));
+      const opaqueSuffix = ["dQwErTyUiOpA", "sDfGhJkLzXc", "VbNmQwErTyU", "iOpAsD"].join("");
+      const githubToken = ["gh", "p_", "ABCDEFGHIJKLMNOPQRST"].join("");
+      const deniedMessages = [
+        "Read failed at C:\\Users\\Patrik Smith\\marius-patrik\\Andromeda\\packages\\manager\\src\\event-sync.ts",
+        "Read failed at /home/Patrik Smith/Andromeda/packages/manager/src/event-sync.ts",
+        "Read failed at C:\\Users\\Patrik Smith\\cache\\abcdefghijklmnopqrstuvwxyzabcdef\\report.json",
+        `Read failed at C:\\Users\\Patrik Smith\\_${githubToken}\\report.json`,
+        `Read failed at C:\\Users\\Patrik Smith\\Andromeda\\event-sync.ts ${opaqueSuffix}`,
+        "Read failed at C:\\Users\\Patrik Smith\\Andromeda\\event-sync.ts dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789",
+        "Read failed at /home/Patrik Smith/Andromeda/event-sync.ts then dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789",
+        'Read failed at "/home/Agent OS/event-sync.ts then dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789"',
+        'Read failed at "/safe/src dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789"',
+        "Read failed at file:///var/cache/abcdefghijklmnopqrstuvwxyzabcdef/report.json",
+        'Read failed at "/safe/src abcdefghijklmnop/qrstuvwxyzabcdef/ghijklmnopqrstuv"',
+        "Read failed at file:///safe/abcdefghijklmnop/qrstuvwxyzabcdef/ghijklmnopqrstuv",
+        'Read failed at "/safe/src/dQwErTyUiOpAsDfG/x/hJkLzXcVbNmQwErT/y/0123456789"',
+        'Read failed at "/safe/Ab3dEf5h_Ij7lMn9p/report.json"',
+        'Read failed at "/safe/Ab3dEf5h+Ij7lMn9p/report.json"',
+        'Read failed at "/safe/Ab3dEf5h.Ij7lMn9p/report.json"',
+        'Read failed at "/safe/Ab3d-Ef5h-Ij7l-Mn9p/report.json"',
+        'Read failed at "/safe/gh7k2m9q-pr8vz4nx-w6ty3abc.json"',
+        'Read failed at "/safe/ghijkl-memory-session-20260715.json"',
+        'Read failed at "/safe/active-memory-session-20260715.json/report.txt"',
+        'Read failed at "/safe/20260715-102030-0123456789abcdef0123456789abcdef.json"',
+        'Read failed at "/safe/20260715-102030-0123456789abcdef0123456789abcdef-rollback.json"',
+        "Read failed at file:///C:/Users/patrik/.agents/memory/snapshots/compaction/20260715-102030-0123456789abcdef0123456789abcdef-rollback-extra.json",
+        "Read failed at /safe/src dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789",
+        "Read failed at C:\\safe\\src dQwErTyUiOpAsDfG\\hJkLzXcVbNmQwErT\\0123456789",
+        "Read failed at /safe/src cache/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789",
+        "Read failed at /safe/src AbcDef12345/GhiJkl67890/MnoPqr24680",
+        "Read failed at C:\\safe\\src AbcDef12345\\GhiJkl67890\\MnoPqr24680",
+        "Read failed at /home/Patrik Smith/Andromeda/runner //example.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789",
+        'Read failed at "/safe/src:https://example.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789"',
+        'Read failed at "/safe/src:custom+v1://example.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789"',
+        'Read failed at "C:\\Users\\Patrik Smith\\Andromeda\\runner then https://example.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789"',
+        "Read failed at C:\\Users\\Patrik Smith\\Andromeda\\event-sync.ts token=abcdefgh",
+        'Read failed at "C:\\Users\\Patrik Smith\\Andromeda\\packages\\manager\\src\\event-sync.ts',
+        "Read failed at C:\\Users\\Patrik Smith\\Andromeda\\event-sync.ts then https://example.invalid/dQwErTyUiOpAsDfG/hJkLzXcVbNmQwErT/0123456789",
+      ] as const;
+      for (const [index, message] of deniedMessages.entries()) {
+        const sessionId = `bounded-denial-${index}`;
+        const bundle = path.join(root, `${sessionId}.bundle.json`);
+        await appendAssistantMessage(source, sessionId, message);
+        try {
+          await expect(exportEventBundle(source, bundle)).rejects.toThrow("secret-like");
+        } finally {
+          await rm(sessionPaths(source, sessionId).dir, { recursive: true, force: true });
+          await rm(bundle, { force: true });
+        }
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("DarkFactory worker control-path admission remains exact and segment-bounded", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-darkfactory-control-denials-"));
+    try {
+      const opaqueSuffix = ["dQwErTyUiOpA", "sDfGhJkLzXc", "VbNmQwErTyU", "iOpAsD"].join("");
+      const messages = [
+        `Read failed at .darkfactory/df-worker-summary.md/${opaqueSuffix}`,
+        `Read failed at .darkfactory/${opaqueSuffix}.md`,
+        `Read failed at prefix.darkfactory/df-worker-summary.md/${opaqueSuffix}`,
+        `Read failed at prefix-.darkfactory/df-worker-summary.md/${opaqueSuffix}`,
+        `Read failed at .darkfactory/df-worker-summary.md.${opaqueSuffix}`,
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `df-denial-${index}`, message);
+        await expect(exportEventBundle(source, path.join(root, `df-denial-${index}.bundle.json`))).rejects.toThrow(
+          "secret-like",
+        );
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("public workflow shorthand admission remains exact and token-bounded", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-public-workflow-denials-"));
+    try {
+      const opaqueSuffix = ["dQwErTyUiOpA", "sDfGhJkLzXc", "VbNmQwErTyU", "iOpAsD"].join("");
+      const messages = [
+        `${opaqueSuffix}/review/admin/bypass/force-push/deletion`,
+        `review/admin/bypass/force-push/deletion/${opaqueSuffix}`,
+        `review/admin/bypass/force-push/deletions/${opaqueSuffix}`,
+        `review/admin/bypass/force-push/deletion.${opaqueSuffix}`,
+        `${opaqueSuffix}/CLI/state/secrets/source-install`,
+        `CLI/state/secrets/source-install/${opaqueSuffix}`,
+        `CLI/state/secrets/source-installs/${opaqueSuffix}`,
+        `CLI/state/secrets/source-install.${opaqueSuffix}`,
+        `${opaqueSuffix}/install/enable/disable/status/repair`,
+        `install/enable/disable/status/repair/${opaqueSuffix}`,
+        `install/enable/disable/status/repairs/${opaqueSuffix}`,
+        `install/enable/disable/status/repair.${opaqueSuffix}`,
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `policy-denial-${index}`, message);
+        await expect(exportEventBundle(source, path.join(root, `policy-denial-${index}.bundle.json`))).rejects.toThrow(
+          "secret-like",
+        );
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("public operational identifier admission preserves opaque and credential denials", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-public-identifier-denials-"));
+    try {
+      const opaque = ["dQwErTyUiOpA", "sDfGhJkLzXc", "VbNmQwErTyU", "iOpAsD"].join("");
+      const messages = [
+        "correct/horse/battery/staple/velvet",
+        "install/abcdefghijklmnop/qrstuvwxyzabcdef",
+        `/repos/actions/runner/releases/assets/${opaque}`,
+        `https://github.com/actions/runner/releases/download/v2.335.1/actions-runner-win-x64-2.335.1.zip?token=${opaque}`,
+        "token: `correcthorsebatterystaple`",
+        "token: `config.cmd correcthorsebatterystaple`",
+        "token: `config.cmd remove --local correcthorsebatterystaple`",
+        "`token=abc123correcthorsebatterystaple`",
+        "correct/horse/state/battery/staple",
+        `session_abc1d23e-4567-890f-ab12-cdefg34h567i${opaque}`,
+        `abc1d23e-4567-890f-ab12-cdefg34h567i${opaque}`,
+        `clis/agy/.gemini/oauth_creds.json/${opaque}`,
+        `Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.CimClassProperties/${opaque}`,
+        "C:\\Temp\\correct-horse-battery-1.txt",
+        "C:\\Temp\\api-secret-value-123.txt",
+        "C:\\Temp\\andromeda-260-kimi-blockers.txt-opaque",
+        "token: `config.cmd-opaquevalue`",
+        `token: ghr_FAKE_REGISTRATION_TOKEN_0123456789${opaque}`,
+      ] as const;
+      for (const [index, message] of messages.entries()) {
+        const source = await assistantMessageState(path.join(root, `source-${index}`), `identifier-denial-${index}`, message);
+        await expect(exportEventBundle(source, path.join(root, `identifier-denial-${index}.bundle.json`))).rejects.toThrow(
+          "secret-like",
+        );
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("unmatched path delimiters are scanned in bounded time", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-unmatched-path-delimiters-"));
+    try {
+      const source = await assistantMessageState(
+        path.join(root, "source"),
+        "unmatched-path-delimiters",
+        "[/a".repeat(16_000),
+      );
+      const startedAt = performance.now();
+      const exported = await exportEventBundle(source, path.join(root, "unmatched-path-delimiters.bundle.json"));
+      expect(exported.entries).toBeGreaterThan(0);
+      expect(performance.now() - startedAt).toBeLessThan(2_000);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("ordinary native Windows path segments in assistant events are admitted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-windows-path-"));
+    try {
+      const source = await assistantMessageState(
+        path.join(root, "source"),
+        "windows-path",
+        "Read failed at C:\\Users\\patrik\\marius-patrik\\Andromeda\\packages\\manager\\src\\event-sync.ts",
+      );
+      const exported = await exportEventBundle(source, path.join(root, "windows-path.bundle.json"));
+      expect(exported.entries).toBeGreaterThan(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("opaque native Windows and UNC path segments remain denied", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-sync-windows-opaque-path-"));
+    try {
+      const windowsSource = await assistantMessageState(
+        path.join(root, "windows-source"),
+        "windows-opaque-path",
+        "Read failed at C:\\Users\\patrik\\cache\\abcdefghijklmnopqrstuvwxyzabcdef\\report.json",
+      );
+      await expect(
+        exportEventBundle(windowsSource, path.join(root, "windows-opaque-path.bundle.json")),
+      ).rejects.toThrow("secret-like");
+
+      const uncSource = await assistantMessageState(
+        path.join(root, "unc-source"),
+        "unc-opaque-path",
+        "Read failed at \\\\server\\share\\cache\\abcdefghijklmnopqrstuvwxyzabcdef\\report.json",
+      );
+      await expect(exportEventBundle(uncSource, path.join(root, "unc-opaque-path.bundle.json"))).rejects.toThrow(
+        "secret-like",
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }

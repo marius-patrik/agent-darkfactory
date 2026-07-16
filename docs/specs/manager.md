@@ -1,8 +1,9 @@
-# Agent OS Manager PRD
+# Agent OS manager component boundary
 
 The root [PRD](../../PRD.md) and
 [canonical state specification](../state-memory-v2.md) are the
-product authority. This file records the manager package boundary.
+product authority. This supporting document records the current manager package
+boundary; it does not authorize or sequence future work.
 
 ## Ownership
 
@@ -10,8 +11,11 @@ The Bun/TypeScript manager owns:
 
 - one-root bootstrap, environment projection, and read-only doctor;
 - provider-home derivation, executable pinning, and managed session launch;
+- versioned ordered pre-turn route policy, provider availability admission,
+  ordered zero-token route-probe evidence, and fail-closed routing receipts;
 - evidence-backed memory and startup projection;
-- canonical session/orchestrator events and projections;
+- provider/session lifecycle plus the orchestrator runtime, events, and
+  projections until the #218 migration is implemented and accepted;
 - package, data-repository, environment, capability, secret-metadata, and
   credit registries;
 - the `agents` CLI, TUI, installer boundary, and declared container lifecycle
@@ -24,6 +28,7 @@ paths, expose raw provider execution, or synchronize mutable machine snapshots.
 
 ```text
 agents run|tui|sessions ...
+agents route probe ...
 agents state init|env|doctor|status
 agents memory remember|list|status|supersede|retract|render
 agents cli list|doctor|pin|env

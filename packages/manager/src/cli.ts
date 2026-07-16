@@ -26,6 +26,7 @@ import {
 } from "./packages";
 import { listSecrets, secretPath, syncGitHubSecret, writeSecret } from "./secrets";
 import { osCommand } from "./os-lifecycle";
+import { runnerCommand } from "./runner-lifecycle";
 import { TuiApp, configuredProviderModels } from "./tui";
 import { formatToolStatus, readToolStatus, toolStateSpecs } from "./state-consolidation";
 import { doctorState, formatStateDoctor } from "./state-doctor";
@@ -58,13 +59,22 @@ import {
   type SessionMode,
 } from "../../harness/session";
 import { providerSessionAdapter } from "./session-adapters";
+import { executeModelRequest } from "./model-execution";
+import { modelExecutionRequestFromCli, selectsModelExecution } from "./model-execution-cli";
+import {
+  MODEL_TIERS,
+  formatRouteProbeReport,
+  runOrderedRouteProbe,
+  type ModelTier,
+} from "./route-probe";
 import {
   orchestratorSystemPrompt,
   startOrchestratorHeartbeat,
   type OrchestratorHeartbeatController,
 } from "./orchestrator";
 
-const root = process.cwd();
+const invocationRoot = process.cwd();
+const root = invocationRoot;
 const gitmodulesPath = path.join(root, ".gitmodules");
 
 function systemPromptForMode(mode: SessionMode): string | undefined {
@@ -101,7 +111,9 @@ function help(): void {
   console.log(`agents - Bun agent package manager
 
 Usage:
+  agents run --model-tier low|medium|high|max --effort low|medium|high --execution-policy read-only|workspace-write --receipt <absolute-new-path> [--mode orchestrator|default|chat|task] [--prompt-file <absolute-path> | --prompt-stdin | <prompt>]
   agents run [--mode orchestrator|default] [--provider <id>] [--model <model>] [--tui] <prompt>
+  agents route probe [--model-tier low|medium|high|max] [--effort low|medium|high] [--json]
   agents tui [--provider <id>] [--model <model>] [--mode <mode>]
   agents sessions list [--json]
   agents sessions resume <id> <prompt>
@@ -175,6 +187,7 @@ Usage:
   agents os terminal <name> [--shell bash]
   agents os remove <name> [--prune-data] [--dry-run]
   agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
+  agents runner install|enable|disable|status|repair [--json]
 
 All runtime data is shared through .agents so every managed CLI sees the same
 skills, plugins, CLI metadata, and credit store.`);
@@ -199,6 +212,39 @@ function parseArgs(args: string[]): { values: string[]; flags: Record<string, st
     else flags[key] = true;
   }
   return { values, flags };
+}
+
+const ROUTE_PROBE_EFFORTS = new Set(["low", "medium", "high"]);
+
+async function routeCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const [action, ...rest] = args;
+  if (action !== "probe" || rest.length > 0) throw new Error("usage: agents route probe [options]");
+
+  const allowedFlags = new Set(["model-tier", "effort", "json"]);
+  if (Object.keys(flags).some((name) => !allowedFlags.has(name))) {
+    // Reachability remains an injected-library seam. The CLI cannot safely
+    // manufacture a provider executor or fall back to a raw provider command.
+    throw new Error("route probe accepts only --model-tier, --effort, and --json");
+  }
+  if (flags.json !== undefined && flags.json !== true) throw new Error("route probe --json takes no value");
+
+  const requestedTier = flags["model-tier"] ?? "medium";
+  const requestedEffort = flags.effort ?? "medium";
+  if (typeof requestedTier !== "string") throw new Error("route probe --model-tier requires a value");
+  if (typeof requestedEffort !== "string") throw new Error("route probe --effort requires a value");
+  if (!(MODEL_TIERS as readonly string[]).includes(requestedTier)) throw new Error("unknown model tier");
+  if (!ROUTE_PROBE_EFFORTS.has(requestedEffort)) throw new Error("unknown model effort");
+
+  const tier = requestedTier as ModelTier;
+  const state = runtimeState();
+  const report = await runOrderedRouteProbe(
+    state,
+    { tier, effort: requestedEffort, probe: "none" },
+    async (doctorState, provider) => (await doctorAdapter(doctorState, provider)).evidence,
+  );
+  if (flags.json) console.log(JSON.stringify(report, null, 2));
+  else console.log(formatRouteProbeReport(report));
+  if (!report.ok) process.exitCode = 1;
 }
 
 async function exists(file: string): Promise<boolean> {
@@ -649,7 +695,7 @@ async function sessionCommand(args: string[], flags: Record<string, string | boo
         };
       }
     } else {
-      descriptor = await createSession(state, { provider: provider!, model: model!, mode });
+      descriptor = await createSession(state, { provider: provider!, model: model!, mode, workdir: root });
     }
 
     const orchestrator = await prepareOrchestratorSession(state, descriptor);
@@ -727,7 +773,7 @@ async function tuiCommand(args: string[], flags: Record<string, string | boolean
   const state = runtimeState();
   await ensureSharedState(state);
   const { provider, model, mode } = await resolveSessionDefaults(state, flags);
-  const descriptor = await createSession(state, { provider, model, mode });
+  const descriptor = await createSession(state, { provider, model, mode, workdir: root });
   const orchestrator = await prepareOrchestratorSession(state, descriptor);
   try {
     await launchTui(state, descriptor, systemPromptForMode(mode), orchestrator);
@@ -738,6 +784,30 @@ async function tuiCommand(args: string[], flags: Record<string, string | boolean
 }
 
 async function runCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  if (selectsModelExecution(flags)) {
+    // Parse and admit the complete logical-tier contract before initializing
+    // canonical state. Provider/model/TUI overrides and ambiguous prompt
+    // sources therefore fail before any runtime mutation.
+    const request = await modelExecutionRequestFromCli({
+      values: args,
+      flags,
+      // AGENTS_ROOT identifies the distribution. Logical-tier authority stays
+      // bound to the directory from which the user invoked this process.
+      workdir: invocationRoot,
+      stdin: process.stdin,
+    });
+    const state = runtimeState();
+    await ensureSharedState(state);
+    const result = await executeModelRequest(state, request);
+    if (result.ok) console.log(result.content);
+    else {
+      console.error(`execution blocked: ${result.receipt.blockReason ?? "execution_blocked"}`);
+      process.exitCode = 1;
+    }
+    if (result.sessionId) console.error(`session: ${result.sessionId}`);
+    return;
+  }
+
   const prompt = args.join(" ").trim();
   const useTui = Boolean(flags.tui);
   if (!prompt && !useTui) throw new Error("run requires a prompt");
@@ -746,7 +816,7 @@ async function runCommand(args: string[], flags: Record<string, string | boolean
   await ensureSharedState(state);
   const { provider, model, mode } = await resolveSessionDefaults(state, flags);
 
-  const descriptor = await createSession(state, { provider, model, mode });
+  const descriptor = await createSession(state, { provider, model, mode, workdir: root });
   const orchestrator = await prepareOrchestratorSession(state, descriptor);
   const systemPrompt = systemPromptForMode(mode);
 
@@ -1220,6 +1290,7 @@ async function main(): Promise<void> {
   const { values, flags } = parseArgs(rest);
   if (command === "help" || flags.help) return help();
   if (command === "run") return runCommand(values, flags);
+  if (command === "route") return routeCommand(values, flags);
   if (command === "tui") return tuiCommand(values, flags);
   if (command === "sessions") return sessionsCommand(values, flags);
   if (command === "list") return list(flags);
@@ -1242,6 +1313,7 @@ async function main(): Promise<void> {
   if (command === "credits") return credits(values, flags);
   if (command === "doctor") return doctor();
   if (command === "os") return osCommand(rest);
+  if (command === "runner") return runnerCommand(rest);
   throw new Error(`unknown command: ${command}`);
 }
 

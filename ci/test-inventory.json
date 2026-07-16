@@ -65,6 +65,14 @@
       "platforms": ["ubuntu-latest"],
       "submodule": true,
       "requiredPaths": []
+    },
+    {
+      "id": "memory",
+      "path": "plugins/Memory",
+      "suite": "memory",
+      "platforms": ["ubuntu-latest", "windows-latest"],
+      "submodule": true,
+      "requiredPaths": []
     }
   ],
   "realBehaviorLegs": [

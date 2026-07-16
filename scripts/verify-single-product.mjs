@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { javascriptPackageVersionIssues } from "./verify-single-product-versions.mjs";
 import { inventoryIssues } from "./verify-test-inventory.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -113,6 +114,51 @@ for (const relative of tracked) {
 const rootPackage = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const productVersion = rootPackage.version;
 if (typeof productVersion !== "string" || !productVersion) issues.push("root package.json must declare the product version");
+if (rootPackage.name !== "@marius-patrik/agents-manager") {
+  issues.push("root package.json must remain the recorded @marius-patrik/agents-manager package-name exception");
+}
+if (rootPackage.bin?.agents !== "./packages/manager/src/cli.ts") {
+  issues.push("root package.json must own the authoritative agents CLI entrypoint");
+}
+
+const expectedJavaScriptWorkspaces = new Map([
+  ["packages/manager/package.json", "@marius-patrik/andromeda-manager"],
+  ["packages/core/clients/shared-ts/package.json", "@agent-os/shared-ts"],
+  ["packages/core/clients/tui/package.json", "@agent-os/tui"],
+  ["packages/core/clients/web/package.json", "@agent-os/web"],
+]);
+const declaredWorkspaces = new Set(rootPackage.workspaces ?? []);
+for (const required of ["packages/manager", "packages/core/clients/*"]) {
+  if (!declaredWorkspaces.has(required)) issues.push(`root package.json does not own workspace pattern: ${required}`);
+}
+for (const [relative, expectedName] of expectedJavaScriptWorkspaces) {
+  if (!fs.statSync(path.join(root, relative), { throwIfNoEntry: false })?.isFile()) {
+    issues.push(`required JavaScript workspace metadata is missing: ${relative}`);
+    continue;
+  }
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, relative), "utf8"));
+  if (manifest.name !== expectedName) issues.push(`JavaScript package name drift in ${relative}: ${manifest.name} != ${expectedName}`);
+}
+for (const relative of tracked.filter(
+  (name) => name.startsWith("packages/") && name.endsWith("package.json") && !name.endsWith("agent.package.json"),
+)) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, relative), "utf8"));
+  if (manifest.private !== true) issues.push(`nested JavaScript package must be private implementation metadata: ${relative}`);
+  if (manifest.bin?.agents) issues.push(`nested JavaScript package competes for the agents CLI entrypoint: ${relative}`);
+  if (typeof manifest.description !== "string" || !manifest.description.trim()) {
+    issues.push(`nested JavaScript package must describe its PRD layer: ${relative}`);
+  }
+}
+
+for (const retired of [
+  "docs/specs/clients/shared-ts.md",
+  "docs/specs/clients/tui.md",
+  "docs/specs/clients/web.md",
+]) {
+  if (fs.statSync(path.join(root, retired), { throwIfNoEntry: false })) {
+    issues.push(`retired competing client specification remains: ${retired}`);
+  }
+}
 
 const manifests = [];
 for (const relative of tracked.filter((name) => name.endsWith("agent.package.json"))) {
@@ -129,12 +175,7 @@ for (const { relative, manifest } of manifests) {
   ids.set(manifest.id, relative);
 }
 
-for (const relative of tracked.filter((name) => name.endsWith("package.json") && !name.endsWith("agent.package.json"))) {
-  const value = JSON.parse(fs.readFileSync(path.join(root, relative), "utf8"));
-  if (typeof value.version === "string" && value.version !== productVersion) {
-    issues.push(`JavaScript package version drift in ${relative}: ${value.version} != ${productVersion}`);
-  }
-}
+issues.push(...javascriptPackageVersionIssues(root, tracked, productVersion));
 for (const relative of tracked.filter((name) => name.endsWith("pyproject.toml"))) {
   const text = fs.readFileSync(path.join(root, relative), "utf8");
   const version = text.match(/^version\s*=\s*"([^"]+)"/m)?.[1];

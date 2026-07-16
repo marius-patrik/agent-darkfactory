@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { ensureSharedState, sharedStateAt } from "../src/state";
@@ -12,6 +12,7 @@ import {
   syncStateRepository,
 } from "../src/state-repository";
 import { doctorState } from "../src/state-doctor";
+import { stateV2Paths } from "../src/state-v2";
 
 const evidence = {
   uri: "test://state-repository",
@@ -123,6 +124,79 @@ describe("Andromeda-data state repository", () => {
       await git(state.stateDir, ["add", "--", renamedRelative]);
       await git(state.stateDir, ["commit", "-q", "-m", "malformed fixture"]);
       await expect(restoreStateRepository(state)).rejects.toThrow("filename does not match authenticated payload");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("backup publication retries transient Windows link failures", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-repository-retry-"));
+    try {
+      const state = await repositoryState(root);
+      await rememberMemory(state, {
+        scope: "global",
+        subject: "agent-os",
+        predicate: "atomic-backup",
+        value: "eventual-success",
+        sensitivity: "internal",
+        evidence,
+      });
+      let attempts = 0;
+      const backup = await backupStateRepository(state, {
+        publication: {
+          platform: "win32",
+          link: (async (source: string, target: string) => {
+            if (attempts++ < 2) throw Object.assign(new Error("busy"), { code: "EPERM" });
+            await link(source, target);
+          }) as typeof import("node:fs/promises").link,
+          wait: async () => undefined,
+        },
+      });
+      expect(attempts).toBe(3);
+      expect(backup.committed).toBe(true);
+      expect(JSON.parse(await readFile(path.join(state.stateDir, ...backup.bundle.split("/")), "utf8"))).toMatchObject({
+        schemaVersion: 1,
+      });
+      expect((await inspectStateRepository(state)).issues).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("exhausted backup publication fails loudly without partial visibility", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-repository-failure-"));
+    try {
+      const state = await repositoryState(root);
+      await rememberMemory(state, {
+        scope: "global",
+        subject: "agent-os",
+        predicate: "atomic-backup",
+        value: "terminal-failure",
+        sensitivity: "internal",
+        evidence,
+      });
+      let attempts = 0;
+      await expect(backupStateRepository(state, {
+        publication: {
+          platform: "win32",
+          link: (async () => {
+            attempts += 1;
+            throw Object.assign(new Error("busy"), { code: "EBUSY" });
+          }) as typeof import("node:fs/promises").link,
+          wait: async () => undefined,
+        },
+      })).rejects.toThrow("busy");
+      expect(attempts).toBe(10);
+      const backupRoot = path.join(state.stateDir, "backups", "events");
+      const backupEntries = await readdir(backupRoot, { recursive: true }).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        },
+      );
+      expect(backupEntries.filter((entry) => entry.endsWith(".bundle.json"))).toEqual([]);
+      expect((await readdir(stateV2Paths(state).syncDir)).filter((entry) => entry.startsWith("repository-backup-"))).toEqual([]);
+      expect(await git(state.stateDir, ["diff", "--cached", "--name-only"])).toBe("");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -15,6 +15,29 @@ export function canonicalChildEnvironment(env: RuntimePathEnv = process.env): Ru
   return output;
 }
 
+/**
+ * Overlay child-process environment layers while keeping one authoritative
+ * spelling for every variable. Windows treats environment names as
+ * case-insensitive, so retaining an ambient mixed-case alias beside a managed
+ * provider root makes the effective value launcher-dependent.
+ */
+export function overlayChildEnvironment(
+  base: RuntimePathEnv,
+  ...layers: RuntimePathEnv[]
+): RuntimePathEnv {
+  const output: RuntimePathEnv = { ...base };
+  for (const layer of layers) {
+    for (const [name, value] of Object.entries(layer)) {
+      const foldedName = name.toUpperCase();
+      for (const existing of Object.keys(output)) {
+        if (existing.toUpperCase() === foldedName) delete output[existing];
+      }
+      output[name] = value;
+    }
+  }
+  return output;
+}
+
 function resolved(value: string): string {
   return path.resolve(value.trim());
 }
