@@ -14,7 +14,9 @@ import {
   AGENT_ROUTE_POLICY,
   MODEL_TIERS,
   ROUTE_POLICY_VERSION,
+  admittedRouteProviderVersion,
   isSafeModelId,
+  routeCandidateCapabilityReason,
   runCandidateRouteProbe,
   resolveRouteModel,
   type AgentRoutePolicy,
@@ -280,10 +282,7 @@ function outputSafe(value: string, fallback = "unresolved"): string {
 
 /** Provider registry versions may include product names; receipts carry the exact semver token. */
 export function receiptProviderVersion(value: string | null | undefined): string {
-  const trimmed = value?.trim() ?? "";
-  if (SAFE_RECEIPT_VALUE.test(trimmed)) return trimmed;
-  const semver = trimmed.match(/\b\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9.-]+)?\b/)?.[0];
-  return semver && SAFE_RECEIPT_VALUE.test(semver) ? semver : "unresolved";
+  return admittedRouteProviderVersion(value) ?? "unresolved";
 }
 
 function zeroUsage(): AgentExecutionReceipt["usage"] {
@@ -605,20 +604,6 @@ function providerStatusReason(status: ProviderRouteStatus | undefined): string |
   }
 }
 
-function candidateCapabilityReason(
-  provider: ProviderId,
-  executionPolicy: ExecutionPolicy,
-  promptSource: ModelExecutionRequest["promptSource"],
-): string | null {
-  if ((provider === "agy" || provider === "claude") && executionPolicy === "workspace-write") {
-    return "execution_policy_unsupported";
-  }
-  if (provider === "agy" && promptSource !== "positional") {
-    return "provider_prompt_transport_unsupported";
-  }
-  return null;
-}
-
 /** Execute one canonical tier request and always publish exact fail-closed receipt evidence. */
 export async function executeModelRequest(
   state: SharedState,
@@ -751,7 +736,7 @@ export async function executeModelRequest(
           ? firstRouteFailure(report.findings)
           : safeVersion === "unresolved"
             ? "provider_version_unavailable"
-            : candidateCapabilityReason(route.provider, executionPolicy, input.promptSource);
+            : routeCandidateCapabilityReason(route.provider, executionPolicy, input.promptSource);
       const evidence = receiptCandidate(candidate, config, route, providerVersion);
       if (candidateIndex === 0) routing.primary = evidence;
       if (reason) {

@@ -349,11 +349,15 @@ doctor, policy, usage, or provider failure remains blocked.
 `agents route probe` is the read-only, zero-token readiness check for the same
 canonical route boundary. With no flags it checks DarkFactory's default
 `medium` tier at `medium` effort; explicit model tier and effort remain
-independent. JSON output preserves the versioned route-probe report and exits
-nonzero when canonical configuration, the provider pin, executable
-verification, or credential presence is unready. The CLI never invokes a
-provider and deliberately exposes no reachability flag until a production
-executor can satisfy the bounded disposable-state contract.
+independent. Route-probe schema 2 evaluates the same ordered candidate policy
+as execution, records every skipped candidate and stable reason, and selects
+Codex/Sol when the preferred medium Kimi route is explicitly unavailable. An
+explicitly disabled or decommissioned candidate is skipped from canonical
+configuration before its doctor or provider home can be touched. JSON output
+exits nonzero when no policy-authorized candidate has a valid provider version
+and is ready for the command's fixed read-only, positional probe admission.
+The CLI never invokes a provider and deliberately exposes no reachability flag
+until a production executor can satisfy the bounded disposable-state contract.
 
 Memory mutations require `--source`, `--hash`, `--source-class`, and
 `--confidence`. Secret commands never print secret values. A live

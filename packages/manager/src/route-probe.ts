@@ -3,7 +3,12 @@ import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { AdapterDoctorEvidence } from "./adapters";
 import type { ProviderId } from "./provider-registry";
-import { readSessionConfig, type SessionConfig, type SharedState } from "./state";
+import {
+  readSessionConfig,
+  type ProviderRouteStatus,
+  type SessionConfig,
+  type SharedState,
+} from "./state";
 
 /**
  * Isolated route-resolution and reachability-probe seam (Andromeda #253).
@@ -105,6 +110,8 @@ export type RouteFindingCode =
   | "unknown_tier"
   | "malformed_effort"
   | "config_unavailable"
+  | "route_policy_version_mismatch"
+  | "route_unavailable"
   | "registry_unavailable"
   | "model_missing"
   | "model_ambiguous"
@@ -151,6 +158,44 @@ export interface RouteProbeReport {
   probe: ProbeReport;
   findings: RouteFinding[];
 }
+
+export type OrderedRouteSkipReason =
+  | RouteFindingCode
+  | "provider_disabled"
+  | "provider_decommissioned"
+  | "provider_unavailable"
+  | "provider_quota_blocked"
+  | "provider_doctor_failed"
+  | "provider_version_unavailable"
+  | "execution_policy_unsupported"
+  | "provider_prompt_transport_unsupported"
+  | "route_probe_failed";
+
+export interface OrderedRouteSkip {
+  candidateIndex: number;
+  provider: ProviderId;
+  agentPreset: string;
+  capabilityTier: ModelTier;
+  reason: OrderedRouteSkipReason;
+}
+
+/** Schema-v2 CLI report for the canonical ordered pre-turn selection policy. */
+export interface OrderedRouteProbeReport extends Omit<RouteProbeReport, "schemaVersion"> {
+  schemaVersion: 2;
+  routing: {
+    policyVersion: string;
+    capabilityFloor: ModelTier | null;
+    selectedCandidateIndex: number | null;
+    skipped: OrderedRouteSkip[];
+  };
+}
+
+export type RouteProbeOutput = RouteProbeReport | OrderedRouteProbeReport;
+
+export type OrderedRouteDoctor = (
+  state: SharedState,
+  provider: ProviderId,
+) => Promise<AdapterDoctorEvidence>;
 
 /** Fixed minimal probe turn: no tools, no repository content. */
 export const ROUTE_PROBE_PROMPT = "Agent OS route probe. Reply with the single word: ok";
@@ -234,6 +279,47 @@ const EFFORT_TOKEN_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
  * remain bounded to 1..64 ASCII characters with safe, non-traversal segments.
  */
 const MODEL_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+const SEMVER_NUMERIC_IDENTIFIER = String.raw`(?:0|[1-9][0-9]*)`;
+const SEMVER_PRERELEASE_IDENTIFIER = String.raw`(?:${SEMVER_NUMERIC_IDENTIFIER}|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)`;
+const SEMVER_PATTERN_SOURCE = String.raw`${SEMVER_NUMERIC_IDENTIFIER}\.${SEMVER_NUMERIC_IDENTIFIER}\.${SEMVER_NUMERIC_IDENTIFIER}(?:-${SEMVER_PRERELEASE_IDENTIFIER}(?:\.${SEMVER_PRERELEASE_IDENTIFIER})*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?`;
+const SAFE_PROVIDER_VERSION_PATTERN = new RegExp(`^${SEMVER_PATTERN_SOURCE}$`);
+const EMBEDDED_PROVIDER_VERSION_PATTERN = new RegExp(
+  `(?:^|[^0-9A-Za-z._+])(${SEMVER_PATTERN_SOURCE})(?=$|[^0-9A-Za-z._+-])`,
+);
+const MAX_PROVIDER_VERSION_LENGTH = 128;
+
+/** Normalize provider-doctor version evidence through the shared route admission contract. */
+export function admittedRouteProviderVersion(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  if (trimmed.length <= MAX_PROVIDER_VERSION_LENGTH && SAFE_PROVIDER_VERSION_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+  const semver = EMBEDDED_PROVIDER_VERSION_PATTERN.exec(trimmed)?.[1] ?? null;
+  return semver && semver.length <= MAX_PROVIDER_VERSION_LENGTH && SAFE_PROVIDER_VERSION_PATTERN.test(semver)
+    ? semver
+    : null;
+}
+
+export type RouteExecutionPolicy = "read-only" | "workspace-write";
+export type RoutePromptSource = "positional" | "file" | "stdin";
+export type RouteCapabilityReason =
+  | "execution_policy_unsupported"
+  | "provider_prompt_transport_unsupported";
+
+/** Shared provider capability admission used by both readiness and execution. */
+export function routeCandidateCapabilityReason(
+  provider: ProviderId,
+  executionPolicy: RouteExecutionPolicy,
+  promptSource: RoutePromptSource,
+): RouteCapabilityReason | null {
+  if ((provider === "agy" || provider === "claude") && executionPolicy === "workspace-write") {
+    return "execution_policy_unsupported";
+  }
+  if (provider === "agy" && promptSource !== "positional") {
+    return "provider_prompt_transport_unsupported";
+  }
+  return null;
+}
 
 export function isSafeModelId(model: string): boolean {
   if (model.length < 1 || model.length > 64) return false;
@@ -247,6 +333,8 @@ const FINDING_MESSAGES: Record<RouteFindingCode, string> = {
   unknown_tier: "unknown model tier",
   malformed_effort: "requested effort is malformed",
   config_unavailable: "canonical session config is unavailable or invalid",
+  route_policy_version_mismatch: "canonical route policy version does not match session configuration",
+  route_unavailable: "no policy-authorized route candidate is ready",
   registry_unavailable: "canonical provider registry is unavailable or invalid",
   model_missing: "no model is configured for the tier provider",
   model_ambiguous: "multiple models are configured for the tier provider without a canonical default",
@@ -598,8 +686,234 @@ export async function runCandidateRouteProbe(
   return runRouteProbeForCandidate(state, probeOptions, candidate, sessionConfig, stateLifecycle);
 }
 
+export type OrderedRouteProbeOptions = Omit<RouteProbeOptions, "providerDoctorEvidence">;
+
+function providerRouteSkipReason(status: ProviderRouteStatus | undefined): OrderedRouteSkipReason | null {
+  switch (status) {
+    case undefined:
+    case "enabled":
+      return null;
+    case "disabled":
+      return "provider_disabled";
+    case "decommissioned":
+      return "provider_decommissioned";
+    case "unavailable":
+      return "provider_unavailable";
+    case "quota-blocked":
+      return "provider_quota_blocked";
+  }
+}
+
+function orderedReport(
+  report: RouteProbeReport,
+  capabilityFloor: ModelTier | null,
+  selectedCandidateIndex: number | null,
+  skipped: OrderedRouteSkip[],
+): OrderedRouteProbeReport {
+  return {
+    ...report,
+    schemaVersion: 2,
+    routing: {
+      policyVersion: ROUTE_POLICY_VERSION,
+      capabilityFloor,
+      selectedCandidateIndex,
+      skipped,
+    },
+  };
+}
+
+function unavailableOrderedReport(
+  tier: ModelTier,
+  effort: string,
+  skipped: OrderedRouteSkip[],
+  code: "config_unavailable" | "route_policy_version_mismatch" | "route_unavailable",
+  probeMode: OrderedRouteProbeOptions["probe"],
+): OrderedRouteProbeReport {
+  return orderedReport(
+    {
+      schemaVersion: 1,
+      ok: false,
+      requested: { tier, effort },
+      route: null,
+      readiness: "unready",
+      probe: { state: probeMode === "reachability" ? "skipped" : "not_requested" },
+      findings: [finding(code)],
+    },
+    AGENT_ROUTE_POLICY.tiers[tier].capabilityFloor,
+    null,
+    skipped,
+  );
+}
+
+/**
+ * Resolve the complete canonical candidate order used by `agents route probe`.
+ * Explicitly disabled/decommissioned providers are skipped from config alone,
+ * before their doctor (and therefore their provider home) can be touched.
+ */
+export async function runOrderedRouteProbe(
+  state: SharedState,
+  options: OrderedRouteProbeOptions,
+  doctor: OrderedRouteDoctor,
+  stateLifecycle: ProbeStateLifecycle = DEFAULT_PROBE_STATE_LIFECYCLE,
+): Promise<OrderedRouteProbeReport> {
+  const tier = (MODEL_TIERS as readonly string[]).includes(options.tier)
+    ? (options.tier as ModelTier)
+    : null;
+  const effort =
+    typeof options.effort === "string" && EFFORT_TOKEN_PATTERN.test(options.effort)
+      ? options.effort
+      : null;
+  if (!tier || !effort) {
+    const primary = tier ? TIER_ROUTES[tier] : TIER_ROUTES.medium;
+    const report = await runRouteProbeForCandidate(state, options, primary, undefined, stateLifecycle);
+    return orderedReport(report, tier ? AGENT_ROUTE_POLICY.tiers[tier].capabilityFloor : null, null, []);
+  }
+
+  let config: SessionConfig;
+  const policy = AGENT_ROUTE_POLICY.tiers[tier];
+  try {
+    config = await readSessionConfig(state);
+  } catch {
+    const skipped = policy.candidates.map((candidate, candidateIndex) => ({
+      candidateIndex,
+      provider: candidate.provider,
+      agentPreset: candidate.agentPreset,
+      capabilityTier: candidate.capabilityTier,
+      reason: "config_unavailable" as const,
+    }));
+    return unavailableOrderedReport(tier, effort, skipped, "config_unavailable", options.probe);
+  }
+  if (config.routePolicyVersion && config.routePolicyVersion !== ROUTE_POLICY_VERSION) {
+    const skipped = policy.candidates.map((candidate, candidateIndex) => ({
+      candidateIndex,
+      provider: candidate.provider,
+      agentPreset: candidate.agentPreset,
+      capabilityTier: candidate.capabilityTier,
+      reason: "route_policy_version_mismatch" as const,
+    }));
+    return unavailableOrderedReport(
+      tier,
+      effort,
+      skipped,
+      "route_policy_version_mismatch",
+      options.probe,
+    );
+  }
+
+  const skipped: OrderedRouteSkip[] = [];
+  for (let candidateIndex = 0; candidateIndex < policy.candidates.length; candidateIndex += 1) {
+    const candidate = policy.candidates[candidateIndex]!;
+    const statusReason = providerRouteSkipReason(config.providerRouteStatus?.[candidate.provider]);
+    if (statusReason) {
+      skipped.push({
+        candidateIndex,
+        provider: candidate.provider,
+        agentPreset: candidate.agentPreset,
+        capabilityTier: candidate.capabilityTier,
+        reason: statusReason,
+      });
+      continue;
+    }
+
+    let evidence: AdapterDoctorEvidence;
+    try {
+      evidence = await doctor(state, candidate.provider);
+    } catch {
+      skipped.push({
+        candidateIndex,
+        provider: candidate.provider,
+        agentPreset: candidate.agentPreset,
+        capabilityTier: candidate.capabilityTier,
+        reason: "provider_doctor_failed",
+      });
+      continue;
+    }
+
+    let admissionReport: RouteProbeReport;
+    try {
+      admissionReport = await runRouteProbeForCandidate(
+        state,
+        { ...options, providerDoctorEvidence: evidence, probe: "none" },
+        candidate,
+        config,
+        stateLifecycle,
+      );
+    } catch {
+      skipped.push({
+        candidateIndex,
+        provider: candidate.provider,
+        agentPreset: candidate.agentPreset,
+        capabilityTier: candidate.capabilityTier,
+        reason: "route_probe_failed",
+      });
+      continue;
+    }
+    if (admissionReport.readiness !== "ready" || !admissionReport.route) {
+      skipped.push({
+        candidateIndex,
+        provider: candidate.provider,
+        agentPreset: candidate.agentPreset,
+        capabilityTier: candidate.capabilityTier,
+        reason: admissionReport.findings[0]?.code ?? "route_probe_failed",
+      });
+      continue;
+    }
+    if (admittedRouteProviderVersion(evidence.providerVersion) === null) {
+      skipped.push({
+        candidateIndex,
+        provider: candidate.provider,
+        agentPreset: candidate.agentPreset,
+        capabilityTier: candidate.capabilityTier,
+        reason: "provider_version_unavailable",
+      });
+      continue;
+    }
+    const capabilityReason = routeCandidateCapabilityReason(candidate.provider, "read-only", "positional");
+    if (capabilityReason) {
+      skipped.push({
+        candidateIndex,
+        provider: candidate.provider,
+        agentPreset: candidate.agentPreset,
+        capabilityTier: candidate.capabilityTier,
+        reason: capabilityReason,
+      });
+      continue;
+    }
+
+    // Only the admitted candidate may start a bounded reachability probe. A
+    // failure after that start is terminal and never retries another provider.
+    if (options.probe && options.probe !== "none") {
+      try {
+        const report = await runRouteProbeForCandidate(
+          state,
+          { ...options, providerDoctorEvidence: evidence },
+          candidate,
+          config,
+          stateLifecycle,
+        );
+        return orderedReport(report, policy.capabilityFloor, candidateIndex, skipped);
+      } catch {
+        return orderedReport(
+          {
+            ...admissionReport,
+            ok: false,
+            probe: { state: "failed" },
+            findings: [...admissionReport.findings, finding("probe_internal")],
+          },
+          policy.capabilityFloor,
+          candidateIndex,
+          skipped,
+        );
+      }
+    }
+    return orderedReport(admissionReport, policy.capabilityFloor, candidateIndex, skipped);
+  }
+
+  return unavailableOrderedReport(tier, effort, skipped, "route_unavailable", options.probe);
+}
+
 /** Concise, secret-safe human rendering of a route probe report. */
-export function formatRouteProbeReport(report: RouteProbeReport): string {
+export function formatRouteProbeReport(report: RouteProbeOutput): string {
   const lines: string[] = [];
   lines.push(`route probe ${report.ok ? "ok" : "FAILED"}`);
   lines.push(
@@ -633,6 +947,14 @@ export function formatRouteProbeReport(report: RouteProbeReport): string {
   }
   for (const finding of report.findings) {
     lines.push(`fail ${finding.code} ${finding.message}`);
+  }
+  if (report.schemaVersion === 2) {
+    lines.push(
+      `policy ${report.routing.policyVersion} selected=${report.routing.selectedCandidateIndex ?? "none"}`,
+    );
+    for (const skipped of report.routing.skipped) {
+      lines.push(`skip ${skipped.provider}/${skipped.agentPreset} ${skipped.reason}`);
+    }
   }
   return lines.join("\n");
 }

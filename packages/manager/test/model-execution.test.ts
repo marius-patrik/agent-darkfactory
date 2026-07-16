@@ -846,6 +846,9 @@ describe("canonical model execution route and receipt", () => {
     expect(receiptProviderVersion("codex-cli 0.144.1")).toBe("0.144.1");
     expect(receiptProviderVersion("2.1.203 (Claude Code)")).toBe("2.1.203");
     expect(receiptProviderVersion("0.22.2")).toBe("0.22.2");
+    expect(receiptProviderVersion("codex-cli 1.2.3+build.7")).toBe("1.2.3+build.7");
+    expect(receiptProviderVersion("unknown")).toBe("unresolved");
+    expect(receiptProviderVersion("not-a-version")).toBe("unresolved");
     expect(receiptProviderVersion("not a version")).toBe("unresolved");
   });
 });

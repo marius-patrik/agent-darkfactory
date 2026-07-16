@@ -16,8 +16,10 @@ import {
   PROBE_TIMEOUT_MS,
   ROUTE_PROBE_PROMPT,
   TIER_ROUTES,
+  admittedRouteProviderVersion,
   formatRouteProbeReport,
   resolveRouteModel,
+  runOrderedRouteProbe,
   runRouteProbe as runRouteProbeWithEvidence,
   type ModelTier,
   type ProbeExecutionHandle,
@@ -188,6 +190,115 @@ describe("route resolution matrix", () => {
       expect(report.route?.model).toBe(model);
       expect(JSON.stringify(report)).toContain(model);
       expect(formatRouteProbeReport(report)).toContain(`model=${model}`);
+    });
+  });
+
+  test("provider-version admission accepts exact SemVer including build metadata", () => {
+    expect(admittedRouteProviderVersion("1.2.3")).toBe("1.2.3");
+    expect(admittedRouteProviderVersion("1.2.3+build")).toBe("1.2.3+build");
+    expect(admittedRouteProviderVersion("1.2.3-alpha.1+build.7")).toBe("1.2.3-alpha.1+build.7");
+  });
+
+  test("provider-version admission extracts exact SemVer from provider-owned text", () => {
+    expect(admittedRouteProviderVersion("codex-cli 0.144.1+windows.1")).toBe("0.144.1+windows.1");
+    expect(admittedRouteProviderVersion("2.1.203 (Claude Code)")).toBe("2.1.203");
+  });
+
+  test("provider-version admission rejects safe-looking non-SemVer and malformed near-misses", () => {
+    for (const value of ["unknown", "not-a-version", "1.2", "1.2.3.4", "01.2.3", "1.2.3-01"]) {
+      expect(admittedRouteProviderVersion(value)).toBeNull();
+    }
+  });
+
+  test("ordered readiness skips unresolved provider versions exactly as execution does", async () => {
+    await withFixture(async (state) => {
+      await writeSessionConfig(state, {
+        schemaVersion: 1,
+        routePolicyVersion: "agent-os-tier-routes-v1",
+        providerModels: { kimi: ["kimi-standard"], codex: ["codex-reasoning"] },
+      });
+      const doctorCalls: ProviderId[] = [];
+      const report = await runOrderedRouteProbe(
+        state,
+        { tier: "medium", effort: "medium", probe: "none" },
+        async (_state, provider) => {
+          doctorCalls.push(provider);
+          return {
+            schemaVersion: 1,
+            provider,
+            pinned: true,
+            executableVerified: true,
+            credentialsPresent: true,
+            providerVersion: provider === "kimi" ? "not a version" : "codex 1.2.3",
+          };
+        },
+      );
+
+      expect(doctorCalls).toEqual(["kimi", "codex"]);
+      expect(report.ok).toBe(true);
+      expect(report.route?.provider).toBe("codex");
+      expect(report.routing.selectedCandidateIndex).toBe(1);
+      expect(report.routing.skipped).toEqual([
+        {
+          candidateIndex: 0,
+          provider: "kimi",
+          agentPreset: "Kimi",
+          capabilityTier: "medium",
+          reason: "provider_version_unavailable",
+        },
+      ]);
+    });
+  });
+
+  test("ordered readiness preserves doctor finding precedence before provider-version admission", async () => {
+    await withFixture(async (state) => {
+      await writeSessionConfig(state, {
+        schemaVersion: 1,
+        routePolicyVersion: "agent-os-tier-routes-v1",
+        providerModels: { kimi: ["kimi-standard"], codex: ["codex-reasoning"] },
+      });
+      const report = await runOrderedRouteProbe(
+        state,
+        { tier: "medium", effort: "medium", probe: "none" },
+        async (_state, provider) => ({
+          schemaVersion: 1,
+          provider,
+          pinned: false,
+          executableVerified: false,
+          credentialsPresent: false,
+          providerVersion: null,
+        }),
+      );
+
+      expect(report.ok).toBe(false);
+      expect(report.routing.skipped.map(({ provider, reason }) => ({ provider, reason }))).toEqual([
+        { provider: "kimi", reason: "provider_unpinned" },
+        { provider: "codex", reason: "provider_unpinned" },
+      ]);
+    });
+  });
+
+  test("ordered readiness records every candidate when canonical config is unavailable", async () => {
+    await withFixture(async (state) => {
+      await Bun.write(state.configFile, "{ malformed");
+      const doctorCalls: ProviderId[] = [];
+      const report = await runOrderedRouteProbe(
+        state,
+        { tier: "medium", effort: "medium", probe: "none" },
+        async (_state, provider) => {
+          doctorCalls.push(provider);
+          throw new Error("doctor must not run");
+        },
+      );
+
+      expect(doctorCalls).toEqual([]);
+      expect(report.ok).toBe(false);
+      expect(report.route).toBeNull();
+      expect(report.findings.map((finding) => finding.code)).toEqual(["config_unavailable"]);
+      expect(report.routing.skipped.map(({ provider, reason }) => ({ provider, reason }))).toEqual([
+        { provider: "kimi", reason: "config_unavailable" },
+        { provider: "codex", reason: "config_unavailable" },
+      ]);
     });
   });
 });

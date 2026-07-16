@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { adapters, adapterHome } from "../src/adapters";
@@ -83,6 +83,15 @@ async function snapshotTree(root: string, prefix = ""): Promise<Record<string, s
   return snapshot;
 }
 
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await stat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("route probe CLI regression triplet", () => {
   test("primary: the exact DarkFactory command resolves medium/medium without provider calls or state writes", async () => {
     await withFixture(async (state, root) => {
@@ -98,13 +107,19 @@ describe("route probe CLI regression triplet", () => {
       expect(result.code).toBe(0);
       expect(result.stderr).toBe("");
       expect(JSON.parse(result.stdout)).toEqual({
-        schemaVersion: 1,
+        schemaVersion: 2,
         ok: true,
         requested: { tier: "medium", effort: "medium" },
         route: { tier: "medium", provider: "kimi", model: "kimi-standard", agentPreset: "Kimi" },
         readiness: "ready",
         probe: { state: "not_requested" },
         findings: [],
+        routing: {
+          policyVersion: "agent-os-tier-routes-v1",
+          capabilityFloor: "medium",
+          selectedCandidateIndex: 0,
+          skipped: [],
+        },
       });
       expect(result.stdout).not.toContain(root);
       expect(await Bun.file(sentinel).exists()).toBe(false);
@@ -112,6 +127,98 @@ describe("route probe CLI regression triplet", () => {
 
       const help = await runAgents(root, ["help"]);
       expect(help.stdout).toContain("agents route probe [--model-tier low|medium|high|max]");
+    });
+  });
+
+  test("fallback: decommissioned Kimi selects Codex without touching the Kimi provider home", async () => {
+    await withFixture(async (state, root) => {
+      await writeSessionConfig(state, {
+        schemaVersion: 1,
+        routePolicyVersion: "agent-os-tier-routes-v1",
+        providerRouteStatus: { kimi: "decommissioned", codex: "enabled" },
+        providerModels: { kimi: ["kimi-standard"], codex: ["gpt-5.6-sol"] },
+      });
+      const sentinel = await pinReadyProvider(state, root, "codex");
+      const kimiHome = adapterHome(state, "kimi");
+      expect(await pathExists(kimiHome)).toBe(false);
+
+      const result = await runAgents(root, ["route", "probe", "--json"]);
+
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe("");
+      const report = JSON.parse(result.stdout);
+      expect(report).toMatchObject({
+        schemaVersion: 2,
+        ok: true,
+        requested: { tier: "medium", effort: "medium" },
+        route: { tier: "medium", provider: "codex", model: "gpt-5.6-sol", agentPreset: "Sol" },
+        readiness: "ready",
+        routing: {
+          policyVersion: "agent-os-tier-routes-v1",
+          capabilityFloor: "medium",
+          selectedCandidateIndex: 1,
+          skipped: [
+            {
+              candidateIndex: 0,
+              provider: "kimi",
+              agentPreset: "Kimi",
+              capabilityTier: "medium",
+              reason: "provider_decommissioned",
+            },
+          ],
+        },
+      });
+      expect(await pathExists(kimiHome)).toBe(false);
+      expect(await Bun.file(sentinel).exists()).toBe(false);
+    });
+  });
+
+  test("blocked: every unavailable medium candidate is recorded and no provider home is touched", async () => {
+    await withFixture(async (state, root) => {
+      await writeSessionConfig(state, {
+        schemaVersion: 1,
+        routePolicyVersion: "agent-os-tier-routes-v1",
+        providerRouteStatus: { kimi: "decommissioned", codex: "unavailable" },
+        providerModels: { kimi: ["kimi-standard"], codex: ["gpt-5.6-sol"] },
+      });
+      const kimiHome = adapterHome(state, "kimi");
+      const codexHome = adapterHome(state, "codex");
+      expect(await pathExists(kimiHome)).toBe(false);
+      expect(await pathExists(codexHome)).toBe(false);
+
+      const result = await runAgents(root, ["route", "probe", "--json"]);
+
+      expect(result.code).toBe(1);
+      expect(result.stderr).toBe("");
+      const report = JSON.parse(result.stdout);
+      expect(report.ok).toBe(false);
+      expect(report.route).toBeNull();
+      expect(report.findings).toEqual([
+        { code: "route_unavailable", message: "no policy-authorized route candidate is ready" },
+      ]);
+      expect(report.routing).toEqual({
+        policyVersion: "agent-os-tier-routes-v1",
+        capabilityFloor: "medium",
+        selectedCandidateIndex: null,
+        skipped: [
+          {
+            candidateIndex: 0,
+            provider: "kimi",
+            agentPreset: "Kimi",
+            capabilityTier: "medium",
+            reason: "provider_decommissioned",
+          },
+          {
+            candidateIndex: 1,
+            provider: "codex",
+            agentPreset: "Sol",
+            capabilityTier: "high",
+            reason: "provider_unavailable",
+          },
+        ],
+      });
+      expect(await pathExists(kimiHome)).toBe(false);
+      expect(await pathExists(codexHome)).toBe(false);
     });
   });
 

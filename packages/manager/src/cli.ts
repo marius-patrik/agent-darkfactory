@@ -63,9 +63,8 @@ import { executeModelRequest } from "./model-execution";
 import { modelExecutionRequestFromCli, selectsModelExecution } from "./model-execution-cli";
 import {
   MODEL_TIERS,
-  TIER_ROUTES,
   formatRouteProbeReport,
-  runRouteProbe,
+  runOrderedRouteProbe,
   type ModelTier,
 } from "./route-probe";
 import {
@@ -238,16 +237,11 @@ async function routeCommand(args: string[], flags: Record<string, string | boole
 
   const tier = requestedTier as ModelTier;
   const state = runtimeState();
-  const evidence = await doctorAdapter(state, TIER_ROUTES[tier].provider).then(
-    (result) => result.evidence,
-    () => null,
+  const report = await runOrderedRouteProbe(
+    state,
+    { tier, effort: requestedEffort, probe: "none" },
+    async (doctorState, provider) => (await doctorAdapter(doctorState, provider)).evidence,
   );
-  const report = await runRouteProbe(state, {
-    tier,
-    effort: requestedEffort,
-    providerDoctorEvidence: evidence,
-    probe: "none",
-  });
   if (flags.json) console.log(JSON.stringify(report, null, 2));
   else console.log(formatRouteProbeReport(report));
   if (!report.ok) process.exitCode = 1;
