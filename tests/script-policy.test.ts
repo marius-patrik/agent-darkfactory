@@ -2180,8 +2180,13 @@ test("df-work keeps issue running until verification confirms the claim", async 
 
 test("parseWorkerClaim normalizes provider ledger fields", () => {
   const receipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier: "high", effort: "medium" },
+    routing: {
+      policyVersion: "fixture-route-policy-v1",
+      primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
+      skipped: []
+    },
     resolved: { provider: "codex", model: "gpt-5.5", agentPreset: "Sol", providerVersion: "1.2.3" },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },

@@ -6,6 +6,8 @@ import test from "node:test";
 const autoreviewModule: any = await import("../.github/scripts/df-autoreview.mjs");
 // @ts-ignore Workflow policy helpers are native ESM, not built TypeScript modules.
 const modelModule: any = await import("../.github/scripts/df-model-policy.mjs");
+// @ts-ignore Workflow entrypoint helpers are native ESM, not built TypeScript modules.
+const autoreviewRunnerModule: any = await import("../.github/scripts/run-darkfactory-autoreview.mjs");
 
 const {
   loadAutoreviewPolicy,
@@ -15,6 +17,7 @@ const {
   validateAutoreviewPolicy
 } = autoreviewModule;
 const { loadModelPolicy } = modelModule;
+const { assertAutoreviewLifecycle } = autoreviewRunnerModule;
 const controlRoot = path.resolve(import.meta.dirname, "..");
 
 function clean(summary = "Complete review found no blocking issues.") {
@@ -46,8 +49,24 @@ function findings(label = "Preserve the trust boundary") {
 
 function receipt(request: any, outcome = "success") {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier: request.modelTier, effort: request.effort },
+    routing: {
+      policyVersion: "fixture-route-policy-v1",
+      primary: {
+        provider: `fixture-${request.modelTier}`,
+        model: `fixture/${request.modelTier}-model`,
+        agentPreset: `Fixture-${request.modelTier}`,
+        providerVersion: "1.0.0"
+      },
+      skipped: [{
+        provider: "fixture-unavailable",
+        model: "fixture/unavailable-model",
+        agentPreset: "Fixture-Unavailable",
+        providerVersion: "0.9.0",
+        reason: "credential_missing"
+      }]
+    },
     resolved: {
       provider: outcome === "success" ? `fixture-${request.modelTier}` : "unresolved",
       model: outcome === "success" ? `fixture/${request.modelTier}-model` : "unresolved",
@@ -155,6 +174,36 @@ test("Autoreview policy is versioned, bounded, and keeps managed trust surfaces 
   const unbounded = structuredClone(policy);
   unbounded.roundBudgets.medium = 1000;
   assert.throws(() => validateAutoreviewPolicy(unbounded), /medium round budget/);
+});
+
+test("Autoreview lifecycle admission uses the trusted canonical registry before work", () => {
+  const registry = {
+    schemaVersion: 1,
+    repositories: {
+      "marius-patrik/andromeda": { state: "active" },
+      "example/parked": { state: "parked" },
+      "example/completed": { state: "completed" }
+    }
+  };
+
+  assert.equal(
+    assertAutoreviewLifecycle({ owner: "marius-patrik", repo: "DarkFactory" }, registry),
+    "control"
+  );
+  assert.equal(
+    assertAutoreviewLifecycle({ owner: "marius-patrik", repo: "Andromeda" }, registry),
+    "active"
+  );
+  for (const [repository, state] of [
+    [{ owner: "example", repo: "parked" }, "parked"],
+    [{ owner: "example", repo: "completed" }, "completed"],
+    [{ owner: "example", repo: "unregistered" }, "removed"]
+  ] as const) {
+    assert.throws(
+      () => assertAutoreviewLifecycle(repository, registry),
+      (error: any) => error?.code === "target_lifecycle_blocked" && error.message.includes(state)
+    );
+  }
 });
 
 test("clean medium review is followed by an independent clean high confirmation", async () => {

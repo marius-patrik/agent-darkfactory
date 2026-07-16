@@ -25,8 +25,13 @@ function reviewedState(draftId: string, reviewedAt: string): IssueDraftState {
   const document = { title, body, digest: issueContentDigest(title, body) };
   const request = (modelTier: "medium" | "high") => ({ schemaVersion: 1 as const, modelTier, effort: "high" as const, purpose: modelTier === "high" ? "finalReview" as const : "iterativeReview" as const });
   const receipt = (modelTier: "medium" | "high") => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier, effort: "high" },
+    routing: {
+      policyVersion: "fixture-route-policy-v1",
+      primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
+      skipped: []
+    },
     resolved: { provider: `fixture-${modelTier}`, model: `fixture/${modelTier}`, agentPreset: `Fixture-${modelTier}`, providerVersion: "1.0.0" },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },

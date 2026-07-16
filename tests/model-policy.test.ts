@@ -93,8 +93,13 @@ test("execution receipts match the request and expose only sanitized route evide
   const policy = await loadModelPolicy(controlRoot);
   const request = modelRequestForPurpose(policy, "implementation", { taskClass: "standard" });
   const receipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier: "medium", effort: "medium" },
+    routing: {
+      policyVersion: "fixture-route-policy-v1",
+      primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
+      skipped: []
+    },
     resolved: {
       provider: "fixture-provider",
       model: "fixture/model-v1",

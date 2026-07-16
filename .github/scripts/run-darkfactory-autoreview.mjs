@@ -10,8 +10,11 @@ import {
   assertAllowedRepo,
   createGithubClient,
   extractClosingIssueNumbers,
+  managedRepoLifecycleState,
   normalizeWorkerPullRequestActor,
+  normalizedRepoName,
   parseRepo,
+  readManagedRepoRegistry,
   repoName,
   sanitize,
   writeRunLedger
@@ -41,6 +44,7 @@ import {
 } from "../../src/issue-spec.ts";
 
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const CONTROL_REPOSITORY = "marius-patrik/darkfactory";
 const REVIEW_MARKER = "<!-- darkfactory-autoreview -->";
 const OWNER_HISTORY_MARKER = "<!-- darkfactory:owner-text-history -->";
 const OWNER_OVERRIDE_COMMAND = "/df autoreview override";
@@ -56,6 +60,20 @@ function stableError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+/** Admit model-backed review only for the control product or a live managed lane. */
+export function assertAutoreviewLifecycle(repository, registry) {
+  assertAllowedRepo(repository);
+  if (normalizedRepoName(repository) === CONTROL_REPOSITORY) return "control";
+  const state = managedRepoLifecycleState(repository, registry);
+  if (state !== "active") {
+    throw stableError(
+      "target_lifecycle_blocked",
+      `DarkFactory Autoreview requires an active managed repository; ${repoName(repository)} is ${state}.`
+    );
+  }
+  return state;
 }
 
 function sha256(value) {
@@ -979,7 +997,8 @@ export async function executeAutoreview(environment = process.env) {
   const controlRevision = environment.DF_CONTROL_REVISION?.trim() || "";
   if (!Number.isSafeInteger(number) || number < 1) throw new Error("DF_TARGET_NUMBER must be a positive integer");
   if (!new Set(["pull_request", "issue"]).has(kind)) throw new Error("DF_TARGET_KIND must be pull_request or issue");
-  assertAllowedRepo(repository);
+  const registry = await readManagedRepoRegistry(CONTROL_ROOT);
+  assertAutoreviewLifecycle(repository, registry);
   const gh = createGithubClient(token, "darkfactory-autoreview");
   const policy = await loadAutoreviewPolicy(CONTROL_ROOT);
   const modelPolicy = await loadModelPolicy(CONTROL_ROOT);

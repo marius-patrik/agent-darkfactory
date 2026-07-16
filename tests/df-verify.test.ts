@@ -23,8 +23,13 @@ function workerLedger(provider: string, model: string) {
     model_request: { schemaVersion: 1, modelTier, effort },
     agent_os: {
       receipt: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         requested: { modelTier, effort },
+        routing: {
+          policyVersion: "fixture-route-policy-v1",
+          primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
+          skipped: []
+        },
         resolved: { provider, model, agentPreset: provider === "codex" ? "Sol" : "Kimi", providerVersion: "1.2.3" },
         attempts: [{ number: 1, outcome: "success", reason: null }],
         usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },

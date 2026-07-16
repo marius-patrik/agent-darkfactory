@@ -16,6 +16,7 @@ export const MODEL_PURPOSES = Object.freeze([
 export const TASK_CLASSES = Object.freeze(["mechanical", "standard", "hard"]);
 
 const SAFE_ROUTE_VALUE = /^[A-Za-z0-9][A-Za-z0-9_.\/-]{0,127}$/;
+const SAFE_ROUTE_MODEL = /^[A-Za-z0-9][A-Za-z0-9_.\/() -]{0,127}$/;
 const FORBIDDEN_RECEIPT_KEYS = /^(?:auth|authorization|credential|credentials|secret|secrets|privateKey|accessToken|refreshToken)$/i;
 
 function isRecord(value) {
@@ -199,6 +200,35 @@ function safeRouteString(value, field) {
   return value;
 }
 
+function safeRouteModel(value, field) {
+  if (typeof value !== "string" || !SAFE_ROUTE_MODEL.test(value)) {
+    throw new Error(`Agent OS receipt ${field} is invalid`);
+  }
+  return value;
+}
+
+function receiptRouteCandidate(value, context, withReason = false) {
+  if (!isRecord(value)) throw new Error(`${context} is invalid`);
+  exactKeys(
+    value,
+    withReason
+      ? ["provider", "model", "agentPreset", "providerVersion", "reason"]
+      : ["provider", "model", "agentPreset", "providerVersion"],
+    context
+  );
+  const candidate = {
+    provider: safeRouteString(value.provider, `${context}.provider`),
+    model: safeRouteModel(value.model, `${context}.model`),
+    agentPreset: safeRouteString(value.agentPreset, `${context}.agentPreset`),
+    providerVersion: safeRouteString(value.providerVersion, `${context}.providerVersion`)
+  };
+  if (!withReason) return Object.freeze(candidate);
+  if (typeof value.reason !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.reason)) {
+    throw new Error(`${context}.reason is invalid`);
+  }
+  return Object.freeze({ ...candidate, reason: value.reason });
+}
+
 function nonNegativeInteger(value, field) {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Agent OS receipt ${field} is invalid`);
   return value;
@@ -207,18 +237,28 @@ function nonNegativeInteger(value, field) {
 export function validateAgentExecutionReceipt(raw, expectedRequest, options = {}) {
   rejectSensitiveReceiptData(raw);
   if (!isRecord(raw)) throw new Error("Agent OS execution receipt must be an object");
-  exactKeys(raw, ["schemaVersion", "requested", "resolved", "attempts", "usage", "outcome", "blockReason"], "Agent OS execution receipt");
-  if (raw.schemaVersion !== 1) throw new Error("Agent OS execution receipt schemaVersion must be 1");
+  exactKeys(raw, ["schemaVersion", "requested", "routing", "resolved", "attempts", "usage", "outcome", "blockReason"], "Agent OS execution receipt");
+  if (raw.schemaVersion !== 2) throw new Error("Agent OS execution receipt schemaVersion must be 2");
   if (!isRecord(raw.requested)) throw new Error("Agent OS execution receipt requested is invalid");
   exactKeys(raw.requested, ["modelTier", "effort"], "Agent OS execution receipt requested");
   if (raw.requested.modelTier !== expectedRequest.modelTier || raw.requested.effort !== expectedRequest.effort) {
     throw new Error("Agent OS execution receipt does not match the authorized model request");
   }
+  if (!isRecord(raw.routing)) throw new Error("Agent OS execution receipt routing is invalid");
+  exactKeys(raw.routing, ["policyVersion", "primary", "skipped"], "Agent OS execution receipt routing");
+  const policyVersion = safeRouteString(raw.routing.policyVersion, "routing.policyVersion");
+  const primary = receiptRouteCandidate(raw.routing.primary, "Agent OS execution receipt routing.primary");
+  if (!Array.isArray(raw.routing.skipped) || raw.routing.skipped.length > 8) {
+    throw new Error("Agent OS execution receipt routing.skipped is invalid");
+  }
+  const skipped = raw.routing.skipped.map((candidate, index) =>
+    receiptRouteCandidate(candidate, `Agent OS execution receipt routing.skipped ${index}`, true)
+  );
   if (!isRecord(raw.resolved)) throw new Error("Agent OS execution receipt resolved is invalid");
   exactKeys(raw.resolved, ["provider", "model", "agentPreset", "providerVersion"], "Agent OS execution receipt resolved");
   const resolved = {
     provider: safeRouteString(raw.resolved.provider, "resolved.provider"),
-    model: safeRouteString(raw.resolved.model, "resolved.model"),
+    model: safeRouteModel(raw.resolved.model, "resolved.model"),
     agentPreset: safeRouteString(raw.resolved.agentPreset, "resolved.agentPreset"),
     providerVersion: safeRouteString(raw.resolved.providerVersion, "resolved.providerVersion")
   };
@@ -261,8 +301,9 @@ export function validateAgentExecutionReceipt(raw, expectedRequest, options = {}
     throw new Error(`Agent OS execution blocked: ${raw.blockReason || "route_unavailable"}`);
   }
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: Object.freeze({ modelTier: raw.requested.modelTier, effort: raw.requested.effort }),
+    routing: Object.freeze({ policyVersion, primary, skipped: Object.freeze(skipped) }),
     resolved: Object.freeze(resolved),
     attempts: Object.freeze(attempts.map(Object.freeze)),
     usage: Object.freeze(usage),

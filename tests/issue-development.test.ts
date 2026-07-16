@@ -61,8 +61,13 @@ function reviewedState(): IssueDraftState {
   const document = { ...rendered, digest };
   const request = (modelTier: "medium" | "high") => ({ schemaVersion: 1, modelTier, effort: "high", purpose: modelTier === "high" ? "finalReview" : "iterativeReview" });
   const receipt = (modelTier: "medium" | "high") => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier, effort: "high" },
+    routing: {
+      policyVersion: "fixture-route-policy-v1",
+      primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
+      skipped: []
+    },
     resolved: { provider: `fixture-${modelTier}`, model: `fixture/${modelTier}`, agentPreset: `Fixture-${modelTier}`, providerVersion: "1.0.0" },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
@@ -112,8 +117,13 @@ function blockedOwnerQuestionState(): IssueDraftState {
   const request = { schemaVersion: 1, modelTier: "high", effort: "high", purpose: "issueDrafting" };
   const prompt = { selection: { modelTier: "high", effort: "high" } } as never;
   const receipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier: "high", effort: "high" },
+    routing: {
+      policyVersion: "fixture-route-policy-v1",
+      primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
+      skipped: []
+    },
     resolved: { provider: "fixture-high", model: "fixture/high", agentPreset: "Fixture-high", providerVersion: "1.0.0" },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
@@ -205,8 +215,13 @@ test("version-bound owner answers append a high-tier drafting turn and require a
         output: validDraftResult(),
         prompt: { selection: { modelTier: "high", effort: "high" }, inputChecksum: "sha256:test" },
         receipt: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           requested: { modelTier: "high", effort: "high" },
+          routing: {
+            policyVersion: "fixture-route-policy-v1",
+            primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
+            skipped: []
+          },
           resolved: { provider: "fixture-high", model: "fixture/high", agentPreset: "Fixture-high", providerVersion: "1.0.0" },
           attempts: [{ number: 1, outcome: "success", reason: null }],
           usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },

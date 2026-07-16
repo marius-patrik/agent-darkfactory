@@ -58,8 +58,13 @@ function intent(overrides: Partial<ModelTurnIntent> = {}): ModelTurnIntent {
 
 function successfulReceipt(request: any) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier: request.modelTier, effort: request.effort },
+    routing: {
+      policyVersion: "fixture-route-policy-v1",
+      primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
+      skipped: []
+    },
     resolved: {
       provider: "fixture-provider",
       model: "fixture/model-v1",
