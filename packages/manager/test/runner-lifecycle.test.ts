@@ -1157,6 +1157,21 @@ describe("local runner repository binding", () => {
     expect(result.details.note).toBe("runner already installed and healthy");
   });
 
+  test("accepts the official Windows runner's single leading UTF-8 BOM", async () => {
+    const { state } = await freshState();
+    const kit = makeKit();
+    expect((await installRunner(state, kit.deps)).ok).toBe(true);
+    const configPath = path.join(state.stateDir, "runner", ".runner");
+    const config = await readFile(configPath, "utf8");
+    await writeFile(configPath, `\uFEFF${config}`);
+
+    const result = await installRunner(state, kit.deps);
+
+    expect(result.ok).toBe(true);
+    expect(result.changed).toBe(false);
+    expect(result.details.note).toBe("runner already installed and healthy");
+  });
+
   test("treats a missing .runner as genuinely unconfigured and repairs it", async () => {
     const { state } = await freshState();
     const kit = makeKit();
@@ -1175,6 +1190,8 @@ describe("local runner repository binding", () => {
 
   const invalidRunnerConfigs: Array<[string, string]> = [
     ["malformed JSON", "{"],
+    ["double leading BOM", `\uFEFF\uFEFF${JSON.stringify({ agentId: 500, agentName: RUNNER_NAME, gitHubUrl: `https://github.com/${RUNNER_REPOSITORY}` })}`],
+    ["non-leading BOM", ` \uFEFF${JSON.stringify({ agentId: 500, agentName: RUNNER_NAME, gitHubUrl: `https://github.com/${RUNNER_REPOSITORY}` })}`],
     ["top-level null", "null"],
     ["top-level array", "[]"],
     ["top-level scalar", '"value"'],

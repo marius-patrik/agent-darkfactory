@@ -1338,7 +1338,10 @@ async function readRunnerConfiguration(installDir: string): Promise<RunnerConfig
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(contents);
+    // The official Windows runner writes `.runner` as UTF-8 with one leading
+    // BOM. Admit only that encoding marker; a second or non-leading BOM still
+    // reaches JSON.parse and fails closed as malformed configuration.
+    parsed = JSON.parse(contents.startsWith("\uFEFF") ? contents.slice(1) : contents);
   } catch {
     throw new Error("runner configuration is malformed");
   }
