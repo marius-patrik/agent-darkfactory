@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AdapterDoctorResult } from "../src/adapters";
+import { adapterHome, type AdapterDoctorResult } from "../src/adapters";
 import {
   MAX_PROMPT_BYTES,
   executeModelRequest,
@@ -14,8 +14,20 @@ import {
   type ModelEffort,
   type ModelExecutionDependencies,
 } from "../src/model-execution";
-import { TIER_ROUTES, type ModelTier, type ResolvedRoute } from "../src/route-probe";
-import { ensureSharedState, sharedStateAt, writeSessionConfig, type SharedState } from "../src/state";
+import {
+  AGENT_ROUTE_POLICY,
+  ROUTE_POLICY_VERSION,
+  TIER_ROUTES,
+  type ModelTier,
+  type ResolvedRoute,
+} from "../src/route-probe";
+import {
+  ensureSharedState,
+  readSessionConfig,
+  sharedStateAt,
+  writeSessionConfig,
+  type SharedState,
+} from "../src/state";
 
 const roots: string[] = [];
 
@@ -145,8 +157,23 @@ describe("canonical model execution route and receipt", () => {
       expect(result.ok).toBe(true);
       expect(result.receipt).toEqual(JSON.parse(await Bun.file(request(root, receiptDir, tier).receiptPath).text()));
       expect(result.receipt).toEqual({
-        schemaVersion: 1,
+        schemaVersion: 2,
         requested: { modelTier: tier, effort: "medium" },
+        routing: {
+          policyVersion: ROUTE_POLICY_VERSION,
+          primary: {
+            provider: TIER_ROUTES[tier].provider,
+            model: {
+              low: "agy-fast",
+              medium: "kimi-code/kimi-for-coding",
+              high: "gpt-5.6-sol",
+              max: "claude-fable-5",
+            }[tier],
+            agentPreset: TIER_ROUTES[tier].agentPreset,
+            providerVersion: "1.2.3",
+          },
+          skipped: [],
+        },
         resolved: {
           provider: TIER_ROUTES[tier].provider,
           model: {
@@ -185,6 +212,298 @@ describe("canonical model execution route and receipt", () => {
     expect(new Set(captured.map(({ route }) => JSON.stringify(route))).size).toBe(1);
   });
 
+  test("fallback regression triplet: healthy Kimi remains the medium primary", async () => {
+    const { root, state, receiptDir } = await fixture();
+    const doctors: string[] = [];
+    const captured: Parameters<typeof successfulDependencies>[0] = [];
+    const dependencies = successfulDependencies(captured);
+    dependencies.doctor = async (_state, provider) => {
+      doctors.push(provider);
+      return doctorResult(provider);
+    };
+
+    const result = await executeModelRequest(
+      state,
+      request(root, receiptDir, "medium"),
+      dependencies,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(doctors).toEqual(["kimi"]);
+    expect(captured.map(({ route }) => route.provider)).toEqual(["kimi"]);
+    expect(result.receipt.routing).toEqual({
+      policyVersion: ROUTE_POLICY_VERSION,
+      primary: {
+        provider: "kimi",
+        model: "kimi-code/kimi-for-coding",
+        agentPreset: "Kimi",
+        providerVersion: "1.2.3",
+      },
+      skipped: [],
+    });
+  });
+
+  test("fallback regression triplet: decommissioned Kimi selects Codex without touching Kimi", async () => {
+    const { root, state, receiptDir } = await fixture();
+    await writeSessionConfig(state, {
+      ...(await readSessionConfig(state)),
+      providerRouteStatus: { kimi: "decommissioned" },
+    });
+    const doctors: string[] = [];
+    const captured: Parameters<typeof successfulDependencies>[0] = [];
+    const dependencies = successfulDependencies(captured);
+    dependencies.doctor = async (_state, provider) => {
+      doctors.push(provider);
+      return doctorResult(provider);
+    };
+
+    const result = await executeModelRequest(
+      state,
+      request(root, receiptDir, "medium"),
+      dependencies,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(doctors).toEqual(["codex"]);
+    expect(captured.map(({ route }) => route.provider)).toEqual(["codex"]);
+    expect(await Bun.file(adapterHome(state, "kimi")).exists()).toBe(false);
+    expect(result.receipt.requested).toEqual({ modelTier: "medium", effort: "medium" });
+    expect(result.receipt.resolved).toEqual({
+      provider: "codex",
+      model: "gpt-5.6-sol",
+      agentPreset: "Sol",
+      providerVersion: "1.2.3",
+    });
+    expect(result.receipt.routing).toEqual({
+      policyVersion: ROUTE_POLICY_VERSION,
+      primary: {
+        provider: "kimi",
+        model: "kimi-code/kimi-for-coding",
+        agentPreset: "Kimi",
+        providerVersion: "unresolved",
+      },
+      skipped: [
+        {
+          provider: "kimi",
+          model: "kimi-code/kimi-for-coding",
+          agentPreset: "Kimi",
+          providerVersion: "unresolved",
+          reason: "provider_decommissioned",
+        },
+      ],
+    });
+  });
+
+  test("fallback regression triplet: both medium candidates unavailable fail closed before launch", async () => {
+    const { root, state, receiptDir } = await fixture();
+    await writeSessionConfig(state, {
+      ...(await readSessionConfig(state)),
+      providerRouteStatus: { kimi: "decommissioned" },
+    });
+    const doctors: string[] = [];
+    let executions = 0;
+    const result = await executeModelRequest(state, request(root, receiptDir, "medium"), {
+      doctor: async (_state, provider) => {
+        doctors.push(provider);
+        return {
+          ...doctorResult(provider),
+          binary: null,
+          ok: false,
+          pinned: false,
+          evidence: {
+            ...doctorResult(provider).evidence,
+            pinned: false,
+            executableVerified: false,
+          },
+        };
+      },
+      execute: async () => {
+        executions += 1;
+        throw new Error("must not start");
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.sessionId).toBeNull();
+    expect(doctors).toEqual(["codex"]);
+    expect(executions).toBe(0);
+    expect(result.receipt.blockReason).toBe("provider_unpinned");
+    expect(result.receipt.resolved).toEqual({
+      provider: "unresolved",
+      model: "unresolved",
+      agentPreset: "unresolved",
+      providerVersion: "unresolved",
+    });
+    expect(result.receipt.routing.skipped.map(({ provider, reason }) => ({ provider, reason }))).toEqual([
+      { provider: "kimi", reason: "provider_decommissioned" },
+      { provider: "codex", reason: "provider_unpinned" },
+    ]);
+  });
+
+  test("fallback effort matrix preserves medium tier and low/medium/high effort", async () => {
+    const { root, state, receiptDir } = await fixture();
+    await writeSessionConfig(state, {
+      ...(await readSessionConfig(state)),
+      providerRouteStatus: { kimi: "decommissioned" },
+    });
+    const captured: Parameters<typeof successfulDependencies>[0] = [];
+    for (const effort of ["low", "medium", "high"] as const) {
+      const result = await executeModelRequest(
+        state,
+        request(root, receiptDir, "medium", effort),
+        successfulDependencies(captured),
+      );
+      expect(result.ok).toBe(true);
+      expect(result.receipt.requested).toEqual({ modelTier: "medium", effort });
+      expect(result.receipt.resolved.provider).toBe("codex");
+      expect(result.receipt.routing.skipped[0]?.reason).toBe("provider_decommissioned");
+    }
+    expect(captured.map(({ route, effort }) => ({ provider: route.provider, effort }))).toEqual([
+      { provider: "codex", effort: "low" },
+      { provider: "codex", effort: "medium" },
+      { provider: "codex", effort: "high" },
+    ]);
+  });
+
+  test("disabled, unavailable, and quota-blocked medium primaries promote with stable evidence", async () => {
+    const { root, state, receiptDir } = await fixture();
+    const expected = {
+      disabled: "provider_disabled",
+      unavailable: "provider_unavailable",
+      "quota-blocked": "provider_quota_blocked",
+    } as const;
+    for (const [status, reason] of Object.entries(expected)) {
+      await writeSessionConfig(state, {
+        ...(await readSessionConfig(state)),
+        providerRouteStatus: { kimi: status as keyof typeof expected },
+      });
+      const doctors: string[] = [];
+      const captured: Parameters<typeof successfulDependencies>[0] = [];
+      const dependencies = successfulDependencies(captured);
+      dependencies.doctor = async (_state, provider) => {
+        doctors.push(provider);
+        return doctorResult(provider);
+      };
+      const input = request(root, receiptDir, "medium");
+      input.receiptPath = path.join(receiptDir, `${status}.json`);
+
+      const result = await executeModelRequest(state, input, dependencies);
+
+      expect(result.ok, status).toBe(true);
+      expect(doctors, status).toEqual(["codex"]);
+      expect(captured.map(({ route }) => route.provider), status).toEqual(["codex"]);
+      expect(result.receipt.routing.skipped[0]?.reason, status).toBe(reason);
+    }
+  });
+
+  test("an unhealthy Kimi promotes to healthy Codex before the turn", async () => {
+    const { root, state, receiptDir } = await fixture();
+    const doctors: string[] = [];
+    const captured: Parameters<typeof successfulDependencies>[0] = [];
+    const dependencies = successfulDependencies(captured);
+    dependencies.doctor = async (_state, provider) => {
+      doctors.push(provider);
+      if (provider === "kimi") {
+        return {
+          ...doctorResult(provider),
+          binary: null,
+          ok: false,
+          evidence: { ...doctorResult(provider).evidence, executableVerified: false },
+        };
+      }
+      return doctorResult(provider);
+    };
+
+    const result = await executeModelRequest(
+      state,
+      request(root, receiptDir, "medium"),
+      dependencies,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(doctors).toEqual(["kimi", "codex"]);
+    expect(captured.map(({ route }) => route.provider)).toEqual(["codex"]);
+    expect(result.receipt.routing.skipped[0]).toMatchObject({
+      provider: "kimi",
+      reason: "provider_unverified",
+    });
+  });
+
+  test("a turn-started provider failure never retries another candidate", async () => {
+    const { root, state, receiptDir } = await fixture();
+    const doctors: string[] = [];
+    let executions = 0;
+    const result = await executeModelRequest(state, request(root, receiptDir, "medium"), {
+      doctor: async (_state, provider) => {
+        doctors.push(provider);
+        return doctorResult(provider);
+      },
+      execute: async (_state, route) => {
+        executions += 1;
+        expect(route.provider).toBe("kimi");
+        throw new Error("turn failed after launch");
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.receipt.blockReason).toBe("provider_failed");
+    expect(doctors).toEqual(["kimi"]);
+    expect(executions).toBe(1);
+    expect(result.receipt.routing.skipped).toEqual([]);
+  });
+
+  test("route policy trust rejects malformed, unknown, drifted, and downgraded candidates", async () => {
+    const cases: Array<{ name: string; policy: unknown; reason: string }> = [];
+    cases.push({ name: "malformed", policy: null, reason: "route_policy_malformed" });
+    const unknown = structuredClone(AGENT_ROUTE_POLICY);
+    (unknown.tiers.medium.candidates[1] as { provider: string }).provider = "unknown";
+    cases.push({ name: "unknown", policy: unknown, reason: "route_policy_candidate_unknown" });
+    const versionDrift = structuredClone(AGENT_ROUTE_POLICY);
+    (versionDrift as { version: string }).version = "agent-os-tier-routes-v0";
+    cases.push({ name: "version", policy: versionDrift, reason: "route_policy_version_mismatch" });
+    const downgraded = structuredClone(AGENT_ROUTE_POLICY);
+    (downgraded.tiers.medium.candidates[1] as { capabilityTier: ModelTier }).capabilityTier = "low";
+    cases.push({ name: "downgrade", policy: downgraded, reason: "route_policy_capability_downgrade" });
+    const drifted = structuredClone(AGENT_ROUTE_POLICY);
+    (drifted.tiers.medium.candidates[1] as { agentPreset: string }).agentPreset = "Codex";
+    cases.push({ name: "drift", policy: drifted, reason: "route_policy_drift" });
+
+    for (const entry of cases) {
+      const { root, state, receiptDir } = await fixture();
+      let doctorCalls = 0;
+      const input = request(root, receiptDir, "medium");
+      input.receiptPath = path.join(receiptDir, `${entry.name}.json`);
+      const result = await executeModelRequest(state, input, {
+        routePolicy: entry.policy,
+        doctor: async (_state, provider) => {
+          doctorCalls += 1;
+          return doctorResult(provider);
+        },
+      });
+      expect(result.ok, entry.name).toBe(false);
+      expect(result.receipt.blockReason, entry.name).toBe(entry.reason);
+      expect(doctorCalls, entry.name).toBe(0);
+    }
+  });
+
+  test("canonical config rejects route-policy version drift before any provider doctor", async () => {
+    const { root, state, receiptDir } = await fixture();
+    await writeSessionConfig(state, {
+      ...(await readSessionConfig(state)),
+      routePolicyVersion: "agent-os-tier-routes-v0",
+    });
+    let doctorCalls = 0;
+    const result = await executeModelRequest(state, request(root, receiptDir, "medium"), {
+      doctor: async (_state, provider) => {
+        doctorCalls += 1;
+        return doctorResult(provider);
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.receipt.blockReason).toBe("route_policy_version_mismatch");
+    expect(doctorCalls).toBe(0);
+  });
+
   test("route failure publishes a blocked receipt and never executes", async () => {
     const { root, state, receiptDir } = await fixture();
     let calls = 0;
@@ -209,11 +528,20 @@ describe("canonical model execution route and receipt", () => {
     expect(result.receipt.outcome).toBe("blocked");
     expect(result.receipt.blockReason).toBe("provider_unverified");
     expect(result.receipt.resolved).toEqual({
-      provider: "codex",
-      model: "gpt-5.6-sol",
-      agentPreset: "Sol",
-      providerVersion: "1.2.3",
+      provider: "unresolved",
+      model: "unresolved",
+      agentPreset: "unresolved",
+      providerVersion: "unresolved",
     });
+    expect(result.receipt.routing.skipped).toEqual([
+      {
+        provider: "codex",
+        model: "gpt-5.6-sol",
+        agentPreset: "Sol",
+        providerVersion: "1.2.3",
+        reason: "provider_unverified",
+      },
+    ]);
     expect(JSON.parse(await Bun.file(input.receiptPath).text())).toEqual(result.receipt);
   });
 
@@ -359,7 +687,7 @@ describe("canonical model execution route and receipt", () => {
     const input = request(root, receiptDir, "high", "medium");
     const result = await executeModelRequest(state, input, {
       doctor: async (_state, provider) => doctorResult(provider),
-      routeProbe: async () => {
+      candidateProbe: async () => {
         const pending = JSON.parse(await Bun.file(input.receiptPath).text());
         expect(pending.blockReason).toBe("execution_pending");
         throw new Error("route diagnostic must not escape");

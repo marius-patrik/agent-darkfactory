@@ -11,14 +11,24 @@ import { doctorAdapter, type AdapterDoctorResult } from "./adapters";
 import { providerSessionAdapter } from "./session-adapters";
 import type { ProviderId } from "./provider-registry";
 import {
+  AGENT_ROUTE_POLICY,
   MODEL_TIERS,
-  TIER_ROUTES,
-  runRouteProbe,
+  ROUTE_POLICY_VERSION,
+  isSafeModelId,
+  runCandidateRouteProbe,
+  resolveRouteModel,
+  type AgentRoutePolicy,
   type ModelTier,
   type ResolvedRoute,
   type RouteFindingCode,
+  type TierRouteCandidate,
 } from "./route-probe";
-import type { SharedState } from "./state";
+import {
+  readSessionConfig,
+  type ProviderRouteStatus,
+  type SessionConfig,
+  type SharedState,
+} from "./state";
 import { orchestratorSystemPrompt, startOrchestratorHeartbeat } from "./orchestrator";
 import {
   runAnchoredFileAuthority,
@@ -30,8 +40,10 @@ import {
  *
  * Invariants:
  * - A logical tier and independent effort resolve only through the canonical
- *   route module plus provider-doctor evidence. DarkFactory never supplies a
- *   provider, concrete model, executable, registry, or fallback.
+ *   ordered route policy plus provider-doctor evidence. DarkFactory never
+ *   supplies a provider, concrete model, executable, registry, or fallback.
+ *   Candidate selection ends before the one admitted turn starts; a turn
+ *   failure never retries another provider.
  * - Exactly one bounded prompt source is admitted. Prompt text is never placed
  *   in an Agent OS receipt or error and file-backed input is verified through
  *   one pinned handle before use.
@@ -56,10 +68,15 @@ const SAFE_RECEIPT_MODEL = /^[A-Za-z0-9][A-Za-z0-9_.\/() -]{0,127}$/;
 const SAFE_BLOCK_REASON = /^[a-z][a-z0-9_-]{0,63}$/;
 
 export interface AgentExecutionReceipt {
-  schemaVersion: 1;
+  schemaVersion: 2;
   requested: {
     modelTier: ModelTier;
     effort: ModelEffort;
+  };
+  routing: {
+    policyVersion: string;
+    primary: ReceiptRouteCandidate;
+    skipped: Array<ReceiptRouteCandidate & { reason: string }>;
   };
   resolved: {
     provider: string;
@@ -79,6 +96,13 @@ export interface AgentExecutionReceipt {
   };
   outcome: "success" | "blocked";
   blockReason: string | null;
+}
+
+export interface ReceiptRouteCandidate {
+  provider: string;
+  model: string;
+  agentPreset: string;
+  providerVersion: string;
 }
 
 export interface ModelExecutionRequest {
@@ -108,7 +132,10 @@ export interface ManagedProviderOutcome {
 
 export interface ModelExecutionDependencies {
   doctor?: (state: SharedState, provider: ProviderId) => Promise<AdapterDoctorResult>;
-  routeProbe?: typeof runRouteProbe;
+  candidateProbe?: typeof runCandidateRouteProbe;
+  readConfig?: (state: SharedState) => Promise<SessionConfig>;
+  /** Internal trust-test seam. Only the exact canonical policy is admitted. */
+  routePolicy?: unknown;
   execute?: (
     state: SharedState,
     route: ResolvedRoute,
@@ -122,6 +149,73 @@ export interface ModelExecutionDependencies {
       executionPolicy: ExecutionPolicy;
     }>,
   ) => Promise<{ outcome: ManagedProviderOutcome; sessionId: string }>;
+}
+
+type RoutePolicyFailure =
+  | "route_policy_malformed"
+  | "route_policy_candidate_unknown"
+  | "route_policy_version_mismatch"
+  | "route_policy_capability_downgrade"
+  | "route_policy_drift";
+
+const CAPABILITY_RANK: Record<ModelTier, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  max: 3,
+};
+
+const PROVIDERS = new Set<ProviderId>(["agy", "kimi", "codex", "claude"]);
+const SAFE_AGENT_PRESET = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
+
+function validateRoutePolicy(
+  value: unknown,
+): { ok: true; policy: AgentRoutePolicy } | { ok: false; reason: RoutePolicyFailure } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, reason: "route_policy_malformed" };
+  }
+  const policy = value as Partial<AgentRoutePolicy>;
+  if (policy.version !== ROUTE_POLICY_VERSION) {
+    return { ok: false, reason: "route_policy_version_mismatch" };
+  }
+  if (policy.schemaVersion !== 1 || !policy.tiers || typeof policy.tiers !== "object") {
+    return { ok: false, reason: "route_policy_malformed" };
+  }
+  for (const tier of MODEL_TIERS) {
+    const tierPolicy = policy.tiers[tier];
+    if (
+      !tierPolicy ||
+      !(MODEL_TIERS as readonly string[]).includes(tierPolicy.capabilityFloor) ||
+      !Array.isArray(tierPolicy.candidates) ||
+      tierPolicy.candidates.length === 0
+    ) {
+      return { ok: false, reason: "route_policy_malformed" };
+    }
+    for (const candidate of tierPolicy.candidates) {
+      if (!candidate || typeof candidate !== "object" || !PROVIDERS.has(candidate.provider as ProviderId)) {
+        return { ok: false, reason: "route_policy_candidate_unknown" };
+      }
+      if (
+        !SAFE_AGENT_PRESET.test(candidate.agentPreset) ||
+        !(MODEL_TIERS as readonly string[]).includes(candidate.capabilityTier)
+      ) {
+        return { ok: false, reason: "route_policy_malformed" };
+      }
+      const capabilityTier = candidate.capabilityTier as ModelTier;
+      const capabilityFloor = tierPolicy.capabilityFloor as ModelTier;
+      if (CAPABILITY_RANK[capabilityTier] < CAPABILITY_RANK[capabilityFloor]) {
+        return { ok: false, reason: "route_policy_capability_downgrade" };
+      }
+    }
+  }
+  try {
+    if (JSON.stringify(policy) !== JSON.stringify(AGENT_ROUTE_POLICY)) {
+      return { ok: false, reason: "route_policy_drift" };
+    }
+  } catch {
+    return { ok: false, reason: "route_policy_malformed" };
+  }
+  return { ok: true, policy: policy as AgentRoutePolicy };
 }
 
 interface FileIdentity {
@@ -246,18 +340,55 @@ function providerResolvedModel(
 }
 
 function resolvedReceipt(
-  tier: ModelTier,
   route: ResolvedRoute | null,
   providerVersion: string | null | undefined,
   providerModel?: string,
 ): AgentExecutionReceipt["resolved"] {
-  const declared = TIER_ROUTES[tier];
   const model = providerModel ?? route?.model ?? "unresolved";
   return {
-    provider: outputSafe(route?.provider ?? declared.provider),
+    provider: outputSafe(route?.provider ?? "unresolved"),
     model: SAFE_RECEIPT_MODEL.test(model) ? model : "unresolved",
-    agentPreset: outputSafe(route?.agentPreset ?? declared.agentPreset),
+    agentPreset: outputSafe(route?.agentPreset ?? "unresolved"),
     providerVersion: receiptProviderVersion(providerVersion),
+  };
+}
+
+function receiptCandidate(
+  candidate: TierRouteCandidate,
+  config?: SessionConfig,
+  route?: ResolvedRoute | null,
+  providerVersion?: string | null,
+): ReceiptRouteCandidate {
+  const configured = config ? resolveRouteModel(config, candidate.provider) : null;
+  const configuredModel = configured && "model" in configured ? configured.model : "unresolved";
+  const model = route?.model ?? configuredModel;
+  return {
+    provider: outputSafe(candidate.provider),
+    model: isSafeModelId(model) ? model : "unresolved",
+    agentPreset: outputSafe(candidate.agentPreset),
+    providerVersion: receiptProviderVersion(providerVersion),
+  };
+}
+
+function initialRouting(
+  tier: ModelTier,
+  policy: AgentRoutePolicy = AGENT_ROUTE_POLICY,
+  config?: SessionConfig,
+): AgentExecutionReceipt["routing"] {
+  return {
+    policyVersion: ROUTE_POLICY_VERSION,
+    primary: receiptCandidate(policy.tiers[tier].candidates[0]!, config),
+    skipped: [],
+  };
+}
+
+function routingSnapshot(
+  routing: AgentExecutionReceipt["routing"],
+): AgentExecutionReceipt["routing"] {
+  return {
+    policyVersion: routing.policyVersion,
+    primary: { ...routing.primary },
+    skipped: routing.skipped.map((candidate) => ({ ...candidate })),
   };
 }
 
@@ -266,13 +397,15 @@ function blockedReceipt(
   effort: ModelEffort,
   route: ResolvedRoute | null,
   providerVersion: string | null | undefined,
+  routing: AgentExecutionReceipt["routing"],
   reason: string,
 ): AgentExecutionReceipt {
   const blockReason = SAFE_BLOCK_REASON.test(reason) ? reason : "execution_blocked";
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier: tier, effort },
-    resolved: resolvedReceipt(tier, route, providerVersion),
+    routing: routingSnapshot(routing),
+    resolved: resolvedReceipt(route, providerVersion),
     attempts: [{ number: 1, outcome: "blocked", reason: blockReason }],
     usage: zeroUsage(),
     outcome: "blocked",
@@ -285,13 +418,15 @@ function successReceipt(
   effort: ModelEffort,
   route: ResolvedRoute,
   providerVersion: string,
+  routing: AgentExecutionReceipt["routing"],
   usage: AgentExecutionReceipt["usage"],
   providerModel: string,
 ): AgentExecutionReceipt {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     requested: { modelTier: tier, effort },
-    resolved: resolvedReceipt(tier, route, providerVersion, providerModel),
+    routing: routingSnapshot(routing),
+    resolved: resolvedReceipt(route, providerVersion, providerModel),
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage,
     outcome: "success",
@@ -454,6 +589,36 @@ function firstRouteFailure(findings: Array<{ code: RouteFindingCode }>): string 
   return findings[0]?.code ?? "route_unavailable";
 }
 
+function providerStatusReason(status: ProviderRouteStatus | undefined): string | null {
+  switch (status) {
+    case undefined:
+    case "enabled":
+      return null;
+    case "disabled":
+      return "provider_disabled";
+    case "decommissioned":
+      return "provider_decommissioned";
+    case "unavailable":
+      return "provider_unavailable";
+    case "quota-blocked":
+      return "provider_quota_blocked";
+  }
+}
+
+function candidateCapabilityReason(
+  provider: ProviderId,
+  executionPolicy: ExecutionPolicy,
+  promptSource: ModelExecutionRequest["promptSource"],
+): string | null {
+  if ((provider === "agy" || provider === "claude") && executionPolicy === "workspace-write") {
+    return "execution_policy_unsupported";
+  }
+  if (provider === "agy" && promptSource !== "positional") {
+    return "provider_prompt_transport_unsupported";
+  }
+  return null;
+}
+
 /** Execute one canonical tier request and always publish exact fail-closed receipt evidence. */
 export async function executeModelRequest(
   state: SharedState,
@@ -471,8 +636,8 @@ export async function executeModelRequest(
     throw new Error("execution prompt exceeds the bounded input limit");
   }
 
-  const provider = TIER_ROUTES[tier].provider;
-  const pending = blockedReceipt(tier, effort, null, null, "execution_pending");
+  const pendingRouting = initialRouting(tier);
+  const pending = blockedReceipt(tier, effort, null, null, pendingRouting, "execution_pending");
   const reservation = await ReceiptReservation.create(
     input.receiptPath,
     workdir,
@@ -482,94 +647,124 @@ export async function executeModelRequest(
   let finalReceipt = pending;
   let sessionId: string | null = null;
   let content = "";
+  let routing = pendingRouting;
   try {
-    let doctor: AdapterDoctorResult;
-    try {
-      doctor = await (dependencies.doctor ?? doctorAdapter)(state, provider);
-    } catch {
-      finalReceipt = blockedReceipt(tier, effort, null, null, "provider_doctor_failed");
+    const publishBlocked = async (
+      reason: string,
+      route: ResolvedRoute | null = null,
+      providerVersion: string | null | undefined = null,
+    ): Promise<ModelExecutionResult> => {
+      finalReceipt = blockedReceipt(tier, effort, route, providerVersion, routing, reason);
       await reservation.commit(finalReceipt);
       return { ok: false, content, sessionId, receipt: finalReceipt };
+    };
+
+    const policyInput = Object.prototype.hasOwnProperty.call(dependencies, "routePolicy")
+      ? dependencies.routePolicy
+      : AGENT_ROUTE_POLICY;
+    let policyResult: ReturnType<typeof validateRoutePolicy>;
+    try {
+      policyResult = validateRoutePolicy(policyInput);
+    } catch {
+      return await publishBlocked("route_policy_malformed");
+    }
+    if (!policyResult.ok) return await publishBlocked(policyResult.reason);
+    const policy = policyResult.policy;
+
+    let config: SessionConfig;
+    try {
+      config = await (dependencies.readConfig ?? readSessionConfig)(state);
+    } catch {
+      routing = initialRouting(tier, policy);
+      for (const candidate of policy.tiers[tier].candidates) {
+        routing.skipped.push({
+          ...receiptCandidate(candidate),
+          reason: "config_unavailable",
+        });
+      }
+      return await publishBlocked("config_unavailable");
+    }
+    routing = initialRouting(tier, policy, config);
+    if (config.routePolicyVersion && config.routePolicyVersion !== ROUTE_POLICY_VERSION) {
+      return await publishBlocked("route_policy_version_mismatch");
     }
 
-    let report: Awaited<ReturnType<typeof runRouteProbe>>;
-    try {
-      report = await (dependencies.routeProbe ?? runRouteProbe)(state, {
-        tier,
-        effort,
-        providerDoctorEvidence: doctor.evidence,
-        probe: "none",
-      });
-    } catch {
-      finalReceipt = blockedReceipt(
-        tier,
-        effort,
-        null,
-        doctor.evidence.providerVersion,
-        "route_probe_failed",
-      );
-      await reservation.commit(finalReceipt);
-      return { ok: false, content, sessionId, receipt: finalReceipt };
-    }
+    let selected:
+      | {
+          doctor: AdapterDoctorResult;
+          route: ResolvedRoute;
+          safeVersion: string;
+        }
+      | undefined;
+    let terminalReason = "route_unavailable";
+    const candidates = policy.tiers[tier].candidates;
+    for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+      const candidate = candidates[candidateIndex]!;
+      const statusReason = providerStatusReason(config.providerRouteStatus?.[candidate.provider]);
+      if (statusReason) {
+        const evidence = receiptCandidate(candidate, config);
+        if (candidateIndex === 0) routing.primary = evidence;
+        routing.skipped.push({ ...evidence, reason: statusReason });
+        terminalReason = statusReason;
+        continue;
+      }
 
-    const providerVersion = doctor.evidence.providerVersion;
-    const route = report.route;
-    if (!report.ok || !route) {
-      finalReceipt = blockedReceipt(
-        tier,
-        effort,
-        route,
-        providerVersion,
-        firstRouteFailure(report.findings),
-      );
-      await reservation.commit(finalReceipt);
-      return { ok: false, content, sessionId, receipt: finalReceipt };
+      let doctor: AdapterDoctorResult;
+      try {
+        doctor = await (dependencies.doctor ?? doctorAdapter)(state, candidate.provider);
+      } catch {
+        const evidence = receiptCandidate(candidate, config);
+        if (candidateIndex === 0) routing.primary = evidence;
+        routing.skipped.push({ ...evidence, reason: "provider_doctor_failed" });
+        terminalReason = "provider_doctor_failed";
+        continue;
+      }
+
+      let report: Awaited<ReturnType<typeof runCandidateRouteProbe>>;
+      try {
+        report = await (dependencies.candidateProbe ?? runCandidateRouteProbe)(state, {
+          tier,
+          effort,
+          candidateIndex,
+          sessionConfig: config,
+          providerDoctorEvidence: doctor.evidence,
+          probe: "none",
+        });
+      } catch {
+        const evidence = receiptCandidate(
+          candidate,
+          config,
+          null,
+          doctor.evidence.providerVersion,
+        );
+        if (candidateIndex === 0) routing.primary = evidence;
+        routing.skipped.push({ ...evidence, reason: "route_probe_failed" });
+        terminalReason = "route_probe_failed";
+        continue;
+      }
+
+      const providerVersion = doctor.evidence.providerVersion;
+      const route = report.route;
+      const safeVersion = receiptProviderVersion(providerVersion);
+      const reason =
+        !report.ok || !route
+          ? firstRouteFailure(report.findings)
+          : safeVersion === "unresolved"
+            ? "provider_version_unavailable"
+            : candidateCapabilityReason(route.provider, executionPolicy, input.promptSource);
+      const evidence = receiptCandidate(candidate, config, route, providerVersion);
+      if (candidateIndex === 0) routing.primary = evidence;
+      if (reason) {
+        routing.skipped.push({ ...evidence, reason });
+        terminalReason = reason;
+        continue;
+      }
+      selected = { doctor, route: route!, safeVersion };
+      break;
     }
-    const safeVersion = receiptProviderVersion(providerVersion);
-    if (safeVersion === "unresolved") {
-      finalReceipt = blockedReceipt(tier, effort, route, providerVersion, "provider_version_unavailable");
-      await reservation.commit(finalReceipt);
-      return { ok: false, content, sessionId, receipt: finalReceipt };
-    }
-    // Agy exposes an accept-edits request flag but no completed provider-native
-    // receipt for the effective cwd, sandbox, or writable-root set. Do not turn
-    // manager-built argv back into claimed resolved authority.
-    if (route.provider === "agy" && executionPolicy === "workspace-write") {
-      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, "execution_policy_unsupported");
-      await reservation.commit(finalReceipt);
-      return { ok: false, content, sessionId, receipt: finalReceipt };
-    }
-    // Agy 1.1.1 has no stdin/file prompt transport: --print consumes the
-    // prompt as the next argv token. Low-tier positional text is already
-    // caller-visible argv and remains suitable for trivial work, but content
-    // admitted from a secret-safe file/stdin boundary must never be copied
-    // into a downstream process argv.
-    if (route.provider === "agy" && input.promptSource !== "positional") {
-      finalReceipt = blockedReceipt(
-        tier,
-        effort,
-        route,
-        safeVersion,
-        "provider_prompt_transport_unsupported",
-      );
-      await reservation.commit(finalReceipt);
-      return { ok: false, content, sessionId, receipt: finalReceipt };
-    }
-    // The pinned Claude CLI proves max-tier read-only through its native plan
-    // flags, but exposes no completed-turn or manager-owned physical boundary
-    // for Edit/Write. Keep that capability explicit and fail before spawning a
-    // provider rather than converting requested write authority into a receipt.
-    if (route.provider === "claude" && executionPolicy === "workspace-write") {
-      finalReceipt = blockedReceipt(
-        tier,
-        effort,
-        route,
-        safeVersion,
-        "execution_policy_unsupported",
-      );
-      await reservation.commit(finalReceipt);
-      return { ok: false, content, sessionId, receipt: finalReceipt };
-    }
+    if (!selected) return await publishBlocked(terminalReason);
+
+    const { doctor, route, safeVersion } = selected;
 
     let executed: { outcome: ManagedProviderOutcome; sessionId: string };
     try {
@@ -582,26 +777,26 @@ export async function executeModelRequest(
         executionPolicy,
       });
     } catch {
-      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, "provider_failed");
+      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, routing, "provider_failed");
       await reservation.commit(finalReceipt);
       return { ok: false, content, sessionId, receipt: finalReceipt };
     }
     sessionId = executed.sessionId;
     const providerContent = executed.outcome.result.content;
     if (executed.outcome.result.error) {
-      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, "provider_failed");
+      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, routing, "provider_failed");
     } else if (executed.outcome.resolvedExecutionPolicy === null) {
-      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, "execution_policy_unsupported");
+      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, routing, "execution_policy_unsupported");
     } else if (executed.outcome.resolvedExecutionPolicy !== executionPolicy) {
-      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, "execution_policy_mismatch");
+      finalReceipt = blockedReceipt(tier, effort, route, safeVersion, routing, "execution_policy_mismatch");
     } else {
       const resolvedModel = providerResolvedModel(route, effort, executed.outcome.result.receipt);
       const usage = normalizedUsage(executed.outcome.result.usage);
       finalReceipt = !resolvedModel
-        ? blockedReceipt(tier, effort, route, safeVersion, "provider_receipt_malformed")
+        ? blockedReceipt(tier, effort, route, safeVersion, routing, "provider_receipt_malformed")
         : usage
-          ? successReceipt(tier, effort, route, safeVersion, usage, resolvedModel)
-          : blockedReceipt(tier, effort, route, safeVersion, "usage_malformed");
+          ? successReceipt(tier, effort, route, safeVersion, routing, usage, resolvedModel)
+          : blockedReceipt(tier, effort, route, safeVersion, routing, "usage_malformed");
     }
     content = finalReceipt.outcome === "success" ? providerContent : "";
     await reservation.commit(finalReceipt);

@@ -264,11 +264,33 @@ agents runner install|enable|disable|status|repair [--json]
 ### Logical-tier execution
 
 The logical-tier form is the canonical automation boundary used by managed
-DarkFactory work. Its stable routes are `low` to Agy, `medium` to Kimi, `high`
-to Codex with the Sol preset, and `max` to Claude with the Fable preset. The
-concrete model and pinned provider executable come only from canonical Agent OS
-state. A caller cannot override the provider, model, agent preset, executable,
-registry, fallback, or TUI.
+DarkFactory work. Route policy `agent-os-tier-routes-v1` keeps `low` on Agy,
+`high` on Codex with the Sol preset, and `max` on Claude with the Fable preset.
+The ordered `medium` candidates are Kimi first and Codex/Sol second. Codex is a
+higher-capability promotion, never a tier or effort downgrade: the receipt
+continues to report the caller's requested `medium` tier and exact independent
+effort. The concrete model and pinned provider executable come only from
+canonical Agent OS state. A caller cannot override the provider, model, agent
+preset, executable, registry, candidate order, fallback, or TUI.
+
+Canonical `config.json` may bind `routePolicyVersion` to that exact version and
+may set `providerRouteStatus.<provider>` to `enabled`, `disabled`,
+`decommissioned`, `unavailable`, or `quota-blocked`. An omitted policy version
+selects the exact bundled policy; an explicit mismatch fails closed. These are
+Agent OS control-plane values, not DarkFactory request fields. A decommissioned
+candidate is skipped without doctoring it, probing it, or creating/reading its
+provider home. Disabled, unavailable, and preflight-quota-blocked candidates
+are also skipped with their own stable reasons.
+
+Every remaining candidate, in order, must resolve one canonical configured
+model and pass provider doctor evidence for its pinned executable, exact
+version/checksum, credentials, preset, and requested execution-policy
+capability. The first admitted candidate is the only provider allowed to start.
+If it fails after a turn begins, the request blocks; selection never retries a
+different provider mid-turn. If no authorized candidate is healthy, the
+reserved receipt is finalized blocked before any provider execution. Baton
+transfer, takeover, continuation, quota draining, and dispatch ownership are
+not part of this pre-turn policy.
 
 The caller's invocation directory is physically resolved before prompt
 admission and remains the provider cwd and receipt boundary. `AGENTS_ROOT`
@@ -315,10 +337,14 @@ prior-content hash, durably stage the complete final receipt under the same
 manager-only authority, then atomically replace the pending path. The staged
 file's new identity becomes the final proof, so an observer can see only a
 complete pending or complete final route, provider version, attempt, usage,
-outcome, and sanitized block reason. Parent, ancestor, overlapping-authority,
-and cross-volume publication drift fail closed. Provider errors and prompt
-content never enter receipts or blocked CLI output; a route, doctor, policy,
-usage, or provider failure remains blocked.
+outcome, and sanitized block reason. Execution receipt schema 2 adds a
+`routing` object containing `policyVersion`, the full primary candidate, and
+every pre-turn skipped candidate with its stable reason. The existing
+`resolved` object identifies only the one admitted provider/model/preset/version
+and remains `unresolved` when no candidate was admitted. Parent, ancestor,
+overlapping-authority, and cross-volume publication drift fail closed. Provider
+errors and prompt content never enter receipts or blocked CLI output; a route,
+doctor, policy, usage, or provider failure remains blocked.
 
 `agents route probe` is the read-only, zero-token readiness check for the same
 canonical route boundary. With no flags it checks DarkFactory's default

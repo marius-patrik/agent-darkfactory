@@ -38,12 +38,68 @@ export interface TierRoute {
   agentPreset: string;
 }
 
-export const TIER_ROUTES: Record<ModelTier, TierRoute> = {
-  low: { provider: "agy", agentPreset: "Agy" },
-  medium: { provider: "kimi", agentPreset: "Kimi" },
-  high: { provider: "codex", agentPreset: "Sol" },
-  max: { provider: "claude", agentPreset: "Fable" },
+export const ROUTE_POLICY_VERSION = "agent-os-tier-routes-v1";
+
+export interface TierRouteCandidate extends TierRoute {
+  /** Minimum owner capability tier supplied by this route. */
+  capabilityTier: ModelTier;
+}
+
+export interface TierRoutePolicy {
+  capabilityFloor: ModelTier;
+  candidates: readonly TierRouteCandidate[];
+}
+
+export interface AgentRoutePolicy {
+  schemaVersion: 1;
+  version: string;
+  tiers: Record<ModelTier, TierRoutePolicy>;
+}
+
+/**
+ * Canonical ordered pre-turn policy. Medium may promote to a higher-capability
+ * route, but no policy candidate may fall below its tier's capability floor.
+ */
+const AGENT_ROUTE_POLICY_VALUE: AgentRoutePolicy = {
+  schemaVersion: 1,
+  version: ROUTE_POLICY_VERSION,
+  tiers: {
+    low: {
+      capabilityFloor: "low",
+      candidates: [{ provider: "agy", agentPreset: "Agy", capabilityTier: "low" }],
+    },
+    medium: {
+      capabilityFloor: "medium",
+      candidates: [
+        { provider: "kimi", agentPreset: "Kimi", capabilityTier: "medium" },
+        { provider: "codex", agentPreset: "Sol", capabilityTier: "high" },
+      ],
+    },
+    high: {
+      capabilityFloor: "high",
+      candidates: [{ provider: "codex", agentPreset: "Sol", capabilityTier: "high" }],
+    },
+    max: {
+      capabilityFloor: "max",
+      candidates: [{ provider: "claude", agentPreset: "Fable", capabilityTier: "max" }],
+    },
+  },
 };
+for (const tier of MODEL_TIERS) {
+  const tierPolicy = AGENT_ROUTE_POLICY_VALUE.tiers[tier];
+  for (const candidate of tierPolicy.candidates) Object.freeze(candidate);
+  Object.freeze(tierPolicy.candidates);
+  Object.freeze(tierPolicy);
+}
+Object.freeze(AGENT_ROUTE_POLICY_VALUE.tiers);
+export const AGENT_ROUTE_POLICY: Readonly<AgentRoutePolicy> = Object.freeze(AGENT_ROUTE_POLICY_VALUE);
+
+export const TIER_ROUTES: Readonly<Record<ModelTier, TierRoute>> = Object.freeze({
+  low: AGENT_ROUTE_POLICY.tiers.low.candidates[0]!,
+  medium: AGENT_ROUTE_POLICY.tiers.medium.candidates[0]!,
+  high: AGENT_ROUTE_POLICY.tiers.high.candidates[0]!,
+  max: AGENT_ROUTE_POLICY.tiers.max.candidates[0]!,
+});
 
 export type RouteFindingCode =
   | "unknown_tier"
@@ -152,6 +208,13 @@ export interface RouteProbeOptions {
   probeExecutor?: ProbeExecutor;
 }
 
+export interface CandidateRouteProbeOptions extends RouteProbeOptions {
+  /** Canonical policy index, never a caller-provided provider/model override. */
+  candidateIndex: number;
+  /** One already-validated canonical configuration snapshot for this run. */
+  sessionConfig: SessionConfig;
+}
+
 type ProbeStateLifecycle = Readonly<{
   createStateDir: () => Promise<string>;
   removeStateDir: (stateDir: string) => Promise<void>;
@@ -172,7 +235,7 @@ const EFFORT_TOKEN_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
  */
 const MODEL_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
-function isSafeModelId(model: string): boolean {
+export function isSafeModelId(model: string): boolean {
   if (model.length < 1 || model.length > 64) return false;
   return model
     .split("/")
@@ -366,9 +429,11 @@ async function executeProbe(
   }
 }
 
-export async function runRouteProbe(
+async function runRouteProbeForCandidate(
   state: SharedState,
   options: RouteProbeOptions,
+  candidate: TierRoute,
+  sessionConfig: SessionConfig | undefined,
   stateLifecycle: ProbeStateLifecycle = DEFAULT_PROBE_STATE_LIFECYCLE,
 ): Promise<RouteProbeReport> {
   const findings: RouteFinding[] = [];
@@ -381,9 +446,9 @@ export async function runRouteProbe(
 
   let route: ResolvedRoute | null = null;
   if (tier && effort) {
-    const { provider, agentPreset } = TIER_ROUTES[tier];
+    const { provider, agentPreset } = candidate;
 
-    const config = await readSessionConfig(state).catch(() => null);
+    const config = sessionConfig ?? (await readSessionConfig(state).catch(() => null));
     if (!config) {
       findings.push(finding("config_unavailable"));
     } else {
@@ -497,6 +562,40 @@ export async function runRouteProbe(
     probe,
     findings,
   };
+}
+
+export async function runRouteProbe(
+  state: SharedState,
+  options: RouteProbeOptions,
+  stateLifecycle: ProbeStateLifecycle = DEFAULT_PROBE_STATE_LIFECYCLE,
+): Promise<RouteProbeReport> {
+  const tier = (MODEL_TIERS as readonly string[]).includes(options.tier)
+    ? (options.tier as ModelTier)
+    : null;
+  const candidate = tier ? TIER_ROUTES[tier] : TIER_ROUTES.medium;
+  return runRouteProbeForCandidate(state, options, candidate, undefined, stateLifecycle);
+}
+
+/**
+ * Resolve one candidate selected by the canonical ordered policy. The caller
+ * supplies only its index and an already-admitted config snapshot; arbitrary
+ * provider/model overrides are not representable.
+ */
+export async function runCandidateRouteProbe(
+  state: SharedState,
+  options: CandidateRouteProbeOptions,
+  stateLifecycle: ProbeStateLifecycle = DEFAULT_PROBE_STATE_LIFECYCLE,
+): Promise<RouteProbeReport> {
+  const tier = (MODEL_TIERS as readonly string[]).includes(options.tier)
+    ? (options.tier as ModelTier)
+    : null;
+  if (!tier || !Number.isSafeInteger(options.candidateIndex) || options.candidateIndex < 0) {
+    throw new Error("invalid canonical route candidate");
+  }
+  const candidate = AGENT_ROUTE_POLICY.tiers[tier].candidates[options.candidateIndex];
+  if (!candidate) throw new Error("invalid canonical route candidate");
+  const { candidateIndex: _candidateIndex, sessionConfig, ...probeOptions } = options;
+  return runRouteProbeForCandidate(state, probeOptions, candidate, sessionConfig, stateLifecycle);
 }
 
 /** Concise, secret-safe human rendering of a route probe report. */

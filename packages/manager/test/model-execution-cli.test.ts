@@ -96,6 +96,11 @@ async function runProcess(
 
 async function readBlockedReceipt(receiptPath: string): Promise<{
   requested: { modelTier: string; effort: string };
+  routing: {
+    policyVersion: string;
+    primary: { provider: string; model: string; agentPreset: string; providerVersion: string };
+    skipped: Array<{ provider: string; reason: string }>;
+  };
   resolved: { provider: string; model: string };
   outcome: string;
   blockReason: string;
@@ -319,7 +324,11 @@ describe("model execution CLI prompt boundary", () => {
     expect(result.stderr.trim()).toBe(`execution blocked: ${receipt.blockReason}`);
     expect(`${result.stdout}${result.stderr}`).not.toContain(prompt);
     expect(receipt.requested).toEqual({ modelTier: "high", effort: "low" });
-    expect(receipt.resolved).toMatchObject({ provider: "codex", model: "gpt-5.6-sol" });
+    expect(receipt.routing.primary).toMatchObject({ provider: "codex", model: "gpt-5.6-sol" });
+    expect(receipt.routing.skipped).toEqual([
+      expect.objectContaining({ provider: "codex", reason: "provider_unpinned" }),
+    ]);
+    expect(receipt.resolved).toMatchObject({ provider: "unresolved", model: "unresolved" });
     expect(receipt.outcome).toBe("blocked");
   });
 
@@ -436,7 +445,11 @@ describe("model execution CLI prompt boundary", () => {
     await ensureSharedState(state);
     await writeSessionConfig(state, {
       schemaVersion: 1,
-      providerModels: { codex: ["gpt-5.6-sol"] },
+      providerModels: {
+        kimi: ["kimi-code/kimi-for-coding"],
+        codex: ["gpt-5.6-sol"],
+      },
+      providerRouteStatus: { kimi: "decommissioned" },
     });
     const launcherPath = await installWindowsLauncher(state);
     const promptPath = path.join(root, "prompt source with spaces.txt");
@@ -461,7 +474,7 @@ describe("model execution CLI prompt boundary", () => {
         launcherPath,
         "run",
         "--model-tier",
-        "high",
+        "medium",
         "--effort",
         "low",
         "--execution-policy",
@@ -482,8 +495,16 @@ describe("model execution CLI prompt boundary", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr.trim()).toBe(`execution blocked: ${receipt.blockReason}`);
     expect(`${result.stdout}${result.stderr}`).not.toContain(prompt);
-    expect(receipt.requested).toEqual({ modelTier: "high", effort: "low" });
-    expect(receipt.resolved).toMatchObject({ provider: "codex", model: "gpt-5.6-sol" });
+    expect(receipt.requested).toEqual({ modelTier: "medium", effort: "low" });
+    expect(receipt.routing.primary).toMatchObject({
+      provider: "kimi",
+      model: "kimi-code/kimi-for-coding",
+    });
+    expect(receipt.routing.skipped.map(({ provider, reason }) => ({ provider, reason }))).toEqual([
+      { provider: "kimi", reason: "provider_decommissioned" },
+      { provider: "codex", reason: "provider_unpinned" },
+    ]);
+    expect(receipt.resolved).toMatchObject({ provider: "unresolved", model: "unresolved" });
     expect(receipt.outcome).toBe("blocked");
   });
 });

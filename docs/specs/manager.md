@@ -11,6 +11,8 @@ The Bun/TypeScript manager owns:
 
 - one-root bootstrap, environment projection, and read-only doctor;
 - provider-home derivation, executable pinning, and managed session launch;
+- versioned ordered pre-turn route policy, provider availability admission,
+  and fail-closed routing receipts;
 - evidence-backed memory and startup projection;
 - provider/session lifecycle plus the orchestrator runtime, events, and
   projections until the #218 migration is implemented and accepted;
