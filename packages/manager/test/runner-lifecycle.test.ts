@@ -1174,6 +1174,21 @@ describe("local runner repository binding", () => {
     expect(result.details.note).toBe("runner already installed and healthy");
   });
 
+  test("accepts the official Windows runner's single leading UTF-8 BOM", async () => {
+    const { state } = await freshState();
+    const kit = makeKit();
+    expect((await installRunner(state, kit.deps)).ok).toBe(true);
+    const configPath = path.join(state.stateDir, "runner", ".runner");
+    const config = await readFile(configPath, "utf8");
+    await writeFile(configPath, `\uFEFF${config}`);
+
+    const result = await installRunner(state, kit.deps);
+
+    expect(result.ok).toBe(true);
+    expect(result.changed).toBe(false);
+    expect(result.details.note).toBe("runner already installed and healthy");
+  });
+
   test("treats a missing .runner as genuinely unconfigured and repairs it", async () => {
     const { state } = await freshState();
     const kit = makeKit();
@@ -1192,6 +1207,8 @@ describe("local runner repository binding", () => {
 
   const invalidRunnerConfigs: Array<[string, string]> = [
     ["malformed JSON", "{"],
+    ["double leading BOM", `\uFEFF\uFEFF${JSON.stringify({ agentId: 500, agentName: RUNNER_NAME, gitHubUrl: `https://github.com/${RUNNER_REPOSITORY}` })}`],
+    ["non-leading BOM", ` \uFEFF${JSON.stringify({ agentId: 500, agentName: RUNNER_NAME, gitHubUrl: `https://github.com/${RUNNER_REPOSITORY}` })}`],
     ["top-level null", "null"],
     ["top-level array", "[]"],
     ["top-level scalar", '"value"'],
@@ -4626,6 +4643,42 @@ function taskQueryPayload(overrides: Record<string, unknown> = {}): Record<strin
   };
 }
 
+function windowsMockScheduledTask(
+  spec: ScheduledTaskSpec,
+  options: {
+    triggerUser: string;
+    principalUser: string;
+    disallowStartIfOnBatteries?: string;
+    stopIfGoingOnBatteries?: string;
+  },
+): RunnerScheduler {
+  const disallowStartIfOnBatteries = options.disallowStartIfOnBatteries ?? "$false";
+  const stopIfGoingOnBatteries = options.stopIfGoingOnBatteries ?? "$false";
+  const provider =
+    `function Get-ScheduledTask { ` +
+    `[CmdletBinding()] ` +
+    `param([Parameter(ValueFromPipeline=$true)][string]$TaskName); ` +
+    `[pscustomobject]@{ ` +
+    `TaskName = ${psQuote(spec.name)}; TaskPath = ${psQuote(spec.path)}; State = 'Ready'; ` +
+    `Actions = @([pscustomobject]@{ Execute = ${psQuote(spec.executable)}; Arguments = ${psQuote(spec.arguments)} }); ` +
+    `Triggers = @([pscustomobject]@{ ` +
+    `UserId = ${psQuote(options.triggerUser)}; ` +
+    `CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskLogonTrigger' } ` +
+    `}); ` +
+    `Principal = [pscustomobject]@{ ` +
+    `UserId = ${psQuote(options.principalUser)}; LogonType = 'Interactive'; RunLevel = 'Limited' ` +
+    `}; ` +
+    `Settings = [pscustomobject]@{ ` +
+    `Enabled = $true; MultipleInstances = 'IgnoreNew'; ` +
+    `DisallowStartIfOnBatteries = ${disallowStartIfOnBatteries}; ` +
+    `StopIfGoingOnBatteries = ${stopIfGoingOnBatteries}; ` +
+    `RestartCount = 3; RestartInterval = 'PT1M'; ExecutionTimeLimit = 'PT0S' ` +
+    `} ` +
+    `} ` +
+    `}`;
+  return createWindowsScheduler((script) => runPowerShellText(`${provider}; ${script}`));
+}
+
 describe("scheduled task contract", () => {
   test("task plan uses the exact executable and argument string", async () => {
     const { state } = await freshState();
@@ -4827,7 +4880,92 @@ describe("scheduled task contract", () => {
     expect(capturedScript).not.toContain("-TaskPath");
     expect(capturedScript).toContain("$tasks.Count -ne 1");
     expect(capturedScript).toContain("__AMBIGUOUS__");
+    expect(capturedScript).toContain("$account.Translate([System.Security.Principal.SecurityIdentifier])");
+    expect(capturedScript).toContain("$sid.Translate([System.Security.Principal.NTAccount])");
+    expect(capturedScript).toContain("$task.Settings.PSObject.Properties['DisallowStartIfOnBatteries']");
+    expect(capturedScript).toContain("$task.Settings.PSObject.Properties['StopIfGoingOnBatteries']");
+    expect(capturedScript).not.toContain(".EndsWith(");
+    expect(capturedScript).not.toContain("$task.Settings.AllowStartIfOnBatteries");
+    expect(capturedScript).not.toContain("$task.Settings.DontStopIfGoingOnBatteries");
   });
+
+  test.skipIf(process.platform !== "win32")(
+    "success: native task query round-trips qualified accounts through their SID",
+    async () => {
+      const { state } = await freshState();
+      const principal = currentWindowsPrincipal();
+      const spec = buildRunnerTaskSpec(state, principal);
+      const scheduler = windowsMockScheduledTask(spec, {
+        triggerUser: principal,
+        principalUser: principal,
+      });
+
+      const observed = await scheduler.query(TASK_IDENTITY);
+
+      expect(observed).not.toBeNull();
+      expect(observed!.triggerUser?.toLowerCase()).toBe(principal.toLowerCase());
+      expect(observed!.principalUser.toLowerCase()).toBe(principal.toLowerCase());
+      expect(observed!.allowStartIfOnBatteries).toBe(true);
+      expect(observed!.dontStopIfGoingOnBatteries).toBe(true);
+      expect(taskHasCanonicalPersistence(observed, spec)).toBe(true);
+    },
+  );
+
+  test.skipIf(process.platform !== "win32")(
+    "edge-input: native task query canonicalizes an unqualified local principal",
+    async () => {
+      const { state } = await freshState();
+      const principal = currentWindowsPrincipal();
+      const unqualified = principal.slice(principal.indexOf("\\") + 1);
+      const spec = buildRunnerTaskSpec(state, principal);
+      const scheduler = windowsMockScheduledTask(spec, {
+        triggerUser: principal,
+        principalUser: unqualified,
+      });
+
+      const observed = await scheduler.query(TASK_IDENTITY);
+
+      expect(observed).not.toBeNull();
+      expect(observed!.triggerUser?.toLowerCase()).toBe(principal.toLowerCase());
+      expect(observed!.principalUser.toLowerCase()).toBe(principal.toLowerCase());
+      expect(taskHasCanonicalPersistence(observed, spec)).toBe(true);
+    },
+  );
+
+  test.skipIf(process.platform !== "win32")(
+    "denied-failure: native task query fails closed when an account cannot translate to a SID",
+    async () => {
+      const { state } = await freshState();
+      const principal = currentWindowsPrincipal();
+      const invalid = "NO_SUCH_DOMAIN_7A3F\\NO_SUCH_USER_7A3F";
+      const spec = buildRunnerTaskSpec(state, principal);
+      const scheduler = windowsMockScheduledTask(spec, {
+        triggerUser: principal,
+        principalUser: invalid,
+      });
+
+      const error = (await scheduler.query(TASK_IDENTITY).catch((caught) => caught)) as Error;
+
+      expect(error.message).toBe("scheduled task query failed");
+      expect(error.message).not.toContain(invalid);
+    },
+  );
+
+  test.skipIf(process.platform !== "win32")(
+    "denied-failure: native task query rejects nonboolean inverse battery settings",
+    async () => {
+      const { state } = await freshState();
+      const principal = currentWindowsPrincipal();
+      const spec = buildRunnerTaskSpec(state, principal);
+      const scheduler = windowsMockScheduledTask(spec, {
+        triggerUser: principal,
+        principalUser: principal,
+        disallowStartIfOnBatteries: "'false'",
+      });
+
+      await expect(scheduler.query(TASK_IDENTITY)).rejects.toThrow("scheduled task query failed");
+    },
+  );
 
   test("task query maps rejected and nonzero providers to one stable secret-safe error", async () => {
     const sentinel = "RAW_SCHEDULER_PROVIDER_SENTINEL";

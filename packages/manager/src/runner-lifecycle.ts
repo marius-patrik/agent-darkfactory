@@ -500,8 +500,31 @@ export function createWindowsScheduler(
   return {
     async query(identity) {
       requireCanonicalTaskIdentity(identity);
+      // Task Scheduler may serialize the same local account as either
+      // `user` or `MACHINE\user`. Resolve every observed account through the
+      // Windows SID authority before it leaves this trusted provider boundary;
+      // downstream persistence checks remain exact apart from case.
       const script =
         `$ErrorActionPreference = 'Continue'; ` +
+        `function Resolve-CanonicalTaskAccount { ` +
+        `param([object]$Identity); ` +
+        `$raw = [string]$Identity; ` +
+        `if ([string]::IsNullOrWhiteSpace($raw)) { ` +
+        `throw 'scheduled task account identity translation failed' ` +
+        `}; ` +
+        `try { ` +
+        `$account = [System.Security.Principal.NTAccount]::new($raw); ` +
+        `$sid = $account.Translate([System.Security.Principal.SecurityIdentifier]); ` +
+        `$canonical = $sid.Translate([System.Security.Principal.NTAccount]) ` +
+        `} catch { ` +
+        `throw 'scheduled task account identity translation failed' ` +
+        `}; ` +
+        `if ([string]::IsNullOrWhiteSpace([string]$sid.Value) -or ` +
+        `[string]::IsNullOrWhiteSpace([string]$canonical.Value)) { ` +
+        `throw 'scheduled task account identity translation failed' ` +
+        `}; ` +
+        `return ([string]$canonical.Value) ` +
+        `}; ` +
         `$queryErr = @(); ` +
         `$tasks = @(Get-ScheduledTask -TaskName ${powerShellQuote(identity.name)} ` +
         `-ErrorAction SilentlyContinue -ErrorVariable queryErr); ` +
@@ -518,26 +541,40 @@ export function createWindowsScheduler(
         `$task = $tasks[0]; ` +
         `$actions = @($task.Actions); ` +
         `$triggers = @($task.Triggers); ` +
+        // MSFT_TaskSettings exposes inverse battery flags. Require typed
+        // provider evidence before converting them to the app-owned positives.
+        `$disallowStartProperty = $task.Settings.PSObject.Properties['DisallowStartIfOnBatteries']; ` +
+        `$stopOnBatteryProperty = $task.Settings.PSObject.Properties['StopIfGoingOnBatteries']; ` +
+        `if ($null -eq $disallowStartProperty -or $null -eq $stopOnBatteryProperty -or ` +
+        `-not ($disallowStartProperty.Value -is [bool]) -or ` +
+        `-not ($stopOnBatteryProperty.Value -is [bool])) { ` +
+        `throw 'scheduled task battery settings observation failed' ` +
+        `}; ` +
+        `$allowStartIfOnBatteries = -not ([bool]$disallowStartProperty.Value); ` +
+        `$dontStopIfGoingOnBatteries = -not ([bool]$stopOnBatteryProperty.Value); ` +
         `$actionRows = @($actions | ForEach-Object { ` +
         `[pscustomobject]@{ Execute = [string]$_.Execute; Arguments = [string]$_.Arguments } ` +
         `}); ` +
         `$triggerRows = @($triggers | ForEach-Object { ` +
-        `$user = $null; if ($null -ne $_.UserId) { $user = [string]$_.UserId }; ` +
+        `$user = $null; if ($null -ne $_.UserId) { ` +
+        `$user = Resolve-CanonicalTaskAccount -Identity $_.UserId ` +
+        `}; ` +
         `[pscustomobject]@{ Kind = [string]$_.CimClass.CimClassName; User = $user } ` +
         `}); ` +
+        `$principalUser = Resolve-CanonicalTaskAccount -Identity $task.Principal.UserId; ` +
         `[pscustomobject]@{ ` +
         `TaskName = [string]$task.TaskName; TaskPath = [string]$task.TaskPath; ` +
         `State = [string]$task.State; Enabled = [bool]$task.Settings.Enabled; ` +
         `ActionCount = [int]$actions.Count; Actions = $actionRows; ` +
         `TriggerCount = [int]$triggers.Count; Triggers = $triggerRows; ` +
         `Principal = [pscustomobject]@{ ` +
-        `UserId = [string]$task.Principal.UserId; ` +
+        `UserId = $principalUser; ` +
         `LogonType = [string]$task.Principal.LogonType; ` +
         `RunLevel = [string]$task.Principal.RunLevel ` +
         `}; Settings = [pscustomobject]@{ ` +
         `MultipleInstances = [string]$task.Settings.MultipleInstances; ` +
-        `AllowStartIfOnBatteries = [bool]$task.Settings.AllowStartIfOnBatteries; ` +
-        `DontStopIfGoingOnBatteries = [bool]$task.Settings.DontStopIfGoingOnBatteries; ` +
+        `AllowStartIfOnBatteries = $allowStartIfOnBatteries; ` +
+        `DontStopIfGoingOnBatteries = $dontStopIfGoingOnBatteries; ` +
         `RestartCount = [int]$task.Settings.RestartCount; ` +
         `RestartInterval = [string]$task.Settings.RestartInterval; ` +
         `ExecutionTimeLimit = [string]$task.Settings.ExecutionTimeLimit ` +
@@ -1338,7 +1375,10 @@ async function readRunnerConfiguration(installDir: string): Promise<RunnerConfig
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(contents);
+    // The official Windows runner writes `.runner` as UTF-8 with one leading
+    // BOM. Admit only that encoding marker; a second or non-leading BOM still
+    // reaches JSON.parse and fails closed as malformed configuration.
+    parsed = JSON.parse(contents.startsWith("\uFEFF") ? contents.slice(1) : contents);
   } catch {
     throw new Error("runner configuration is malformed");
   }
