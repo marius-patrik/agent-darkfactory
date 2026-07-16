@@ -30,7 +30,7 @@ import {
   type IssueDevelopmentRuntime,
   type OwnerIssueIntent
 } from "./issue-development.js";
-import { evaluateIssueReady, isTrustedDarkFactoryComment, issueContentDigest, issueVersion, validateIssueVersion } from "./issue-spec.js";
+import { isTrustedDarkFactoryComment, issueContentDigest, issueVersion, validateIssueVersion } from "./issue-spec.js";
 import {
   formatCommandHelp,
   formatRootHelp,
@@ -1501,22 +1501,11 @@ async function issueReadContext(repository: string): Promise<{ github: ReturnTyp
 async function runIssueReadyCommand(command: ParsedHumanCommand): Promise<void> {
   const target = parseIssueTarget(command.arguments[0]);
   const expectedVersion = validateIssueVersion(optionString(command, "--version"));
-  const { github } = await issueReadContext(target.repository);
-  const issue = await github.request("GET", `/repos/${target.repository}/issues/${target.number}`);
-  if (!isRecord(issue) || issue.pull_request) throw new Error("Selected target is not an issue");
-  const comments = await fetchAllRecords(github, `/repos/${target.repository}/issues/${target.number}/comments`, "issue comment");
-  const body = typeof issue.body === "string" ? issue.body : "";
-  const dependencyNumbers = [...new Set(Array.from(body.matchAll(/(?:Blocked-by|Depends on):?\s*#([1-9][0-9]*)/gi), (match) => Number(match[1])))];
-  const dependencies = await Promise.all(dependencyNumbers.map(async (number) => {
-    const dependency = await github.request("GET", `/repos/${target.repository}/issues/${number}`);
-    if (!isRecord(dependency)) throw new Error(`GitHub returned invalid dependency #${number}`);
-    return { number, state: dependency.state };
-  }));
-  const result = evaluateIssueReady({ issue, comments, dependencies, expectedVersion });
+  const result = await observedIssueReadiness(command.arguments[0], expectedVersion);
   if (command.options["--json"] === true) console.log(JSON.stringify(humanJsonResult("issue-ready", result.ready ? "ok" : "blocked", result, result.ready ? null : { code: "not_ready", message: "Issue readiness predicates are not satisfied" }), null, 2));
   else {
     console.log(`${target.repository}#${target.number}: ${result.ready ? "ready" : "not ready"} at ${result.targetVersion}`);
-    for (const predicate of result.predicates) console.log(`- ${predicate.passed ? "PASS" : "BLOCK"} ${predicate.id}: ${predicate.evidence}`);
+    for (const finding of result.findings as Array<{ id: string; message: string }>) console.log(`- BLOCK ${finding.id}: ${finding.message}`);
   }
   if (!result.ready) process.exitCode = 1;
 }
@@ -1985,21 +1974,37 @@ async function runPullCommand(command: ParsedHumanCommand): Promise<void> {
   else console.log(`${command.arguments[0]} armed for normal protected auto-merge.`);
 }
 
-async function observedIssueReadiness(targetValue: string): Promise<Record<string, unknown>> {
+async function observedIssueReadiness(targetValue: string, expectedVersion = ""): Promise<Record<string, any>> {
   const target = parseIssueTarget(targetValue);
-  const octokit = await createRepositoryOctokit(target.repository, { contents: "read", issues: "read", pull_requests: "read" });
+  const credentials = loadAppCredentials();
+  const app = new App({ appId: credentials.appId, privateKey: credentials.privateKey });
+  const octokit = await getScopedInstallationOctokit(app, target.repository.split("/")[0], {
+    administration: "read",
+    actions: "read",
+    checks: "read",
+    contents: "read",
+    issues: "read",
+    pull_requests: "read",
+    secrets: "read",
+    statuses: "read"
+  });
   const github = createDoctorRequester(octokit);
-  const issue = await github.request("GET", `/repos/${target.repository}/issues/${target.number}`);
-  if (!isRecord(issue) || issue.pull_request) throw new Error("Selected explain target is not an issue");
-  const comments = await fetchAllRecords(github, `/repos/${target.repository}/issues/${target.number}/comments`, "issue comment");
-  const body = typeof issue.body === "string" ? issue.body : "";
-  const dependencyNumbers = [...new Set(Array.from(body.matchAll(/(?:Blocked-by|Depends on):?\s*#([1-9][0-9]*)/gi), (match) => Number(match[1])))];
-  const dependencies = await Promise.all(dependencyNumbers.map(async (number) => {
-    const dependency = await github.request("GET", `/repos/${target.repository}/issues/${number}`);
-    if (!isRecord(dependency)) throw new Error(`GitHub returned invalid dependency #${number}`);
-    return { number, state: dependency.state };
-  }));
-  return evaluateIssueReady({ issue, comments, dependencies, expectedVersion: issueVersion(issue) }) as unknown as Record<string, unknown>;
+  const orchestrator = await import(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url).href) as unknown as {
+    evaluateTargetIssueReadiness(
+      github: unknown,
+      controlRepo: { owner: string; repo: string },
+      repository: { owner: string; repo: string },
+      issueNumber: number,
+      options?: Record<string, unknown>
+    ): Promise<Record<string, any>>;
+  };
+  return orchestrator.evaluateTargetIssueReadiness(
+    github,
+    { owner: CONTROL_OWNER, repo: CONTROL_REPO },
+    { owner: target.repository.split("/")[0], repo: target.repository.split("/")[1] },
+    target.number,
+    { root: packageRoot(), ...(expectedVersion ? { expectedVersion } : {}) }
+  );
 }
 
 async function observedRun(targetValue: string): Promise<Record<string, unknown>> {

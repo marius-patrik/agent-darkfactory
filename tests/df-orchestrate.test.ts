@@ -147,6 +147,59 @@ test("orchestration policy loading fails closed and accepts only the canonical s
   }
 });
 
+test("targeted issue readiness uses the full shared fleet, capacity, and exact Autoreview evaluator without mutation", async () => {
+  // @ts-ignore Native ESM workflow helper is exercised directly.
+  const { evaluateTargetIssueReadiness } = await import("../.github/scripts/df-orchestrate.mjs?unit=targeted-readiness-test");
+  const repository = "marius-patrik/example";
+  const review = exactReviewHarness(repository, {
+    number: 42,
+    title: "Implement exact targeted readiness",
+    body: EXECUTABLE_BODY,
+    labels: []
+  });
+  const calls: Array<{ method: string; path: string }> = [];
+  const gh = {
+    async request(method: string, path: string, body?: unknown) {
+      calls.push({ method, path });
+      const response = review.respond(method, path, body);
+      if (response !== NO_REVIEW_RESPONSE) return response;
+      if (method === "GET" && path === `/repos/${repository}/issues?state=open&per_page=100&page=1`) return [review.issue];
+      throw new Error(`unexpected ${method} ${path}`);
+    }
+  };
+  const version = issueVersion(review.issue);
+  const options = {
+    registry: { schemaVersion: 1, repositories: { [repository]: { state: "active" } } },
+    repositories: [{ full_name: repository, archived: false, disabled: false }],
+    readinessByRepository: healthyReadiness(),
+    policy: healthyPolicy(),
+    expectedVersion: version
+  };
+  const result = await evaluateTargetIssueReadiness(
+    gh,
+    { owner: "marius-patrik", repo: "DarkFactory" },
+    { owner: "marius-patrik", repo: "example" },
+    42,
+    options
+  );
+  assert.equal(result.ready, true);
+  assert.equal(result.targetVersion, version);
+  assert.equal(result.issueReview.ready, true);
+  assert.equal(result.capacityAvailable, true);
+  assert.equal(calls.some((call) => call.method !== "GET"), false);
+
+  await assert.rejects(
+    evaluateTargetIssueReadiness(
+      gh,
+      { owner: "marius-patrik", repo: "DarkFactory" },
+      { owner: "marius-patrik", repo: "example" },
+      42,
+      { ...options, expectedVersion: "f".repeat(64) }
+    ),
+    /stale issue version/
+  );
+});
+
 test("orchestrator dispatches open df:ready issues in active managed repos", async () => {
   // @ts-ignore Script helpers are native ESM workflow files, not built TypeScript modules.
   const { orchestrate } = await import("../.github/scripts/df-orchestrate.mjs?unit=df-orchestrate-test");

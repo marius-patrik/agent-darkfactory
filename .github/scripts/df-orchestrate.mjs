@@ -870,6 +870,44 @@ function readinessFinding(id, message) {
   return { id, message };
 }
 
+async function observeIssueCandidateReadiness(gh, candidate, context = {}) {
+  const { repository, currentRepoName, currentRepoOpenIssueNumbers, issue } = candidate;
+  const baseEvaluationOptions = {
+    repository,
+    currentRepoName,
+    currentRepoOpenIssueNumbers,
+    openIssueIndex: context.openIssueIndex,
+    knownRepositories: context.knownRepositories,
+    repositoryState: context.readinessByRepository?.get(currentRepoName),
+    capacityAvailable: capacityAvailableForIssue(context.counts, repository, issue, context.policy)
+  };
+  const preliminary = evaluateIssueReadiness(issue, baseEvaluationOptions);
+  let issueReview = null;
+  if (context.forceIssueReview === true || preliminary.ready || issueLabelNames(issue).has("df:ready")) {
+    try {
+      const comments = await listIssueComments(gh, repository, issue.number);
+      issueReview = evaluateIssueAutoreviewEvidence(issue, comments, {
+        ...baseEvaluationOptions,
+        assumeOpenInventory: true
+      });
+    } catch (error) {
+      issueReview = Object.freeze({
+        ready: false,
+        targetVersion: null,
+        effectiveIssue: issue,
+        findings: Object.freeze([
+          readinessFinding("issue-review-unobservable", `DarkFactory could not read exact issue Autoreview evidence: ${error.message || String(error)}`)
+        ])
+      });
+    }
+    context.issueReviews?.set(openIssueKey(currentRepoName, issue.number), issueReview);
+  }
+  const evaluation = issueReview
+    ? evaluateIssueReadiness(issue, { ...baseEvaluationOptions, requireIssueReview: true, issueReview })
+    : preliminary;
+  return { baseEvaluationOptions, preliminary, issueReview, evaluation };
+}
+
 export async function evaluateIssueReadinessLabels(gh, snapshots, warn = console.warn, options = {}) {
   const openIssueIndex = buildOpenIssueIndex(snapshots);
   const knownRepositories = buildKnownRepositories(snapshots);
@@ -910,39 +948,14 @@ export async function evaluateIssueReadinessLabels(gh, snapshots, warn = console
       ? await observeReadyLabelOwnership(gh, repository, issue.number)
       : null;
     const readyLabelWasUntrusted = names.has("df:ready") && readyLabelOwnership?.trusted !== true;
-    const baseEvaluationOptions = {
-      repository,
-      currentRepoName,
-      currentRepoOpenIssueNumbers,
+    const { issueReview, evaluation } = await observeIssueCandidateReadiness(gh, candidate, {
       openIssueIndex,
       knownRepositories,
-      repositoryState: options.readinessByRepository?.get(currentRepoName),
-      capacityAvailable: capacityAvailableForIssue(counts, repository, issue, options.policy)
-    };
-    const preliminary = evaluateIssueReadiness(issue, baseEvaluationOptions);
-    let issueReview = null;
-    if (preliminary.ready || names.has("df:ready")) {
-      try {
-        const comments = await listIssueComments(gh, repository, issue.number);
-        issueReview = evaluateIssueAutoreviewEvidence(issue, comments, {
-          ...baseEvaluationOptions,
-          assumeOpenInventory: true
-        });
-      } catch (error) {
-        issueReview = Object.freeze({
-          ready: false,
-          targetVersion: null,
-          effectiveIssue: issue,
-          findings: Object.freeze([
-            readinessFinding("issue-review-unobservable", `DarkFactory could not read exact issue Autoreview evidence: ${error.message || String(error)}`)
-          ])
-        });
-      }
-      options.issueReviews?.set(openIssueKey(currentRepoName, issue.number), issueReview);
-    }
-    const evaluation = issueReview
-      ? evaluateIssueReadiness(issue, { ...baseEvaluationOptions, requireIssueReview: true, issueReview })
-      : preliminary;
+      counts,
+      policy: options.policy,
+      readinessByRepository: options.readinessByRepository,
+      issueReviews: options.issueReviews
+    });
     let action = "no-op";
 
     try {
@@ -985,6 +998,61 @@ export async function evaluateIssueReadinessLabels(gh, snapshots, warn = console
     });
   }
   return evaluations;
+}
+
+export async function evaluateTargetIssueReadiness(gh, controlRepo, repository, issueNumber, options = {}) {
+  const targetRepository = parseRepo(repoName(repository));
+  if (!Number.isInteger(issueNumber) || issueNumber < 1) throw new Error("Targeted readiness requires a positive issue number");
+  const targets = await targetRepositories(gh, controlRepo, {
+    root: options.root || CONTROL_ROOT,
+    registry: options.registry,
+    repositories: options.repositories,
+    warn: options.warn || (() => {})
+  });
+  if (!targets.some((target) => normalizedRepoName(target) === normalizedRepoName(targetRepository))) {
+    throw new Error(`Targeted readiness repository ${repoName(targetRepository)} is not an active managed repository`);
+  }
+  const snapshots = [];
+  for (const target of targets) snapshots.push({ repository: target, openIssues: await listOpenIssues(gh, target) });
+  const targetSnapshot = snapshots.find((snapshot) => normalizedRepoName(snapshot.repository) === normalizedRepoName(targetRepository));
+  const issue = targetSnapshot?.openIssues?.find((entry) => entry.number === issueNumber);
+  if (!issue) throw new Error(`Targeted readiness issue ${repoName(targetRepository)}#${issueNumber} is not an open issue`);
+
+  const policy = normalizeOrchestrationPolicy(options.policy || await readOrchestrationPolicy(options.root || CONTROL_ROOT));
+  const readinessByRepository = options.readinessByRepository || await collectRepositoryReadiness(gh, controlRepo, snapshots, {
+    root: options.root || CONTROL_ROOT,
+    registry: options.registry
+  });
+  const currentRepoName = normalizedRepoName(targetRepository);
+  const candidate = {
+    repository: targetRepository,
+    currentRepoName,
+    currentRepoOpenIssueNumbers: new Set(targetSnapshot.openIssues.map((entry) => entry.number).filter(Number.isInteger)),
+    issue
+  };
+  const result = await observeIssueCandidateReadiness(gh, candidate, {
+    openIssueIndex: buildOpenIssueIndex(snapshots),
+    knownRepositories: buildKnownRepositories(snapshots),
+    counts: activeConcurrencyCounts(snapshots),
+    policy,
+    readinessByRepository,
+    forceIssueReview: true
+  });
+  if (options.expectedVersion && result.issueReview?.targetVersion && result.issueReview.targetVersion !== options.expectedVersion) {
+    throw new Error(`stale issue version: expected ${options.expectedVersion}, observed ${result.issueReview.targetVersion}`);
+  }
+  return Object.freeze({
+    ready: result.evaluation.ready,
+    targetVersion: result.issueReview?.targetVersion || null,
+    findings: Object.freeze(result.evaluation.findings.map((finding) => Object.freeze({ ...finding }))),
+    repositoryState: result.baseEvaluationOptions.repositoryState || null,
+    capacityAvailable: result.baseEvaluationOptions.capacityAvailable,
+    issueReview: result.issueReview ? Object.freeze({
+      ready: result.issueReview.ready,
+      targetVersion: result.issueReview.targetVersion,
+      findings: Object.freeze(result.issueReview.findings.map((finding) => Object.freeze({ ...finding })))
+    }) : null
+  });
 }
 
 function reserveIssueCapacity(counts, repository, issue) {
