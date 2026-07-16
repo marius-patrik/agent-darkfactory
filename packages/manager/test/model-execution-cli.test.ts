@@ -152,7 +152,7 @@ describe("model execution CLI prompt boundary", () => {
       effort: "high",
       executionPolicy: "read-only",
       receiptPath: path.join(root, "receipt.json"),
-      workdir: root,
+      workdir: await realpath(root),
       mode: "orchestrator",
       prompt: "review this",
       promptSource: "positional",
