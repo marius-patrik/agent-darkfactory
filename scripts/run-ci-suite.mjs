@@ -84,6 +84,10 @@ export const CI_SUITE_NAMES = Object.freeze([
   "review",
 ]);
 
+export function managerTestTimeoutMs(platform = process.platform) {
+  return platform === "win32" ? 90_000 : 30_000;
+}
+
 const suites = {
   inventory() {
     run("product contract regression tests", process.execPath, [
@@ -149,7 +153,7 @@ const suites = {
     // Manager fixtures exercise real filesystem locks and temporarily mutate
     // process-wide Git/environment state. Keep them serialized so a slow
     // hosted runner cannot let timed-out cleanup contaminate the next fixture.
-    run("manager tests", "bun", ["test", "--timeout=30000", "--max-concurrency=1", ...managerTests()]);
+    run("manager tests", "bun", ["test", `--timeout=${managerTestTimeoutMs()}`, "--max-concurrency=1", ...managerTests()]);
     run("compact capsule authority", "pwsh", [
       "-NoProfile",
       "-ExecutionPolicy",
