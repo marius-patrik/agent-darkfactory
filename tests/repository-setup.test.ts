@@ -20,6 +20,7 @@ test("checkRepositorySetup returns no comment when managed setup is current", as
       ".github/workflows/df-orchestrate.yml": "name: DarkFactory Orchestrate\n",
       ".github/workflows/df-work.yml": "name: DarkFactory Work\n",
       ".github/workflows/df-release.yml": "name: DarkFactory Release\n",
+      ".github/workflows/df-release-producer.yml": "name: DarkFactory Release Producer\n",
       ".github/workflows/df-submodule-autoupdate.yml": "name: DarkFactory Submodule Auto Update\n",
       ".github/workflows/df-autoreview-recovery.yml": "name: DarkFactory Autoreview Recovery\n",
       ".github/workflows/df-clean.yml": "name: DarkFactory Clean\n",
