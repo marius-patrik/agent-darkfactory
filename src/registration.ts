@@ -43,6 +43,19 @@ export async function convergeManagedRegistration(
   }
 
   const branch = `darkfactory/register-${target.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  const mainRef = record((await github.request("GET /repos/{owner}/{repo}/git/ref/{ref}", {
+    ...registryRepository,
+    ref: "heads/main"
+  })).data, "Andromeda-data main ref");
+  const mainObject = record(mainRef.object, "Andromeda-data main ref object");
+  const mainHead = exactCommit(mainObject.sha, "Andromeda-data main head");
+  const next = structuredClone(registry);
+  next.repositories[target] = {
+    state: "active",
+    kind: "code",
+    note: "Managed code repository admitted through the reviewed df setup registration lane."
+  };
+  const content = `${JSON.stringify(sortRegistry(next), null, 2)}\n`;
   const existingPulls = array((await github.request("GET /repos/{owner}/{repo}/pulls", {
     ...registryRepository,
     state: "open",
@@ -51,18 +64,17 @@ export async function convergeManagedRegistration(
     per_page: 10
   })).data, "managed registration pull requests");
   if (existingPulls.length > 1) throw new Error("multiple open managed registration pull requests exist for one repository");
+  const branchRef = await optionalBranchRef(github, registryRepository, branch);
   if (existingPulls.length === 1) {
     const pull = record(existingPulls[0], "managed registration pull request");
+    if (!branchRef) throw new Error("managed registration pull request exists without its exact source branch");
     const branchFile = registryFile(await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
       ...registryRepository,
       path: MANAGED_REGISTRY_PATH,
       ref: branch
     }));
-    const proposed = parseRegistry(branchFile.content);
-    const proposedEntry = findEntry(proposed.repositories, target);
-    if (!proposedEntry || record(proposedEntry.value, "proposed managed registry entry").state !== "active") {
-      throw new Error("existing managed registration pull request does not carry the exact active target entry");
-    }
+    if (branchFile.content !== content) throw new Error("existing managed registration pull request does not carry the exact canonical registry content");
+    await assertSafeRegistrationBranch(github, registryRepository, mainHead, branchRef, branch);
     return {
       sourceActive: false,
       receipt: {
@@ -74,33 +86,32 @@ export async function convergeManagedRegistration(
     };
   }
 
-  const mainRef = record((await github.request("GET /repos/{owner}/{repo}/git/ref/{ref}", {
-    ...registryRepository,
-    ref: "heads/main"
-  })).data, "Andromeda-data main ref");
-  const mainObject = record(mainRef.object, "Andromeda-data main ref object");
-  const mainHead = exactCommit(mainObject.sha, "Andromeda-data main head");
-  await github.request("POST /repos/{owner}/{repo}/git/refs", {
-    ...registryRepository,
-    ref: `refs/heads/${branch}`,
-    sha: mainHead
-  });
-
-  const next = structuredClone(registry);
-  next.repositories[target] = {
-    state: "active",
-    kind: "code",
-    note: "Managed code repository admitted through the reviewed df setup registration lane."
-  };
-  const content = `${JSON.stringify(sortRegistry(next), null, 2)}\n`;
-  await github.request("PUT /repos/{owner}/{repo}/contents/{path}", {
-    ...registryRepository,
-    path: MANAGED_REGISTRY_PATH,
-    branch,
-    sha: mainFile.sha,
-    message: `Register ${target} for DarkFactory management`,
-    content: Buffer.from(content, "utf8").toString("base64")
-  });
+  if (!branchRef) {
+    await github.request("POST /repos/{owner}/{repo}/git/refs", {
+      ...registryRepository,
+      ref: `refs/heads/${branch}`,
+      sha: mainHead
+    });
+  } else {
+    await assertSafeRegistrationBranch(github, registryRepository, mainHead, branchRef, branch);
+  }
+  let branchFile = branchRef && branchRef !== mainHead
+    ? registryFile(await github.request("GET /repos/{owner}/{repo}/contents/{path}", {
+      ...registryRepository,
+      path: MANAGED_REGISTRY_PATH,
+      ref: branch
+    }))
+    : mainFile;
+  if (branchFile.content !== content) {
+    await github.request("PUT /repos/{owner}/{repo}/contents/{path}", {
+      ...registryRepository,
+      path: MANAGED_REGISTRY_PATH,
+      branch,
+      sha: branchFile.sha,
+      message: `Register ${target} for DarkFactory management`,
+      content: Buffer.from(content, "utf8").toString("base64")
+    });
+  }
   const created = record((await github.request("POST /repos/{owner}/{repo}/pulls", {
     ...registryRepository,
     title: `Register ${target} for DarkFactory management`,
@@ -126,6 +137,42 @@ export async function convergeManagedRegistration(
       detail: requiredText(created.html_url, "created managed registration pull request URL")
     }
   };
+}
+
+async function optionalBranchRef(
+  github: OperatorGitHubRequester,
+  repository: { owner: string; repo: string },
+  branch: string
+): Promise<string | null> {
+  try {
+    const ref = record((await github.request("GET /repos/{owner}/{repo}/git/ref/{ref}", {
+      ...repository,
+      ref: `heads/${branch}`
+    })).data, "managed registration branch ref");
+    return exactCommit(record(ref.object, "managed registration branch object").sha, "managed registration branch head");
+  } catch (error) {
+    if (recordStatus(error) === 404) return null;
+    throw error;
+  }
+}
+
+async function assertSafeRegistrationBranch(
+  github: OperatorGitHubRequester,
+  repository: { owner: string; repo: string },
+  mainHead: string,
+  branchHead: string,
+  branch: string
+): Promise<void> {
+  if (branchHead === mainHead) return;
+  const comparison = record((await github.request("GET /repos/{owner}/{repo}/compare/{basehead}", {
+    ...repository,
+    basehead: `${mainHead}...${branchHead}`
+  })).data, "managed registration branch comparison");
+  const files = array(comparison.files, "managed registration branch files");
+  if (comparison.status !== "ahead" || comparison.ahead_by !== 1 || comparison.behind_by !== 0
+      || files.length !== 1 || record(files[0], "managed registration branch file").filename !== MANAGED_REGISTRY_PATH) {
+    throw new Error(`managed registration branch ${branch} contains unknown or stale work; setup preserved it and refused adoption`);
+  }
 }
 
 interface Registry {
@@ -202,4 +249,8 @@ function record(value: unknown, label: string): Record<string, any> {
 function array(value: unknown, label: string): unknown[] {
   if (!Array.isArray(value)) throw new Error(`${label} is malformed`);
   return value;
+}
+
+function recordStatus(error: unknown): number | undefined {
+  return error && typeof error === "object" && "status" in error ? Number((error as { status?: unknown }).status) : undefined;
 }
