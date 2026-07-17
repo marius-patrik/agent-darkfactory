@@ -17,7 +17,7 @@ const {
   validateAutoreviewPolicy
 } = autoreviewModule;
 const { loadModelPolicy } = modelModule;
-const { assertAutoreviewLifecycle } = autoreviewRunnerModule;
+const { assertAutoreviewLifecycle, assertPullPolicy } = autoreviewRunnerModule;
 const controlRoot = path.resolve(import.meta.dirname, "..");
 
 function clean(summary = "Complete review found no blocking issues.") {
@@ -371,4 +371,42 @@ test("autofix proposals are hash-bound text edits and cannot weaken trusted cont
       { path: "SRC/NEW.ts", expectedSha256: "0".repeat(64), contentBase64: Buffer.from("b\n").toString("base64") }
     ]
   }, {}, policy), /case-collides/);
+});
+
+test("release-engine automation PRs are admitted on exact App provenance and owned branch prefixes", () => {
+  const repository = { owner: "marius-patrik", repo: "DarkFactory" };
+  const enginePull = (branch: string, overrides: any = {}) => ({
+    state: "open",
+    draft: false,
+    author_association: "NONE",
+    user: { login: "darkfactory-agent[bot]", type: "Bot" },
+    body: "Automated convergence with no execution issue.",
+    head: { ref: branch, sha: "a".repeat(40), repo: { full_name: "marius-patrik/DarkFactory" } },
+    base: { ref: "main", sha: "b".repeat(40) },
+    ...overrides
+  });
+
+  // Trusted App + release/ or reconcile/ prefix: admitted without association or linked issue.
+  for (const branch of ["release/7c74aa97a986", "reconcile/87502d30-dd6ab2a6"]) {
+    const admitted = assertPullPolicy(enginePull(branch), repository);
+    assert.equal(admitted.branch, branch);
+    assert.deepEqual(admitted.linked, []);
+  }
+
+  // Same branch shape without the trusted App actor stays blocked.
+  assert.throws(
+    () => assertPullPolicy(enginePull("release/7c74aa97a986", { user: { login: "mallory", type: "User" } }), repository),
+    (error: any) => error?.code === "target_policy_blocked" && error.message.includes("author provenance")
+  );
+
+  // Trusted App outside the engine-owned prefixes is not engine automation:
+  // it must carry the worker marker (and then link an execution issue).
+  assert.throws(
+    () => assertPullPolicy(enginePull("feat/unowned-branch"), repository),
+    (error: any) => error?.code === "target_policy_blocked" && error.message.includes("author provenance")
+  );
+  assert.throws(
+    () => assertPullPolicy(enginePull("feat/unowned-branch", { body: "<!-- dark-factory:worker-pr issue=42 -->" }), repository),
+    (error: any) => error?.code === "target_policy_blocked" && error.message.includes("execution issue")
+  );
 });
