@@ -375,7 +375,7 @@ function gitRepositoryInventory(repoRoot, token, hooksRoot) {
   return paths;
 }
 
-function assertPullPolicy(pull, repository, expectations = {}) {
+export function assertPullPolicy(pull, repository, expectations = {}) {
   if (!pull || pull.state !== "open" || pull.draft) throw stableError("target_policy_blocked", "Pull request must be open and ready for review");
   if (String(pull.head?.repo?.full_name || "").toLowerCase() !== repoName(repository).toLowerCase()) {
     throw stableError("target_policy_blocked", "Autofix requires a same-repository pull request head");
@@ -393,11 +393,18 @@ function assertPullPolicy(pull, repository, expectations = {}) {
     throw stableError("stale_target", "Pull request head advanced beyond the triggering event");
   }
   const workerMarker = /<!--\s*dark-factory:worker-pr\s+issue=\d+\s*-->/i.test(pull.body || "");
-  if (!ALLOWED_ASSOCIATIONS.has(pull.author_association) && !workerMarker) {
+  // Release-engine automation: the trusted DarkFactory App authors release/ and
+  // reconcile/ convergence PRs with no execution issue; admit them on exact App
+  // actor provenance plus the engine's owned branch prefixes.
+  const engineAutomation = normalizeWorkerPullRequestActor(pull.user) !== null
+    && /^(?:release|reconcile)\//.test(branch);
+  if (!engineAutomation && !ALLOWED_ASSOCIATIONS.has(pull.author_association) && !workerMarker) {
     throw stableError("target_policy_blocked", "Pull request author provenance is not authorized for autofix");
   }
   const linked = extractClosingIssueNumbers(pull.body || "", repository.repo);
-  if (linked.length === 0) throw stableError("target_policy_blocked", "Pull request must link an execution issue");
+  if (!engineAutomation && linked.length === 0) {
+    throw stableError("target_policy_blocked", "Pull request must link an execution issue");
+  }
   return { branch, linked };
 }
 
