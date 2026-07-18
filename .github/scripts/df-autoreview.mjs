@@ -233,13 +233,21 @@ function indexAutofixDeniedPaths(rawDeniedPaths) {
   return deniedByFoldedPath;
 }
 
+function deniedAutofixRoot(deniedByFoldedPath, filePath) {
+  const foldedPath = filePath.toLowerCase();
+  for (const [foldedRoot, deniedRoot] of deniedByFoldedPath) {
+    if (foldedPath === foldedRoot || foldedPath.startsWith(`${foldedRoot}/`)) return deniedRoot;
+  }
+  return null;
+}
+
 export function assertAutofixPathsEligible(filePaths, rawDeniedPaths) {
   if (!Array.isArray(filePaths)) throw new Error("Autofix candidate paths must be an array");
   const deniedByFoldedPath = indexAutofixDeniedPaths(rawDeniedPaths);
   for (const [index, rawPath] of filePaths.entries()) {
     const filePath = boundedText(rawPath, 512, `Autofix candidate path ${index}`).replace(/\\/g, "/");
     if (!safeRelativePath(filePath)) throw new Error(`Autofix candidate path ${index} is unsafe`);
-    if (deniedByFoldedPath.has(filePath.toLowerCase())) {
+    if (deniedAutofixRoot(deniedByFoldedPath, filePath)) {
       throw new Error(`Autofix cannot modify ineligible changed path ${filePath}`);
     }
   }
@@ -273,7 +281,7 @@ export function validateAutofixProposal(raw, snapshotFiles, policyInput, rawDeni
     const foldedPath = filePath.toLowerCase();
     if (seen.has(foldedPath)) throw new Error(`Autofix proposal repeats or case-collides path ${filePath}`);
     seen.add(foldedPath);
-    if (deniedByFoldedPath.has(foldedPath)) throw new Error(`Autofix cannot modify ineligible changed path ${filePath}`);
+    if (deniedAutofixRoot(deniedByFoldedPath, filePath)) throw new Error(`Autofix cannot modify ineligible changed path ${filePath}`);
     if (pathIsProtected(filePath, policy)) throw new Error(`Autofix cannot modify protected path ${filePath}`);
     const snapshotEvidence = snapshotByFoldedPath.get(foldedPath) ?? null;
     if (snapshotEvidence && snapshotEvidence.path !== filePath) {

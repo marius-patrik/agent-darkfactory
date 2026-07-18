@@ -105,22 +105,24 @@ test("every base or head gitlink path rejects zero-hash autofix at validation an
     [newPath, rename.autofixDeniedPaths],
     [oldPath, unchanged.autofixDeniedPaths]
   ] as const) {
-    const proposal = {
-      schemaVersion: 1,
-      summary: "Attempt to recreate an ineligible gitlink path.",
-      changes: [{
-        path,
-        expectedSha256: "0".repeat(64),
-        contentBase64: Buffer.from("replacement\n").toString("base64")
-      }]
-    };
-    assert.throws(
-      () => validateAutofixProposal(proposal, {}, policy, deniedPaths),
-      /ineligible changed path/
-    );
-    assert.throws(
-      () => assertAutofixPathsEligible([path], deniedPaths),
-      /ineligible changed path/
-    );
+    for (const candidate of [path, `${path}/file.txt`]) {
+      const proposal = {
+        schemaVersion: 1,
+        summary: "Attempt to recreate an ineligible gitlink namespace.",
+        changes: [{
+          path: candidate,
+          expectedSha256: "0".repeat(64),
+          contentBase64: Buffer.from("replacement\n").toString("base64")
+        }]
+      };
+      assert.throws(
+        () => validateAutofixProposal(proposal, {}, policy, deniedPaths),
+        /ineligible changed path/
+      );
+      assert.throws(
+        () => assertAutofixPathsEligible([candidate], deniedPaths),
+        /ineligible changed path/
+      );
+    }
   }
 });
