@@ -634,7 +634,7 @@ export function classifyChangedTreeEntry(filePath, baseEntries, headEntries) {
 
 export function verifyExactPullDiff(repoRoot, token, hooksRoot, git = runGit) {
   return git(
-    ["diff", "--check", "refs/remotes/origin/df-base...refs/remotes/origin/df-head", "--"],
+    ["diff", "--check", "--no-ext-diff", "--no-textconv", "refs/remotes/origin/df-base...refs/remotes/origin/df-head", "--"],
     repoRoot,
     token,
     hooksRoot

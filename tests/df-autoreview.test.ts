@@ -259,7 +259,7 @@ test("exact pull diff check is immutable and propagates a failed git gate", () =
     return "";
   });
   assert.deepEqual(observed.slice(0, 4), [
-    ["diff", "--check", "refs/remotes/origin/df-base...refs/remotes/origin/df-head", "--"],
+    ["diff", "--check", "--no-ext-diff", "--no-textconv", "refs/remotes/origin/df-base...refs/remotes/origin/df-head", "--"],
     "repo",
     "token",
     "hooks",
