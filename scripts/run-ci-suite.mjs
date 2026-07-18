@@ -187,7 +187,6 @@ const suites = {
   review() {
     run("review workflow regressions", process.execPath, [
       "--test",
-      ".github/scripts/run-kimi-review.test.mjs",
       ".github/scripts/managed-enforcement.test.mjs",
     ]);
   },

@@ -118,7 +118,6 @@
       "suite": "review",
       "platforms": ["ubuntu-latest"],
       "requiredPaths": [
-        ".github/scripts/run-kimi-review.test.mjs",
         ".github/scripts/managed-enforcement.test.mjs"
       ]
     }

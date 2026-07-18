@@ -7,30 +7,25 @@ baton ownership, and work dispatch remain outside this scope.
 
 ## Protected Andromeda branches
 
-Andromeda uses `dev` for feature integration and `main` for releases. On
-2026-07-13 both branches were configured with strict branch protection:
+Andromeda uses `dev` for feature integration and `main` for releases. Both
+branches use strict branch protection:
 
-- required status checks: `Validate` and `Codex Review`;
+- required App-bound status checks: `Validate` and `DarkFactory Autoreview`;
 - force pushes: disabled;
 - branch deletion: disabled;
 - repository auto-merge: enabled, with protected merges waiting for both checks
   and an up-to-date branch;
-- separate pull-request approval: not required; `Codex Review` is the automated
-  review gate;
+- separate pull-request approval: not required; `DarkFactory Autoreview` is the
+  automated review gate and requires a clean medium round plus an independent
+  clean high-tier confirmation;
 - administrator enforcement: disabled; automation does not use the
   administrator bypass.
 
-Disposable evidence PRs proved that red changes are blocked on both branches:
-
-- [#204](https://github.com/marius-patrik/Andromeda/pull/204) targeted `dev`;
-  `Validate` and `Codex Review` failed and GitHub reported
-  `mergeStateStatus=BLOCKED`.
-- [#205](https://github.com/marius-patrik/Andromeda/pull/205) targeted `main`;
-  `Validate` and `Codex Review` failed and GitHub reported
-  `mergeStateStatus=BLOCKED`.
-
-The probe PRs and their branches were closed and deleted after the evidence was
-captured.
+Disposable evidence PRs [#204](https://github.com/marius-patrik/Andromeda/pull/204)
+and [#205](https://github.com/marius-patrik/Andromeda/pull/205) proved that red
+validation or automated-review changes are blocked on `dev` and `main`. Their
+provider-specific historical check implementation has since been replaced by
+the App-bound provider-agnostic gate above.
 
 ## Managed Validate baseline
 
@@ -43,48 +38,22 @@ now inside this repository at `packages/core/contracts-go/go.mod`; validation no
 longer depends on a sibling contracts checkout, and the monorepo has no root
 `go.work` file to conditionally discover.
 
-## Base-trusted Codex Review bootstrap
+## Base-trusted provider-agnostic Autoreview
 
-`Codex Review` uses `pull_request_target`, so its workflow and image inputs are
-trusted infrastructure. The workflow checks out the exact PR base SHA and
-builds the image before checking out the PR head. A complete base builds its
-own image inputs. If any managed image input is absent, the workflow checks out
-the same three assets from immutable Andromeda commit
-`0040bc60d76ee251feb25d4eacfb04eff1e40e43` and builds that trusted bootstrap.
+`DarkFactory Autoreview` uses `pull_request_target` only as a thin trusted
+dispatcher. It mints a bounded DarkFactory App token, checks out protected
+`marius-patrik/DarkFactory@main`, records the exact control revision, and
+verifies canonical Agent OS health before starting review. The target head is
+treated as untrusted evidence and is never used to select a provider, model,
+credential transport, or executable control path.
 
-The PR checkout is never an image-build context. It is mounted read-only only
-after the image exists. This lets a PR introduce or repair managed image inputs
-without executing or building from untrusted PR content.
-
-## Credential-isolated review takeover
-
-The landed #148 and #152-#162 implementation was rechecked criterion by
-criterion:
-
-| Criterion | Enforced by |
-| --- | --- |
-| Export the exact immutable prompt on primary automation failure | `run-codex-review.sh` exports the prompt, seals it with SHA-256, and rejects mutation before takeover. |
-| Invoke Kimi only for automation failure | Exit code `42` is the sole takeover signal; a schema-valid changes-required Codex result remains authoritative. |
-| Keep checkout read-only and credentials isolated | The PR workspace is mounted `:ro`; Codex and Kimi credentials exist in separate workflow steps. |
-| Give Kimi no filesystem or tool authority | Kimi receives one HTTP chat request with the sealed prompt and no `tools` field. |
-| Normalize the result | `run-kimi-review.mjs` validates and emits the existing `approved`, `summary`, `blocking_findings`, and `non_blocking_notes` schema. |
-| Refresh OAuth without exposing plaintext | Refresh occurs in memory; rotated credentials move through an in-memory stdin pipe to the trusted GitHub secret API and are never logged or written to the workspace. |
-| Preserve future takeover context and isolation | `skills/orchestrator/SKILL.md` requires the same canonical session, immutable context, provider credential isolation, read-only fallback judgment, and trusted rotation persistence. |
-| Regression coverage | Parser, credential-envelope, no-secret-in-prompt, prompt-integrity, refresh, retry, read-only mount, and no-tools cases run in the authoritative CI gate. |
-| Fail closed when both providers fail | The Kimi boundary writes a blocking review on every failure and the final workflow step rejects any unapproved result or blocking finding. |
-
-The live provider paths were rechecked from durable Actions output:
-
-- [#154's Kimi review](https://github.com/marius-patrik/Andromeda/pull/154#issuecomment-4951840764)
-  is a schema-normalized, approved quota-takeover verdict.
-- [#153's failed takeover](https://github.com/marius-patrik/Andromeda/pull/153#issuecomment-4951808059)
-  remained changes-required when the exported prompt was unreadable, proving
-  the two-provider failure path stayed closed.
-- [#204's primary Codex review](https://github.com/marius-patrik/Andromeda/pull/204#issuecomment-4958253878)
-  produced a valid changes-required verdict and did not invoke Kimi.
-
-The recheck found no residual behavior gap; #203 adds explicit read-only-mount
-and no-tools regression assertions.
+The protected control runtime binds every result to the exact base and head,
+runs a complete medium review to clean, and then requires an independent clean
+high-tier confirmation. Findings return through bounded review/fix rounds;
+malformed output, stale state, unavailable routes, missing evidence, or an
+exhausted budget fails closed. Provider routing and authentication remain owned
+by Agent OS, so the repository carries no provider-specific review credentials,
+container, schema, runner, fallback script, or routing policy.
 
 ## Andromeda-data protection posture
 

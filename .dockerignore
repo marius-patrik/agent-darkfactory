@@ -1,8 +1,0 @@
-# The root Docker context is used only for the isolated Codex review worker.
-# Keep that build input exact; product runtimes build from their component roots.
-**
-!.github/
-!.github/scripts/
-!.github/scripts/run-codex-review.sh
-!.github/codex-review.schema.json
-!.github/codex-review.Dockerfile

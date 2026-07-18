@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const ciWorkflowPath = ".github/workflows/ci.yml";
-const reviewWorkflowPath = ".github/workflows/codex-review.yml";
+const reviewWorkflowPath = ".github/workflows/darkfactory-autoreview.yml";
 
 function step(workflow, name) {
   return workflow.match(new RegExp(`- name: ${name}[\\s\\S]*?(?=\\n\\s{6}- name:|$)`))?.[0] ?? "";
@@ -29,45 +29,52 @@ test("monorepo validation uses the uv CLI without a cross-repository go.work", a
   assert.equal(existsSync("packages/core/contracts-go/go.mod"), true);
 });
 
-test("review image primary path is pinned to the pull request base", async () => {
+test("Autoreview loads provider-agnostic control from protected DarkFactory main", async () => {
   const workflow = await readFile(reviewWorkflowPath, "utf8");
-  const checkout = step(workflow, "Checkout trusted base");
-  const select = step(workflow, "Select trusted review image inputs");
-  assert.match(checkout, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+  const checkout = step(workflow, "Checkout protected DarkFactory control runtime");
+  assert.match(workflow, /pull_request_target:/);
+  assert.match(checkout, /repository: marius-patrik\/DarkFactory/);
+  assert.match(checkout, /ref: main/);
   assert.match(checkout, /persist-credentials: false/);
-  assert.match(select, /context=\./);
-  assert.match(select, /\.github\/codex-review\.Dockerfile/);
-  assert.match(select, /\.github\/codex-review\.schema\.json/);
-  assert.match(select, /\.github\/scripts\/run-codex-review\.sh/);
+  assert.match(workflow, /run-darkfactory-autoreview\.mjs/);
+  assert.doesNotMatch(workflow, /CODEX_AUTH_JSON|KIMI_AUTH_JSON|codex-review|run-kimi-review/i);
 });
 
-test("review image edge path uses an immutable trusted bootstrap", async () => {
+test("Autoreview validates canonical Agent OS before the bounded review protocol", async () => {
   const workflow = await readFile(reviewWorkflowPath, "utf8");
-  const bootstrap = step(workflow, "Checkout immutable review bootstrap");
-  assert.match(bootstrap, /if: steps\.review-image\.outputs\.bootstrap == 'true'/);
-  assert.match(bootstrap, /repository: marius-patrik\/Andromeda/);
-  assert.match(bootstrap, /ref: [a-f0-9]{40}/);
-  assert.match(bootstrap, /path: trusted-review-bootstrap/);
-  assert.match(bootstrap, /persist-credentials: false/);
+  const verify = step(workflow, "Verify canonical Agent OS");
+  const review = step(workflow, "Run bounded medium-to-clean and high confirmation protocol");
+  assert.match(verify, /AGENTS_HOME/);
+  assert.match(verify, /agents\.ps1/);
+  assert.match(verify, /state doctor --json/);
+  assert.match(review, /DF_EXPECTED_BASE_SHA/);
+  assert.match(review, /DF_EXPECTED_HEAD_SHA/);
+  assert.match(review, /DF_CONTROL_REVISION/);
 });
 
-test("review image denied path never builds from untrusted PR content", async () => {
-  const workflow = await readFile(reviewWorkflowPath, "utf8");
-  const build = step(workflow, "Build Codex review image");
-  assert.match(build, /steps\.review-image\.outputs\.context/);
-  assert.doesNotMatch(build, /pr-workspace/);
-  assert.ok(
-    workflow.indexOf("- name: Build Codex review image") < workflow.indexOf("- name: Checkout PR head"),
-    "the trusted image must exist before the untrusted PR checkout",
-  );
+test("legacy provider-specific review assets are absent and no longer required", async () => {
+  const legacyPaths = [
+    ".github/workflows/codex-review.yml",
+    ".github/codex-review.Dockerfile",
+    ".github/codex-review.schema.json",
+    ".github/scripts/run-codex-review.sh",
+    ".github/scripts/run-kimi-review.mjs",
+    ".github/scripts/run-kimi-review.test.mjs",
+  ];
+  for (const legacyPath of legacyPaths) assert.equal(existsSync(legacyPath), false, legacyPath);
+
+  const managed = JSON.parse(await readFile(".darkfactory/managed-repository.json", "utf8"));
+  assert.deepEqual(managed.requiredSecrets, ["DARK_FACTORY_APP_ID", "DARK_FACTORY_PRIVATE_KEY"]);
+  assert.ok(managed.requiredFiles.includes(reviewWorkflowPath));
+  assert.ok(legacyPaths.every((legacyPath) => managed.removedFiles.includes(legacyPath)));
 });
 
 test("documented branch policy matches the enforced check names", async () => {
   const policy = await readFile(".darkfactory/branching-policy.md", "utf8");
-  assert.match(policy, /Both `dev` and `main` use strict branch protection/);
-  assert.match(policy, /`Validate` and\s+`Codex Review` status checks required/);
+  assert.match(policy, /Both `dev` and `main` use strict GitHub-Actions-bound branch protection with\s+`Validate` and `DarkFactory Autoreview` required/);
+  assert.match(policy, /independent schema-valid\s+clean high confirmation/);
   assert.match(policy, /Force pushes and branch deletion are disabled/);
-  assert.match(policy, /queued merge lands only after[\s\S]*both required checks report success/);
+  assert.match(policy, /Administrator enforcement remains disabled/);
 });
 
 test("Andromeda-data posture records the compensating control without choosing billing or visibility", async () => {

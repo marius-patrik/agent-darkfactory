@@ -1,7 +1,7 @@
 # Status
 
 - Andromeda v0.2.2 is released at `d7bafd4f660c275bb327b9dd97b371f26a48adc2` after PRs #169, #170, and #172 passed CI and automated review.
-- The complete Windows gate passes: 208 manager tests, generated-code freshness, and 27 review-takeover tests, with zero failures.
+- The complete Windows gate passes: manager tests, generated-code freshness, and seven provider-agnostic review enforcement regressions, with zero failures.
 - The last v0.2.2 cross-machine acceptance installed exact
   `main@d7bafd4f660c` on Windows and Mac. Its encrypted 18-entry exchange was
   idempotent in both directions, and both machines replayed the same nine

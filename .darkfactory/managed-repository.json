@@ -1,8 +1,12 @@
 {
   "schemaVersion": 1,
   "managedBy": "darkfactory",
-  "dataRepo": "marius-patrik/agents-data",
-  "requiredSecrets": ["CODEX_AUTH_JSON"],
+  "dataRepo": "marius-patrik/Andromeda-data",
+  "ledgerRepo": "marius-patrik/darkfactory-data",
+  "requiredSecrets": [
+    "DARK_FACTORY_APP_ID",
+    "DARK_FACTORY_PRIVATE_KEY"
+  ],
   "requiredFiles": [
     "AGENTS.md",
     ".darkfactory/branching-policy.md",
@@ -15,10 +19,15 @@
     ".github/workflows/dark-factory-bootstrap.yml",
     ".github/workflows/dark-factory-autoupdate.yml",
     ".github/workflows/dark-factory-release.yml",
+    ".github/workflows/darkfactory-autoreview.yml",
+    ".github/scripts/dark-factory-release-check.mjs"
+  ],
+  "removedFiles": [
     ".github/workflows/codex-review.yml",
     ".github/codex-review.Dockerfile",
     ".github/codex-review.schema.json",
     ".github/scripts/run-codex-review.sh",
-    ".github/scripts/dark-factory-release-check.mjs"
+    ".github/scripts/run-kimi-review.mjs",
+    ".github/scripts/run-kimi-review.test.mjs"
   ]
 }

@@ -25,7 +25,7 @@ The owner-set end state: **the system runs itself — multi-agent, one system,
 GitHub-only control.** An orchestrator assesses global state on schedule, plans
 waves, dispatches per-component agents within concurrency caps, posts
 dashboards, and escalates only via ask-owner issues. The full backlog drains
-through DarkFactory lanes: issue → branch (from `dev`) → PR → CI + Codex Review
+through DarkFactory lanes: issue → branch (from `dev`) → PR → Validate + DarkFactory Autoreview
 gates → automerge → release. Zero orchestrator terminal sessions. "GitHub-only
 control" means autonomous orchestration operates exclusively through the GitHub
 control plane; the `agents` CLI remains the local operator surface.
@@ -99,7 +99,7 @@ local one.
   profiles.
 - Enforce the GitHub control plane fail-closed: required CI and review gates on
   `dev` and `main`, managed templates that cover every active toolchain, and
-  credential-isolated review takeover.
+  Agent OS-routed provider-agnostic Autoreview.
 - Make CI prove the whole system: every active component's suite on every PR,
   real-behavior legs, a Windows matrix leg, and fail-closed suite inventory.
 
@@ -335,16 +335,16 @@ strictly through them.
 
 ### GitHub control plane (DarkFactory)
 
-- Required status checks (Validate + Codex Review) are enforced on `dev` and
+- Required status checks (Validate + DarkFactory Autoreview) are enforced on `dev` and
   `main`; force pushes and deletions stay blocked; automerge lands only on
   green.
 - Managed templates cover every active toolchain (Node/Bun, Go, uv) and stay
   robust to PRs that introduce managed files, without weakening the
   `pull_request_target` trust boundary.
-- Review quota/auth takeover is credential-isolated and fail-closed: the
-  secondary provider receives the exact immutable prompt, no filesystem/tool
-  authority, and no access to primary-provider credentials; both-provider
-  failure blocks the merge.
+- Autoreview is provider-agnostic and fail-closed: Agent OS owns routing,
+  credentials, and execution; a complete clean medium round plus an independent
+  clean high-tier confirmation is required, and an unavailable route blocks the
+  merge.
 - Every dispatched package-lane action produces a durable action receipt. The
   orchestrator plans waves by reasoning over receipts, not agent self-report,
   and receipts give the owner a compact audit trail without reopening
