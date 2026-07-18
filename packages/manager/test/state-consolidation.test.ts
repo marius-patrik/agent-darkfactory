@@ -86,6 +86,20 @@ describe("single-root provider state", () => {
     }
   });
 
+  test("agy user-profile root is app-owned on Windows only", async () => {
+    const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
+    try {
+      const agentsHome = path.join(homeDir, ".agents");
+      await Bun.write(path.join(toolCanonicalPath("agy", agentsHome), "bin", "agy.exe"), "binary");
+      await Bun.write(path.join(toolForbiddenPath("agy", homeDir), "antigravity-cli", "settings.json"), "{}");
+
+      expect((await readToolStatus("agy", homeDir, agentsHome, "win32")).location).toBe("app-owned");
+      expect((await readToolStatus("agy", homeDir, agentsHome, "linux")).location).toBe("split");
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
   test("never treats a bridge or standalone-only root as app-owned", () => {
     expect(
       classifyProviderRootLocation({

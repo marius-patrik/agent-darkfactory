@@ -24,7 +24,10 @@ export const toolStateSpecs: ToolStateSpec[] = [
   { id: "claude", displayName: "Claude", forbiddenHomeName: ".claude", appOwnedPlatforms: ["win32"] },
   { id: "codex", displayName: "Codex", forbiddenHomeName: ".codex", appOwnedPlatforms: ["win32"] },
   { id: "kimi", displayName: "Kimi", forbiddenHomeName: ".kimi-code", appOwnedPlatforms: [] },
-  { id: "agy", displayName: "Agy", forbiddenHomeName: ".gemini", appOwnedPlatforms: [] },
+  // Antigravity resolves its config root from the OS user profile on Windows,
+  // so an owner-interactive ~/.gemini coexists with canonical authority the
+  // same way the Claude and Codex desktop roots do (#293).
+  { id: "agy", displayName: "Agy", forbiddenHomeName: ".gemini", appOwnedPlatforms: ["win32"] },
   { id: "agents", displayName: "Agent OS", forbiddenHomeName: null, appOwnedPlatforms: [] },
 ];
 
