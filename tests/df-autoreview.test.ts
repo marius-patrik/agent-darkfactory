@@ -320,6 +320,7 @@ test("trusted pull revision facts prove bounded reconciliation ancestry and tree
     parents: [base, incorporatedMain],
   });
   assert.throws(() => parseExactCommitRecord("not-an-oid"), /invalid commit ancestry object ID/);
+  assert.throws(() => parseExactCommitRecord(`${merge} ${base}\n${incorporatedMain}`), /multiple commit ancestry records/);
   assert.throws(() => parseExactCommitRecord(`${merge} ${base} ${base}`), /invalid commit ancestry relationship/);
   assert.throws(
     () => parseExactCommitRecord([merge, ...Array.from({ length: 9 }, (_, index) => index.toString(16).padStart(40, "0"))].join(" ")),

@@ -691,8 +691,11 @@ function exactGitOid(value, context) {
 }
 
 export function parseExactCommitRecord(output) {
-  const fields = String(output || "").trim().split(/\s+/).filter(Boolean);
-  if (fields.length === 0) throw stableError("target_policy_blocked", "Git returned an empty commit ancestry record");
+  const serialized = String(output || "").trim();
+  if (!serialized) throw stableError("target_policy_blocked", "Git returned an empty commit ancestry record");
+  if (/[\r\n]/.test(serialized)) throw stableError("target_policy_blocked", "Git returned multiple commit ancestry records");
+  const fields = serialized.split(" ");
+  if (fields.some((value) => !value)) throw stableError("target_policy_blocked", "Git returned a malformed commit ancestry record");
   const [commit, ...parents] = fields.map((value) => exactGitOid(value, "commit ancestry"));
   if (parents.length > COMMIT_PARENT_PROOF_LIMIT) {
     throw stableError("target_policy_blocked", "Git commit parent evidence exceeds the Autoreview bound");
