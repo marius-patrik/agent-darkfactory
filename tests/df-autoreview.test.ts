@@ -27,9 +27,13 @@ const {
   gitlinkManifestFromEntries,
   indexExactTreeEntries,
   parseChangedPaths,
+  parseExactCommitRecord,
   parseGitTreeEntries,
   serializeIssueReviewContext,
   serializePullReviewContext,
+  trustedPullRevisionEvidence,
+  trustedPullRevisionEvidenceForPolicy,
+  trustedPullRevisionFacts,
   verifyExactPullDiff
 } = autoreviewRunnerModule;
 const controlRoot = path.resolve(import.meta.dirname, "..");
@@ -268,6 +272,146 @@ test("exact pull diff check is immutable and propagates a failed git gate", () =
     () => verifyExactPullDiff("repo", "token", "hooks", () => { throw new Error("diff check failed"); }),
     /diff check failed/,
   );
+});
+
+test("trusted pull revision facts prove bounded reconciliation ancestry and tree identity", () => {
+  const base = "a".repeat(40);
+  const head = "b".repeat(40);
+  const proposalBase = "c".repeat(40);
+  const merge = "d".repeat(40);
+  const incorporatedMain = "e".repeat(40);
+  const baseTree = "f".repeat(40);
+  const headTree = "1".repeat(40);
+  const responses = new Map([
+    ["rev-parse refs/remotes/origin/df-base", base],
+    ["rev-parse refs/remotes/origin/df-head", head],
+    [`rev-parse ${base}^{tree}`, baseTree],
+    [`rev-parse ${head}^{tree}`, headTree],
+    [`rev-parse ${proposalBase}^{tree}`, baseTree],
+    [`rev-parse ${merge}^{tree}`, baseTree],
+    [`merge-base ${base} ${head}`, base],
+    [`rev-list --parents -n 1 ${head}`, `${head} ${proposalBase}`],
+    [`rev-list --parents -n 1 ${proposalBase}`, `${proposalBase} ${merge}`],
+    [`rev-list --parents -n 1 ${merge}`, `${merge} ${base} ${incorporatedMain}`],
+  ]);
+  const facts = trustedPullRevisionFacts(
+    "repo",
+    "token",
+    "hooks",
+    ["docs/reconciliation/release.json"],
+    (args: string[]) => {
+      const key = args.join(" ");
+      const response = responses.get(key);
+      if (!response) throw new Error(`Unexpected git call: ${key}`);
+      return response;
+    },
+  );
+
+  assert.match(facts[0], new RegExp(`baseCommit=${base},baseTree=${baseTree}`));
+  assert.match(facts[0], new RegExp(`headCommit=${head},headTree=${headTree}`));
+  assert.match(facts[0], new RegExp(`mergeBase=${base}; baseIsAncestor=true`));
+  assert.match(facts[1], /reachedBase=true,complete=true,boundedOut=false,limit=16/);
+  assert.match(facts[1], new RegExp(`commit=${proposalBase},tree=${baseTree},parents=${merge}`));
+  assert.match(facts[1], new RegExp(`commit=${merge},tree=${baseTree},parents=${base},${incorporatedMain}`));
+  assert.match(facts[2], /count=1,orderedNulSha256=[0-9a-f]{64}/);
+
+  assert.deepEqual(parseExactCommitRecord(`${merge} ${base} ${incorporatedMain}`), {
+    commit: merge,
+    parents: [base, incorporatedMain],
+  });
+  assert.throws(() => parseExactCommitRecord("not-an-oid"), /invalid commit ancestry object ID/);
+  assert.throws(() => parseExactCommitRecord(`${merge} ${base} ${base}`), /invalid commit ancestry relationship/);
+  assert.throws(
+    () => parseExactCommitRecord([merge, ...Array.from({ length: 9 }, (_, index) => index.toString(16).padStart(40, "0"))].join(" ")),
+    /parent evidence exceeds/,
+  );
+});
+
+test("trusted revision evidence compacts bounded-depth octopus ancestry without blocking ordinary pull requests", () => {
+  const oid = (value: number) => value.toString(16).padStart(40, "0");
+  const base = "f".repeat(39) + "e";
+  const head = oid(1);
+  const chain = Array.from({ length: 17 }, (_, index) => oid(index + 1));
+  const fakeGit = (args: string[]) => {
+    if (args[0] === "rev-parse" && args[1] === "refs/remotes/origin/df-base") return base;
+    if (args[0] === "rev-parse" && args[1] === "refs/remotes/origin/df-head") return head;
+    if (args[0] === "rev-parse" && args[1].endsWith("^{tree}")) return "a".repeat(40);
+    if (args[0] === "merge-base") return oid(9000);
+    if (args[0] === "rev-list") {
+      const current = args.at(-1) as string;
+      const index = chain.indexOf(current);
+      const firstParent = chain[index + 1];
+      const extraParents = Array.from({ length: 7 }, (_, offset) => oid(1000 + index * 10 + offset));
+      return [current, firstParent, ...extraParents].join(" ");
+    }
+    throw new Error(`Unexpected git call: ${args.join(" ")}`);
+  };
+  const evidence = trustedPullRevisionEvidence("repo", "token", "hooks", [], fakeGit);
+  assert.equal(evidence.proof.ancestryBoundedOut, true);
+  assert.match(evidence.facts[1], /boundedOut=true/);
+  assert.ok(evidence.facts.every((fact: string) => Buffer.byteLength(fact, "utf8") <= 3500));
+
+  const malformedGit = (args: string[]) => {
+    if (args[0] === "rev-parse" && args[1] === "refs/remotes/origin/df-base") return base;
+    if (args[0] === "rev-parse" && args[1] === "refs/remotes/origin/df-head") return head;
+    if (args[0] === "rev-parse" && args[1].endsWith("^{tree}")) return "a".repeat(40);
+    if (args[0] === "merge-base") return base;
+    if (args[0] === "rev-list") return `${head} ${base} ${base}`;
+    throw new Error(`Unexpected git call: ${args.join(" ")}`);
+  };
+  assert.throws(
+    () => trustedPullRevisionEvidence("repo", "token", "hooks", [], malformedGit),
+    /invalid commit ancestry relationship/,
+  );
+
+  let ordinaryGitCalls = 0;
+  assert.equal(trustedPullRevisionEvidenceForPolicy(
+    { engineAutomation: false },
+    "repo",
+    "token",
+    "hooks",
+    [],
+    () => { ordinaryGitCalls += 1; throw new Error("ordinary PR must not collect engine-only revision evidence"); },
+  ), null);
+  assert.equal(ordinaryGitCalls, 0);
+});
+
+test("trusted engine zero-diff reconciliation runs the normal provider-agnostic review protocol", async () => {
+  const policy = await loadAutoreviewPolicy(controlRoot);
+  const modelPolicy = await loadModelPolicy(controlRoot);
+  const base = "a".repeat(40);
+  const head = "b".repeat(40);
+  const snapshot = {
+    kind: "pull_request",
+    repository: "marius-patrik/Andromeda",
+    number: 306,
+    version: `${base}:${head}`,
+    baseSha: base,
+    headSha: head,
+    headRef: "reconcile/main-into-dev",
+    engineAutomation: true,
+    files: {},
+    verifiedFacts: [
+      `Exact fetched revision proof: baseCommit=${base}; headCommit=${head}; baseIsAncestor=true.`,
+      "Exact fetched changed-path inventory: count=0,orderedNulSha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.",
+    ],
+  };
+  let modelTurns = 0;
+  const result = await runAutoreview({
+    target: {
+      read: async () => snapshot,
+      fix: async () => { throw new Error("clean zero-diff review must not request a fix"); },
+    },
+    policy,
+    modelPolicy,
+    review: async ({ request }: any) => {
+      modelTurns += 1;
+      return { verdict: clean(), receipt: receipt(request), prompt: prompt(request) };
+    },
+    record: async () => {},
+  });
+  assert.equal(result.state, "clean");
+  assert.equal(modelTurns, 2);
 });
 
 async function fixture(options: { verdicts: any[]; policy?: any; mutateDuringReviewAt?: number; recordFailsAt?: number; promptMismatchAt?: number }) {

@@ -429,7 +429,7 @@ export function assertPullPolicy(pull, repository, expectations = {}) {
   if (!engineAutomation && linked.length === 0) {
     throw stableError("target_policy_blocked", "Pull request must link an execution issue");
   }
-  return { branch, linked };
+  return { branch, linked, engineAutomation };
 }
 
 async function ensureRepository(root, repository, token, hooksRoot) {
@@ -641,6 +641,147 @@ export function verifyExactPullDiff(repoRoot, token, hooksRoot, git = runGit) {
   );
 }
 
+const EXACT_GIT_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const FIRST_PARENT_PROOF_LIMIT = 16;
+const COMMIT_PARENT_PROOF_LIMIT = 8;
+const REVISION_FACT_BYTES = 3500;
+const REVISION_FACTS_TOTAL_BYTES = 7000;
+
+function exactGitOid(value, context) {
+  const oid = String(value || "").trim();
+  if (!EXACT_GIT_OID.test(oid)) {
+    throw stableError("target_policy_blocked", `Git returned an invalid ${context} object ID`);
+  }
+  return oid;
+}
+
+export function parseExactCommitRecord(output) {
+  const fields = String(output || "").trim().split(/\s+/).filter(Boolean);
+  if (fields.length === 0) throw stableError("target_policy_blocked", "Git returned an empty commit ancestry record");
+  const [commit, ...parents] = fields.map((value) => exactGitOid(value, "commit ancestry"));
+  if (parents.length > COMMIT_PARENT_PROOF_LIMIT) {
+    throw stableError("target_policy_blocked", "Git commit parent evidence exceeds the Autoreview bound");
+  }
+  if (new Set(parents).size !== parents.length || parents.includes(commit)) {
+    throw stableError("target_policy_blocked", "Git returned an invalid commit ancestry relationship");
+  }
+  return { commit, parents };
+}
+
+function exactCommitRecord(repoRoot, ref, token, hooksRoot, git) {
+  const record = parseExactCommitRecord(git(
+    ["rev-list", "--parents", "-n", "1", ref],
+    repoRoot,
+    token,
+    hooksRoot
+  ));
+  const tree = exactGitOid(git(
+    ["rev-parse", `${record.commit}^{tree}`],
+    repoRoot,
+    token,
+    hooksRoot
+  ), "commit tree");
+  return { ...record, tree };
+}
+
+export function trustedPullRevisionEvidence(repoRoot, token, hooksRoot, changedPaths = [], git = runGit) {
+  const base = exactGitOid(git(
+    ["rev-parse", "refs/remotes/origin/df-base"],
+    repoRoot,
+    token,
+    hooksRoot
+  ), "base commit");
+  const head = exactGitOid(git(
+    ["rev-parse", "refs/remotes/origin/df-head"],
+    repoRoot,
+    token,
+    hooksRoot
+  ), "head commit");
+  const baseTree = exactGitOid(git(
+    ["rev-parse", `${base}^{tree}`],
+    repoRoot,
+    token,
+    hooksRoot
+  ), "base tree");
+  const headTree = exactGitOid(git(
+    ["rev-parse", `${head}^{tree}`],
+    repoRoot,
+    token,
+    hooksRoot
+  ), "head tree");
+  const mergeBase = exactGitOid(git(
+    ["merge-base", base, head],
+    repoRoot,
+    token,
+    hooksRoot
+  ), "merge base");
+
+  const normalizedPaths = changedPaths.map(assertSafeRepositoryPath);
+  const changedPathDigest = sha256(Buffer.from(normalizedPaths.join("\0"), "utf8"));
+  let reachedBase = false;
+  let complete = false;
+  let ancestryBoundedOut = false;
+  const ancestry = [];
+  const seen = new Set();
+  let cursor = head;
+  for (let depth = 0; cursor !== base && depth < FIRST_PARENT_PROOF_LIMIT; depth += 1) {
+    if (seen.has(cursor)) throw stableError("target_policy_blocked", "Git returned cyclic first-parent ancestry evidence");
+    seen.add(cursor);
+    const record = exactCommitRecord(repoRoot, cursor, token, hooksRoot, git);
+    if (record.commit !== cursor) throw stableError("target_policy_blocked", "Git ancestry record does not match the requested commit");
+    ancestry.push(record);
+    if (record.parents.length === 0) break;
+    cursor = record.parents[0];
+  }
+  reachedBase = cursor === base;
+  complete = reachedBase || ancestry.at(-1)?.parents.length === 0;
+  ancestryBoundedOut = !complete;
+  let ancestryFact = ancestry.length === 0
+    ? "none (head equals base)"
+    : ancestry.map((record) => (
+      `commit=${record.commit},tree=${record.tree},parents=${record.parents.length > 0 ? record.parents.join(",") : "none"}`
+    )).join("; ");
+  if (Buffer.byteLength(ancestryFact, "utf8") > REVISION_FACT_BYTES) {
+    ancestryBoundedOut = true;
+    ancestryFact = "bounded supplemental ancestry evidence omitted because its serialized form exceeded the Autoreview fact limit";
+  }
+
+  const facts = [
+    `Exact fetched revision proof: baseCommit=${base},baseTree=${baseTree}; headCommit=${head},headTree=${headTree}; mergeBase=${mergeBase}; baseIsAncestor=${mergeBase === base}.`,
+    `Exact fetched supplemental first-parent ancestry from head toward base: reachedBase=${reachedBase},complete=${complete},boundedOut=${ancestryBoundedOut},limit=${FIRST_PARENT_PROOF_LIMIT}; ${ancestryFact}.`,
+    `Exact fetched changed-path inventory: count=${normalizedPaths.length},orderedNulSha256=${changedPathDigest}.`
+  ];
+  if (facts.some((fact) => Buffer.byteLength(fact, "utf8") > REVISION_FACT_BYTES)
+    || Buffer.byteLength(facts.join("\n"), "utf8") > REVISION_FACTS_TOTAL_BYTES) {
+    throw stableError("target_policy_blocked", "Serialized revision evidence exceeds the verified-fact bound");
+  }
+  return {
+    facts,
+    proof: {
+      base,
+      head,
+      baseTree,
+      headTree,
+      mergeBase,
+      baseIsAncestor: mergeBase === base,
+      reachedBase,
+      complete,
+      ancestryBoundedOut,
+      changedPathCount: normalizedPaths.length,
+      changedPathDigest
+    }
+  };
+}
+
+export function trustedPullRevisionFacts(repoRoot, token, hooksRoot, changedPaths = [], git = runGit) {
+  return trustedPullRevisionEvidence(repoRoot, token, hooksRoot, changedPaths, git).facts;
+}
+
+export function trustedPullRevisionEvidenceForPolicy(policyEvidence, repoRoot, token, hooksRoot, changedPaths = [], git = runGit) {
+  if (policyEvidence?.engineAutomation !== true) return null;
+  return trustedPullRevisionEvidence(repoRoot, token, hooksRoot, changedPaths, git);
+}
+
 function changedPullFiles(repoRoot, token, hooksRoot) {
   const names = parseChangedPaths(runGit(
     ["diff", "--name-only", "-z", "--no-ext-diff", "--no-textconv", "refs/remotes/origin/df-base...refs/remotes/origin/df-head"],
@@ -793,6 +934,13 @@ export async function createPullRequestTarget({
     verifyExactPullDiff(repoRoot, token, hooksRoot);
     const baseGitlinks = exactGitlinkManifest(repoRoot, "refs/remotes/origin/df-base", token, hooksRoot);
     const headGitlinks = exactGitlinkManifest(repoRoot, "refs/remotes/origin/df-head", token, hooksRoot);
+    const revisionEvidence = trustedPullRevisionEvidenceForPolicy(
+      policyEvidence,
+      repoRoot,
+      token,
+      hooksRoot,
+      changed.reviewedFiles.map((entry) => entry.path)
+    );
     const reviewContext = serializePullReviewContext({
       target: {
         kind: "pull_request",
@@ -822,6 +970,7 @@ export async function createPullRequestTarget({
       files: changed.files,
       verifiedFacts: [
         `Exact fetched diff passed git diff --check for ${pull.base.sha}...${pull.head.sha}.`,
+        ...(revisionEvidence?.facts || []),
         gitlinkManifestFact("base", baseGitlinks),
         gitlinkManifestFact("head", headGitlinks)
       ],
@@ -1113,7 +1262,7 @@ function roundSummary(round) {
   };
 }
 
-function resultComment(result) {
+export function resultComment(result) {
   const lastReview = [...result.rounds].reverse().find((round) => round.verdict);
   const findings = lastReview?.verdict?.blockingFindings || [];
   const lines = [
