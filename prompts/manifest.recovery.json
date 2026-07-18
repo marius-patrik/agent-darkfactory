@@ -587,7 +587,7 @@
       "kind": "skill",
       "path": "skills/validation-autoreview.md",
       "version": "0.2.0",
-      "checksum": "sha256:45cbd51333a4c7d8a44bfa21fb26f5504dbbcc0f8f0ccead7487497301c80cbd",
+      "checksum": "sha256:870d1c40c9004760d5d993eccd31e79e5cad9943a15d7729cd2d67808ab7b705",
       "variables": [],
       "requiredVariables": []
     },
@@ -1206,7 +1206,7 @@
       "snapshot": "fixtures/snapshots/implementer.snapshot.md",
       "version": "0.3.0",
       "checksum": "sha256:da6a9de9d6b53f95058fc48f93cc7842b5750a7c462fc7436d03de1a579d5529",
-      "snapshotChecksum": "sha256:8e79e22fe866693c4dca22e14fedfbe35878c954fea6202839e07f2e1727532b",
+      "snapshotChecksum": "sha256:c21020fd0e4ede58e6b403edb119c38d56a746cdc502f5f7e29570929ceaafda",
       "covers": [
         "output/implementer",
         "overlay/agent-os-boundary",
@@ -1233,7 +1233,7 @@
       "snapshot": "fixtures/snapshots/issue-drafter.snapshot.md",
       "version": "0.2.0",
       "checksum": "sha256:5b830bd2586f13e4812f37bd26b1a83e5a5e35cd61c8e5181a246580b496dbf4",
-      "snapshotChecksum": "sha256:4c09376447e0689cc4d71fc34b4636e9666d1d4c9e8c38f8e54475ad3dfb7cac",
+      "snapshotChecksum": "sha256:faccd1ff037b99b54a210280a07aa1c9843d94223f6a0aa6e78af8a65b7fe5f5",
       "covers": [
         "output/issue-drafter",
         "overlay/agent-os-boundary",
@@ -1257,7 +1257,7 @@
       "snapshot": "fixtures/snapshots/issue-final-review.snapshot.md",
       "version": "0.3.0",
       "checksum": "sha256:7e47b4780435a79f9fa5dc3e4023ed714ef8f0af49082e5e7fda2c3a0c100cb5",
-      "snapshotChecksum": "sha256:27ec42243560dbe62f462716fc958cbf93e8a5253e70d2aa4bc159129ec42622",
+      "snapshotChecksum": "sha256:8a9db359545720fbd13f894e1c0a743b87482fbe6bbc55917b45e4d42d16ec9c",
       "covers": [
         "output/issue-reviewer",
         "overlay/agent-os-boundary",
@@ -1304,7 +1304,7 @@
       "snapshot": "fixtures/snapshots/issue-reviewer.snapshot.md",
       "version": "0.3.0",
       "checksum": "sha256:f91fdca969f4a3dc0fe1eb1890fa9df0098f3a686b32450ca444d1fb6f60f426",
-      "snapshotChecksum": "sha256:9cb8dd863ddb63ede98170593c065aa40715ccd3df3b9346833811f9d99efb71",
+      "snapshotChecksum": "sha256:287feb3ba11f0b88b2ad46702fb83f58c2f178f7daae6a0fb7970b03f8db7748",
       "covers": [
         "output/issue-reviewer",
         "overlay/agent-os-boundary",
@@ -1418,7 +1418,7 @@
       "snapshot": "fixtures/snapshots/pointer-updater.snapshot.md",
       "version": "0.2.0",
       "checksum": "sha256:9ce4bae093fdd2e68dc22fc0982b4b7d71e3a309f91a65074deefaae6d68ee24",
-      "snapshotChecksum": "sha256:014c6b4d6b50837901f1d73eead2a752c866502f5d2c7bdb5feb92065a07ff3b",
+      "snapshotChecksum": "sha256:4d0bccc8b9cefeea26c69bb58b5a7e6f641f2292264849000a7b3470221344cc",
       "covers": [
         "output/pointer-updater",
         "overlay/agent-os-boundary",
@@ -1442,7 +1442,7 @@
       "snapshot": "fixtures/snapshots/pr-final-review.snapshot.md",
       "version": "0.3.0",
       "checksum": "sha256:7ce65fdda6f90ef375ee6644adfe3ff3259bd6a8b418f1754b2315462713585f",
-      "snapshotChecksum": "sha256:adcf1d55f9f591072056645b8ef0a77847f0de4d90694c58051738fe7e596a2b",
+      "snapshotChecksum": "sha256:226eb73104180b7cb64a46dab9407a46c9d1af16fea9c37e0ea96ee618bc6902",
       "covers": [
         "output/pr-reviewer",
         "overlay/agent-os-boundary",
@@ -1465,7 +1465,7 @@
       "snapshot": "fixtures/snapshots/pr-fixer.snapshot.md",
       "version": "0.3.0",
       "checksum": "sha256:add53083ecf202affdd8b80690bbdf884d9218c4a596d769694bad5579c90052",
-      "snapshotChecksum": "sha256:32ed360a1bf4b96db1cfc6105634274e92c4dcbfdd6c02a3c943df551d76670c",
+      "snapshotChecksum": "sha256:fc0223ff24f07f9d291f7ca97d14702901070f2a250f385b75029480cf21a6b8",
       "covers": [
         "output/pr-fixer",
         "overlay/agent-os-boundary",
@@ -1490,7 +1490,7 @@
       "snapshot": "fixtures/snapshots/pr-reviewer.snapshot.md",
       "version": "0.3.0",
       "checksum": "sha256:d1a49b377d599c53fb62bc605f15c8ddca2d494504afcdf8694929b3aeade23e",
-      "snapshotChecksum": "sha256:14c4c881ed519c865bd5faf466f01bfa927b217a0717b17c15ad10a29c92acd1",
+      "snapshotChecksum": "sha256:a97b348073a7b4f5d906360de2d5efe1a07559e7cb8ce9adb73b42965dbb6c55",
       "covers": [
         "output/pr-reviewer",
         "overlay/agent-os-boundary",
@@ -1513,7 +1513,7 @@
       "snapshot": "fixtures/snapshots/releaser.snapshot.md",
       "version": "0.2.0",
       "checksum": "sha256:c02c71aa907e74fc8d4e559d624f838d4836f429738dd2f0d0581d540ab540e2",
-      "snapshotChecksum": "sha256:8727c2bad94d9c8e98d8d43a3593026a0f8b666f52f35500bcce245f2037b8da",
+      "snapshotChecksum": "sha256:33d979d79fbb48d5f3ca650d984eb98a9ced9be035bbc267c4bc992214d53f05",
       "covers": [
         "output/releaser",
         "overlay/agent-os-boundary",
