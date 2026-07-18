@@ -422,8 +422,16 @@ export function assertPullPolicy(pull, repository, expectations = {}) {
   // Release-engine automation: the trusted DarkFactory App authors release/ and
   // reconcile/ convergence PRs with no execution issue; admit them on exact App
   // actor provenance plus the engine's owned branch prefixes.
-  const engineAutomation = normalizeWorkerPullRequestActor(pull.user) !== null
+  const normalizedEngineActor = normalizeWorkerPullRequestActor(pull.user);
+  const engineAutomation = normalizedEngineActor !== null
     && /^(?:release|reconcile)\//.test(branch);
+  const engineActorDecision = engineAutomation ? Object.freeze({
+    normalizedActor: normalizedEngineActor,
+    login: pull.user.login,
+    type: pull.user.type || null,
+    typename: pull.user.__typename || null,
+    ownedBranch: branch
+  }) : null;
   if (!engineAutomation && !ALLOWED_ASSOCIATIONS.has(pull.author_association) && !workerMarker) {
     throw stableError("target_policy_blocked", "Pull request author provenance is not authorized for autofix");
   }
@@ -431,7 +439,7 @@ export function assertPullPolicy(pull, repository, expectations = {}) {
   if (!engineAutomation && linked.length === 0) {
     throw stableError("target_policy_blocked", "Pull request must link an execution issue");
   }
-  return { branch, linked, engineAutomation };
+  return { branch, linked, engineAutomation, engineActorDecision };
 }
 
 async function ensureRepository(root, repository, token, hooksRoot) {
@@ -999,6 +1007,7 @@ export async function createPullRequestTarget({
       files: changed.files,
       autofixDeniedPaths: changed.autofixDeniedPaths,
       engineAutomation: policyEvidence.engineAutomation,
+      engineActorDecision: policyEvidence.engineActorDecision,
       trustedRevisionProof: revisionEvidence?.proof || null,
       verifiedFacts: [
         `Exact fetched diff passed git diff --check for ${pull.base.sha}...${pull.head.sha}.`,
@@ -1301,7 +1310,15 @@ function roundSummary(round) {
 
 export function isTrustedZeroDiffReconciliation(snapshot) {
   const proof = snapshot?.trustedRevisionProof;
-  if (snapshot?.kind !== "pull_request" || snapshot.engineAutomation !== true || !proof || typeof proof !== "object") return false;
+  const actor = snapshot?.engineActorDecision;
+  if (snapshot?.kind !== "pull_request"
+    || snapshot.engineAutomation !== true
+    || !actor
+    || actor.normalizedActor !== "darkfactory-agent"
+    || actor.ownedBranch !== snapshot.headRef
+    || !/^(?:release|reconcile)\//.test(actor.ownedBranch || "")
+    || !proof
+    || typeof proof !== "object") return false;
   const emptyPathDigest = sha256(Buffer.alloc(0));
   // Exact merge-base equality proves that the protected base is an ancestor of
   // the head regardless of first-parent depth. The bounded first-parent chain is
@@ -1322,14 +1339,35 @@ export function isTrustedZeroDiffReconciliation(snapshot) {
 }
 
 function trustedZeroDiffResult(snapshot) {
+  const trustedEvidence = Object.freeze({
+    schemaVersion: 1,
+    admission: "trusted_engine_zero_diff",
+    actorDecision: Object.freeze({ ...snapshot.engineActorDecision }),
+    headRef: snapshot.headRef,
+    baseSha: snapshot.baseSha,
+    headSha: snapshot.headSha,
+    revisionProof: Object.freeze({ ...snapshot.trustedRevisionProof })
+  });
   return Object.freeze({
     schemaVersion: 1,
     ok: true,
     state: "trusted_zero_diff",
     code: null,
     targetVersion: snapshot.version,
-    rounds: Object.freeze([])
+    rounds: Object.freeze([]),
+    trustedEvidence
   });
+}
+
+export function autoreviewResultLedger(result) {
+  return {
+    ok: result.ok,
+    state: result.state,
+    code: result.code,
+    targetVersion: result.targetVersion || null,
+    rounds: result.rounds.map(roundSummary),
+    trustedEvidence: result.trustedEvidence || null
+  };
 }
 
 export async function runAutoreviewForTarget({ target, policy, modelPolicy, review, record }) {
@@ -1534,13 +1572,7 @@ export async function executeAutoreview(environment = process.env) {
     await writeRunLedger(gh, DARK_FACTORY_DATA_REPO, "autoreview-result", repoName(repository), {
       check: AUTOREVIEW_CHECK_NAME,
       target: `${repoName(repository)}#${number}`,
-      result: {
-        ok: result.ok,
-        state: result.state,
-        code: result.code,
-        targetVersion: result.targetVersion || null,
-        rounds: result.rounds.map(roundSummary)
-      }
+      result: autoreviewResultLedger(result)
     });
     await upsertResultComment(gh, repository, number, resultComment(result));
     if (!result.ok) return result;

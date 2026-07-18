@@ -487,7 +487,7 @@ test("Autoreview recovery rejects a colliding PR-controlled Actions check even b
   assert.deepEqual(mutations, []);
 });
 
-test("Autoreview recovery reruns an exact failed PR gate even when its exact trusted result comment is clean", async () => {
+test("Autoreview recovery reruns an exact failed PR gate when its exact trusted zero-diff result is successful", async () => {
   const base = "1".repeat(40);
   const head = "2".repeat(40);
   const version = `${base}:${head}`;
@@ -507,7 +507,7 @@ test("Autoreview recovery reruns an exact failed PR gate even when its exact tru
       `<!-- darkfactory-autoreview-target version=${version} -->`,
       "## DarkFactory Autoreview",
       "",
-      "**Verdict:** Clean high confirmation"
+      "**Verdict:** Trusted zero-diff reconciliation"
     ].join("\n")
   }];
   const mutations: Array<{ method: string; path: string; body?: any }> = [];

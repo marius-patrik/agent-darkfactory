@@ -205,7 +205,7 @@ async function observePullRecoveryCandidate(repository, pull, admittedCommentId 
   return {
     ...base,
     recoveryAction: "rerun-pull-request-target",
-    recoveryReason: completion === "clean" || completion === "owner_override"
+    recoveryReason: isSuccessfulPullCompletion(completion)
       ? "successful-comment-with-red-gate"
       : completion === "blocked" ? "blocked-result" : "missing-or-stale-result"
   };

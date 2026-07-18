@@ -34,6 +34,7 @@ const {
   serializeIssueReviewContext,
   serializePullReviewContext,
   runAutoreviewForTarget,
+  autoreviewResultLedger,
   trustedPullRevisionEvidence,
   trustedPullRevisionEvidenceForPolicy,
   trustedPullRevisionFacts,
@@ -377,7 +378,15 @@ test("trusted engine zero-diff reconciliation bypasses every model round after e
     version: `${base}:${head}`,
     baseSha: base,
     headSha: head,
+    headRef: "reconcile/main-into-dev",
     engineAutomation: true,
+    engineActorDecision: {
+      normalizedActor: "darkfactory-agent",
+      login: "darkfactory-agent[bot]",
+      type: "Bot",
+      typename: null,
+      ownedBranch: "reconcile/main-into-dev",
+    },
     files: {},
     trustedRevisionProof: {
       base,
@@ -412,6 +421,23 @@ test("trusted engine zero-diff reconciliation bypasses every model round after e
     code: null,
     targetVersion: snapshot.version,
     rounds: [],
+    trustedEvidence: {
+      schemaVersion: 1,
+      admission: "trusted_engine_zero_diff",
+      actorDecision: snapshot.engineActorDecision,
+      headRef: snapshot.headRef,
+      baseSha: base,
+      headSha: head,
+      revisionProof: snapshot.trustedRevisionProof,
+    },
+  });
+  assert.deepEqual(autoreviewResultLedger(result), {
+    ok: true,
+    state: "trusted_zero_diff",
+    code: null,
+    targetVersion: snapshot.version,
+    rounds: [],
+    trustedEvidence: result.trustedEvidence,
   });
   assert.match(resultComment(result), /\*\*Verdict:\*\* Trusted zero-diff reconciliation/);
   assert.match(resultComment(result), /No model review rounds were run/);
@@ -434,7 +460,15 @@ test("zero-diff admission rejects incomplete trust evidence, detects a revalidat
     version: `${base}:${head}`,
     baseSha: base,
     headSha: head,
+    headRef: "release/dev-to-main",
     engineAutomation: true,
+    engineActorDecision: {
+      normalizedActor: "darkfactory-agent",
+      login: "darkfactory-agent[bot]",
+      type: "Bot",
+      typename: null,
+      ownedBranch: "release/dev-to-main",
+    },
     files: {},
     trustedRevisionProof: {
       base,
