@@ -25,6 +25,8 @@ const {
   classifyChangedTreeEntry,
   gitlinkManifestFact,
   gitlinkManifestFromEntries,
+  indexExactTreeEntries,
+  parseChangedPaths,
   parseGitTreeEntries,
   serializeIssueReviewContext,
   serializePullReviewContext,
@@ -169,6 +171,19 @@ test("exact Git tree evidence is strict, bounded, and keeps gitlinks out of auto
   assert.throws(() => classifyChangedTreeEntry("../unsafe", []), /unsafe changed path/);
   assert.throws(() => classifyChangedTreeEntry(gitlink.path, [gitlink, gitlink]), /ambiguous exact-tree evidence/);
 
+  const replacementEntries = parseGitTreeEntries(Buffer.from(
+    `100644 blob ${oid}\tmodule/file\0` +
+    `100644 blob ${oid}\t[literal-pathspec]\0`,
+  ));
+  const indexed = indexExactTreeEntries(replacementEntries);
+  const changedPaths = parseChangedPaths(Buffer.from("module\0module/file\0[literal-pathspec]\0"));
+  assert.deepEqual(changedPaths, ["module", "module/file", "[literal-pathspec]"]);
+  assert.equal(classifyChangedTreeEntry("module", indexed.has("module") ? [indexed.get("module")] : []).kind, "deleted");
+  assert.equal(classifyChangedTreeEntry("module/file", [indexed.get("module/file")]).kind, "blob");
+  assert.equal(classifyChangedTreeEntry("[literal-pathspec]", [indexed.get("[literal-pathspec]")]).path, "[literal-pathspec]");
+  assert.throws(() => parseChangedPaths(Buffer.from("module")), /unterminated changed-path evidence/);
+  assert.throws(() => parseChangedPaths(Buffer.from([0xff, 0x00])), /non-UTF-8 changed-path evidence/);
+
   assert.deepEqual(gitlinkManifestFromEntries([gitlink]), [{ path: gitlink.path, oid }]);
   assert.throws(
     () => gitlinkManifestFromEntries(Array.from({ length: 201 }, (_, index) => ({ ...gitlink, path: `module-${index}` }))),
@@ -179,6 +194,16 @@ test("exact Git tree evidence is strict, bounded, and keeps gitlinks out of auto
   const encodedPath = /pathBase64url=([^,]+)/.exec(fact)?.[1];
   assert.ok(encodedPath);
   assert.equal(Buffer.from(encodedPath, "base64url").toString("utf8"), "modules/instruction-like=path; text");
+  const admittedManifest = gitlinkManifestFromEntries(Array.from(
+    { length: 30 },
+    (_, index) => ({ ...gitlink, path: `m${index}` }),
+  ));
+  assert.ok(gitlinkManifestFact("base", admittedManifest).length < 4096);
+  assert.throws(
+    () => gitlinkManifestFromEntries([{ ...gitlink, path: "x".repeat(3000) }]),
+    /verified-fact bound/,
+  );
+  assert.throws(() => gitlinkManifestFact("untrusted", []), /label is invalid/);
 
   assert.throws(
     () => parseGitTreeEntries(Buffer.from(`160000 commit ${oid}\tpackages/darkfactory\u0000160000 commit ${oid}\tpackages/darkfactory\u0000`)),

@@ -513,10 +513,20 @@ export function parseGitTreeEntries(output) {
   return entries;
 }
 
-function exactTreeEntries(repoRoot, ref, token, hooksRoot, pathspec = null) {
-  const args = ["ls-tree", "-r", "-z", ref];
-  if (pathspec !== null) args.push("--", pathspec);
-  return parseGitTreeEntries(runGit(args, repoRoot, token, hooksRoot, { binary: true, maxBuffer: 16 * 1024 * 1024 }));
+function exactTreeEntries(repoRoot, ref, token, hooksRoot) {
+  return parseGitTreeEntries(runGit(
+    ["ls-tree", "-r", "-z", ref],
+    repoRoot,
+    token,
+    hooksRoot,
+    { binary: true, maxBuffer: 16 * 1024 * 1024 }
+  ));
+}
+
+function renderGitlinkManifest(manifest) {
+  return manifest.length > 0
+    ? manifest.map((entry) => `pathBase64url=${Buffer.from(entry.path, "utf8").toString("base64url")},oid=${entry.oid}`).join("; ")
+    : "none";
 }
 
 export function gitlinkManifestFromEntries(entries) {
@@ -524,6 +534,9 @@ export function gitlinkManifestFromEntries(entries) {
     .filter((entry) => entry.mode === "160000" && entry.type === "commit")
     .map((entry) => ({ path: entry.path, oid: entry.oid }));
   if (gitlinks.length > 200) throw stableError("target_policy_blocked", "Exact gitlink manifest exceeds the Autoreview bound");
+  if (renderGitlinkManifest(gitlinks).length > 3500) {
+    throw stableError("target_policy_blocked", "Serialized gitlink manifest exceeds the verified-fact bound");
+  }
   return gitlinks;
 }
 
@@ -532,10 +545,33 @@ function exactGitlinkManifest(repoRoot, ref, token, hooksRoot) {
 }
 
 export function gitlinkManifestFact(label, manifest) {
-  const rendered = manifest.length > 0
-    ? manifest.map((entry) => `pathBase64url=${Buffer.from(entry.path, "utf8").toString("base64url")},oid=${entry.oid}`).join("; ")
-    : "none";
+  if (!new Set(["base", "head"]).has(label)) throw stableError("target_policy_blocked", "Gitlink manifest label is invalid");
+  const rendered = renderGitlinkManifest(manifest);
+  if (rendered.length > 3500) throw stableError("target_policy_blocked", "Serialized gitlink manifest exceeds the verified-fact bound");
   return `Exact fetched ${label} gitlink manifest: ${rendered}.`;
+}
+
+export function parseChangedPaths(output) {
+  let decoded;
+  try {
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(output || []));
+  } catch {
+    throw stableError("target_policy_blocked", "Git returned non-UTF-8 changed-path evidence");
+  }
+  if (!decoded) return [];
+  if (!decoded.endsWith("\0")) throw stableError("target_policy_blocked", "Git returned unterminated changed-path evidence");
+  const paths = decoded.slice(0, -1).split("\0");
+  if (paths.some((filePath) => !filePath)) throw stableError("target_policy_blocked", "Git returned an empty changed path");
+  return paths.map(assertSafeRepositoryPath);
+}
+
+export function indexExactTreeEntries(entries) {
+  const indexed = new Map();
+  for (const entry of entries) {
+    if (indexed.has(entry.path)) throw stableError("target_policy_blocked", "Git returned duplicate indexed tree paths");
+    indexed.set(entry.path, entry);
+  }
+  return indexed;
 }
 
 export function classifyChangedTreeEntry(filePath, entries) {
@@ -564,13 +600,15 @@ export function verifyExactPullDiff(repoRoot, token, hooksRoot, git = runGit) {
 }
 
 function changedPullFiles(repoRoot, token, hooksRoot) {
-  const names = runGit(
+  const names = parseChangedPaths(runGit(
     ["diff", "--name-only", "-z", "--no-ext-diff", "--no-textconv", "refs/remotes/origin/df-base...refs/remotes/origin/df-head"],
     repoRoot,
     token,
     hooksRoot,
     { binary: true }
-  ).toString("utf8").split("\0").filter(Boolean);
+  ));
+  const headEntries = exactTreeEntries(repoRoot, "refs/remotes/origin/df-head", token, hooksRoot);
+  const headByPath = indexExactTreeEntries(headEntries);
   const files = {};
   const reviewedFiles = [];
   const caseFoldedPaths = new Set();
@@ -579,13 +617,14 @@ function changedPullFiles(repoRoot, token, hooksRoot) {
     const foldedPath = filePath.toLowerCase();
     if (caseFoldedPaths.has(foldedPath)) throw stableError("target_policy_blocked", "Pull request contains case-colliding changed paths");
     caseFoldedPaths.add(foldedPath);
-    const entries = exactTreeEntries(repoRoot, "refs/remotes/origin/df-head", token, hooksRoot, filePath);
+    const entry = headByPath.get(filePath);
+    const entries = entry ? [entry] : [];
     const evidence = classifyChangedTreeEntry(filePath, entries);
     if (evidence.kind === "deleted" || evidence.kind === "gitlink") {
       reviewedFiles.push(evidence);
       continue;
     }
-    const entry = entries[0];
+    const exactEntry = entries[0];
     const child = spawnSync("git", ["show", `refs/remotes/origin/df-head:${filePath}`], {
       cwd: repoRoot,
       encoding: null,
@@ -610,7 +649,7 @@ function changedPullFiles(repoRoot, token, hooksRoot) {
     const lower = filePath.toLowerCase();
     const isTest = /(^|\/)(?:test|tests|__tests__)(\/|$)|(?:\.test|\.spec)\.[a-z0-9]+$/.test(lower);
     files[filePath] = { sha256: hash, isTest };
-    reviewedFiles.push({ path: filePath, kind: "file", deleted: false, mode: entry.mode, oid: entry.oid, sha256: hash, content: decoded });
+    reviewedFiles.push({ path: filePath, kind: "file", deleted: false, mode: exactEntry.mode, oid: exactEntry.oid, sha256: hash, content: decoded });
   }
   return { files, reviewedFiles };
 }
