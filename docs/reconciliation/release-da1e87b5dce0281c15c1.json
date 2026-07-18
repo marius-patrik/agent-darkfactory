@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "findingId": "df-b0846321f0908c8fca1c",
+  "repository": "marius-patrik/Andromeda",
+  "pullRequest": 306,
+  "reviewedBase": {
+    "ref": "dev",
+    "commit": "2b78936e4b7099cc30998f08fcdf4d9a806a5e56",
+    "tree": "9f35135d4cadbc12e99b28c0c77869dbc9af33da"
+  },
+  "reconciliationMerge": {
+    "commit": "0f866bca5710a8b67f2d15f6bfbe6531e6479b67",
+    "tree": "9f35135d4cadbc12e99b28c0c77869dbc9af33da",
+    "parents": [
+      "2b78936e4b7099cc30998f08fcdf4d9a806a5e56",
+      "cd511544eae8798c6d2a86ebb4c49dc7aac1e57d"
+    ]
+  },
+  "incorporatedMain": {
+    "ref": "main",
+    "commit": "cd511544eae8798c6d2a86ebb4c49dc7aac1e57d",
+    "tree": "d8b34750cebff637341e3e345a32551e50337d86"
+  },
+  "proof": {
+    "ancestry": "The reviewed reconciliation merge names the reviewed dev base and incorporated main revision as its two direct parents.",
+    "completeBaseToMergeDiff": {
+      "changedPaths": [],
+      "diffCheck": "pass"
+    },
+    "treeResolution": "The merge tree equals the reviewed dev tree; reconciliation adds ancestry without changing the dev snapshot."
+  },
+  "followUpContract": {
+    "parent": "0f866bca5710a8b67f2d15f6bfbe6531e6479b67",
+    "onlyChangedPath": "docs/reconciliation/release-da1e87b5dce0281c15c1.json"
+  }
+}
