@@ -903,3 +903,22 @@ test("active recovery workflows bind trusted main, Agent OS, scoped tokens, exac
     assert.ok(manifest.requiredFiles.includes(required), `${required} is required`);
   }
 });
+
+test("one-time reconciliation bootstrap is exact-state-bound and publishes only a new isolated App ref", async () => {
+  const workflow = await readFile(path.join(root, ".github/workflows/df-reconcile-bootstrap.yml"), "utf8");
+  const expectedDev = "c512258f6bb6f429f2c8779087c28f196570a1be";
+
+  assert.match(workflow, /^\s{2}workflow_dispatch:\s*$/m);
+  assert.doesNotMatch(workflow, /^\s{2}(pull_request|push|schedule):/m);
+  assert.match(workflow, /GITHUB_REPOSITORY.*marius-patrik\/DarkFactory.*GITHUB_REF.*refs\/heads\/main/);
+  assert.match(workflow, new RegExp(`const expectedDev = "${expectedDev}"`));
+  assert.match(workflow, /getRef\(\{ owner, repo, ref: "heads\/main" \}\)/);
+  assert.match(workflow, /getRef\(\{ owner, repo, ref: "heads\/dev" \}\)/);
+  assert.match(workflow, /mainRef\.object\.sha !== main/);
+  assert.match(workflow, /devRef\.object\.sha !== expectedDev/);
+  assert.match(workflow, /getRef\(\{ owner, repo, ref: `heads\/\$\{branch\}` \}\)[\s\S]*already exists; refusing to overwrite/);
+  assert.match(workflow, /createCommit\(\{[\s\S]*tree: devCommit\.commit\.tree\.sha,[\s\S]*parents: \[expectedDev, main\]/);
+  assert.match(workflow, /createRef\(\{[\s\S]*ref: `refs\/heads\/\$\{branch\}`,[\s\S]*sha: commit\.sha/);
+  assert.doesNotMatch(workflow, /updateRef|force:\s*true|refs\/heads\/(?:main|dev)`/);
+  assert.match(workflow, /repositories: DarkFactory[\s\S]*permission-contents: write/);
+});
