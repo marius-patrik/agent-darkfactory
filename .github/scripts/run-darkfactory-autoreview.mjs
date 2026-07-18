@@ -574,20 +574,60 @@ export function indexExactTreeEntries(entries) {
   return indexed;
 }
 
-export function classifyChangedTreeEntry(filePath, entries) {
+export function classifyChangedTreeEntry(filePath, baseEntries, headEntries) {
   assertSafeRepositoryPath(filePath);
-  if (entries.length === 0) {
-    return { path: filePath, kind: "deleted", deleted: true, mode: null, oid: null, sha256: null, content: null };
-  }
-  if (entries.length !== 1 || entries[0].path !== filePath) {
+  if (baseEntries.length > 1 || (baseEntries.length === 1 && baseEntries[0].path !== filePath)
+    || headEntries.length > 1 || (headEntries.length === 1 && headEntries[0].path !== filePath)) {
     throw stableError("target_policy_blocked", `Changed path ${filePath} has ambiguous exact-tree evidence`);
   }
-  const entry = entries[0];
-  if (entry.mode === "160000" && entry.type === "commit") {
-    return { path: filePath, kind: "gitlink", deleted: false, mode: entry.mode, oid: entry.oid, sha256: null, content: null };
+  const baseEntry = baseEntries[0] || null;
+  const headEntry = headEntries[0] || null;
+  const baseGitlink = baseEntry?.mode === "160000" && baseEntry.type === "commit";
+  const headGitlink = headEntry?.mode === "160000" && headEntry.type === "commit";
+  if (baseGitlink || headGitlink) {
+    return {
+      path: filePath,
+      kind: "gitlink",
+      deleted: headEntry === null,
+      mode: headEntry?.mode || baseEntry.mode,
+      oid: headEntry?.oid || baseEntry.oid,
+      baseOid: baseGitlink ? baseEntry.oid : null,
+      headOid: headGitlink ? headEntry.oid : null,
+      contentKind: headEntry?.type === "blob" ? "blob" : "none",
+      autofixEligible: false,
+      sha256: null,
+      content: null
+    };
   }
-  if (entry.type !== "blob") throw stableError("target_policy_blocked", `Changed path ${filePath} is not a reviewable blob or gitlink`);
-  return { path: filePath, kind: "blob", deleted: false, mode: entry.mode, oid: entry.oid, sha256: null, content: null };
+  if (headEntry === null) {
+    return {
+      path: filePath,
+      kind: "deleted",
+      deleted: true,
+      mode: baseEntry?.mode || null,
+      oid: baseEntry?.oid || null,
+      baseOid: null,
+      headOid: null,
+      contentKind: "none",
+      autofixEligible: false,
+      sha256: null,
+      content: null
+    };
+  }
+  if (headEntry.type !== "blob") throw stableError("target_policy_blocked", `Changed path ${filePath} is not a reviewable blob or gitlink`);
+  return {
+    path: filePath,
+    kind: "blob",
+    deleted: false,
+    mode: headEntry.mode,
+    oid: headEntry.oid,
+    baseOid: null,
+    headOid: null,
+    contentKind: "blob",
+    autofixEligible: true,
+    sha256: null,
+    content: null
+  };
 }
 
 export function verifyExactPullDiff(repoRoot, token, hooksRoot, git = runGit) {
@@ -607,7 +647,9 @@ function changedPullFiles(repoRoot, token, hooksRoot) {
     hooksRoot,
     { binary: true }
   ));
+  const baseEntries = exactTreeEntries(repoRoot, "refs/remotes/origin/df-base", token, hooksRoot);
   const headEntries = exactTreeEntries(repoRoot, "refs/remotes/origin/df-head", token, hooksRoot);
+  const baseByPath = indexExactTreeEntries(baseEntries);
   const headByPath = indexExactTreeEntries(headEntries);
   const files = {};
   const reviewedFiles = [];
@@ -617,14 +659,17 @@ function changedPullFiles(repoRoot, token, hooksRoot) {
     const foldedPath = filePath.toLowerCase();
     if (caseFoldedPaths.has(foldedPath)) throw stableError("target_policy_blocked", "Pull request contains case-colliding changed paths");
     caseFoldedPaths.add(foldedPath);
-    const entry = headByPath.get(filePath);
-    const entries = entry ? [entry] : [];
-    const evidence = classifyChangedTreeEntry(filePath, entries);
-    if (evidence.kind === "deleted" || evidence.kind === "gitlink") {
+    const baseEntry = baseByPath.get(filePath);
+    const headEntry = headByPath.get(filePath);
+    const evidence = classifyChangedTreeEntry(
+      filePath,
+      baseEntry ? [baseEntry] : [],
+      headEntry ? [headEntry] : []
+    );
+    if (evidence.contentKind === "none") {
       reviewedFiles.push(evidence);
       continue;
     }
-    const exactEntry = entries[0];
     const child = spawnSync("git", ["show", `refs/remotes/origin/df-head:${filePath}`], {
       cwd: repoRoot,
       encoding: null,
@@ -648,8 +693,8 @@ function changedPullFiles(repoRoot, token, hooksRoot) {
     const hash = sha256(content);
     const lower = filePath.toLowerCase();
     const isTest = /(^|\/)(?:test|tests|__tests__)(\/|$)|(?:\.test|\.spec)\.[a-z0-9]+$/.test(lower);
-    files[filePath] = { sha256: hash, isTest };
-    reviewedFiles.push({ path: filePath, kind: "file", deleted: false, mode: exactEntry.mode, oid: exactEntry.oid, sha256: hash, content: decoded });
+    if (evidence.autofixEligible) files[filePath] = { sha256: hash, isTest };
+    reviewedFiles.push({ ...evidence, sha256: hash, content: decoded });
   }
   return { files, reviewedFiles };
 }

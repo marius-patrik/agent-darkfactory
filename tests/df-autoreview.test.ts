@@ -150,26 +150,46 @@ test("exact Git tree evidence is strict, bounded, and keeps gitlinks out of auto
     parseGitTreeEntries(Buffer.from(`160000 commit ${oid}\tpackages/darkfactory\0`)),
     [gitlink],
   );
-  assert.deepEqual(classifyChangedTreeEntry(gitlink.path, [gitlink]), {
+  assert.deepEqual(classifyChangedTreeEntry(gitlink.path, [], [gitlink]), {
     path: gitlink.path,
     kind: "gitlink",
     deleted: false,
     mode: "160000",
     oid,
+    baseOid: null,
+    headOid: oid,
+    contentKind: "none",
+    autofixEligible: false,
     sha256: null,
     content: null,
   });
-  assert.deepEqual(classifyChangedTreeEntry("removed", []), {
+  const blob = { mode: "100644", type: "blob", oid, path: "removed" };
+  assert.deepEqual(classifyChangedTreeEntry("removed", [blob], []), {
     path: "removed",
     kind: "deleted",
     deleted: true,
-    mode: null,
-    oid: null,
+    mode: "100644",
+    oid,
+    baseOid: null,
+    headOid: null,
+    contentKind: "none",
+    autofixEligible: false,
     sha256: null,
     content: null,
   });
-  assert.throws(() => classifyChangedTreeEntry("../unsafe", []), /unsafe changed path/);
-  assert.throws(() => classifyChangedTreeEntry(gitlink.path, [gitlink, gitlink]), /ambiguous exact-tree evidence/);
+  const deletedGitlink = classifyChangedTreeEntry(gitlink.path, [gitlink], []);
+  assert.deepEqual(
+    { kind: deletedGitlink.kind, deleted: deletedGitlink.deleted, mode: deletedGitlink.mode, oid: deletedGitlink.oid, baseOid: deletedGitlink.baseOid, headOid: deletedGitlink.headOid, autofixEligible: deletedGitlink.autofixEligible },
+    { kind: "gitlink", deleted: true, mode: "160000", oid, baseOid: oid, headOid: null, autofixEligible: false },
+  );
+  const replacementBlob = { ...blob, path: gitlink.path };
+  const replacedGitlink = classifyChangedTreeEntry(gitlink.path, [gitlink], [replacementBlob]);
+  assert.deepEqual(
+    { kind: replacedGitlink.kind, contentKind: replacedGitlink.contentKind, baseOid: replacedGitlink.baseOid, autofixEligible: replacedGitlink.autofixEligible },
+    { kind: "gitlink", contentKind: "blob", baseOid: oid, autofixEligible: false },
+  );
+  assert.throws(() => classifyChangedTreeEntry("../unsafe", [], []), /unsafe changed path/);
+  assert.throws(() => classifyChangedTreeEntry(gitlink.path, [], [gitlink, gitlink]), /ambiguous exact-tree evidence/);
 
   const replacementEntries = parseGitTreeEntries(Buffer.from(
     `100644 blob ${oid}\tmodule/file\0` +
@@ -178,9 +198,9 @@ test("exact Git tree evidence is strict, bounded, and keeps gitlinks out of auto
   const indexed = indexExactTreeEntries(replacementEntries);
   const changedPaths = parseChangedPaths(Buffer.from("module\0module/file\0[literal-pathspec]\0"));
   assert.deepEqual(changedPaths, ["module", "module/file", "[literal-pathspec]"]);
-  assert.equal(classifyChangedTreeEntry("module", indexed.has("module") ? [indexed.get("module")] : []).kind, "deleted");
-  assert.equal(classifyChangedTreeEntry("module/file", [indexed.get("module/file")]).kind, "blob");
-  assert.equal(classifyChangedTreeEntry("[literal-pathspec]", [indexed.get("[literal-pathspec]")]).path, "[literal-pathspec]");
+  assert.equal(classifyChangedTreeEntry("module", [{ ...blob, path: "module" }], indexed.has("module") ? [indexed.get("module")] : []).kind, "deleted");
+  assert.equal(classifyChangedTreeEntry("module/file", [], [indexed.get("module/file")]).kind, "blob");
+  assert.equal(classifyChangedTreeEntry("[literal-pathspec]", [], [indexed.get("[literal-pathspec]")]).path, "[literal-pathspec]");
   assert.throws(() => parseChangedPaths(Buffer.from("module")), /unterminated changed-path evidence/);
   assert.throws(() => parseChangedPaths(Buffer.from([0xff, 0x00])), /non-UTF-8 changed-path evidence/);
 
