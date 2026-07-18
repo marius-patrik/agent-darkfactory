@@ -65,16 +65,43 @@ test("required release checks fail closed on missing, red, or wrong-App evidence
   const spoofed = release.evaluateRequiredChecks(protection, checkRuns("success", 1234), { statuses: [] }, releasePolicy().requiredChecks);
   assert.equal(spoofed.green, false);
   assert.deepEqual(spoofed.red.sort(), ["DarkFactory Autoreview", "Validate"]);
+
+  const externalProtection = structuredClone(protectedBranch());
+  externalProtection.required_status_checks.checks.push({ context: "Security Scan", app_id: 999 });
+  const externalRuns = checkRuns("success", 15368);
+  externalRuns.check_runs.push({
+    name: "Security Scan", status: "completed", conclusion: "success", app: { id: 999 }
+  });
+  const externalGreen = release.evaluateRequiredChecks(
+    externalProtection, externalRuns, { statuses: [] }, releasePolicy().requiredChecks
+  );
+  assert.equal(externalGreen.green, true);
+
+  const mismatchedExternalRuns = structuredClone(externalRuns);
+  const externalRun = mismatchedExternalRuns.check_runs.at(-1);
+  assert.ok(externalRun);
+  externalRun.app.id = 998;
+  const externalMismatch = release.evaluateRequiredChecks(
+    externalProtection, mismatchedExternalRuns, { statuses: [] }, releasePolicy().requiredChecks
+  );
+  assert.equal(externalMismatch.green, false);
+  assert.deepEqual(externalMismatch.red, ["Security Scan"]);
 });
 
 test("main evidence evaluates only policy-selected checks despite broader protection", () => {
-  const validateOnly = release.evaluateRequiredChecks(
-    protectedBranch(),
-    {
-      check_runs: [
-        { name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }
-      ]
-    },
+  const observed = {
+    check_runs: [
+      { name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }
+    ]
+  };
+  const protectedPull = release.evaluateRequiredChecks(
+    protectedBranch(), observed, { statuses: [] }, releasePolicy().mainChecks
+  );
+  assert.equal(protectedPull.green, false);
+  assert.deepEqual(protectedPull.missing, ["DarkFactory Autoreview"]);
+
+  const validateOnly = release.evaluatePolicySelectedChecks(
+    observed,
     { statuses: [] },
     releasePolicy().mainChecks
   );
