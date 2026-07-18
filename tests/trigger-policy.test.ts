@@ -883,6 +883,8 @@ test("active recovery workflows bind trusted main, Agent OS, scoped tokens, exac
   assert.match(recovery, /permission-actions: write/);
   assert.match(recovery, /repositories: darkfactory-data[\s\S]*permission-contents: write/);
   assert.match(recovery, /df-autoreview-recovery\.mjs/);
+  assert.match(recovery, /name: Upload sanitized recovery receipt[\s\S]*if: always\(\)[\s\S]*if-no-files-found: ignore/);
+  assert.doesNotMatch(recovery, /hashFiles\('autoreview-recovery-receipt\.json'\)/);
   assert.doesNotMatch(recovery, /checkout[^\n]*pull_request|github\.event\.pull_request\.head/);
 
   assert.match(clean, /cron: "53 \*\/4 \* \* \*"/);

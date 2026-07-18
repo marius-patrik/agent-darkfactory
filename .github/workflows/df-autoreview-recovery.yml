@@ -120,10 +120,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload sanitized recovery receipt
-        if: always() && hashFiles('autoreview-recovery-receipt.json') != ''
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: autoreview-recovery-${{ github.run_id }}
           path: autoreview-recovery-receipt.json
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30
