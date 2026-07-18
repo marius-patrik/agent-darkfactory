@@ -153,8 +153,9 @@ export function evaluateRequiredChecks(protection, checkRuns, statuses, policyCh
   }
   const latest = new Map();
   for (const run of Array.isArray(checkRuns?.check_runs) ? checkRuns.check_runs : []) {
-    if (typeof run?.name !== "string" || latest.has(run.name)) continue;
-    latest.set(run.name, {
+    if (typeof run?.name !== "string") continue;
+    const candidates = latest.get(run.name) ?? [];
+    candidates.push({
       appId: Number.isInteger(run?.app?.id) ? run.app.id : null,
       id: Number.isInteger(run?.id) ? run.id : null,
       url: typeof run?.html_url === "string" ? run.html_url : null,
@@ -162,18 +163,22 @@ export function evaluateRequiredChecks(protection, checkRuns, statuses, policyCh
         ? "green"
         : run.status === "completed" ? "red" : "pending"
     });
+    latest.set(run.name, candidates);
   }
   for (const status of Array.isArray(statuses?.statuses) ? statuses.statuses : []) {
     if (typeof status?.context !== "string" || latest.has(status.context)) continue;
-    latest.set(status.context, {
+    latest.set(status.context, [{
       appId: null,
       id: Number.isInteger(status?.id) ? status.id : null,
       url: typeof status?.target_url === "string" ? status.target_url : null,
       state: status.state === "success" ? "green" : status.state === "pending" ? "pending" : "red"
-    });
+    }]);
   }
   const checks = [...expected].map(([name, expectedAppId]) => {
-    const actual = latest.get(name);
+    const candidates = latest.get(name) ?? [];
+    const actual = expectedAppId === null
+      ? candidates[0]
+      : candidates.find((candidate) => candidate.appId === expectedAppId) ?? candidates[0];
     const appBound = expectedAppId === null || actual?.appId === expectedAppId;
     return {
       name, expectedAppId, actualAppId: actual?.appId ?? null,
