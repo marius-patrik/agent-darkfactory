@@ -26,9 +26,11 @@ const {
   gitlinkManifestFact,
   gitlinkManifestFromEntries,
   indexExactTreeEntries,
+  mediumCleanProofFact,
   parseChangedPaths,
   parseExactCommitRecord,
   parseGitTreeEntries,
+  runComposedTurn,
   serializeIssueReviewContext,
   serializePullReviewContext,
   trustedPullRevisionEvidence,
@@ -462,7 +464,7 @@ async function fixture(options: { verdicts: any[]; policy?: any; mutateDuringRev
       records.push(round);
     }
   });
-  return { result, records, fixInputs };
+  return { result, records, fixInputs, reviewCount: reviewIndex };
 }
 
 test("Autoreview policy is versioned, bounded, and keeps managed trust surfaces out of autofix", async () => {
@@ -509,11 +511,117 @@ test("Autoreview lifecycle admission uses the trusted canonical registry before 
 });
 
 test("clean medium review is followed by an independent clean high confirmation", async () => {
-  const { result, records, fixInputs } = await fixture({ verdicts: [clean("medium clean"), clean("high clean")] });
+  let highProof: any = null;
+  const { result, records, fixInputs } = await fixture({ verdicts: [
+    (input: any) => {
+      assert.equal(input.phase, "medium_review");
+      assert.equal(input.priorCleanRound, undefined);
+      return clean("medium clean");
+    },
+    (input: any) => {
+      assert.equal(input.phase, "high_review");
+      highProof = input.priorCleanRound;
+      return clean("high clean");
+    }
+  ] });
   assert.equal(result.ok, true);
   assert.deepEqual(records.map((round) => round.phase), ["medium_review", "high_review"]);
   assert.deepEqual(records.map((round) => round.request.modelTier), ["medium", "high"]);
+  assert.deepEqual(highProof, {
+    schemaVersion: 1,
+    phase: "medium_review",
+    sequence: 1,
+    targetVersion: "v1",
+    outcome: "clean"
+  });
+  assert.deepEqual(mediumCleanProofFact("high_review", { version: "v1" }, highProof), [
+    "Trusted protocol evidence: medium iterative review round 1 completed clean for exact target version v1, and its durable round receipt was recorded before this high review."
+  ]);
+  assert.throws(
+    () => mediumCleanProofFact("high_review", { version: "v2" }, highProof),
+    /exact trusted medium-clean protocol evidence/
+  );
+  for (const invalidProof of [
+    null,
+    {},
+    { ...highProof, schemaVersion: 2 },
+    { ...highProof, sequence: 0 },
+    { ...highProof, outcome: "findings" }
+  ]) {
+    assert.throws(
+      () => mediumCleanProofFact("high_review", { version: "v1" }, invalidProof),
+      /exact trusted medium-clean protocol evidence/
+    );
+  }
   assert.equal(fixInputs.length, 0);
+});
+
+test("composed high review receives the exact trusted medium-clean fact only", async () => {
+  const snapshot = {
+    kind: "pull_request",
+    repository: "marius-patrik/DarkFactory",
+    number: 402,
+    version: "base:head",
+    defaultBranch: "main",
+    repositoryPaths: ["package.json", "src/index.ts", "tests/index.ts"],
+    author: "marius-patrik",
+    url: "https://github.com/marius-patrik/DarkFactory/pull/402",
+    title: "Bootstrap trusted medium-clean proof",
+    reviewContext: "Bounded bootstrap context.",
+    verifiedFacts: ["Exact fetched diff passed git diff --check."]
+  };
+  const request = { modelTier: "high", effort: "high", promptVersion: "darkfactory-autoreview-v1" };
+  const capturedIntents: any[] = [];
+  const modelTurnExecutor = async (input: any) => {
+    capturedIntents.push(input.intent);
+    return { output: clean(), receipt: receipt(input.request), prompt: prompt(input.request) };
+  };
+  const proof = {
+    schemaVersion: 1,
+    phase: "medium_review",
+    sequence: 3,
+    targetVersion: snapshot.version,
+    outcome: "clean"
+  };
+  const proofFacts = mediumCleanProofFact("high_review", snapshot, proof);
+
+  await runComposedTurn({
+    request: { ...request, modelTier: "medium" },
+    snapshot,
+    tempRoot: controlRoot,
+    turnName: "medium_review",
+    profile: "profile/pr-reviewer",
+    controlRevision: "a".repeat(40),
+    modelTurnExecutor
+  });
+  await runComposedTurn({
+    request,
+    snapshot,
+    tempRoot: controlRoot,
+    turnName: "high_review",
+    profile: "profile/pr-final-review",
+    additionalVerifiedFacts: proofFacts,
+    controlRevision: "a".repeat(40),
+    modelTurnExecutor
+  });
+
+  assert.equal(capturedIntents.length, 2);
+  assert.ok(!capturedIntents[0].verified.facts.includes(proofFacts[0]));
+  assert.ok(capturedIntents[1].verified.facts.includes(proofFacts[0]));
+  await assert.rejects(
+    runComposedTurn({
+      request,
+      snapshot,
+      tempRoot: controlRoot,
+      turnName: "high_review",
+      profile: "profile/pr-final-review",
+      additionalVerifiedFacts: [""],
+      controlRevision: "a".repeat(40),
+      modelTurnExecutor
+    }),
+    /Additional verified facts must be non-empty strings/
+  );
+  assert.equal(capturedIntents.length, 2, "malformed facts are rejected before model execution");
 });
 
 test("medium findings are losslessly carried into medium autofix before clean and high review", async () => {
@@ -609,6 +717,12 @@ test("a missing durable round receipt blocks before the protocol advances", asyn
   assert.equal(result.code, "receipt_persistence_failed");
   assert.equal(records.length, 0);
   assert.equal(fixInputs.length, 0);
+
+  const cleanPersistenceFailure = await fixture({ verdicts: [clean()], recordFailsAt: 1 });
+  assert.equal(cleanPersistenceFailure.result.code, "receipt_persistence_failed");
+  assert.equal(cleanPersistenceFailure.reviewCount, 1, "high review is not invoked before the clean medium receipt persists");
+  assert.equal(cleanPersistenceFailure.records.length, 0);
+  assert.equal(cleanPersistenceFailure.fixInputs.length, 0);
 });
 
 test("finding normalization deduplicates only identical complete findings and rejects unsafe paths", async () => {
@@ -688,12 +802,57 @@ test("release-engine automation PRs are admitted on exact App provenance and own
     ...overrides
   });
 
-  // Trusted App + release/ or reconcile/ prefix: admitted without association or linked issue.
-  for (const branch of ["release/7c74aa97a986", "reconcile/87502d30-dd6ab2a6"]) {
-    const admitted = assertPullPolicy(enginePull(branch), repository);
-    assert.equal(admitted.branch, branch);
-    assert.deepEqual(admitted.linked, []);
+  // Trusted App release PRs must provide one bounded issue-context marker.
+  const release = assertPullPolicy(enginePull("release/7c74aa97a986", {
+    body: "<!-- darkfactory:release-issues 280,360,364 -->"
+  }), repository);
+  assert.deepEqual(release.linked, [280, 360, 364]);
+
+  // Reconciliation PRs remain admissible without execution issues or release context.
+  const reconcile = assertPullPolicy(enginePull("reconcile/87502d30-dd6ab2a6"), repository);
+  assert.deepEqual(reconcile.linked, []);
+  assert.throws(
+    () => assertPullPolicy(enginePull("release/7c74aa97a986"), repository),
+    /must declare its bounded release issue context/
+  );
+  for (const body of [
+    "<!-- darkfactory:release-issues 280,280 -->",
+    "<!-- darkfactory:release-issues 0 -->",
+    "<!-- darkfactory:release-issues 280 -->\n<!-- darkfactory:release-issues 360 -->"
+  ]) {
+    assert.throws(() => assertPullPolicy(enginePull("release/7c74aa97a986", { body }), repository), /release.issue|release-issues/i);
   }
+  assert.throws(
+    () => assertPullPolicy(enginePull("release/7c74aa97a986", {
+      body: `<!-- darkfactory:release-issues ${Array.from({ length: 51 }, (_, index) => index + 1).join(",")} -->`
+    }), repository),
+    /bounded contract/
+  );
+  assert.throws(
+    () => assertPullPolicy(enginePull("reconcile/87502d30-dd6ab2a6", { body: "<!-- darkfactory:release-issues 280 -->" }), repository),
+    /Only a trusted App-authored release branch/
+  );
+
+  const ordinaryPull = (body: string) => enginePull("fix/ordinary-owner-change", {
+    author_association: "OWNER",
+    user: { login: "marius-patrik", type: "User" },
+    body,
+    base: { ref: "dev", sha: "b".repeat(40) }
+  });
+  for (const body of [
+    "Closes #42\n<!-- darkfactory:release-issues 280 -->",
+    "Closes #42\n<!-- darkfactory:release-issues 280,280 -->",
+    "Closes #42\n<!-- darkfactory:release-issues malformed -->"
+  ]) {
+    assert.throws(
+      () => assertPullPolicy(ordinaryPull(body), repository),
+      /trusted App-authored release branch|release.issue|release-issues/i
+    );
+  }
+  assert.deepEqual(
+    assertPullPolicy(ordinaryPull("Closes #42\nThis change documents the darkfactory:release-issues marker syntax."), repository).linked,
+    [42]
+  );
 
   // Same branch shape without the trusted App actor stays blocked.
   assert.throws(

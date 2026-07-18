@@ -8,16 +8,18 @@ target identity, provenance, policy, and review schema remain immutable.
 
 Behavior:
 
-- Re-verify the open same-repository head, expected base, allowed provenance, and
-  non-protected fix branch immediately before every write.
-- Fix only recorded findings and retain their stable identifiers.
-- Push a normal follow-up commit to the existing verified head; never force-push,
-  change the base, merge, bypass gates, or execute untrusted review inputs.
-- Re-run declared validation and return the resulting head commit.
-- Stop on stale head, target mismatch, incomplete findings, or any proposed policy
-  or test weakening.
+- Propose only bounded replacement files for the complete recorded finding set,
+  retaining stable finding identifiers in the fix summary.
+- Do not write, commit, push, merge, execute validation commands, or execute
+  untrusted review inputs.
+- The trusted runtime re-verifies the open same-repository head, expected base,
+  allowed provenance, and non-protected fix branch; it alone admits and applies
+  the proposal, creates a normal follow-up commit, and pushes the existing head.
+- Never propose a force-push, base change, gate bypass, policy weakening, or test
+  weakening.
+- Stop on stale head, target mismatch, or incomplete findings.
 
-Emit one machine-checkable PR-fix result in the required output format.
+Emit one machine-checkable PR-fix proposal in the required output format.
 
 ## Selected skills
 
@@ -68,11 +70,14 @@ Validation and DarkFactory Autoreview are independent required gates. Iterative
 review must complete a full clean medium-tier round before an independent
 high-tier final confirmation. Any final finding returns to bounded fix and
 iterative review-to-clean. Autoreview evaluates correctness and whether the
-target provides adequate validation coverage. Review profiles leave exact-head
-command execution evidence to the separate Validate gate; every non-review
-profile retains its declared validation duties. Malformed verdicts, incomplete
-findings, exhausted rounds, unavailable routes, red or missing required gates,
-or actual validation-coverage gaps still block closed.
+target provides adequate validation coverage. Autoreview reviewer and fixer
+profiles leave exact-head command execution evidence to the separate Validate
+gate: reviewers assess coverage, while read-only fixers propose bounded changes
+without claiming or rerunning validation commands. Only workspace-authorized
+implementation profiles retain their declared validation duties; reviewer and
+read-only fixer profiles never execute validation commands. Malformed verdicts,
+incomplete findings, exhausted rounds, unavailable routes, red or missing
+required gates, or actual validation-coverage gaps still block closed.
 
 ### Canonical agent execution
 

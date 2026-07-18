@@ -1319,9 +1319,17 @@ test("composition follows the canonical policy-to-output order", () => {
 test("Autoreview leaves execution evidence to the independent Validate gate", () => {
   const inputs = loadFixture(realRoot, "fixtures/compose/pr-reviewer.fixture.json");
   const prompt = composePrompt(inputs, realRoot);
-  assert.match(prompt, /Review profiles leave exact-head\s+command execution evidence to the separate Validate gate/);
+  assert.match(prompt, /Autoreview reviewer and fixer\s+profiles leave exact-head command execution evidence to the separate Validate\s+gate/);
   assert.match(prompt, /do not claim these commands ran or create a finding solely because their\s+results are intentionally absent/);
   assert.match(prompt, /actual\s+validation-coverage gaps still block closed/);
+
+  const fixer = composePrompt(loadFixture(realRoot, "fixtures/compose/pr-fixer.fixture.json"), realRoot);
+  assert.match(fixer, /read-only fixers propose bounded changes\s+without claiming or rerunning validation commands/);
+  assert.match(fixer, /reviewer and\s+read-only fixer profiles never execute validation commands/);
+  assert.match(fixer, /Do not write, commit, push, merge, execute validation commands/);
+  assert.match(fixer, /trusted runtime re-verifies the open same-repository head/);
+  assert.match(fixer, /it alone admits and applies\s+the proposal, creates a normal follow-up commit, and pushes the existing head/);
+  assert.doesNotMatch(fixer, /Re-run declared validation|return the resulting head commit|immediately before every write/);
 
   const implementer = composePrompt(loadFixture(realRoot, "fixtures/compose/implementer.fixture.json"), realRoot);
   assert.match(implementer, /run is not complete until the authoritative validation lane passes/);

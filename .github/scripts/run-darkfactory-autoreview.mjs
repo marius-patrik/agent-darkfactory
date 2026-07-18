@@ -97,8 +97,10 @@ export async function runComposedTurn({
   turnName,
   profile,
   findings = [],
+  additionalVerifiedFacts = [],
   controlRevision = "",
-  environment = process.env
+  environment = process.env,
+  modelTurnExecutor = executeModelTurn
 }) {
   const [owner, repo] = snapshot.repository.split("/");
   const exactControlRevision = controlRevision || environment.DF_CONTROL_REVISION?.trim() || "";
@@ -113,9 +115,12 @@ export async function runComposedTurn({
   const contextComments = findings.length > 0
     ? [`Complete current findings: ${JSON.stringify(findings)}`]
     : [];
+  if (!Array.isArray(additionalVerifiedFacts) || additionalVerifiedFacts.some((fact) => typeof fact !== "string" || !fact.trim())) {
+    throw stableError("target_policy_blocked", "Additional verified facts must be non-empty strings");
+  }
   let turn;
   try {
-    turn = await executeModelTurn(
+    turn = await modelTurnExecutor(
       {
         intent: {
           runId: `autoreview-${workItemKind}-${snapshot.number}-${seamTurnName}-${versionDigest}`,
@@ -146,7 +151,8 @@ export async function runComposedTurn({
             facts: [
               `Target ${snapshot.kind} ${snapshot.number} is open at version ${snapshot.version}.`,
               `Repository default branch is ${snapshot.defaultBranch}.`,
-              ...(Array.isArray(snapshot.verifiedFacts) ? snapshot.verifiedFacts : [])
+              ...(Array.isArray(snapshot.verifiedFacts) ? snapshot.verifiedFacts : []),
+              ...additionalVerifiedFacts
             ]
           },
           effort: request.effort,
@@ -208,6 +214,24 @@ export function serializeIssueReviewContext(value, policy) {
   return ensureContextBounded(serializeUntrustedContext(value), policy);
 }
 
+export function mediumCleanProofFact(phase, snapshot, priorCleanRound) {
+  if (phase !== "high_review") return [];
+  if (
+    !priorCleanRound
+    || priorCleanRound.schemaVersion !== 1
+    || priorCleanRound.phase !== "medium_review"
+    || !Number.isSafeInteger(priorCleanRound.sequence)
+    || priorCleanRound.sequence < 1
+    || priorCleanRound.targetVersion !== snapshot.version
+    || priorCleanRound.outcome !== "clean"
+  ) {
+    throw stableError("target_policy_blocked", "High review requires exact trusted medium-clean protocol evidence");
+  }
+  return [
+    `Trusted protocol evidence: medium iterative review round ${priorCleanRound.sequence} completed clean for exact target version ${snapshot.version}, and its durable round receipt was recorded before this high review.`
+  ];
+}
+
 function htmlEscape(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -244,8 +268,9 @@ function ownerHistory(title, body) {
   ].join("\n");
 }
 
-function pullVersion(pull) {
-  return `${pull.base?.sha || "missing"}:${pull.head?.sha || "missing"}`;
+function pullVersion(pull, linkedIssues = []) {
+  const issueContextDigest = sha256(JSON.stringify(linkedIssues));
+  return `${pull.base?.sha || "missing"}:${pull.head?.sha || "missing"}:${issueContextDigest}`;
 }
 
 function issueLabels(issue) {
@@ -400,6 +425,23 @@ function gitRepositoryInventory(repoRoot, token, hooksRoot) {
   return paths;
 }
 
+export function releaseIssueNumbers(body) {
+  const markerLines = String(body || "").split(/\r?\n/)
+    .filter((line) => /<!--\s*darkfactory:release-issues\b/i.test(line));
+  if (markerLines.length === 0) return [];
+  if (markerLines.length !== 1) throw stableError("target_policy_blocked", "Release pull request must contain exactly one release-issues marker");
+  const match = /^<!-- darkfactory:release-issues ([1-9]\d*(?:,[1-9]\d*)*) -->$/.exec(markerLines[0]);
+  if (!match) throw stableError("target_policy_blocked", "Release pull request contains a malformed release-issues marker");
+  const issues = match[1].split(",").map(Number);
+  if (issues.length > 50 || issues.some((number) => !Number.isSafeInteger(number) || number < 1)) {
+    throw stableError("target_policy_blocked", "Release issue context exceeds its bounded contract");
+  }
+  if (new Set(issues).size !== issues.length) {
+    throw stableError("target_policy_blocked", "Release pull request repeats a release issue");
+  }
+  return issues;
+}
+
 export function assertPullPolicy(pull, repository, expectations = {}) {
   if (!pull || pull.state !== "open" || pull.draft) throw stableError("target_policy_blocked", "Pull request must be open and ready for review");
   if (String(pull.head?.repo?.full_name || "").toLowerCase() !== repoName(repository).toLowerCase()) {
@@ -426,7 +468,17 @@ export function assertPullPolicy(pull, repository, expectations = {}) {
   if (!engineAutomation && !ALLOWED_ASSOCIATIONS.has(pull.author_association) && !workerMarker) {
     throw stableError("target_policy_blocked", "Pull request author provenance is not authorized for autofix");
   }
-  const linked = extractClosingIssueNumbers(pull.body || "", repository.repo);
+  const declaredReleaseIssues = releaseIssueNumbers(pull.body || "");
+  if (!(engineAutomation && branch.startsWith("release/")) && declaredReleaseIssues.length > 0) {
+    throw stableError("target_policy_blocked", "Only a trusted App-authored release branch may declare release issue context");
+  }
+  let linked = extractClosingIssueNumbers(pull.body || "", repository.repo);
+  if (engineAutomation && branch.startsWith("release/")) {
+    linked = declaredReleaseIssues;
+    if (linked.length === 0) {
+      throw stableError("target_policy_blocked", "Release pull request must declare its bounded release issue context");
+    }
+  }
   if (!engineAutomation && linked.length === 0) {
     throw stableError("target_policy_blocked", "Pull request must link an execution issue");
   }
@@ -933,6 +985,26 @@ export async function createPullRequestTarget({
     return gh.request("GET", `/repos/${repoName(repository)}/pulls/${number}`);
   }
 
+  async function fetchLinkedIssues(policyEvidence) {
+    const linkedIssues = [];
+    for (const issueNumber of policyEvidence.linked.slice(0, 50)) {
+      const issue = await gh.request("GET", `/repos/${repoName(repository)}/issues/${issueNumber}`);
+      if (issue.pull_request || issue.state !== "open") {
+        throw stableError("target_policy_blocked", `Linked execution issue #${issueNumber} must be open`);
+      }
+      linkedIssues.push({
+        number: issue.number,
+        title: issue.title || "",
+        body: issue.body || "",
+        labels: (issue.labels || [])
+          .map((label) => label.name || label)
+          .filter((label) => typeof label === "string" && label)
+          .sort()
+      });
+    }
+    return linkedIssues;
+  }
+
   async function read() {
     const pull = await fetchPull();
     if (initialRead && expectedBaseSha && pull.base?.sha !== expectedBaseSha) {
@@ -948,14 +1020,7 @@ export async function createPullRequestTarget({
     initialRead = false;
     await refreshPullRepository({ repoRoot, hooksRoot, repository, pull, token });
 
-    const linkedIssues = [];
-    for (const issueNumber of policyEvidence.linked.slice(0, 50)) {
-      const issue = await gh.request("GET", `/repos/${repoName(repository)}/issues/${issueNumber}`);
-      if (issue.pull_request || issue.state !== "open") {
-        throw stableError("target_policy_blocked", `Linked execution issue #${issueNumber} must be open`);
-      }
-      linkedIssues.push({ number: issue.number, title: issue.title || "", body: issue.body || "", labels: (issue.labels || []).map((label) => label.name || label) });
-    }
+    const linkedIssues = await fetchLinkedIssues(policyEvidence);
     const changed = changedPullFiles(repoRoot, token, hooksRoot);
     verifyExactPullDiff(repoRoot, token, hooksRoot);
     const baseGitlinks = exactGitlinkManifest(repoRoot, "refs/remotes/origin/df-base", token, hooksRoot);
@@ -986,7 +1051,7 @@ export async function createPullRequestTarget({
       kind: "pull_request",
       repository: repoName(repository),
       number,
-      version: pullVersion(pull),
+      version: pullVersion(pull, linkedIssues),
       defaultBranch,
       repositoryPaths: gitRepositoryInventory(repoRoot, token, hooksRoot),
       title: pull.title || "",
@@ -1055,16 +1120,19 @@ export async function createPullRequestTarget({
       const newHead = runGit(["rev-parse", "HEAD"], repoRoot, token, hooksRoot);
 
       const beforePush = await fetchPull();
-      assertPullPolicy(beforePush, repository, { base: authorizedBase, branch: authorizedBranch });
-      if (pullVersion(beforePush) !== snapshot.version) throw stableError("stale_target", "Pull request changed immediately before autofix push");
+      const beforePushPolicy = assertPullPolicy(beforePush, repository, { base: authorizedBase, branch: authorizedBranch });
+      const beforePushIssues = await fetchLinkedIssues(beforePushPolicy);
+      if (pullVersion(beforePush, beforePushIssues) !== snapshot.version) throw stableError("stale_target", "Pull request changed immediately before autofix push");
       runGit(["push", "origin", `HEAD:refs/heads/${authorizedBranch}`], repoRoot, token, hooksRoot);
       const afterPush = await fetchPull();
       if (afterPush.head?.sha !== newHead || afterPush.base?.ref !== authorizedBase) {
         throw stableError("stale_target", "GitHub did not confirm the exact autofix commit on the authorized pull request");
       }
+      const afterPushPolicy = assertPullPolicy(afterPush, repository, { base: authorizedBase, branch: authorizedBranch });
+      const afterPushIssues = await fetchLinkedIssues(afterPushPolicy);
       return {
         beforeVersion: snapshot.version,
-        afterVersion: pullVersion(afterPush),
+        afterVersion: pullVersion(afterPush, afterPushIssues),
         changeRef: newHead,
         receipt: turn.receipt,
         prompt: turn.prompt
@@ -1460,7 +1528,7 @@ export async function executeAutoreview(environment = process.env) {
       policy,
       modelPolicy,
       target,
-      review: async ({ phase, request, snapshot, promptVersion }) => {
+      review: async ({ phase, request, snapshot, promptVersion, priorCleanRound }) => {
         const turn = await runComposedTurn({
           request,
           snapshot,
@@ -1469,6 +1537,7 @@ export async function executeAutoreview(environment = process.env) {
           profile: snapshot.kind === "pull_request"
             ? (phase === "high_review" ? "profile/pr-final-review" : "profile/pr-reviewer")
             : (phase === "high_review" ? "profile/issue-final-review" : "profile/issue-reviewer"),
+          additionalVerifiedFacts: mediumCleanProofFact(phase, snapshot, priorCleanRound),
           controlRevision,
           environment
         });
