@@ -26,6 +26,7 @@ const {
   gitlinkManifestFact,
   gitlinkManifestFromEntries,
   indexExactTreeEntries,
+  mediumCleanProofFact,
   parseChangedPaths,
   parseExactCommitRecord,
   parseGitTreeEntries,
@@ -509,10 +510,36 @@ test("Autoreview lifecycle admission uses the trusted canonical registry before 
 });
 
 test("clean medium review is followed by an independent clean high confirmation", async () => {
-  const { result, records, fixInputs } = await fixture({ verdicts: [clean("medium clean"), clean("high clean")] });
+  let highProof: any = null;
+  const { result, records, fixInputs } = await fixture({ verdicts: [
+    (input: any) => {
+      assert.equal(input.phase, "medium_review");
+      assert.equal(input.priorCleanRound, undefined);
+      return clean("medium clean");
+    },
+    (input: any) => {
+      assert.equal(input.phase, "high_review");
+      highProof = input.priorCleanRound;
+      return clean("high clean");
+    }
+  ] });
   assert.equal(result.ok, true);
   assert.deepEqual(records.map((round) => round.phase), ["medium_review", "high_review"]);
   assert.deepEqual(records.map((round) => round.request.modelTier), ["medium", "high"]);
+  assert.deepEqual(highProof, {
+    schemaVersion: 1,
+    phase: "medium_review",
+    sequence: 1,
+    targetVersion: "v1",
+    outcome: "clean"
+  });
+  assert.deepEqual(mediumCleanProofFact("high_review", { version: "v1" }, highProof), [
+    "Trusted protocol evidence: medium iterative review round 1 completed clean for exact target version v1, and its durable round receipt was recorded before this high review."
+  ]);
+  assert.throws(
+    () => mediumCleanProofFact("high_review", { version: "v2" }, highProof),
+    /exact trusted medium-clean protocol evidence/
+  );
   assert.equal(fixInputs.length, 0);
 });
 

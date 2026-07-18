@@ -467,6 +467,7 @@ export async function runAutoreview(options) {
   let mediumRounds = 0;
   let highRounds = 0;
   let sequence = 0;
+  let mediumCleanProof = null;
 
   const blockAttempt = async ({ phase, request, snapshot: attemptSnapshot, error, verdict = null, findings = [], findingIds = [] }) => {
     const code = stableBlockCode(error, phase.endsWith("review") ? "malformed_verdict" : "malformed_fix");
@@ -505,6 +506,7 @@ export async function runAutoreview(options) {
   while (true) {
     let mediumClean = false;
     while (!mediumClean) {
+      mediumCleanProof = null;
       if (mediumRounds >= policy.roundBudgets.medium) {
         return blockedResult("exhausted_medium_rounds", rounds);
       }
@@ -554,6 +556,13 @@ export async function runAutoreview(options) {
       const recordFailure = await persistRound(options.record, reviewRound, rounds);
       if (recordFailure) return recordFailure;
       if (turn.verdict.approved) {
+        mediumCleanProof = Object.freeze({
+          schemaVersion: 1,
+          phase: "medium_review",
+          sequence: reviewRound.sequence,
+          targetVersion: snapshot.version,
+          outcome: "clean"
+        });
         mediumClean = true;
         snapshot = current;
         break;
@@ -615,7 +624,8 @@ export async function runAutoreview(options) {
         request: highRequest,
         snapshot,
         promptVersion: policy.promptVersion,
-        round: highRounds
+        round: highRounds,
+        priorCleanRound: mediumCleanProof
       }), highRequest, policy);
     } catch (error) {
       return blockAttempt({ phase: "high_review", request: highRequest, snapshot, error });
