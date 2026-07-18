@@ -68,13 +68,19 @@ test("required release checks fail closed on missing, red, or wrong-App evidence
 });
 
 test("main evidence evaluates only policy-selected checks despite broader protection", () => {
-  const validateOnly = release.evaluateRequiredChecks(
-    protectedBranch(),
-    {
-      check_runs: [
-        { name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }
-      ]
-    },
+  const observed = {
+    check_runs: [
+      { name: "Validate", status: "completed", conclusion: "success", app: { id: 15368 } }
+    ]
+  };
+  const protectedPull = release.evaluateRequiredChecks(
+    protectedBranch(), observed, { statuses: [] }, releasePolicy().mainChecks
+  );
+  assert.equal(protectedPull.green, false);
+  assert.deepEqual(protectedPull.missing, ["DarkFactory Autoreview"]);
+
+  const validateOnly = release.evaluatePolicySelectedChecks(
+    observed,
     { statuses: [] },
     releasePolicy().mainChecks
   );
