@@ -176,14 +176,16 @@ export function evaluateRequiredChecks(protection, checkRuns, statuses, policyCh
   }
   const checks = [...expected].map(([name, expectedAppId]) => {
     const candidates = latest.get(name) ?? [];
-    const actual = expectedAppId === null
-      ? candidates[0]
-      : candidates.find((candidate) => candidate.appId === expectedAppId) ?? candidates[0];
+    const matching = expectedAppId === null
+      ? candidates
+      : candidates.filter((candidate) => candidate.appId === expectedAppId);
+    const actual = matching[0] ?? candidates[0];
+    const ambiguous = matching.length > 1;
     const appBound = expectedAppId === null || actual?.appId === expectedAppId;
     return {
       name, expectedAppId, actualAppId: actual?.appId ?? null,
       id: actual?.id ?? null, url: actual?.url ?? null,
-      state: actual ? (appBound ? actual.state : "red") : "missing"
+      state: actual ? (appBound && !ambiguous ? actual.state : "red") : "missing"
     };
   });
   return {

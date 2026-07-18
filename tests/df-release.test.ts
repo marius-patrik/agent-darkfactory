@@ -93,6 +93,27 @@ test("required release checks fail closed on missing, red, or wrong-App evidence
     assert.equal(collisionGreen.green, true);
   }
 
+  for (const result of [
+    { status: "completed", conclusion: "failure" },
+    { status: "in_progress", conclusion: "" }
+  ]) {
+    const conflictingExternalRun = structuredClone(expectedExternalRun);
+    conflictingExternalRun.status = result.status;
+    conflictingExternalRun.conclusion = result.conclusion;
+    for (const collision of [
+      [conflictingExternalRun, expectedExternalRun],
+      [expectedExternalRun, conflictingExternalRun]
+    ]) {
+      const collisionRuns = checkRuns("success", 15368);
+      collisionRuns.check_runs.push(...structuredClone(collision));
+      const collisionRed = release.evaluateRequiredChecks(
+        externalProtection, collisionRuns, { statuses: [] }, releasePolicy().requiredChecks
+      );
+      assert.equal(collisionRed.green, false);
+      assert.deepEqual(collisionRed.red, ["Security Scan"]);
+    }
+  }
+
   const mismatchedExternalRuns = checkRuns("success", 15368);
   mismatchedExternalRuns.check_runs.push(wrongExternalRun);
   const externalMismatch = release.evaluateRequiredChecks(
