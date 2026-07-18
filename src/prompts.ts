@@ -2157,6 +2157,21 @@ function renderRepositoryContext(inputs: PromptInputs): string {
 
 function renderValidation(inputs: PromptInputs): string {
   const commands = inputs.validation.commands.map((command) => `- ${command}`).join("\n");
+  const autoreviewProfiles = new Set([
+    "profile/pr-reviewer",
+    "profile/pr-final-review",
+    "profile/issue-reviewer",
+    "profile/issue-final-review"
+  ]);
+  if (!autoreviewProfiles.has(inputs.selection.profile)) {
+    return [
+      "## Validation",
+      "",
+      "The run is not complete until the authoritative validation lane passes:",
+      "",
+      commands.length > 0 ? commands : "- (none declared)"
+    ].join("\n");
+  }
   return [
     "## Validation",
     "",

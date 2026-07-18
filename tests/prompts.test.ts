@@ -1322,4 +1322,8 @@ test("Autoreview leaves execution evidence to the independent Validate gate", ()
   assert.match(prompt, /separate exact-head Validate\s+gate owns command execution evidence/);
   assert.match(prompt, /do not claim these commands ran or create a finding solely because their\s+results are intentionally absent/);
   assert.match(prompt, /actual\s+validation-coverage gaps still block closed/);
+
+  const implementer = composePrompt(loadFixture(realRoot, "fixtures/compose/implementer.fixture.json"), realRoot);
+  assert.match(implementer, /run is not complete until the authoritative validation lane passes/);
+  assert.doesNotMatch(implementer, /results are intentionally absent from model context/);
 });

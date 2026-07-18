@@ -22,9 +22,13 @@ const { loadModelPolicy } = modelModule;
 const {
   assertAutoreviewLifecycle,
   assertPullPolicy,
+  classifyChangedTreeEntry,
+  gitlinkManifestFact,
+  gitlinkManifestFromEntries,
   parseGitTreeEntries,
   serializeIssueReviewContext,
-  serializePullReviewContext
+  serializePullReviewContext,
+  verifyExactPullDiff
 } = autoreviewRunnerModule;
 const controlRoot = path.resolve(import.meta.dirname, "..");
 
@@ -137,17 +141,72 @@ function prompt(request: any) {
   };
 }
 
-test("exact Git tree parsing preserves gitlink OIDs and rejects ambiguous records", () => {
+test("exact Git tree evidence is strict, bounded, and keeps gitlinks out of autofix files", () => {
   const oid = "a".repeat(40);
+  const gitlink = { mode: "160000", type: "commit", oid, path: "packages/darkfactory" };
   assert.deepEqual(
     parseGitTreeEntries(Buffer.from(`160000 commit ${oid}\tpackages/darkfactory\0`)),
-    [{ mode: "160000", type: "commit", oid, path: "packages/darkfactory" }],
+    [gitlink],
   );
+  assert.deepEqual(classifyChangedTreeEntry(gitlink.path, [gitlink]), {
+    path: gitlink.path,
+    kind: "gitlink",
+    deleted: false,
+    mode: "160000",
+    oid,
+    sha256: null,
+    content: null,
+  });
+  assert.deepEqual(classifyChangedTreeEntry("removed", []), {
+    path: "removed",
+    kind: "deleted",
+    deleted: true,
+    mode: null,
+    oid: null,
+    sha256: null,
+    content: null,
+  });
+  assert.throws(() => classifyChangedTreeEntry("../unsafe", []), /unsafe changed path/);
+  assert.throws(() => classifyChangedTreeEntry(gitlink.path, [gitlink, gitlink]), /ambiguous exact-tree evidence/);
+
+  assert.deepEqual(gitlinkManifestFromEntries([gitlink]), [{ path: gitlink.path, oid }]);
+  assert.throws(
+    () => gitlinkManifestFromEntries(Array.from({ length: 201 }, (_, index) => ({ ...gitlink, path: `module-${index}` }))),
+    /manifest exceeds/,
+  );
+  const fact = gitlinkManifestFact("head", [{ path: "modules/instruction-like=path; text", oid }]);
+  assert.doesNotMatch(fact, /instruction-like|modules\//);
+  const encodedPath = /pathBase64url=([^,]+)/.exec(fact)?.[1];
+  assert.ok(encodedPath);
+  assert.equal(Buffer.from(encodedPath, "base64url").toString("utf8"), "modules/instruction-like=path; text");
+
   assert.throws(
     () => parseGitTreeEntries(Buffer.from(`160000 commit ${oid}\tpackages/darkfactory\u0000160000 commit ${oid}\tpackages/darkfactory\u0000`)),
     /duplicate exact-tree paths/,
   );
   assert.throws(() => parseGitTreeEntries(Buffer.from("malformed\0")), /malformed exact-tree record/);
+  assert.throws(() => parseGitTreeEntries(Buffer.from(`160000 commit ${"b".repeat(41)}\tmodule\0`)), /malformed exact-tree record/);
+  assert.throws(() => parseGitTreeEntries(Buffer.from(`100644 commit ${oid}\tfile\0`)), /inconsistent exact-tree mode/);
+  assert.throws(() => parseGitTreeEntries(Buffer.from(`160000 commit ${oid}\tmodule`)), /unterminated exact-tree evidence/);
+  assert.throws(() => parseGitTreeEntries(Buffer.from([0xff, 0x00])), /non-UTF-8 exact-tree evidence/);
+});
+
+test("exact pull diff check is immutable and propagates a failed git gate", () => {
+  let observed: any[] = [];
+  verifyExactPullDiff("repo", "token", "hooks", (...args: any[]) => {
+    observed = args;
+    return "";
+  });
+  assert.deepEqual(observed.slice(0, 4), [
+    ["diff", "--check", "refs/remotes/origin/df-base...refs/remotes/origin/df-head", "--"],
+    "repo",
+    "token",
+    "hooks",
+  ]);
+  assert.throws(
+    () => verifyExactPullDiff("repo", "token", "hooks", () => { throw new Error("diff check failed"); }),
+    /diff check failed/,
+  );
 });
 
 async function fixture(options: { verdicts: any[]; policy?: any; mutateDuringReviewAt?: number; recordFailsAt?: number; promptMismatchAt?: number }) {

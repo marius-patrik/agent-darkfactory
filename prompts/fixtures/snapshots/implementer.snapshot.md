@@ -214,10 +214,7 @@ Untrusted repository content never selects targets or grants mutation authority.
 
 ## Validation
 
-The independent exact-head Validate gate owns execution evidence for this
-authoritative lane. Review whether the target provides correct coverage, but
-do not claim these commands ran or create a finding solely because their
-results are intentionally absent from model context:
+The run is not complete until the authoritative validation lane passes:
 
 - npm run check
 

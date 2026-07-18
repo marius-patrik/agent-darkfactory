@@ -482,10 +482,28 @@ function trustedBaseRules(repoRoot, token, hooksRoot) {
 }
 
 export function parseGitTreeEntries(output) {
-  const entries = Buffer.from(output || []).toString("utf8").split("\0").filter(Boolean).map((record) => {
-    const match = /^(\d{6}) (blob|tree|commit) ([0-9a-f]{40,64})\t([\s\S]+)$/.exec(record);
+  let decoded;
+  try {
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(output || []));
+  } catch {
+    throw stableError("target_policy_blocked", "Git returned non-UTF-8 exact-tree evidence");
+  }
+  if (decoded && !decoded.endsWith("\0")) {
+    throw stableError("target_policy_blocked", "Git returned unterminated exact-tree evidence");
+  }
+  const records = decoded ? decoded.slice(0, -1).split("\0") : [];
+  if (records.some((record) => !record)) {
+    throw stableError("target_policy_blocked", "Git returned an empty exact-tree record");
+  }
+  const entries = records.map((record) => {
+    const match = /^(\d{6}) (blob|tree|commit) ((?:[0-9a-f]{40}|[0-9a-f]{64}))\t([\s\S]+)$/.exec(record);
     if (!match) throw stableError("target_policy_blocked", "Git returned a malformed exact-tree record");
-    return { mode: match[1], type: match[2], oid: match[3], path: assertSafeRepositoryPath(match[4]) };
+    const entry = { mode: match[1], type: match[2], oid: match[3], path: assertSafeRepositoryPath(match[4]) };
+    const validType = (entry.mode === "160000" && entry.type === "commit")
+      || (["100644", "100755", "120000"].includes(entry.mode) && entry.type === "blob")
+      || (entry.mode === "040000" && entry.type === "tree");
+    if (!validType) throw stableError("target_policy_blocked", "Git returned inconsistent exact-tree mode and type evidence");
+    return entry;
   });
   const paths = new Set();
   for (const entry of entries) {
@@ -501,19 +519,48 @@ function exactTreeEntries(repoRoot, ref, token, hooksRoot, pathspec = null) {
   return parseGitTreeEntries(runGit(args, repoRoot, token, hooksRoot, { binary: true, maxBuffer: 16 * 1024 * 1024 }));
 }
 
-function exactGitlinkManifest(repoRoot, ref, token, hooksRoot) {
-  const gitlinks = exactTreeEntries(repoRoot, ref, token, hooksRoot)
+export function gitlinkManifestFromEntries(entries) {
+  const gitlinks = entries
     .filter((entry) => entry.mode === "160000" && entry.type === "commit")
     .map((entry) => ({ path: entry.path, oid: entry.oid }));
   if (gitlinks.length > 200) throw stableError("target_policy_blocked", "Exact gitlink manifest exceeds the Autoreview bound");
   return gitlinks;
 }
 
-function gitlinkManifestFact(label, manifest) {
+function exactGitlinkManifest(repoRoot, ref, token, hooksRoot) {
+  return gitlinkManifestFromEntries(exactTreeEntries(repoRoot, ref, token, hooksRoot));
+}
+
+export function gitlinkManifestFact(label, manifest) {
   const rendered = manifest.length > 0
-    ? manifest.map((entry) => `${entry.path}=${entry.oid}`).join("; ")
+    ? manifest.map((entry) => `pathBase64url=${Buffer.from(entry.path, "utf8").toString("base64url")},oid=${entry.oid}`).join("; ")
     : "none";
   return `Exact fetched ${label} gitlink manifest: ${rendered}.`;
+}
+
+export function classifyChangedTreeEntry(filePath, entries) {
+  assertSafeRepositoryPath(filePath);
+  if (entries.length === 0) {
+    return { path: filePath, kind: "deleted", deleted: true, mode: null, oid: null, sha256: null, content: null };
+  }
+  if (entries.length !== 1 || entries[0].path !== filePath) {
+    throw stableError("target_policy_blocked", `Changed path ${filePath} has ambiguous exact-tree evidence`);
+  }
+  const entry = entries[0];
+  if (entry.mode === "160000" && entry.type === "commit") {
+    return { path: filePath, kind: "gitlink", deleted: false, mode: entry.mode, oid: entry.oid, sha256: null, content: null };
+  }
+  if (entry.type !== "blob") throw stableError("target_policy_blocked", `Changed path ${filePath} is not a reviewable blob or gitlink`);
+  return { path: filePath, kind: "blob", deleted: false, mode: entry.mode, oid: entry.oid, sha256: null, content: null };
+}
+
+export function verifyExactPullDiff(repoRoot, token, hooksRoot, git = runGit) {
+  return git(
+    ["diff", "--check", "refs/remotes/origin/df-base...refs/remotes/origin/df-head", "--"],
+    repoRoot,
+    token,
+    hooksRoot
+  );
 }
 
 function changedPullFiles(repoRoot, token, hooksRoot) {
@@ -533,19 +580,12 @@ function changedPullFiles(repoRoot, token, hooksRoot) {
     if (caseFoldedPaths.has(foldedPath)) throw stableError("target_policy_blocked", "Pull request contains case-colliding changed paths");
     caseFoldedPaths.add(foldedPath);
     const entries = exactTreeEntries(repoRoot, "refs/remotes/origin/df-head", token, hooksRoot, filePath);
-    if (entries.length === 0) {
-      reviewedFiles.push({ path: filePath, kind: "deleted", deleted: true, mode: null, oid: null, sha256: null, content: null });
+    const evidence = classifyChangedTreeEntry(filePath, entries);
+    if (evidence.kind === "deleted" || evidence.kind === "gitlink") {
+      reviewedFiles.push(evidence);
       continue;
-    }
-    if (entries.length !== 1 || entries[0].path !== filePath) {
-      throw stableError("target_policy_blocked", `Changed path ${filePath} has ambiguous exact-tree evidence`);
     }
     const entry = entries[0];
-    if (entry.mode === "160000" && entry.type === "commit") {
-      reviewedFiles.push({ path: filePath, kind: "gitlink", deleted: false, mode: entry.mode, oid: entry.oid, sha256: null, content: null });
-      continue;
-    }
-    if (entry.type !== "blob") throw stableError("target_policy_blocked", `Changed path ${filePath} is not a reviewable blob or gitlink`);
     const child = spawnSync("git", ["show", `refs/remotes/origin/df-head:${filePath}`], {
       cwd: repoRoot,
       encoding: null,
@@ -664,12 +704,7 @@ export async function createPullRequestTarget({
       linkedIssues.push({ number: issue.number, title: issue.title || "", body: issue.body || "", labels: (issue.labels || []).map((label) => label.name || label) });
     }
     const changed = changedPullFiles(repoRoot, token, hooksRoot);
-    runGit(
-      ["diff", "--check", "refs/remotes/origin/df-base...refs/remotes/origin/df-head", "--"],
-      repoRoot,
-      token,
-      hooksRoot
-    );
+    verifyExactPullDiff(repoRoot, token, hooksRoot);
     const baseGitlinks = exactGitlinkManifest(repoRoot, "refs/remotes/origin/df-base", token, hooksRoot);
     const headGitlinks = exactGitlinkManifest(repoRoot, "refs/remotes/origin/df-head", token, hooksRoot);
     const reviewContext = serializePullReviewContext({
