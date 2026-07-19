@@ -413,7 +413,9 @@ export async function bindTrustedPolicyCheckRuns(repository, sha, payload, polic
       bound.push(checkRun);
       continue;
     }
-    const trusted = await isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding, options.expectedPull || null);
+    const trusted = await isTrustedPolicyWorkflowRun(
+      repository, sha, checkRun, binding, options.expectedPull || null, options.expectedBranch || null
+    );
     bound.push({ ...checkRun, _trustedPolicyWorkflow: trusted });
   }
   return { ...payload, check_runs: bound };
@@ -446,8 +448,9 @@ export async function observeReleaseState(repository) {
   ]);
   const classification = classifyConvergence(mainSha, devSha, comparison, mainTreeSha, devTreeSha);
   const mainChecks = mainSha && mainProtection
-    ? await checksFor(repository, mainSha, mainProtection, policy, {
+      ? await checksFor(repository, mainSha, mainProtection, policy, {
         includeProtection: false,
+        expectedBranch: "main",
         requiredChecks: [...policy.mainChecks, ...policy.artifactWorkflows, ...policy.publicationChecks]
       })
     : null;
@@ -663,6 +666,7 @@ export async function verifyRelease(repository, observation, plan) {
   const currentProtections = await assertCurrentProtections(repository, observation.policy);
   const checks = await checksFor(repository, observation.mainSha, currentProtections.main, observation.policy, {
     includeProtection: false,
+    expectedBranch: "main",
     requiredChecks: [...observation.policy.mainChecks, ...observation.policy.artifactWorkflows, ...observation.policy.publicationChecks]
   });
   if (!checks.green) {
@@ -794,14 +798,15 @@ async function checksFor(repository, sha, protection, policy, options = {}) {
     listCompleteCommitStatuses(repository, sha)
   ]);
   const checkRuns = await bindTrustedPolicyCheckRuns(repository, sha, rawCheckRuns, requiredChecks, {
-    expectedPull: options.expectedPull || null
+    expectedPull: options.expectedPull || null,
+    expectedBranch: options.expectedBranch || null
   });
   return options.includeProtection === false
     ? evaluatePolicySelectedChecks(checkRuns, statuses, requiredChecks)
     : evaluateRequiredChecks(protection, checkRuns, statuses, requiredChecks);
 }
 
-async function isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding, expectedPull) {
+async function isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding, expectedPull, expectedBranch) {
   const suiteId = checkRun?.check_suite?.id;
   if (!Number.isSafeInteger(suiteId) || suiteId < 1 || checkRun.head_sha !== sha) return false;
   if (!hasConsistentTrustedCheckSuite(checkRun, suiteId)) return false;
@@ -814,7 +819,7 @@ async function isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding, ex
       || !binding.events.includes(run.event)
       || !Number.isSafeInteger(run.id) || run.id < 1
       || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) return false;
-  if (!await hasTrustedWorkflowProvenance(repository, sha, run, binding, expectedPull)) return false;
+  if (!await hasTrustedWorkflowProvenance(repository, sha, run, binding, expectedPull, expectedBranch)) return false;
   if (checkRun.status === "completed") {
     return run.status === "completed" && run.conclusion === checkRun.conclusion;
   }
@@ -891,7 +896,7 @@ async function scanCompleteWorkflowRuns(repository, suiteId) {
   throw new Error("release workflow-run binding exceeded the bounded page limit");
 }
 
-async function hasTrustedWorkflowProvenance(repository, sha, run, binding, expectedPull) {
+async function hasTrustedWorkflowProvenance(repository, sha, run, binding, expectedPull, expectedBranch) {
   const pathEvidence = trustedWorkflowPath(run.path, binding);
   if (!pathEvidence) return false;
   const fullName = repoName(repository);
@@ -903,7 +908,7 @@ async function hasTrustedWorkflowProvenance(repository, sha, run, binding, expec
   let trustedRef = null;
   let trustedBaseSha = null;
   if (["pull_request", "pull_request_target"].includes(run.event)) {
-    if (!isExpectedPullEvidence(expectedPull, sha)) return false;
+    if (expectedBranch !== null || !isExpectedPullEvidence(expectedPull, sha)) return false;
     const pulls = Array.isArray(run.pull_requests) ? run.pull_requests : [];
     if (pulls.length !== 1) return false;
     const [pull] = pulls;
@@ -921,8 +926,9 @@ async function hasTrustedWorkflowProvenance(repository, sha, run, binding, expec
   } else if (["push", "workflow_dispatch"].includes(run.event)) {
     if (expectedPull !== null
         || !Array.isArray(run.pull_requests) || run.pull_requests.length !== 0
-        || typeof run.head_branch !== "string") return false;
-    trustedRef = run.head_branch;
+        || typeof expectedBranch !== "string" || expectedBranch.length === 0
+        || run.head_branch !== expectedBranch) return false;
+    trustedRef = expectedBranch;
   } else {
     return false;
   }

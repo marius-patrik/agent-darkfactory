@@ -213,7 +213,9 @@ test("release check evidence is complete and bound to the exact trusted workflow
   assert.equal(complete.check_runs.length, 101);
   const statuses = await release.listCompleteCommitStatuses(repo(), SHA.main);
   assert.equal(statuses.statuses.length, 101);
-  const trusted = await release.bindTrustedPolicyCheckRuns(repo(), SHA.main, complete, ["Validate"]);
+  const trusted = await release.bindTrustedPolicyCheckRuns(
+    repo(), SHA.main, complete, ["Validate"], { expectedBranch: "main" }
+  );
   assert.equal(trusted.check_runs.find((run: any) => run.id === finalCheck.id)?._trustedPolicyWorkflow, true);
 
   const trustedFinal = trusted.check_runs.find((run: any) => run.id === finalCheck.id);
@@ -227,11 +229,17 @@ test("release check evidence is complete and bound to the exact trusted workflow
     }
   };
   const collision = await release.bindTrustedPolicyCheckRuns(
-    repo(), SHA.main, { total_count: 2, check_runs: [trustedFinal, spoof] }, ["Validate"]
+    repo(), SHA.main, { total_count: 2, check_runs: [trustedFinal, spoof] }, ["Validate"], { expectedBranch: "main" }
   );
   assert.equal(collision.check_runs.length, 2);
   const rejected = release.evaluatePolicySelectedChecks(collision, { statuses: [] }, ["Validate"]);
   assert.deepEqual(rejected.red, ["Validate"]);
+
+  const wrongBranch = await release.bindTrustedPolicyCheckRuns(
+    repo(), SHA.main, { total_count: 1, check_runs: [trustedFinal] }, ["Validate"], { expectedBranch: "dev" }
+  );
+  assert.equal(wrongBranch.check_runs[0]._trustedPolicyWorkflow, false);
+  assert.deepEqual(release.evaluatePolicySelectedChecks(wrongBranch, { statuses: [] }, ["Validate"]).red, ["Validate"]);
 
   const custom = { ...finalCheck, id: 502, name: "Artifact Scan", check_suite: { id: 902 } };
   const additional = await release.bindTrustedPolicyCheckRuns(
