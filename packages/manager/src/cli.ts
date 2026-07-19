@@ -111,7 +111,7 @@ function help(): void {
   console.log(`agents - Bun agent package manager
 
 Usage:
-  agents run --model-tier low|medium|high|max --effort low|medium|high --execution-policy read-only|workspace-write --receipt <absolute-new-path> [--mode orchestrator|default|chat|task] [--prompt-file <absolute-path> | --prompt-stdin | <prompt>]
+  agents run --model-tier low|medium|high|max --effort low|medium|high --execution-policy read-only|workspace-write --tool-policy standard|none --receipt <absolute-new-path> [--mode orchestrator|default|chat|task] [--prompt-file <absolute-path> | --prompt-stdin | <prompt>]
   agents run [--mode orchestrator|default] [--provider <id>] [--model <model>] [--tui] <prompt>
   agents route probe [--model-tier low|medium|high|max] [--effort low|medium|high] [--json]
   agents tui [--provider <id>] [--model <model>] [--mode <mode>]

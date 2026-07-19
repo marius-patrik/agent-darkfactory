@@ -189,7 +189,7 @@ There is no compatibility mode or alternate loader to bypass.
 ## Command surface
 
 ```text
-agents run --model-tier low|medium|high|max --effort low|medium|high --execution-policy read-only|workspace-write --receipt <absolute-new-path> [--mode orchestrator|default|chat|task] [--prompt-file <absolute-path> | --prompt-stdin | <prompt>]
+agents run --model-tier low|medium|high|max --effort low|medium|high --execution-policy read-only|workspace-write --tool-policy standard|none --receipt <absolute-new-path> [--mode orchestrator|default|chat|task] [--prompt-file <absolute-path> | --prompt-stdin | <prompt>]
 agents run [--mode orchestrator|default] [--provider <id>] [--model <model>] [--tui] <prompt>
 agents route probe [--model-tier low|medium|high|max] [--effort low|medium|high] [--json]
 agents tui [--provider <id>] [--model <model>] [--mode <mode>]
@@ -260,6 +260,15 @@ agents os remove <name> [--prune-data] [--dry-run]
 agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
 agents runner install|enable|disable|status|repair [--json]
 ```
+
+`--tool-policy none` is an independent confidentiality boundary for fresh,
+read-only turns. Agent OS suppresses canonical startup memory, runs the
+provider from an empty disposable directory, strips personal Agent OS/home
+paths from the child environment, and accepts output only when the adapter can
+attest a native zero-tool surface. Kimi ACP and Claude support this boundary;
+Codex and Agy fail closed before provider inspection or launch until their
+native runtimes expose a complete zero-tool contract. `standard` preserves the
+ordinary provider tool surface and does not imply read isolation.
 
 ### Logical-tier execution
 

@@ -172,6 +172,7 @@ export type OrderedRouteSkipReason =
   | "provider_doctor_failed"
   | "provider_version_unavailable"
   | "execution_policy_unsupported"
+  | "tool_policy_unsupported"
   | "provider_prompt_transport_unsupported"
   | "route_probe_failed";
 
@@ -305,9 +306,11 @@ export function admittedRouteProviderVersion(value: string | null | undefined): 
 }
 
 export type RouteExecutionPolicy = "read-only" | "workspace-write";
+export type RouteToolPolicy = "standard" | "none";
 export type RoutePromptSource = "positional" | "file" | "stdin";
 export type RouteCapabilityReason =
   | "execution_policy_unsupported"
+  | "tool_policy_unsupported"
   | "provider_prompt_transport_unsupported";
 
 /** Shared provider capability admission used by both readiness and execution. */
@@ -315,7 +318,11 @@ export function routeCandidateCapabilityReason(
   provider: ProviderId,
   executionPolicy: RouteExecutionPolicy,
   promptSource: RoutePromptSource,
+  toolPolicy: RouteToolPolicy = "standard",
 ): RouteCapabilityReason | null {
+  if (toolPolicy === "none" && provider !== "kimi" && provider !== "claude") {
+    return "tool_policy_unsupported";
+  }
   if ((provider === "agy" || provider === "claude") && executionPolicy === "workspace-write") {
     return "execution_policy_unsupported";
   }

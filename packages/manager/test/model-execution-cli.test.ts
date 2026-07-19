@@ -95,7 +95,7 @@ async function runProcess(
 }
 
 async function readBlockedReceipt(receiptPath: string): Promise<{
-  requested: { modelTier: string; effort: string };
+  requested: { modelTier: string; effort: string; toolPolicy: string };
   routing: {
     policyVersion: string;
     primary: { provider: string; model: string; agentPreset: string; providerVersion: string };
@@ -139,6 +139,7 @@ function flags(root: string): Record<string, string | boolean> {
     "model-tier": "high",
     effort: "high",
     "execution-policy": "read-only",
+    "tool-policy": "none",
     receipt: path.join(root, "receipt.json"),
     mode: "orchestrator",
   };
@@ -156,6 +157,7 @@ describe("model execution CLI prompt boundary", () => {
       modelTier: "high",
       effort: "high",
       executionPolicy: "read-only",
+      toolPolicy: "none",
       receiptPath: path.join(root, "receipt.json"),
       workdir: await realpath(root),
       mode: "orchestrator",
@@ -226,7 +228,7 @@ describe("model execution CLI prompt boundary", () => {
 
   test("required policy flags remain explicit rather than silently defaulting", async () => {
     const root = await rootFixture();
-    for (const name of ["model-tier", "effort", "execution-policy", "receipt"]) {
+    for (const name of ["model-tier", "effort", "execution-policy", "tool-policy", "receipt"]) {
       const incomplete = flags(root);
       delete incomplete[name];
       await expect(
@@ -235,6 +237,7 @@ describe("model execution CLI prompt boundary", () => {
     }
     expect(selectsModelExecution({ effort: "high" })).toBe(true);
     expect(selectsModelExecution({ "execution-policy": "workspace-write" })).toBe(true);
+    expect(selectsModelExecution({ "tool-policy": "none" })).toBe(true);
     expect(selectsModelExecution({ receipt: path.join(root, "receipt.json") })).toBe(true);
     expect(selectsModelExecution({ provider: "codex", model: "gpt-5.6-sol" })).toBe(false);
     await expect(
@@ -308,6 +311,8 @@ describe("model execution CLI prompt boundary", () => {
         "low",
         "--execution-policy",
         "read-only",
+        "--tool-policy",
+        "standard",
         "--receipt",
         receiptPath,
         "--mode",
@@ -323,7 +328,7 @@ describe("model execution CLI prompt boundary", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr.trim()).toBe(`execution blocked: ${receipt.blockReason}`);
     expect(`${result.stdout}${result.stderr}`).not.toContain(prompt);
-    expect(receipt.requested).toEqual({ modelTier: "high", effort: "low" });
+    expect(receipt.requested).toEqual({ modelTier: "high", effort: "low", toolPolicy: "standard" });
     expect(receipt.routing.primary).toMatchObject({ provider: "codex", model: "gpt-5.6-sol" });
     expect(receipt.routing.skipped).toEqual([
       expect.objectContaining({ provider: "codex", reason: "provider_unpinned" }),
@@ -345,6 +350,8 @@ describe("model execution CLI prompt boundary", () => {
         "low",
         "--execution-policy",
         "read-only",
+        "--tool-policy",
+        "standard",
         "--receipt",
         receiptPath,
         "prompt",
@@ -389,6 +396,8 @@ describe("model execution CLI prompt boundary", () => {
         "low",
         "--execution-policy",
         "read-only",
+        "--tool-policy",
+        "standard",
         "--receipt",
         receiptPath,
         "caller-root sentinel",
@@ -421,6 +430,8 @@ describe("model execution CLI prompt boundary", () => {
         "low",
         "--execution-policy",
         "read-only",
+        "--tool-policy",
+        "standard",
         "--receipt",
         receiptPath,
         "outside-root sentinel",
@@ -480,6 +491,8 @@ describe("model execution CLI prompt boundary", () => {
         "low",
         "--execution-policy",
         "read-only",
+        "--tool-policy",
+        "standard",
         "--receipt",
         receiptPath,
         "--mode",
@@ -496,7 +509,7 @@ describe("model execution CLI prompt boundary", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr.trim()).toBe(`execution blocked: ${receipt.blockReason}`);
     expect(`${result.stdout}${result.stderr}`).not.toContain(prompt);
-    expect(receipt.requested).toEqual({ modelTier: "medium", effort: "low" });
+    expect(receipt.requested).toEqual({ modelTier: "medium", effort: "low", toolPolicy: "standard" });
     expect(receipt.routing.primary).toMatchObject({
       provider: "kimi",
       model: "kimi-code/kimi-for-coding",

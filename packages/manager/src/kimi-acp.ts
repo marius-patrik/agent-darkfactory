@@ -192,7 +192,7 @@ function nativeReceiptForContinuation(
 }
 
 function currentTurnPrompt(options: KimiAcpTurnOptions, resuming: boolean): string {
-  const sections = [options.startup];
+  const sections = options.startup ? [options.startup] : [];
   const priorMessages = messagesBeforeCurrentTurn(options.transcript, options.request);
   let instructionStart = 0;
   if (resuming) {
@@ -586,6 +586,13 @@ export async function runKimiAcpTurn(options: KimiAcpTurnOptions): Promise<TurnR
   if (executionPolicy !== "read-only" && executionPolicy !== "workspace-write") {
     throw new KimiContinuityError("Kimi execution policy is unsupported");
   }
+  const toolPolicy = options.request.toolPolicy ?? "standard";
+  if (toolPolicy !== "standard" && toolPolicy !== "none") {
+    throw new KimiContinuityError("Kimi tool policy is unsupported");
+  }
+  if (toolPolicy === "none" && executionPolicy !== "read-only") {
+    throw new KimiContinuityError("Kimi zero-tool execution requires read-only policy");
+  }
   // Kimi's auto mode can execute ambient provider tools without a manager
   // authorization callback. Workspace-write therefore uses manual mode and
   // grants only one workspace-bounded edit at a time; shell/delete/move and
@@ -628,6 +635,10 @@ export async function runKimiAcpTurn(options: KimiAcpTurnOptions): Promise<TurnR
       return { outcome: { outcome: "cancelled" } };
     },
     async readTextFile(params) {
+      if (toolPolicy === "none") {
+        unexpectedFilesystemRequest = true;
+        return { content: "" };
+      }
       try {
         return await readWorkspaceTextFile(params, activeSessionId, options.descriptor.workdir);
       } catch {
@@ -639,6 +650,10 @@ export async function runKimiAcpTurn(options: KimiAcpTurnOptions): Promise<TurnR
       }
     },
     async writeTextFile(params) {
+      if (toolPolicy === "none") {
+        unexpectedFilesystemRequest = true;
+        return {};
+      }
       try {
         return await writeWorkspaceTextFile(
           params,
@@ -673,7 +688,10 @@ export async function runKimiAcpTurn(options: KimiAcpTurnOptions): Promise<TurnR
       connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: executionPolicy === "workspace-write" },
+          fs: {
+            readTextFile: toolPolicy === "standard",
+            writeTextFile: toolPolicy === "standard" && executionPolicy === "workspace-write",
+          },
           terminal: false,
         },
         clientInfo: { name: "Andromeda Manager", version: "0.1.0" },
@@ -772,6 +790,7 @@ export async function runKimiAcpTurn(options: KimiAcpTurnOptions): Promise<TurnR
       finishReason: response.stopReason,
       usage: acpUsage(response.usage),
       resolvedExecutionPolicy: executionPolicy,
+      resolvedToolPolicy: toolPolicy,
       receipt: {
         provider: "kimi",
         model: options.descriptor.model,

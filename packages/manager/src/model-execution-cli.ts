@@ -14,6 +14,7 @@ const TIER_EXECUTION_FLAGS = [
   "model-tier",
   "effort",
   "execution-policy",
+  "tool-policy",
   "receipt",
   "prompt-file",
   "prompt-stdin",
@@ -24,6 +25,7 @@ const TIER_ALLOWED_FLAGS = new Set([
   "model-tier",
   "effort",
   "execution-policy",
+  "tool-policy",
   "receipt",
   "prompt-file",
   "prompt-stdin",
@@ -83,6 +85,7 @@ export async function modelExecutionRequestFromCli(input: ModelExecutionCliInput
   const modelTier = requiredStringFlag(input.flags, "model-tier");
   const effort = requiredStringFlag(input.flags, "effort");
   const executionPolicy = requiredStringFlag(input.flags, "execution-policy");
+  const toolPolicy = requiredStringFlag(input.flags, "tool-policy");
   const receiptPath = requiredStringFlag(input.flags, "receipt");
   const modeValue = optionalStringFlag(input.flags, "mode") ?? "default";
   if (!MODEL_RUN_MODES.has(modeValue as SessionMode)) throw new Error("run --mode is invalid");
@@ -124,6 +127,7 @@ export async function modelExecutionRequestFromCli(input: ModelExecutionCliInput
     modelTier,
     effort,
     executionPolicy,
+    toolPolicy,
     receiptPath,
     workdir,
     mode: modeValue as SessionMode,

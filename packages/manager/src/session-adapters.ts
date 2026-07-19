@@ -40,6 +40,13 @@ export interface CliAdapterOptions {
     result: TurnResult,
     launch: NativeCliLaunch,
   ) => Promise<"read-only" | "workspace-write">;
+  /** Provider-native effective tool-surface attestation after structured output parsing. */
+  resolveToolPolicy?: (
+    descriptor: SessionDescriptor,
+    request: TurnRequest,
+    result: TurnResult,
+    launch: NativeCliLaunch,
+  ) => Promise<"standard" | "none">;
   /**
    * Captures immutable per-run authority before canonical launch preparation.
    * This is the only phase allowed to bind to mutable provider registry state.
@@ -135,29 +142,33 @@ export class CliProviderAdapter implements ProviderAdapter {
     transcript: SessionTranscript,
     request: TurnRequest,
   ): Promise<TurnResult> {
+    const toolPolicy = request.toolPolicy ?? "standard";
+    if (toolPolicy !== "standard" && toolPolicy !== "none") {
+      throw new Error("provider tool policy is unsupported");
+    }
     // Snapshot the initial authority before canonical processing. S0 is a
     // per-run local — no adapter-global mutable slot — so concurrent turns
     // never share or rebind launch authority.
     const attestationS0 = this.options.preflight ? await this.options.preflight(descriptor) : undefined;
     let effectiveTranscript = transcript;
-    try {
-      const startup = await loadCanonicalStartup(descriptor);
-      effectiveTranscript = withCanonicalStartup(transcript, startup);
-    } catch (error) {
-      return {
-        content: "",
-        role: "assistant",
-        error: `canonical startup memory unavailable: ${(error as Error).message}`,
-      };
+    if (toolPolicy === "none") {
+      assertFreshReadIsolatedTranscript(transcript, request);
+    } else {
+      try {
+        const startup = await loadCanonicalStartup(descriptor);
+        effectiveTranscript = withCanonicalStartup(transcript, startup);
+      } catch (error) {
+        return {
+          content: "",
+          role: "assistant",
+          error: `canonical startup memory unavailable: ${(error as Error).message}`,
+        };
+      }
     }
     const args = this.options.buildArgs(request, effectiveTranscript, descriptor);
     const stdinText = this.options.buildStdin?.(request, effectiveTranscript, descriptor);
     const cwd = this.options.cwd ?? descriptor.workdir;
-    const env = overlayChildEnvironment(
-      canonicalChildEnvironment(),
-      this.options.env ?? {},
-      canonicalProviderEnv(this.id, descriptor),
-    );
+    const env = providerProcessEnvironment(this.id, descriptor, toolPolicy, this.options.env ?? {});
     forceAgyAutoUpdateDisabled(env, this.id);
     const invocation = commandInvocation(this.options.binary, args, env);
     const nativeLaunch: NativeCliLaunch = Object.freeze({
@@ -220,6 +231,16 @@ export class CliProviderAdapter implements ProviderAdapter {
     if (preworkExecutionPolicy && result.resolvedExecutionPolicy !== preworkExecutionPolicy) {
       throw new Error("provider pre-work and completed-turn execution-policy receipts disagree");
     }
+    if (this.options.resolveToolPolicy) {
+      result.resolvedToolPolicy = await this.options.resolveToolPolicy(
+        descriptor,
+        request,
+        result,
+        nativeLaunch,
+      );
+    } else {
+      delete result.resolvedToolPolicy;
+    }
     if (this.options.receipt) {
       result.receipt = await this.options.receipt(descriptor, request, result, nativeLaunch);
     }
@@ -274,6 +295,29 @@ export function withCanonicalStartup(
       ...transcript.messages,
     ],
   };
+}
+
+/**
+ * A zero-tool turn may contain trusted system instructions plus exactly one
+ * current user request. Prior conversation or a previously injected canonical
+ * startup could already contain tool-derived personal data, so continuation is
+ * refused instead of silently treating it as read-isolated.
+ */
+export function assertFreshReadIsolatedTranscript(
+  transcript: SessionTranscript,
+  request: TurnRequest,
+): void {
+  const current = transcript.messages.at(-1);
+  if (current?.role !== "user" || current.content !== request.prompt) {
+    throw new Error("zero-tool turn is not aligned with the current request");
+  }
+  if (
+    transcript.messages.slice(0, -1).some((message) =>
+      message.role !== "system" || message.metadata?.source === "canonical-agent-os"
+    )
+  ) {
+    throw new Error("zero-tool turn requires a fresh read-isolated session");
+  }
 }
 
 function isAgentsBinPath(candidate: string): boolean {
@@ -336,11 +380,79 @@ export function transcriptAsPrompt(request: TurnRequest, transcript: SessionTran
 
 export type CliSessionProvider = "kimi" | "claude" | "codex" | "agy";
 
-export function canonicalProviderEnv(provider: string, descriptor: SessionDescriptor): Record<string, string> {
+const READ_ISOLATED_ENVIRONMENT = new Set([
+  "CI",
+  "COMSPEC",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "NO_PROXY",
+  "NODE_EXTRA_CA_CERTS",
+  "PATH",
+  "PATHEXT",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "SYSTEMROOT",
+  "TEMP",
+  "TERM",
+  "TMP",
+  "TMPDIR",
+  "WINDIR",
+]);
+
+function readIsolatedEnvironment(source: Record<string, string | undefined>): Record<string, string | undefined> {
+  const output: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(source)) {
+    const folded = name.toUpperCase();
+    if (!READ_ISOLATED_ENVIRONMENT.has(folded) && !folded.startsWith("LC_")) continue;
+    output[name] = value;
+  }
+  return output;
+}
+
+export function providerProcessEnvironment(
+  provider: string,
+  descriptor: SessionDescriptor,
+  toolPolicy: "standard" | "none",
+  extra: Record<string, string> = {},
+): Record<string, string | undefined> {
+  if (toolPolicy === "standard") {
+    return overlayChildEnvironment(
+      canonicalChildEnvironment(),
+      extra,
+      canonicalProviderEnv(provider, descriptor, toolPolicy),
+    );
+  }
+  if (toolPolicy !== "none") throw new Error("provider tool policy is unsupported");
+  return overlayChildEnvironment(
+    readIsolatedEnvironment(canonicalChildEnvironment()),
+    readIsolatedEnvironment(extra),
+    canonicalProviderEnv(provider, descriptor, toolPolicy),
+  );
+}
+
+export function canonicalProviderEnv(
+  provider: string,
+  descriptor: SessionDescriptor,
+  toolPolicy: "standard" | "none" = "standard",
+): Record<string, string> {
   if (!["kimi", "claude", "codex", "agy"].includes(provider)) return {};
   const stateDir = path.resolve(descriptor.stateDir);
   const userHome = resolveUserHome();
   const providerHome = path.join(stateDir, "clis", provider);
+  if (toolPolicy === "none") {
+    if (provider === "claude") return { CLAUDE_CONFIG_DIR: providerHome };
+    if (provider === "kimi") {
+      return {
+        KIMI_CODE_HOME: providerHome,
+        HOME: providerHome,
+        USERPROFILE: providerHome,
+      };
+    }
+    throw new Error(`${provider} zero-tool execution is unsupported`);
+  }
   const env: Record<string, string> = {
     AGENTS_HOME: stateDir,
     AGENTS_USER_HOME: userHome,
@@ -429,6 +541,7 @@ export function resolveAgyModel(
 
 export interface NativeInvocationAttestation {
   executionPolicy: "read-only" | "workspace-write";
+  toolPolicy: "standard" | "none";
   model: string;
   effort: "low" | "medium" | "high" | null;
 }
@@ -458,6 +571,7 @@ export function attestAgyNativeInvocation(launch: NativeCliLaunch): NativeInvoca
   const resolution = resolveAgyModel(args[4]!);
   return {
     executionPolicy: "read-only",
+    toolPolicy: "standard",
     model: resolution.concreteModel,
     effort: resolution.effort,
   };
@@ -487,7 +601,7 @@ export function attestClaudeNativeInvocation(launch: NativeCliLaunch): NativeInv
     args[cursor] !== "--permission-mode" ||
     args[cursor + 1] !== "plan" ||
     args[cursor + 2] !== "--tools" ||
-    args[cursor + 3] !== "Read,Glob,Grep" ||
+    (args[cursor + 3] !== "Read,Glob,Grep" && args[cursor + 3] !== "") ||
     args[cursor + 4] !== "--no-session-persistence" ||
     args[cursor + 5] !== "--output-format" ||
     args[cursor + 6] !== "json" ||
@@ -495,7 +609,12 @@ export function attestClaudeNativeInvocation(launch: NativeCliLaunch): NativeInv
   ) {
     throw new Error("Claude native invocation receipt is malformed");
   }
-  return { executionPolicy: "read-only", model, effort };
+  return {
+    executionPolicy: "read-only",
+    toolPolicy: args[cursor + 3] === "" ? "none" : "standard",
+    model,
+    effort,
+  };
 }
 
 export function buildProviderArgs(
@@ -506,14 +625,18 @@ export function buildProviderArgs(
 ): string[] {
   if (!model.trim() || model.includes("\0")) throw new Error("provider model must be a concrete non-empty identifier");
   if (model === "default") throw new Error("retired default model sentinel is forbidden");
-  if (provider === "kimi") return ["acp"];
-  const prompt = transcriptAsPrompt(request, transcript);
-  const modelArgs = ["--model", model];
   const executionPolicy = request.executionPolicy ?? "read-only";
   if (executionPolicy !== "read-only" && executionPolicy !== "workspace-write") {
     throw new Error("provider execution policy is unsupported");
   }
   const effortArgs = request.effort ? ["--effort", request.effort] : [];
+  const toolPolicy = request.toolPolicy ?? "standard";
+  if (toolPolicy !== "standard" && toolPolicy !== "none") {
+    throw new Error("provider tool policy is unsupported");
+  }
+  if (provider === "kimi") return ["acp"];
+  const prompt = transcriptAsPrompt(request, transcript);
+  const modelArgs = ["--model", model];
 
   switch (provider) {
     case "claude": {
@@ -527,13 +650,16 @@ export function buildProviderArgs(
         "--permission-mode",
         "plan",
         "--tools",
-        "Read,Glob,Grep",
+        toolPolicy === "none" ? "" : "Read,Glob,Grep",
         "--no-session-persistence",
         "--output-format",
         "json",
       ];
     }
     case "codex": {
+      if (toolPolicy === "none") {
+        throw new Error("Codex zero-tool execution is unsupported without a native complete tool-surface boundary");
+      }
       const codexConfig = [
         ...(request.effort ? [`model_reasoning_effort=\"${request.effort}\"`] : []),
         ...(executionPolicy === "workspace-write"
@@ -560,6 +686,9 @@ export function buildProviderArgs(
       ];
     }
     case "agy": {
+      if (toolPolicy === "none") {
+        throw new Error("Agy zero-tool execution is unsupported without provider-native tool-surface evidence");
+      }
       if (executionPolicy === "workspace-write") {
         throw new Error("Agy workspace-write is unsupported without provider-native physical authority evidence");
       }
@@ -911,20 +1040,25 @@ class KimiAcpProviderAdapter implements ProviderAdapter {
     transcript: SessionTranscript,
     request: TurnRequest,
   ): Promise<TurnResult> {
-    let startup: string;
-    try {
-      startup = await loadCanonicalStartup(descriptor);
-    } catch (error) {
-      return {
-        content: "",
-        role: "assistant",
-        error: `canonical startup memory unavailable: ${(error as Error).message}`,
-      };
+    const toolPolicy = request.toolPolicy ?? "standard";
+    if (toolPolicy !== "standard" && toolPolicy !== "none") {
+      throw new Error("provider tool policy is unsupported");
     }
-    const env = overlayChildEnvironment(
-      canonicalChildEnvironment(),
-      canonicalProviderEnv("kimi", descriptor),
-    );
+    let startup = "";
+    if (toolPolicy === "none") {
+      assertFreshReadIsolatedTranscript(transcript, request);
+    } else {
+      try {
+        startup = await loadCanonicalStartup(descriptor);
+      } catch (error) {
+        return {
+          content: "",
+          role: "assistant",
+          error: `canonical startup memory unavailable: ${(error as Error).message}`,
+        };
+      }
+    }
+    const env = providerProcessEnvironment("kimi", descriptor, toolPolicy);
     // Keep the provider-specific ACP/Zod boundary off unrelated manager
     // startup paths; a managed Kimi turn loads it only after canonical startup
     // and provider environment preparation have succeeded.
@@ -979,6 +1113,8 @@ export function claudeSessionAdapter(binaryOverride?: string): ProviderAdapter {
     parseResult: parseClaudeJsonResult,
     resolveExecutionPolicy: async (_descriptor, _request, _result, launch) =>
       attestClaudeNativeInvocation(launch).executionPolicy,
+    resolveToolPolicy: async (_descriptor, _request, _result, launch) =>
+      attestClaudeNativeInvocation(launch).toolPolicy,
     receipt: (_descriptor, request, result, launch) => {
       const native = attestClaudeNativeInvocation(launch);
       return {
@@ -988,6 +1124,8 @@ export function claudeSessionAdapter(binaryOverride?: string): ProviderAdapter {
         agentPreset: request.agentPreset ?? null,
         requestedExecutionPolicy: request.executionPolicy ?? "read-only",
         resolvedExecutionPolicy: result.resolvedExecutionPolicy ?? null,
+        requestedToolPolicy: request.toolPolicy ?? "standard",
+        resolvedToolPolicy: result.resolvedToolPolicy ?? null,
       };
     },
   });
@@ -1010,6 +1148,12 @@ export function codexSessionAdapter(binaryOverride?: string): ProviderAdapter {
       if (typeof providerThreadId !== "string") throw new Error("Codex native execution receipt is missing");
       return attestCodexExecutionPolicy(descriptor, request, providerThreadId);
     },
+    resolveToolPolicy: async (_descriptor, request) => {
+      if ((request.toolPolicy ?? "standard") !== "standard") {
+        throw new Error("Codex zero-tool execution is unsupported without a native complete tool-surface boundary");
+      }
+      return "standard";
+    },
     receipt: (descriptor, request, result) => ({
       provider: "codex",
       model: descriptor.model,
@@ -1017,6 +1161,8 @@ export function codexSessionAdapter(binaryOverride?: string): ProviderAdapter {
       agentPreset: request.agentPreset ?? null,
       requestedExecutionPolicy: request.executionPolicy ?? "read-only",
       resolvedExecutionPolicy: result.resolvedExecutionPolicy ?? null,
+      requestedToolPolicy: request.toolPolicy ?? "standard",
+      resolvedToolPolicy: result.resolvedToolPolicy ?? null,
     }),
   });
 }
@@ -1332,6 +1478,8 @@ export function agySessionAdapter(binaryOverride?: string): ProviderAdapter {
       verifyAgyAttestedState(attestation as AgyLaunchAttestation | undefined, "after the managed run"),
     resolveExecutionPolicy: async (_descriptor, _request, _result, launch) =>
       attestAgyNativeInvocation(launch).executionPolicy,
+    resolveToolPolicy: async (_descriptor, _request, _result, launch) =>
+      attestAgyNativeInvocation(launch).toolPolicy,
     receipt: (descriptor, _request, _result, launch) => {
       const native = attestAgyNativeInvocation(launch);
       return {

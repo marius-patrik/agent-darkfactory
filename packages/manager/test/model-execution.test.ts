@@ -13,6 +13,7 @@ import {
   type ExecutionPolicy,
   type ModelEffort,
   type ModelExecutionDependencies,
+  type ToolPolicy,
 } from "../src/model-execution";
 import {
   AGENT_ROUTE_POLICY,
@@ -76,9 +77,10 @@ function doctorResult(provider: ResolvedRoute["provider"], version = `${provider
 }
 
 function successfulDependencies(
-  capture: Array<{ route: ResolvedRoute; effort: ModelEffort; executionPolicy: ExecutionPolicy; prompt: string }> = [],
+  capture: Array<{ route: ResolvedRoute; effort: ModelEffort; executionPolicy: ExecutionPolicy; toolPolicy: ToolPolicy; prompt: string }> = [],
   options: {
     resolvedExecutionPolicy?: ExecutionPolicy | null;
+    resolvedToolPolicy?: ToolPolicy | null;
     version?: string;
     usage?: { tokensIn?: number; tokensOut?: number; totalTokens?: number };
     error?: string;
@@ -92,6 +94,7 @@ function successfulDependencies(
         route,
         effort: request.effort,
         executionPolicy: request.executionPolicy,
+        toolPolicy: request.toolPolicy,
         prompt: request.prompt,
       });
       return {
@@ -100,6 +103,9 @@ function successfulDependencies(
           resolvedExecutionPolicy: Object.prototype.hasOwnProperty.call(options, "resolvedExecutionPolicy")
             ? options.resolvedExecutionPolicy!
             : request.executionPolicy,
+          resolvedToolPolicy: Object.prototype.hasOwnProperty.call(options, "resolvedToolPolicy")
+            ? options.resolvedToolPolicy!
+            : request.toolPolicy,
           result: {
             content: options.content ?? "ok",
             role: "assistant",
@@ -131,12 +137,14 @@ function request(
   modelTier: ModelTier,
   effort: ModelEffort = "medium",
   executionPolicy: ExecutionPolicy = "read-only",
+  toolPolicy: ToolPolicy = "standard",
 ) {
   return {
     modelTier,
     effort,
     executionPolicy,
-    receiptPath: path.join(receiptDir, `${modelTier}-${effort}-${executionPolicy}.json`),
+    toolPolicy,
+    receiptPath: path.join(receiptDir, `${modelTier}-${effort}-${executionPolicy}-${toolPolicy}.json`),
     workdir: root,
     mode: "task" as const,
     prompt: "Review the admitted fixture.",
@@ -157,8 +165,8 @@ describe("canonical model execution route and receipt", () => {
       expect(result.ok).toBe(true);
       expect(result.receipt).toEqual(JSON.parse(await Bun.file(request(root, receiptDir, tier).receiptPath).text()));
       expect(result.receipt).toEqual({
-        schemaVersion: 2,
-        requested: { modelTier: tier, effort: "medium" },
+        schemaVersion: 3,
+        requested: { modelTier: tier, effort: "medium", toolPolicy: "standard" },
         routing: {
           policyVersion: ROUTE_POLICY_VERSION,
           primary: {
@@ -184,6 +192,7 @@ describe("canonical model execution route and receipt", () => {
           }[tier],
           agentPreset: TIER_ROUTES[tier].agentPreset,
           providerVersion: "1.2.3",
+          toolPolicy: "standard",
         },
         attempts: [{ number: 1, outcome: "success", reason: null }],
         usage: { inputTokens: 11, outputTokens: 7, totalTokens: 18 },
@@ -267,12 +276,13 @@ describe("canonical model execution route and receipt", () => {
     expect(doctors).toEqual(["codex"]);
     expect(captured.map(({ route }) => route.provider)).toEqual(["codex"]);
     expect(await Bun.file(adapterHome(state, "kimi")).exists()).toBe(false);
-    expect(result.receipt.requested).toEqual({ modelTier: "medium", effort: "medium" });
+    expect(result.receipt.requested).toEqual({ modelTier: "medium", effort: "medium", toolPolicy: "standard" });
     expect(result.receipt.resolved).toEqual({
       provider: "codex",
       model: "gpt-5.6-sol",
       agentPreset: "Sol",
       providerVersion: "1.2.3",
+      toolPolicy: "standard",
     });
     expect(result.receipt.routing).toEqual({
       policyVersion: ROUTE_POLICY_VERSION,
@@ -333,6 +343,7 @@ describe("canonical model execution route and receipt", () => {
       model: "unresolved",
       agentPreset: "unresolved",
       providerVersion: "unresolved",
+      toolPolicy: "unresolved",
     });
     expect(result.receipt.routing.skipped.map(({ provider, reason }) => ({ provider, reason }))).toEqual([
       { provider: "kimi", reason: "provider_decommissioned" },
@@ -355,7 +366,7 @@ describe("canonical model execution route and receipt", () => {
         successfulDependencies(captured),
       );
       expect(result.ok).toBe(true);
-      expect(result.receipt.requested).toEqual({ modelTier: "medium", effort });
+      expect(result.receipt.requested).toEqual({ modelTier: "medium", effort, toolPolicy: "standard" });
       expect(result.receipt.resolved.provider).toBe("codex");
       expect(result.receipt.routing.skipped[0]?.reason).toBe("provider_decommissioned");
     }
@@ -533,6 +544,7 @@ describe("canonical model execution route and receipt", () => {
       model: "unresolved",
       agentPreset: "unresolved",
       providerVersion: "unresolved",
+      toolPolicy: "unresolved",
     });
     expect(result.receipt.routing.skipped).toEqual([
       {
@@ -566,6 +578,67 @@ describe("canonical model execution route and receipt", () => {
     expect(result.receipt.usage).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
   });
 
+  test("zero-tool regression triplet: Kimi success is independently requested and attested", async () => {
+    const { root, state, receiptDir } = await fixture();
+    const captured: Parameters<typeof successfulDependencies>[0] = [];
+    const result = await executeModelRequest(
+      state,
+      request(root, receiptDir, "medium", "medium", "read-only", "none"),
+      successfulDependencies(captured),
+    );
+    expect(result.ok).toBe(true);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.toolPolicy).toBe("none");
+    expect(result.receipt.requested.toolPolicy).toBe("none");
+    expect(result.receipt.resolved.toolPolicy).toBe("none");
+  });
+
+  test("zero-tool regression triplet: unsupported candidates skip inspection before a supported fallback", async () => {
+    const { root, state, receiptDir } = await fixture();
+    await writeSessionConfig(state, {
+      ...(await readSessionConfig(state)),
+      providerRouteStatus: { kimi: "decommissioned" },
+    });
+    const inspectedProviders: string[] = [];
+    let executions = 0;
+    const result = await executeModelRequest(
+      state,
+      request(root, receiptDir, "medium", "medium", "read-only", "none"),
+      {
+        doctor: async (_state, provider) => {
+          inspectedProviders.push(provider);
+          throw new Error("doctor unavailable");
+        },
+        execute: async () => {
+          executions += 1;
+          throw new Error("must not launch");
+        },
+      },
+    );
+    expect(result.ok).toBe(false);
+    expect(inspectedProviders).toEqual(["claude"]);
+    expect(executions).toBe(0);
+    expect(result.receipt.blockReason).toBe("provider_doctor_failed");
+    expect(result.receipt.routing.skipped.map(({ provider, reason }) => ({ provider, reason }))).toEqual([
+      { provider: "kimi", reason: "provider_decommissioned" },
+      { provider: "codex", reason: "tool_policy_unsupported" },
+      { provider: "claude", reason: "provider_doctor_failed" },
+    ]);
+  });
+
+  test("zero-tool regression triplet: a broader resolved surface is rejected", async () => {
+    const { root, state, receiptDir } = await fixture();
+    const result = await executeModelRequest(
+      state,
+      request(root, receiptDir, "medium", "medium", "read-only", "none"),
+      successfulDependencies([], { resolvedToolPolicy: "standard", content: "unsafe success" }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.content).toBe("");
+    expect(result.receipt.blockReason).toBe("tool_policy_mismatch");
+    expect(result.receipt.resolved.toolPolicy).toBe("unresolved");
+  });
+
   test("Agy effort varies independently and receipts record the concrete native model", async () => {
     const { root, state, receiptDir } = await fixture();
     const captured: Parameters<typeof successfulDependencies>[0] = [];
@@ -580,7 +653,7 @@ describe("canonical model execution route and receipt", () => {
       expect(result.receipt.resolved.model).toBe(
         `Gemini 3.5 Flash (${effort[0]!.toUpperCase()}${effort.slice(1)})`,
       );
-      expect(result.receipt.requested).toEqual({ modelTier: "low", effort });
+      expect(result.receipt.requested).toEqual({ modelTier: "low", effort, toolPolicy: "standard" });
     }
     expect(new Set(captured.map(({ route }) => route.provider))).toEqual(new Set(["agy"]));
   });
@@ -662,6 +735,7 @@ describe("canonical model execution route and receipt", () => {
           sessionId: "reserved-session",
           outcome: {
             resolvedExecutionPolicy: "workspace-write",
+            resolvedToolPolicy: "standard",
             result: {
               content: "complete",
               role: "assistant",
@@ -796,6 +870,7 @@ describe("canonical model execution route and receipt", () => {
             sessionId: "must-not-land",
             outcome: {
               resolvedExecutionPolicy: "read-only",
+              resolvedToolPolicy: "standard",
               result: {
                 content: "must not land",
                 role: "assistant",
