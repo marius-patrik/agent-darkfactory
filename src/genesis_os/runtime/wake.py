@@ -149,8 +149,8 @@ class WakeRuntime:
                     actor=Actor.ORGANISM,
                     payload={
                         "phase": "action_selection",
-                        "prompt": prompt,
-                        "raw_generation": raw,
+                        "prompt": prompt[:65536] if len(prompt) > 65536 else prompt,
+                        "raw_generation": raw[:65536] if len(raw) > 65536 else raw,
                         "parsed_call": call.model_dump(mode="json"),
                         "step": step,
                         "release": self.policy.self_state,
