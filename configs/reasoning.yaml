@@ -1,0 +1,88 @@
+name: genesis-reasoning-from-scratch
+seed: 42
+genome:
+  d_model: 256
+  n_layers: 8
+  n_heads: 8
+  ff_multiplier: 4.0
+  max_sequence_length: 2048
+  memory_slots: 16
+  world_latent_dim: 128
+  max_modality_tokens: 256
+  structured_feature_dim: 64
+  image_patch_size: 16
+  audio_kernel_size: 400
+  audio_stride: 160
+curriculum:
+  seed: 42
+  validation_fraction: 0.08
+  mastery_threshold: 0.65
+  remediation_rounds: 1
+  remediation_examples_per_task: 2048
+  stages:
+    - name: textbook_foundations
+      generator: textbook
+      examples: 128
+      parameters:
+        paths:
+          - ../examples/textbooks/foundations.yaml
+    - name: procedural_reasoning
+      generator: procedural_distillation
+      examples: 100000
+      prerequisites: [textbook_foundations]
+      weight: 1.5
+      parameters:
+        teacher_required: false
+    - name: language
+      generator: language_foundations
+      examples: 50000
+      prerequisites: [textbook_foundations]
+    - name: arithmetic
+      generator: arithmetic
+      examples: 100000
+      prerequisites: [language]
+    - name: logic
+      generator: symbolic_logic
+      examples: 100000
+      prerequisites: [language]
+    - name: algorithms
+      generator: algorithms
+      examples: 100000
+      prerequisites: [arithmetic, logic]
+    - name: causality
+      generator: causal_worlds
+      examples: 100000
+      prerequisites: [logic]
+      weight: 1.2
+    - name: tools
+      generator: tool_use
+      examples: 150000
+      prerequisites: [language]
+      weight: 1.6
+    - name: memory
+      generator: memory_recall
+      examples: 100000
+      prerequisites: [language]
+      weight: 1.4
+  personal:
+    sources: []
+    include_assistant_imitation: false
+    redact_secrets: true
+training:
+  seed: 42
+  epochs: 3
+  batch_size: 16
+  learning_rate: 0.0003
+  weight_decay: 0.1
+  warmup_steps: 2000
+  gradient_accumulation_steps: 4
+  max_gradient_norm: 1.0
+  world_loss_weight: 0.25
+  value_loss_weight: 0.1
+  uncertainty_loss_weight: 0.02
+  device: auto
+viability:
+  max_validation_loss: 5.0
+  min_tool_name_accuracy: 0.35
+  generation_samples: 128
+  max_generation_tokens: 384
