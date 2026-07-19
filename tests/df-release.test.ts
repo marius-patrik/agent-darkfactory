@@ -163,16 +163,22 @@ test("release check evidence is complete and bound to the exact trusted workflow
   };
   const gh = {
     request: async (_method: string, path: string) => {
-      if (path.includes("/check-runs?") && path.endsWith("page=1")) {
+      if (path.includes("/check-suites?")) {
+        return {
+          total_count: 1,
+          check_suites: [{ id: 900, head_sha: SHA.main, app: { id: 15368 }, status: "completed", conclusion: "success" }]
+        };
+      }
+      if (path.includes("/check-suites/900/check-runs?") && path.endsWith("page=1")) {
         return {
           total_count: 101,
           check_runs: Array.from({ length: 100 }, (_, index) => ({
             id: index + 1, name: `Other ${index}`, head_sha: SHA.main,
-            status: "completed", conclusion: "success", app: { id: 15368 }, check_suite: { id: index + 1000 }
+            status: "completed", conclusion: "success", app: { id: 15368 }, check_suite: { id: 900 }
           }))
         };
       }
-      if (path.includes("/check-runs?") && path.endsWith("page=2")) {
+      if (path.includes("/check-suites/900/check-runs?") && path.endsWith("page=2")) {
         return { total_count: 101, check_runs: [finalCheck] };
       }
       if (path.includes("/actions/runs?check_suite_id=")) {
@@ -221,26 +227,29 @@ test("release check evidence is complete and bound to the exact trusted workflow
 });
 
 test("release evidence inventories reject changing, duplicate, malformed, truncated, and oversized pages", async () => {
+  const item = (kind: "checks" | "statuses", id: number) => kind === "checks"
+    ? { id, name: `Check ${id}`, head_sha: SHA.main, app: { id: 15368 }, check_suite: { id: 800 } }
+    : { id, context: `Status ${id}` };
   const completePage = (kind: "checks" | "statuses") => Array.from({ length: 100 }, (_, index) => kind === "checks"
-    ? { id: index + 1, name: `Check ${index}` }
-    : { id: index + 1, context: `Status ${index}` });
+    ? item(kind, index + 1)
+    : item(kind, index + 1));
   const cases = [
     {
       name: "changing total",
       response: (kind: "checks" | "statuses", page: number) => page === 1
         ? { total_count: 101, [kind === "checks" ? "check_runs" : "statuses"]: completePage(kind) }
-        : { total_count: 102, [kind === "checks" ? "check_runs" : "statuses"]: [{ id: 101 }] }
+        : { total_count: 102, [kind === "checks" ? "check_runs" : "statuses"]: [item(kind, 101)] }
     },
     {
       name: "duplicate id",
       response: (kind: "checks" | "statuses", page: number) => page === 1
         ? { total_count: 101, [kind === "checks" ? "check_runs" : "statuses"]: completePage(kind) }
-        : { total_count: 101, [kind === "checks" ? "check_runs" : "statuses"]: [{ id: 100 }] }
+        : { total_count: 101, [kind === "checks" ? "check_runs" : "statuses"]: [item(kind, 100)] }
     },
     {
       name: "malformed id",
       response: (kind: "checks" | "statuses") => ({
-        total_count: 1, [kind === "checks" ? "check_runs" : "statuses"]: [{ id: 0 }]
+        total_count: 1, [kind === "checks" ? "check_runs" : "statuses"]: [item(kind, 0)]
       })
     },
     {
@@ -262,6 +271,12 @@ test("release evidence inventories reject changing, duplicate, malformed, trunca
       const gh = {
         request: async (_method: string, path: string) => {
           const page = Number(path.match(/page=(\d+)/)?.[1]);
+          if (kind === "checks" && path.includes("/check-suites?")) {
+            return {
+              total_count: 1,
+              check_suites: [{ id: 800, head_sha: SHA.main, app: { id: 15368 } }]
+            };
+          }
           return scenario.response(kind, page);
         }
       };
@@ -272,6 +287,52 @@ test("release evidence inventories reject changing, duplicate, malformed, trunca
       await assert.rejects(operation, /release (check-run|commit-status) inventory/, `${kind}: ${scenario.name}`);
     }
   }
+
+  release.configureReleaseRuntime({
+    gh: {
+      request: async () => ({
+        total_count: 101,
+        check_suites: Array.from({ length: 100 }, (_, index) => ({
+          id: index + 1, head_sha: SHA.main, app: { id: 15368 }
+        }))
+      })
+    },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" }
+  });
+  await assert.rejects(release.listCompleteCheckRuns(repo(), SHA.main), /check-suite inventory.*bounded limit/);
+});
+
+test("release inventories reject same-count evidence mutation between consistency passes", async () => {
+  let checkRunReads = 0;
+  let statusReads = 0;
+  const gh = {
+    request: async (_method: string, path: string) => {
+      if (path.includes("/check-suites?")) {
+        return { total_count: 1, check_suites: [{ id: 800, head_sha: SHA.main, app: { id: 15368 } }] };
+      }
+      if (path.includes("/check-suites/800/check-runs?")) {
+        checkRunReads += 1;
+        return {
+          total_count: 1,
+          check_runs: [{
+            id: 801, name: "Validate", head_sha: SHA.main, app: { id: 15368 }, check_suite: { id: 800 },
+            status: "completed", conclusion: checkRunReads === 1 ? "success" : "failure"
+          }]
+        };
+      }
+      if (path.includes("/status?")) {
+        statusReads += 1;
+        return {
+          total_count: 1,
+          statuses: [{ id: 901, context: "Legacy", state: statusReads === 1 ? "success" : "failure" }]
+        };
+      }
+      throw new Error(`unexpected mocked request: ${path}`);
+    }
+  };
+  release.configureReleaseRuntime({ gh, controlRepo: { owner: "marius-patrik", repo: "DarkFactory" } });
+  await assert.rejects(release.listCompleteCheckRuns(repo(), SHA.main), /changed during verification/);
+  await assert.rejects(release.listCompleteCommitStatuses(repo(), SHA.main), /changed during verification/);
 });
 
 test("standard policy gates require exact and unambiguous workflow provenance", async () => {
@@ -289,7 +350,7 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
     id: suiteId + 1000,
     check_suite_id: suiteId,
     head_sha: SHA.main,
-    path: suiteId === 911 ? ".github/workflows/darkfactory-autoreview.yml" : ".github/workflows/ci.yml",
+    path: `${suiteId === 911 ? ".github/workflows/darkfactory-autoreview.yml" : ".github/workflows/ci.yml"}@main`,
     event: suiteId === 911 ? "workflow_dispatch" : "pull_request",
     status: "completed",
     conclusion: "success",
@@ -315,6 +376,7 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
 
   const invalidRuns = [
     { name: "wrong path", run: { ...workflowRun(910), path: ".github/workflows/untrusted.yml" } },
+    { name: "wrong ref", run: { ...workflowRun(910), path: ".github/workflows/ci.yml@feature" } },
     { name: "wrong event", run: { ...workflowRun(910), event: "issues" } },
     { name: "wrong head", run: { ...workflowRun(910), head_sha: SHA.dev } },
     { name: "wrong suite", run: { ...workflowRun(910), check_suite_id: 999 } },
@@ -334,12 +396,35 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
     );
   }
 
-  runs = new Map([[910, [workflowRun(910), { ...workflowRun(910), id: 1911 }]]]);
+  runs = new Map([[910, [workflowRun(910), { ...workflowRun(910), id: 1911, path: ".github/workflows/untrusted.yml@main" }]]]);
   const ambiguous = await release.bindTrustedPolicyCheckRuns(
     repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"]
   );
   assert.equal(ambiguous.check_runs[0]._trustedPolicyWorkflow, false);
   assert.deepEqual(release.evaluatePolicySelectedChecks(ambiguous, { statuses: [] }, ["Validate"]).red, ["Validate"]);
+
+  let workflowReads = 0;
+  release.configureReleaseRuntime({
+    gh: {
+      request: async () => {
+        workflowReads += 1;
+        return {
+          total_count: 1,
+          workflow_runs: [{
+            ...workflowRun(910),
+            conclusion: workflowReads === 1 ? "success" : "failure"
+          }]
+        };
+      }
+    },
+    controlRepo: { owner: "marius-patrik", repo: "DarkFactory" }
+  });
+  await assert.rejects(
+    release.bindTrustedPolicyCheckRuns(
+      repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"]
+    ),
+    /workflow-run binding changed during verification/
+  );
 });
 
 test("release plans are deterministic for identical, ahead, diverged, and blocked evidence", () => {
@@ -416,7 +501,10 @@ test("green dev-ahead release creates one marker-owned branch/PR and arms autome
       }
       if (method === "GET" && path.endsWith("/pulls/7")) return pulls[0];
       if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, SHA.dev);
-      if (method === "GET" && path.includes("/check-runs")) return checkRuns("success", 15368, SHA.dev);
+      if (method === "GET" && path.includes("/check-suites?")) return checkSuites(SHA.dev);
+      if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
+        return suiteCheckRuns(path, "success", 15368, SHA.dev);
+      }
       if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
       throw new Error(`unexpected mocked request: ${method} ${path}`);
     },
@@ -536,7 +624,10 @@ test("main-ahead reconciliation uses one reviewed PR and never writes dev direct
       }
       if (method === "GET" && path.endsWith("/pulls/8")) return pull;
       if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, SHA.main);
-      if (method === "GET" && path.includes("/check-runs")) return checkRuns("success", 15368, SHA.main);
+      if (method === "GET" && path.includes("/check-suites?")) return checkSuites(SHA.main);
+      if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
+        return suiteCheckRuns(path, "success", 15368, SHA.main);
+      }
       if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
       throw new Error(`unexpected mocked request: ${method} ${path}`);
     },
@@ -607,7 +698,10 @@ test("diverged reconciliation resumes from the exact trusted two-parent merge", 
       }
       if (method === "GET" && path.endsWith("/pulls/9")) return pull;
       if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, SHA.merge);
-      if (method === "GET" && path.includes("/check-runs")) return checkRuns("success", 15368, SHA.merge);
+      if (method === "GET" && path.includes("/check-suites?")) return checkSuites(SHA.merge);
+      if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
+        return suiteCheckRuns(path, "success", 15368, SHA.merge);
+      }
       if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
       throw new Error(`unexpected mocked request: ${method} ${path}`);
     },
@@ -665,7 +759,10 @@ test("red post-release main CI creates one exact evidence issue and blocks verif
       if (method === "GET" && path.includes("/git/ref/heads/")) return { object: { sha: SHA.main } };
       if (method === "GET" && path.endsWith("/protection")) return protectedBranch();
       if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, SHA.main, "failure");
-      if (method === "GET" && path.includes("/check-runs")) return { total_count: 1, check_runs: [{ id: 77, name: "Validate", head_sha: SHA.main, html_url: "https://example.test/check/77", status: "completed", conclusion: "failure", app: { id: 15368 }, check_suite: { id: 201 } }] };
+      if (method === "GET" && path.includes("/check-suites?")) return checkSuites(SHA.main, "failure", [201]);
+      if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
+        return { total_count: 1, check_runs: [{ id: 77, name: "Validate", head_sha: SHA.main, html_url: "https://example.test/check/77", status: "completed", conclusion: "failure", app: { id: 15368 }, check_suite: { id: 201 } }] };
+      }
       if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
       if (method === "GET" && path.includes("/issues?state=open")) return [];
       if (method === "POST" && path.endsWith("/issues")) {
@@ -710,9 +807,12 @@ test("green release verification proves the trusted PR and atomic cleanup eviden
       }
       if (method === "GET" && path.endsWith("/protection")) return protectedBranch();
       if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, checkSha);
-      if (method === "GET" && path.includes("/check-runs")) {
+      if (method === "GET" && path.includes("/check-suites?")) {
         checkSha = path.includes(SHA.dev) ? SHA.dev : SHA.main;
-        return checkRuns("success", 15368, checkSha);
+        return checkSuites(checkSha);
+      }
+      if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
+        return suiteCheckRuns(path, "success", 15368, checkSha);
       }
       if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
       if (method === "GET" && path.includes("/pulls?state=closed")) return [pull];
@@ -807,6 +907,26 @@ function checkRuns(conclusion: string, appId: number, headSha = SHA.main): any {
       { id: 102, name: "DarkFactory Autoreview", head_sha: headSha, status: "completed", conclusion, app: { id: appId }, check_suite: { id: 202 } }
     ]
   };
+}
+
+function checkSuites(headSha = SHA.main, conclusion = "success", suiteIds = [201, 202]) {
+  return {
+    total_count: suiteIds.length,
+    check_suites: suiteIds.map((id) => ({
+      id,
+      head_sha: headSha,
+      app: { id: 15368 },
+      status: "completed",
+      conclusion,
+      latest_check_runs_count: 1
+    }))
+  };
+}
+
+function suiteCheckRuns(path: string, conclusion: string, appId: number, headSha: string) {
+  const suiteId = Number(path.match(/check-suites\/(\d+)\/check-runs/)?.[1]);
+  const runs = checkRuns(conclusion, appId, headSha).check_runs.filter((run: any) => run.check_suite.id === suiteId);
+  return { total_count: runs.length, check_runs: runs };
 }
 
 function workflowRuns(path: string, headSha: string, conclusion = "success") {

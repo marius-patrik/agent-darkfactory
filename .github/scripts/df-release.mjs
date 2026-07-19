@@ -24,12 +24,18 @@ const DATA_REPOSITORIES = new Set([
 ]);
 const ACTIONS_APP_ID = 15368;
 const MAX_PAGINATION_PAGES = 100;
+const MAX_CHECK_SUITES = 100;
 const MAX_CHECK_RUNS = 2000;
 const MAX_COMMIT_STATUSES = 2000;
 const TRUSTED_POLICY_WORKFLOWS = Object.freeze({
-  "Validate": Object.freeze({ path: ".github/workflows/ci.yml", events: Object.freeze(["pull_request", "push"]) }),
+  "Validate": Object.freeze({
+    path: ".github/workflows/ci.yml",
+    refs: Object.freeze(["main", "refs/heads/main"]),
+    events: Object.freeze(["pull_request", "push"])
+  }),
   "DarkFactory Autoreview": Object.freeze({
     path: ".github/workflows/darkfactory-autoreview.yml",
+    refs: Object.freeze(["main", "refs/heads/main"]),
     events: Object.freeze(["pull_request_target", "workflow_dispatch"])
   })
 });
@@ -217,13 +223,94 @@ export function evaluatePolicySelectedChecks(checkRuns, statuses, policyChecks) 
 }
 
 export async function listCompleteCheckRuns(repository, sha) {
+  const first = await scanCompleteCheckRuns(repository, sha);
+  const second = await scanCompleteCheckRuns(repository, sha);
+  if (first.fingerprint !== second.fingerprint) {
+    throw new Error("release check-run inventory changed during verification");
+  }
+  return second.payload;
+}
+
+async function scanCompleteCheckRuns(repository, sha) {
+  const suites = await listCompleteCheckSuitesOnce(repository, sha);
   const checkRuns = [];
+  const seen = new Set();
+  for (const suite of suites.check_suites) {
+    const payload = await listCompleteSuiteCheckRunsOnce(repository, sha, suite.id);
+    for (const run of payload.check_runs) {
+      if (seen.has(run.id)) throw new Error("release check-run inventory contains duplicate evidence across suites");
+      seen.add(run.id);
+      checkRuns.push(run);
+      if (checkRuns.length > MAX_CHECK_RUNS) {
+        throw new Error("release check-run inventory exceeds the bounded limit");
+      }
+    }
+  }
+  const suiteEvidence = suites.check_suites.map((suite) => ({
+    id: suite.id,
+    headSha: suite.head_sha,
+    appId: suite.app.id,
+    status: suite.status ?? null,
+    conclusion: suite.conclusion ?? null,
+    latestCheckRunsCount: suite.latest_check_runs_count ?? null
+  })).sort((left, right) => left.id - right.id);
+  const runEvidence = checkRuns.map((run) => ({
+    id: run.id,
+    suiteId: run.check_suite.id,
+    headSha: run.head_sha,
+    name: run.name,
+    appId: run.app?.id ?? null,
+    status: run.status ?? null,
+    conclusion: run.conclusion ?? null,
+    url: run.html_url ?? null
+  })).sort((left, right) => left.id - right.id);
+  return {
+    payload: { total_count: checkRuns.length, check_runs: checkRuns },
+    fingerprint: JSON.stringify({ suites: suiteEvidence, runs: runEvidence })
+  };
+}
+
+async function listCompleteCheckSuitesOnce(repository, sha) {
+  const suites = [];
   const seen = new Set();
   let totalCount = null;
   for (let page = 1; page <= MAX_PAGINATION_PAGES; page += 1) {
     const payload = await gh.request(
       "GET",
-      `/repos/${repoName(repository)}/commits/${sha}/check-runs?filter=latest&per_page=100&page=${page}`
+      `/repos/${repoName(repository)}/commits/${sha}/check-suites?per_page=100&page=${page}`
+    );
+    if (!isRecord(payload)
+        || !Number.isSafeInteger(payload.total_count) || payload.total_count < 0 || payload.total_count > MAX_CHECK_SUITES
+        || !Array.isArray(payload.check_suites) || payload.check_suites.length > 100) {
+      throw new Error("release check-suite inventory is malformed or exceeds the bounded limit");
+    }
+    totalCount ??= payload.total_count;
+    if (payload.total_count !== totalCount) throw new Error("release check-suite inventory changed during pagination");
+    for (const suite of payload.check_suites) {
+      if (!isRecord(suite)
+          || !Number.isSafeInteger(suite.id) || suite.id < 1 || seen.has(suite.id)
+          || suite.head_sha !== sha
+          || !Number.isSafeInteger(suite?.app?.id) || suite.app.id < 1) {
+        throw new Error("release check-suite inventory contains malformed or duplicate evidence");
+      }
+      seen.add(suite.id);
+      suites.push(suite);
+    }
+    if (suites.length > totalCount) throw new Error("release check-suite inventory exceeds its declared total");
+    if (suites.length === totalCount) return { total_count: totalCount, check_suites: suites };
+    if (payload.check_suites.length < 100) throw new Error("release check-suite inventory is truncated");
+  }
+  throw new Error("release check-suite inventory exceeded the bounded page limit");
+}
+
+async function listCompleteSuiteCheckRunsOnce(repository, sha, suiteId) {
+  const runs = [];
+  const seen = new Set();
+  let totalCount = null;
+  for (let page = 1; page <= MAX_PAGINATION_PAGES; page += 1) {
+    const payload = await gh.request(
+      "GET",
+      `/repos/${repoName(repository)}/check-suites/${suiteId}/check-runs?filter=latest&per_page=100&page=${page}`
     );
     if (!isRecord(payload)
         || !Number.isSafeInteger(payload.total_count) || payload.total_count < 0 || payload.total_count > MAX_CHECK_RUNS
@@ -233,20 +320,31 @@ export async function listCompleteCheckRuns(repository, sha) {
     totalCount ??= payload.total_count;
     if (payload.total_count !== totalCount) throw new Error("release check-run inventory changed during pagination");
     for (const run of payload.check_runs) {
-      if (!isRecord(run) || !Number.isSafeInteger(run.id) || run.id < 1 || seen.has(run.id)) {
+      if (!isRecord(run)
+          || !Number.isSafeInteger(run.id) || run.id < 1 || seen.has(run.id)
+          || run.head_sha !== sha || run?.check_suite?.id !== suiteId) {
         throw new Error("release check-run inventory contains malformed or duplicate evidence");
       }
       seen.add(run.id);
-      checkRuns.push(run);
+      runs.push(run);
     }
-    if (checkRuns.length > totalCount) throw new Error("release check-run inventory exceeds its declared total");
-    if (checkRuns.length === totalCount) return { total_count: totalCount, check_runs: checkRuns };
+    if (runs.length > totalCount) throw new Error("release check-run inventory exceeds its declared total");
+    if (runs.length === totalCount) return { total_count: totalCount, check_runs: runs };
     if (payload.check_runs.length < 100) throw new Error("release check-run inventory is truncated");
   }
   throw new Error("release check-run inventory exceeded the bounded page limit");
 }
 
 export async function listCompleteCommitStatuses(repository, sha) {
+  const first = await scanCompleteCommitStatuses(repository, sha);
+  const second = await scanCompleteCommitStatuses(repository, sha);
+  if (first.fingerprint !== second.fingerprint) {
+    throw new Error("release commit-status inventory changed during verification");
+  }
+  return second.payload;
+}
+
+async function scanCompleteCommitStatuses(repository, sha) {
   const statuses = [];
   const seen = new Set();
   let totalCount = null;
@@ -270,7 +368,20 @@ export async function listCompleteCommitStatuses(repository, sha) {
       statuses.push(status);
     }
     if (statuses.length > totalCount) throw new Error("release commit-status inventory exceeds its declared total");
-    if (statuses.length === totalCount) return { ...payload, total_count: totalCount, statuses };
+    if (statuses.length === totalCount) {
+      const evidence = statuses.map((status) => ({
+        id: status.id,
+        context: status.context ?? null,
+        state: status.state ?? null,
+        targetUrl: status.target_url ?? null,
+        createdAt: status.created_at ?? null,
+        updatedAt: status.updated_at ?? null
+      })).sort((left, right) => left.id - right.id);
+      return {
+        payload: { total_count: totalCount, statuses },
+        fingerprint: JSON.stringify(evidence)
+      };
+    }
     if (payload.statuses.length < 100) throw new Error("release commit-status inventory is truncated");
   }
   throw new Error("release commit-status inventory exceeded the bounded page limit");
@@ -670,15 +781,15 @@ async function isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding) {
   const suiteId = checkRun?.check_suite?.id;
   if (!Number.isSafeInteger(suiteId) || suiteId < 1 || checkRun.head_sha !== sha) return false;
   const runs = await listCompleteWorkflowRuns(repository, suiteId);
-  const exact = runs.filter((run) => isRecord(run)
-    && run.check_suite_id === suiteId
-    && run.head_sha === sha
-    && run.path === binding.path
-    && binding.events.includes(run.event)
-    && Number.isSafeInteger(run.id) && run.id > 0
-    && Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0);
-  if (exact.length !== 1) return false;
-  const [run] = exact;
+  if (runs.length !== 1) return false;
+  const [run] = runs;
+  if (!isRecord(run)
+      || run.check_suite_id !== suiteId
+      || run.head_sha !== sha
+      || !isTrustedWorkflowPath(run.path, binding)
+      || !binding.events.includes(run.event)
+      || !Number.isSafeInteger(run.id) || run.id < 1
+      || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) return false;
   if (checkRun.status === "completed") {
     return run.status === "completed" && run.conclusion === checkRun.conclusion;
   }
@@ -686,6 +797,15 @@ async function isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding) {
 }
 
 async function listCompleteWorkflowRuns(repository, suiteId) {
+  const first = await scanCompleteWorkflowRuns(repository, suiteId);
+  const second = await scanCompleteWorkflowRuns(repository, suiteId);
+  if (first.fingerprint !== second.fingerprint) {
+    throw new Error("release workflow-run binding changed during verification");
+  }
+  return second.runs;
+}
+
+async function scanCompleteWorkflowRuns(repository, suiteId) {
   const runs = [];
   const seen = new Set();
   let totalCount = null;
@@ -709,10 +829,31 @@ async function listCompleteWorkflowRuns(repository, suiteId) {
       runs.push(run);
     }
     if (runs.length > totalCount) throw new Error("release workflow-run binding exceeds its declared total");
-    if (runs.length === totalCount) return runs;
+    if (runs.length === totalCount) {
+      const evidence = runs.map((run) => ({
+        id: run.id,
+        checkSuiteId: run.check_suite_id ?? null,
+        headSha: run.head_sha ?? null,
+        path: run.path ?? null,
+        event: run.event ?? null,
+        status: run.status ?? null,
+        conclusion: run.conclusion ?? null,
+        runAttempt: run.run_attempt ?? null
+      })).sort((left, right) => left.id - right.id);
+      return { runs, fingerprint: JSON.stringify(evidence) };
+    }
     if (payload.workflow_runs.length < 100) throw new Error("release workflow-run binding evidence is truncated");
   }
   throw new Error("release workflow-run binding exceeded the bounded page limit");
+}
+
+function isTrustedWorkflowPath(value, binding) {
+  if (typeof value !== "string") return false;
+  const separator = value.indexOf("@");
+  const workflowPath = separator === -1 ? value : value.slice(0, separator);
+  const workflowRef = separator === -1 ? null : value.slice(separator + 1);
+  if (workflowPath !== binding.path) return false;
+  return workflowRef === null || (workflowRef.length > 0 && !workflowRef.includes("@") && binding.refs.includes(workflowRef));
 }
 
 async function assertRefsUnchanged(repository, mainSha, devSha) {
