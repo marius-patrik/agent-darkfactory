@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Annotated, Any
@@ -124,18 +125,53 @@ def _resolve_config_paths(spec: BirthSpec, config_path: Path) -> BirthSpec:
     return spec.model_copy(update={"curriculum": curriculum})
 
 
+def _resolve_workspace(workspace: Path | None = None) -> Path:
+    if workspace is not None:
+        return workspace.resolve()
+
+    env_workspace = os.getenv("GENESIS_WORKSPACE")
+    if env_workspace:
+        return Path(env_workspace).expanduser().resolve()
+
+    cwd = Path.cwd().resolve()
+    genesis_dir = cwd / ".genesis"
+    if genesis_dir.exists():
+        first_ai = genesis_dir / "first_ai"
+        if first_ai.exists():
+            return first_ai
+        subdirs = [d for d in genesis_dir.iterdir() if d.is_dir() and d.name not in {"scratch", "logs"}]
+        if subdirs:
+            return sorted(subdirs)[0]
+        return genesis_dir
+
+    home_genesis = Path.home() / ".genesis"
+    if home_genesis.exists():
+        first_ai = home_genesis / "first_ai"
+        if first_ai.exists():
+            return first_ai
+        subdirs = [d for d in home_genesis.iterdir() if d.is_dir() and d.name not in {"scratch", "logs"}]
+        if subdirs:
+            return sorted(subdirs)[0]
+
+    return (cwd / ".genesis" / "default").resolve()
+
+
 @app.command()
 def init(
-    workspace: Annotated[Path, typer.Argument(help="Workspace directory")],
+    workspace: Annotated[
+        Path | None, typer.Argument(help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
 ) -> None:
-    paths = WorkspacePaths.from_root(workspace)
+    target_workspace = _resolve_workspace(workspace)
+    paths = WorkspacePaths.from_root(target_workspace)
     paths.ensure()
     ExperienceLedger(paths.database)
     console.print(f"Initialized Genesis workspace: [bold]{paths.root}[/bold]")
 
 
-def _resolve_lineage(workspace: Path, lineage: str | None) -> str:
-    store = LineageStore(WorkspacePaths.from_root(workspace).lineages)
+def _resolve_lineage(workspace: Path | None, lineage: str | None) -> str:
+    target_workspace = _resolve_workspace(workspace)
+    store = LineageStore(WorkspacePaths.from_root(target_workspace).lineages)
     lineages = store.list_lineages()
     promoted = [info for info in lineages if info.get("current_release_id")]
 
@@ -147,18 +183,18 @@ def _resolve_lineage(workspace: Path, lineage: str | None) -> str:
             if promoted:
                 available = ", ".join(info["lineage_id"] for info in promoted)
                 raise typer.BadParameter(
-                    f"Lineage '{lineage}' has no promoted release in workspace '{workspace.resolve()}'. "
+                    f"Lineage '{lineage}' has no promoted release in workspace '{target_workspace}'. "
                     f"Available promoted lineages: {available}"
                 ) from None
             elif lineages:
                 available = ", ".join(info["lineage_id"] for info in lineages)
                 raise typer.BadParameter(
-                    f"Lineage '{lineage}' has no promoted release in workspace '{workspace.resolve()}'. "
+                    f"Lineage '{lineage}' has no promoted release in workspace '{target_workspace}'. "
                     f"Unpromoted lineages: {available}. Use 'genesis lineage promote' to promote a release."
                 ) from None
             else:
                 raise typer.BadParameter(
-                    f"Workspace '{workspace.resolve()}' contains no lineages. Run 'genesis birth' first."
+                    f"Workspace '{target_workspace}' contains no lineages. Run 'genesis birth' first."
                 ) from None
 
     if promoted:
@@ -172,18 +208,20 @@ def _resolve_lineage(workspace: Path, lineage: str | None) -> str:
     if lineages:
         available = ", ".join(info["lineage_id"] for info in lineages)
         raise typer.BadParameter(
-            f"No lineage in workspace '{workspace.resolve()}' has a promoted release yet. "
+            f"No lineage in workspace '{target_workspace}' has a promoted release yet. "
             f"Unpromoted lineages: {available}. Use 'genesis lineage promote' to promote a release."
         )
 
     raise typer.BadParameter(
-        f"No lineages found in workspace '{workspace.resolve()}'. Run 'genesis birth' first."
+        f"No lineages found in workspace '{target_workspace}'. Run 'genesis birth' first."
     )
 
 
 @app.command()
 def birth(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
     config: Annotated[Path | None, typer.Option("--config", "-c")] = None,
     tiny: Annotated[
         bool, typer.Option("--tiny", help="Use a CPU-scale developmental birth")
@@ -193,6 +231,7 @@ def birth(
         typer.Option("--lineage", "-l", help="Target lineage ID (auto-created if omitted)"),
     ] = None,
 ) -> None:
+    target_workspace = _resolve_workspace(workspace)
     if config is None and not tiny:
         raise typer.BadParameter("Provide --config or --tiny")
     if config is not None and tiny:
@@ -209,17 +248,19 @@ def birth(
         f"Birthing [bold]{spec.name}[/bold] from {spec.initialization.mode.value} weights "
         f"with {sum(stage.examples for stage in spec.curriculum.stages):,} generated lessons."
     )
-    certificate = BirthRunner(workspace).run(spec)
+    certificate = BirthRunner(target_workspace).run(spec)
     console.print_json(certificate.model_dump_json(indent=2))
     console.print(
         f"[green]Birth complete.[/green] To wake this organism, run:\n"
-        f"  [bold]genesis wake --workspace {workspace} --lineage {certificate.lineage_id}[/bold]"
+        f"  [bold]genesis wake --lineage {certificate.lineage_id}[/bold]"
     )
 
 
 @app.command()
 def wake(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
     lineage: Annotated[
         str | None,
         typer.Option("--lineage", "-l", help="Lineage ID (auto-selected if omitted)"),
@@ -231,9 +272,10 @@ def wake(
     max_tool_steps: Annotated[int, typer.Option("--max-tool-steps")] = 8,
     temperature: Annotated[float, typer.Option("--temperature")] = 0.0,
 ) -> None:
-    target_lineage = _resolve_lineage(workspace, lineage)
+    target_workspace = _resolve_workspace(workspace)
+    target_lineage = _resolve_lineage(target_workspace, lineage)
     runtime = load_runtime(
-        workspace,
+        target_workspace,
         lineage_id=target_lineage,
         device=device,
         settings=RuntimeSettings(
@@ -271,22 +313,27 @@ def wake(
 
 @app.command()
 def sleep(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
     lineage: Annotated[
         str | None,
         typer.Option("--lineage", "-l", help="Lineage ID (auto-selected if omitted)"),
     ] = None,
     config: Annotated[Path | None, typer.Option("--config", "-c")] = None,
 ) -> None:
-    target_lineage = _resolve_lineage(workspace, lineage)
+    target_workspace = _resolve_workspace(workspace)
+    target_lineage = _resolve_lineage(target_workspace, lineage)
     spec = SleepSpec.model_validate(_yaml(config)) if config else SleepSpec()
-    result = SleepProgram(workspace).run(target_lineage, spec)
+    result = SleepProgram(target_workspace).run(target_lineage, spec)
     console.print_json(result.model_dump_json(indent=2))
 
 
 @app.command()
 def serve(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
     lineage: Annotated[
         str | None,
         typer.Option("--lineage", "-l", help="Lineage ID (auto-selected if omitted)"),
@@ -298,7 +345,8 @@ def serve(
     allow_process_tools: Annotated[bool, typer.Option("--allow-process-tools")] = False,
     allow_network_tools: Annotated[bool, typer.Option("--allow-network-tools")] = False,
 ) -> None:
-    target_lineage = _resolve_lineage(workspace, lineage)
+    target_workspace = _resolve_workspace(workspace)
+    target_lineage = _resolve_lineage(target_workspace, lineage)
     settings = RuntimeSettings(
         allow_python_tools=allow_python_tools,
         allow_process_tools=allow_process_tools,
@@ -306,7 +354,7 @@ def serve(
     )
     uvicorn.run(
         create_app(
-            workspace=workspace,
+            workspace=target_workspace,
             lineage_id=target_lineage,
             device=device,
             settings=settings,
@@ -318,15 +366,18 @@ def serve(
 
 @app.command()
 def ingest(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
-    sources: Annotated[list[Path], typer.Argument(help="Files or directories to ingest")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
+    sources: Annotated[list[Path], typer.Argument(help="Files or directories to ingest")] = None,
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
 ) -> None:
-    paths = WorkspacePaths.from_root(workspace)
+    target_workspace = _resolve_workspace(workspace)
+    paths = WorkspacePaths.from_root(target_workspace)
     paths.ensure()
     records = PersonalDataIngestor(
         artifacts=ArtifactStore(paths.artifacts), redact_secrets=True
-    ).ingest(sources)
+    ).ingest(sources or [])
     target = output or (paths.datasets / "personal-manifest.jsonl")
     target.parent.mkdir(parents=True, exist_ok=True)
     from dataclasses import asdict
@@ -343,17 +394,20 @@ def ingest(
 
 @app.command()
 def evolve(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
-    birth_config: Annotated[Path, typer.Option("--birth-config")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
+    birth_config: Annotated[Path, typer.Option("--birth-config")] = None,
     sleep_config: Annotated[Path | None, typer.Option("--sleep-config")] = None,
     generations: Annotated[int, typer.Option("--generations")] = 1,
     population: Annotated[int, typer.Option("--population")] = 3,
     no_sleep_trial: Annotated[bool, typer.Option("--no-sleep-trial")] = False,
 ) -> None:
+    target_workspace = _resolve_workspace(workspace)
     birth_spec = BirthSpec.model_validate(_yaml(birth_config))
     birth_spec = _resolve_config_paths(birth_spec, birth_config.resolve())
     sleep_spec = SleepSpec.model_validate(_yaml(sleep_config)) if sleep_config else SleepSpec()
-    result = EvolutionEngine(workspace).run(
+    result = EvolutionEngine(target_workspace).run(
         HarnessGenome(birth=birth_spec, sleep=sleep_spec),
         EvolutionSpec(
             generations=generations,
@@ -366,9 +420,12 @@ def evolve(
 
 @ledger_app.command("verify")
 def ledger_verify(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
 ) -> None:
-    ledger = ExperienceLedger(WorkspacePaths.from_root(workspace).database)
+    target_workspace = _resolve_workspace(workspace)
+    ledger = ExperienceLedger(WorkspacePaths.from_root(target_workspace).database)
     valid, errors = ledger.verify()
     if valid:
         console.print(f"Ledger verified: {ledger.latest_sequence():,} immutable events.")
@@ -380,18 +437,24 @@ def ledger_verify(
 
 @ledger_app.command("export")
 def ledger_export(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
     output: Annotated[Path, typer.Option("--output", "-o")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
 ) -> None:
-    target = ExperienceLedger(WorkspacePaths.from_root(workspace).database).export_jsonl(output)
+    target_workspace = _resolve_workspace(workspace)
+    target = ExperienceLedger(WorkspacePaths.from_root(target_workspace).database).export_jsonl(output)
     console.print(f"Exported ledger to {target}")
 
 
 @lineage_app.command("list")
 def lineage_list(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
 ) -> None:
-    store = LineageStore(WorkspacePaths.from_root(workspace).lineages)
+    target_workspace = _resolve_workspace(workspace)
+    store = LineageStore(WorkspacePaths.from_root(target_workspace).lineages)
     table = Table("Lineage", "Current release", "Created", "Name")
     for value in store.list_lineages():
         metadata = value.get("metadata", {})
@@ -406,14 +469,17 @@ def lineage_list(
 
 @lineage_app.command("releases")
 def lineage_releases(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
     lineage: Annotated[
         str | None,
         typer.Option("--lineage", "-l", help="Lineage ID (auto-selected if omitted)"),
     ] = None,
 ) -> None:
-    store = LineageStore(WorkspacePaths.from_root(workspace).lineages)
-    lineage_id = _resolve_lineage(workspace, lineage)
+    target_workspace = _resolve_workspace(workspace)
+    lineage_id = _resolve_lineage(target_workspace, lineage)
+    store = LineageStore(WorkspacePaths.from_root(target_workspace).lineages)
     try:
         current_ref = store.current(lineage_id)
         current_release_id = current_ref.release_id
@@ -434,12 +500,15 @@ def lineage_releases(
 
 @lineage_app.command("promote")
 def lineage_promote(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
     lineage: Annotated[str, typer.Option("--lineage", "-l")],
     release: Annotated[str, typer.Option("--release", "-r")],
     reason: Annotated[str, typer.Option("--reason")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
 ) -> None:
-    store = LineageStore(WorkspacePaths.from_root(workspace).lineages)
+    target_workspace = _resolve_workspace(workspace)
+    store = LineageStore(WorkspacePaths.from_root(target_workspace).lineages)
     reference = store.promote_release(
         lineage,
         release,
@@ -453,9 +522,12 @@ def lineage_promote(
 
 @tool_app.command("list")
 def tools_list(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
 ) -> None:
-    paths = WorkspacePaths.from_root(workspace)
+    target_workspace = _resolve_workspace(workspace)
+    paths = WorkspacePaths.from_root(target_workspace)
     paths.ensure()
     registry = ToolRegistry(paths.dynamic_tools)
     register_builtin_tools(registry)
@@ -481,17 +553,20 @@ class _UnusedPolicy:
 
 @tool_app.command("invoke")
 def tools_invoke(
-    workspace: Annotated[Path, typer.Option("--workspace", "-w")],
     name: Annotated[str, typer.Argument()],
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", "-w", help="Workspace directory (auto-resolved if omitted)")
+    ] = None,
     arguments: Annotated[str, typer.Option("--arguments", "-a")] = "{}",
     allow_python_tools: Annotated[bool, typer.Option("--allow-python-tools")] = False,
     allow_process_tools: Annotated[bool, typer.Option("--allow-process-tools")] = False,
 ) -> None:
+    target_workspace = _resolve_workspace(workspace)
     payload = json.loads(arguments)
     if not isinstance(payload, dict):
         raise typer.BadParameter("--arguments must decode to a JSON object")
     runtime = WakeRuntime(
-        workspace=workspace,
+        workspace=target_workspace,
         policy=_UnusedPolicy(),
         settings=RuntimeSettings(
             allow_python_tools=allow_python_tools,

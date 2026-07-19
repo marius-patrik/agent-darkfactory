@@ -162,3 +162,15 @@ def test_cli_auto_lineage_resolution(tmp_path):
     with pytest.raises(BadParameter, match="has no promoted release"):
         _resolve_lineage(tmp_path, "invalid_lineage_xyz")
 
+
+def test_cli_auto_workspace_resolution(tmp_path, monkeypatch):
+    from genesis_os.cli import _resolve_workspace
+
+    # Explicit workspace passed
+    assert _resolve_workspace(tmp_path) == tmp_path.resolve()
+
+    # GENESIS_WORKSPACE env var
+    monkeypatch.setenv("GENESIS_WORKSPACE", str(tmp_path))
+    assert _resolve_workspace(None) == tmp_path.resolve()
+
+
