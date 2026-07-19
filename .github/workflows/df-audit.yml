@@ -112,6 +112,7 @@ jobs:
           permission-contents: write
 
       - name: Run deterministic repository doctor
+        id: doctor
         env:
           DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
           DF_LEDGER_TOKEN: ${{ steps.ledger-token.outputs.token }}
@@ -124,10 +125,13 @@ jobs:
           DF_TRIGGER: ${{ github.event_name }}
         run: |
           node .github/scripts/df-audit.mjs --json | Tee-Object -FilePath repository-doctor-report.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $doctorExitCode = $LASTEXITCODE
+          $reportExists = Test-Path -LiteralPath repository-doctor-report.json -PathType Leaf
+          "report_exists=$($reportExists.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($doctorExitCode -ne 0) { exit $doctorExitCode }
 
       - name: Publish doctor summary
-        if: always() && hashFiles('repository-doctor-report.json') != ''
+        if: always() && steps.doctor.outputs.report_exists == 'true'
         run: |
           $reports = Get-Content -LiteralPath repository-doctor-report.json -Raw | ConvertFrom-Json
           "## DarkFactory Repository Doctor" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
@@ -137,7 +141,7 @@ jobs:
           }
 
       - name: Upload deterministic evidence
-        if: always() && hashFiles('repository-doctor-report.json') != ''
+        if: always() && steps.doctor.outputs.report_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: repository-doctor-report
