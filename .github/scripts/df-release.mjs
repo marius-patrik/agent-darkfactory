@@ -397,7 +397,7 @@ async function scanCompleteCommitStatuses(repository, sha) {
   throw new Error("release commit-status inventory exceeded the bounded page limit");
 }
 
-export async function bindTrustedPolicyCheckRuns(repository, sha, payload, policyChecks) {
+export async function bindTrustedPolicyCheckRuns(repository, sha, payload, policyChecks, options = {}) {
   if (!isRecord(payload) || !Array.isArray(payload.check_runs)) {
     throw new Error("release check-run inventory is malformed");
   }
@@ -413,7 +413,7 @@ export async function bindTrustedPolicyCheckRuns(repository, sha, payload, polic
       bound.push(checkRun);
       continue;
     }
-    const trusted = await isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding);
+    const trusted = await isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding, options.expectedPull || null);
     bound.push({ ...checkRun, _trustedPolicyWorkflow: trusted });
   }
   return { ...payload, check_runs: bound };
@@ -562,14 +562,18 @@ export async function ensureReleasePull(repository, observation, plan) {
   await assertRefsUnchanged(repository, observation.mainSha, observation.devSha);
   assertTrustedPull(repository, pull, branch, "main", observation.devSha);
   let currentProtections = await assertCurrentProtections(repository, observation.policy);
-  let checks = await checksFor(repository, pull.head.sha, currentProtections.main, observation.policy);
+  let checks = await checksFor(repository, pull.head.sha, currentProtections.main, observation.policy, {
+    expectedPull: expectedPullEvidence(pull, observation.mainSha)
+  });
   if (!checks.green) return { action: "release-pr", status: "waiting-for-green", pull_request: pull.html_url, branch, checks };
   currentProtections = await assertCurrentProtections(repository, observation.policy);
   await assertRefsUnchanged(repository, observation.mainSha, observation.devSha);
   const currentPull = await gh.request("GET", `/repos/${repoName(repository)}/pulls/${pull.number}`);
   assertTrustedPull(repository, currentPull, branch, "main", observation.devSha);
   if (currentPull.state !== "open") throw new Error("release pull request is no longer open");
-  checks = await checksFor(repository, currentPull.head.sha, currentProtections.main, observation.policy);
+  checks = await checksFor(repository, currentPull.head.sha, currentProtections.main, observation.policy, {
+    expectedPull: expectedPullEvidence(currentPull, observation.mainSha)
+  });
   if (!checks.green) return { action: "release-pr", status: "waiting-for-green", pull_request: pull.html_url, branch, checks };
   await enableAutoMerge(currentPull);
   return { action: "release-pr", status: "automerge-armed", pull_request: pull.html_url, branch, checks };
@@ -598,13 +602,17 @@ export async function reconcile(repository, observation, plan) {
   });
   assertTrustedPull(repository, pull, branch, "dev", mergeSha);
   let currentProtections = await assertCurrentProtections(repository, observation.policy);
-  let checks = await checksFor(repository, mergeSha, currentProtections.dev, observation.policy);
+  let checks = await checksFor(repository, mergeSha, currentProtections.dev, observation.policy, {
+    expectedPull: expectedPullEvidence(pull, observation.devSha)
+  });
   if (!checks.green) return { action: "reconcile", status: "waiting-for-green", pull_request: pull.html_url, branch, checks };
   currentProtections = await assertCurrentProtections(repository, observation.policy);
   const currentPull = await gh.request("GET", `/repos/${repoName(repository)}/pulls/${pull.number}`);
   assertTrustedPull(repository, currentPull, branch, "dev", mergeSha);
   if (currentPull.state !== "open") throw new Error("reconciliation pull request is no longer open");
-  checks = await checksFor(repository, currentPull.head.sha, currentProtections.dev, observation.policy);
+  checks = await checksFor(repository, currentPull.head.sha, currentProtections.dev, observation.policy, {
+    expectedPull: expectedPullEvidence(currentPull, observation.devSha)
+  });
   if (!checks.green) return { action: "reconcile", status: "waiting-for-green", pull_request: pull.html_url, branch, checks };
   await enableAutoMerge(currentPull);
   return { action: "reconcile", status: "automerge-armed", pull_request: pull.html_url, branch, checks };
@@ -623,14 +631,18 @@ async function reconcileFastForward(repository, observation, plan) {
   });
   assertTrustedPull(repository, pull, branch, "dev", observation.mainSha);
   let currentProtections = await assertCurrentProtections(repository, observation.policy);
-  let checks = await checksFor(repository, pull.head.sha, currentProtections.dev, observation.policy);
+  let checks = await checksFor(repository, pull.head.sha, currentProtections.dev, observation.policy, {
+    expectedPull: expectedPullEvidence(pull, observation.devSha)
+  });
   if (!checks.green) return { action: "reconcile", status: "waiting-for-green", pull_request: pull.html_url, branch, checks };
   await assertRefsUnchanged(repository, observation.mainSha, observation.devSha);
   currentProtections = await assertCurrentProtections(repository, observation.policy);
   const currentPull = await gh.request("GET", `/repos/${repoName(repository)}/pulls/${pull.number}`);
   assertTrustedPull(repository, currentPull, branch, "dev", observation.mainSha);
   if (currentPull.state !== "open") throw new Error("reconciliation pull request is no longer open");
-  checks = await checksFor(repository, currentPull.head.sha, currentProtections.dev, observation.policy);
+  checks = await checksFor(repository, currentPull.head.sha, currentProtections.dev, observation.policy, {
+    expectedPull: expectedPullEvidence(currentPull, observation.devSha)
+  });
   if (!checks.green) return { action: "reconcile", status: "waiting-for-green", pull_request: pull.html_url, branch, checks };
   await enableAutoMerge(currentPull);
   return { action: "reconcile", status: "automerge-armed", pull_request: pull.html_url, branch, checks };
@@ -781,13 +793,15 @@ async function checksFor(repository, sha, protection, policy, options = {}) {
     listCompleteCheckRuns(repository, sha),
     listCompleteCommitStatuses(repository, sha)
   ]);
-  const checkRuns = await bindTrustedPolicyCheckRuns(repository, sha, rawCheckRuns, requiredChecks);
+  const checkRuns = await bindTrustedPolicyCheckRuns(repository, sha, rawCheckRuns, requiredChecks, {
+    expectedPull: options.expectedPull || null
+  });
   return options.includeProtection === false
     ? evaluatePolicySelectedChecks(checkRuns, statuses, requiredChecks)
     : evaluateRequiredChecks(protection, checkRuns, statuses, requiredChecks);
 }
 
-async function isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding) {
+async function isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding, expectedPull) {
   const suiteId = checkRun?.check_suite?.id;
   if (!Number.isSafeInteger(suiteId) || suiteId < 1 || checkRun.head_sha !== sha) return false;
   if (!hasConsistentTrustedCheckSuite(checkRun, suiteId)) return false;
@@ -800,7 +814,7 @@ async function isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding) {
       || !binding.events.includes(run.event)
       || !Number.isSafeInteger(run.id) || run.id < 1
       || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) return false;
-  if (!await hasTrustedWorkflowProvenance(repository, sha, run, binding)) return false;
+  if (!await hasTrustedWorkflowProvenance(repository, sha, run, binding, expectedPull)) return false;
   if (checkRun.status === "completed") {
     return run.status === "completed" && run.conclusion === checkRun.conclusion;
   }
@@ -877,7 +891,7 @@ async function scanCompleteWorkflowRuns(repository, suiteId) {
   throw new Error("release workflow-run binding exceeded the bounded page limit");
 }
 
-async function hasTrustedWorkflowProvenance(repository, sha, run, binding) {
+async function hasTrustedWorkflowProvenance(repository, sha, run, binding, expectedPull) {
   const pathEvidence = trustedWorkflowPath(run.path, binding);
   if (!pathEvidence) return false;
   const fullName = repoName(repository);
@@ -889,20 +903,25 @@ async function hasTrustedWorkflowProvenance(repository, sha, run, binding) {
   let trustedRef = null;
   let trustedBaseSha = null;
   if (["pull_request", "pull_request_target"].includes(run.event)) {
+    if (!isExpectedPullEvidence(expectedPull, sha)) return false;
     const pulls = Array.isArray(run.pull_requests) ? run.pull_requests : [];
     if (pulls.length !== 1) return false;
     const [pull] = pulls;
     if (!isRecord(pull)
-        || pull?.head?.sha !== sha
+        || pull.number !== expectedPull.number
+        || pull?.head?.sha !== expectedPull.headSha
+        || pull?.head?.ref !== expectedPull.headRef
         || pull?.head?.ref !== run.head_branch
         || pull?.head?.repo?.id !== run.head_repository.id
         || pull?.base?.repo?.id !== run.repository.id
-        || typeof pull?.base?.ref !== "string"
-        || typeof pull?.base?.sha !== "string" || !/^[0-9a-f]{40}$/i.test(pull.base.sha)) return false;
+        || pull?.base?.ref !== expectedPull.baseRef
+        || pull?.base?.sha !== expectedPull.baseSha) return false;
     trustedRef = pull.base.ref;
     trustedBaseSha = pull.base.sha;
   } else if (["push", "workflow_dispatch"].includes(run.event)) {
-    if (!Array.isArray(run.pull_requests) || run.pull_requests.length !== 0 || typeof run.head_branch !== "string") return false;
+    if (expectedPull !== null
+        || !Array.isArray(run.pull_requests) || run.pull_requests.length !== 0
+        || typeof run.head_branch !== "string") return false;
     trustedRef = run.head_branch;
   } else {
     return false;
@@ -914,6 +933,25 @@ async function hasTrustedWorkflowProvenance(repository, sha, run, binding) {
     return await workflowFileMatchesTrustedBase(repository, binding.path, sha, trustedBaseSha);
   }
   return true;
+}
+
+function expectedPullEvidence(pull, baseSha) {
+  return {
+    number: pull?.number,
+    headRef: pull?.head?.ref,
+    headSha: pull?.head?.sha,
+    baseRef: pull?.base?.ref,
+    baseSha
+  };
+}
+
+function isExpectedPullEvidence(value, sha) {
+  return isRecord(value)
+    && Number.isSafeInteger(value.number) && value.number > 0
+    && typeof value.headRef === "string" && value.headRef.length > 0
+    && value.headSha === sha
+    && typeof value.baseRef === "string" && value.baseRef.length > 0
+    && typeof value.baseSha === "string" && /^[0-9a-f]{40}$/i.test(value.baseSha);
 }
 
 function trustedWorkflowPath(value, binding) {
@@ -1153,7 +1191,9 @@ async function verifyReleasePullEvidence(repository, observation) {
   candidates.sort((a, b) => String(b.pull.merged_at).localeCompare(String(a.pull.merged_at)));
   const { pull, kind } = candidates[0];
   const protection = kind === "release" ? observation.rawProtections.main : observation.rawProtections.dev;
-  const checks = await checksFor(repository, pull.head.sha, protection, observation.policy);
+  const checks = await checksFor(repository, pull.head.sha, protection, observation.policy, {
+    expectedPull: expectedPullEvidence(pull, trustedPullBaseSha(pull, kind))
+  });
   if (!checks.green) return { green: false, reason: `${kind}-pr-gates-not-green`, pull_request: pull.html_url, checks };
   const marker = kind === "release"
     ? String(pull.body || "").match(/<!-- darkfactory:release-issues ([0-9,]*) -->/)
@@ -1374,6 +1414,13 @@ function isTrustedReconciliationPull(repository, policy, pull) {
     && pull?.head?.ref?.startsWith(policy.reconcileBranchPrefix)
     && pull?.head?.sha === marker[4]
     && String(pull?.head?.repo?.full_name || "").toLowerCase() === repoName(repository).toLowerCase();
+}
+
+function trustedPullBaseSha(pull, kind) {
+  const expression = kind === "release"
+    ? /<!-- darkfactory:release plan=release-[0-9a-f]{20} main=([0-9a-f]{40}) dev=[0-9a-f]{40} -->/i
+    : /<!-- darkfactory:reconcile plan=release-[0-9a-f]{20} main=[0-9a-f]{40} dev=([0-9a-f]{40}) head=[0-9a-f]{40} -->/i;
+  return String(pull?.body || "").match(expression)?.[1] || null;
 }
 
 function isMechanicalConflict(comparison) {

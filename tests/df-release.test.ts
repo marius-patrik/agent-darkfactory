@@ -374,11 +374,11 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
     check_suite_id: suiteId,
     head_sha: SHA.main,
     path: `${suiteId === 911 ? ".github/workflows/darkfactory-autoreview.yml" : ".github/workflows/ci.yml"}@main`,
-    event: suiteId === 911 ? "workflow_dispatch" : "pull_request",
-    head_branch: suiteId === 911 ? "main" : "feature",
+    event: suiteId === 911 ? "pull_request_target" : "pull_request",
+    head_branch: "feature",
     repository: { id: 42, full_name: "marius-patrik/example" },
     head_repository: { id: 42, full_name: "marius-patrik/example" },
-    pull_requests: suiteId === 911 ? [] : [{
+    pull_requests: [{
       number: 7,
       head: { ref: "feature", sha: SHA.main, repo: { id: 42 } },
       base: { ref: "main", sha: SHA.dev, repo: { id: 42 } }
@@ -387,6 +387,11 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
     conclusion: "success",
     run_attempt: 1
   });
+  const bindingOptions = {
+    expectedPull: {
+      number: 7, headRef: "feature", headSha: SHA.main, baseRef: "main", baseSha: SHA.dev
+    }
+  };
   let runs = new Map<number, any[]>([
     [910, [workflowRun(910)]],
     [911, [workflowRun(911)]]
@@ -400,7 +405,7 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
   };
   release.configureReleaseRuntime({ gh, controlRepo: { owner: "marius-patrik", repo: "DarkFactory" } });
   const valid = await release.bindTrustedPolicyCheckRuns(
-    repo(), SHA.main, { total_count: 2, check_runs: checks }, checks.map((check) => check.name)
+    repo(), SHA.main, { total_count: 2, check_runs: checks }, checks.map((check) => check.name), bindingOptions
   );
   assert.ok(valid.check_runs.every((run: any) => run._trustedPolicyWorkflow === true));
   assert.equal(release.evaluatePolicySelectedChecks(valid, { statuses: [] }, checks.map((check) => check.name)).green, true);
@@ -413,12 +418,30 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
     { name: "wrong head", run: { ...workflowRun(910), head_sha: SHA.dev } },
     { name: "wrong suite", run: { ...workflowRun(910), check_suite_id: 999 } },
     { name: "wrong state", run: { ...workflowRun(910), status: "in_progress", conclusion: null } },
-    { name: "wrong conclusion", run: { ...workflowRun(910), conclusion: "failure" } }
+    { name: "wrong conclusion", run: { ...workflowRun(910), conclusion: "failure" } },
+    {
+      name: "dispatch cannot gate a pull",
+      run: { ...workflowRun(910), event: "workflow_dispatch", head_branch: "main", pull_requests: [] }
+    },
+    {
+      name: "same head wrong pull",
+      run: { ...workflowRun(910), pull_requests: [{ ...workflowRun(910).pull_requests[0], number: 8 }] }
+    },
+    {
+      name: "same head wrong base",
+      run: {
+        ...workflowRun(910),
+        pull_requests: [{
+          ...workflowRun(910).pull_requests[0],
+          base: { ...workflowRun(910).pull_requests[0].base, ref: "dev", sha: SHA.merge }
+        }]
+      }
+    }
   ];
   for (const scenario of invalidRuns) {
     runs = new Map([[910, [scenario.run]]]);
     const bound = await release.bindTrustedPolicyCheckRuns(
-      repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"]
+      repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"], bindingOptions
     );
     assert.equal(bound.check_runs[0]._trustedPolicyWorkflow, false, scenario.name);
     assert.deepEqual(
@@ -438,7 +461,7 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
   for (const scenario of invalidSuites) {
     const check = { ...checks[0], _checkSuiteEvidence: scenario.evidence };
     const bound = await release.bindTrustedPolicyCheckRuns(
-      repo(), SHA.main, { total_count: 1, check_runs: [check] }, ["Validate"]
+      repo(), SHA.main, { total_count: 1, check_runs: [check] }, ["Validate"], bindingOptions
     );
     assert.equal(bound.check_runs[0]._trustedPolicyWorkflow, false, scenario.name);
     assert.deepEqual(
@@ -450,7 +473,7 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
 
   runs = new Map([[910, [workflowRun(910), { ...workflowRun(910), id: 1911, path: ".github/workflows/untrusted.yml@main" }]]]);
   const ambiguous = await release.bindTrustedPolicyCheckRuns(
-    repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"]
+    repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"], bindingOptions
   );
   assert.equal(ambiguous.check_runs[0]._trustedPolicyWorkflow, false);
   assert.deepEqual(release.evaluatePolicySelectedChecks(ambiguous, { statuses: [] }, ["Validate"]).red, ["Validate"]);
@@ -475,12 +498,12 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
     controlRepo: { owner: "marius-patrik", repo: "DarkFactory" }
   });
   const sameDefinition = await release.bindTrustedPolicyCheckRuns(
-    repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"]
+    repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"], bindingOptions
   );
   assert.equal(sameDefinition.check_runs[0]._trustedPolicyWorkflow, true);
   baseWorkflowSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   const headControlled = await release.bindTrustedPolicyCheckRuns(
-    repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"]
+    repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"], bindingOptions
   );
   assert.equal(headControlled.check_runs[0]._trustedPolicyWorkflow, false);
 
@@ -502,7 +525,7 @@ test("standard policy gates require exact and unambiguous workflow provenance", 
   });
   await assert.rejects(
     release.bindTrustedPolicyCheckRuns(
-      repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"]
+      repo(), SHA.main, { total_count: 1, check_runs: [checks[0]] }, ["Validate"], bindingOptions
     ),
     /workflow-run binding changed during verification/
   );
@@ -581,7 +604,11 @@ test("green dev-ahead release creates one marker-owned branch/PR and arms autome
         return pull;
       }
       if (method === "GET" && path.endsWith("/pulls/7")) return pulls[0];
-      if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, SHA.dev);
+      if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) {
+        return workflowRuns(path, SHA.dev, "success", {
+          number: 7, headRef: `release/${SHA.dev.slice(0, 12)}`, baseRef: "main", baseSha: SHA.main
+        });
+      }
       if (method === "GET" && path.includes("/check-suites?")) return checkSuites(SHA.dev);
       if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
         return suiteCheckRuns(path, "success", 15368, SHA.dev);
@@ -704,7 +731,11 @@ test("main-ahead reconciliation uses one reviewed PR and never writes dev direct
         return pull;
       }
       if (method === "GET" && path.endsWith("/pulls/8")) return pull;
-      if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, SHA.main);
+      if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) {
+        return workflowRuns(path, SHA.main, "success", {
+          number: 8, headRef: branch, baseRef: "dev", baseSha: SHA.dev
+        });
+      }
       if (method === "GET" && path.includes("/check-suites?")) return checkSuites(SHA.main);
       if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
         return suiteCheckRuns(path, "success", 15368, SHA.main);
@@ -778,7 +809,11 @@ test("diverged reconciliation resumes from the exact trusted two-parent merge", 
         return pull;
       }
       if (method === "GET" && path.endsWith("/pulls/9")) return pull;
-      if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, SHA.merge);
+      if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) {
+        return workflowRuns(path, SHA.merge, "success", {
+          number: 9, headRef: branch, baseRef: "dev", baseSha: SHA.dev
+        });
+      }
       if (method === "GET" && path.includes("/check-suites?")) return checkSuites(SHA.merge);
       if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
         return suiteCheckRuns(path, "success", 15368, SHA.merge);
@@ -887,7 +922,11 @@ test("green release verification proves the trusted PR and atomic cleanup eviden
         if (branch === releaseBranch) throw Object.assign(new Error("missing"), { status: 404 });
       }
       if (method === "GET" && path.endsWith("/protection")) return protectedBranch();
-      if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) return workflowRuns(path, checkSha);
+      if (method === "GET" && path.includes("/actions/runs?check_suite_id=")) {
+        return workflowRuns(path, checkSha, "success", checkSha === SHA.dev ? {
+          number: 12, headRef: releaseBranch, baseRef: "main", baseSha: SHA.main
+        } : null);
+      }
       if (method === "GET" && path.includes("/check-suites?")) {
         checkSha = path.includes(SHA.dev) ? SHA.dev : SHA.main;
         return checkSuites(checkSha);
@@ -1010,7 +1049,12 @@ function suiteCheckRuns(path: string, conclusion: string, appId: number, headSha
   return { total_count: runs.length, check_runs: runs };
 }
 
-function workflowRuns(path: string, headSha: string, conclusion = "success") {
+function workflowRuns(
+  path: string,
+  headSha: string,
+  conclusion = "success",
+  pullEvidence: { number: number; headRef: string; baseRef: string; baseSha: string } | null = null
+) {
   const suiteId = Number(path.match(/check_suite_id=(\d+)/)?.[1]);
   const autoreview = suiteId === 202;
   return {
@@ -1019,16 +1063,16 @@ function workflowRuns(path: string, headSha: string, conclusion = "success") {
       id: suiteId + 1000,
       check_suite_id: suiteId,
       head_sha: headSha,
-      path: `${autoreview ? ".github/workflows/darkfactory-autoreview.yml" : ".github/workflows/ci.yml"}@main`,
-      event: autoreview ? "pull_request_target" : "pull_request",
-      head_branch: "release-test",
+      path: `${autoreview ? ".github/workflows/darkfactory-autoreview.yml" : ".github/workflows/ci.yml"}@${pullEvidence?.baseRef ?? "main"}`,
+      event: pullEvidence ? (autoreview ? "pull_request_target" : "pull_request") : (autoreview ? "workflow_dispatch" : "push"),
+      head_branch: pullEvidence?.headRef ?? "main",
       repository: { id: 42, full_name: "marius-patrik/example" },
       head_repository: { id: 42, full_name: "marius-patrik/example" },
-      pull_requests: [{
-        number: 7,
-        head: { ref: "release-test", sha: headSha, repo: { id: 42 } },
-        base: { ref: "main", sha: SHA.dev, repo: { id: 42 } }
-      }],
+      pull_requests: pullEvidence ? [{
+        number: pullEvidence.number,
+        head: { ref: pullEvidence.headRef, sha: headSha, repo: { id: 42 } },
+        base: { ref: pullEvidence.baseRef, sha: pullEvidence.baseSha, repo: { id: 42 } }
+      }] : [],
       status: "completed",
       conclusion,
       run_attempt: 1
