@@ -364,6 +364,7 @@ async function scanCompleteCommitStatuses(repository, sha) {
       `/repos/${repoName(repository)}/commits/${sha}/status?per_page=100&page=${page}`
     );
     if (!isRecord(payload)
+        || payload.sha !== sha
         || !Number.isSafeInteger(payload.total_count) || payload.total_count < 0 || payload.total_count > MAX_COMMIT_STATUSES
         || !Array.isArray(payload.statuses) || payload.statuses.length > 100) {
       throw new Error("release commit-status inventory is malformed or exceeds the bounded limit");

@@ -197,6 +197,7 @@ test("release check evidence is complete and bound to the exact trusted workflow
       }
       if (path.includes("/status?") && path.endsWith("page=1")) {
         return {
+          sha: SHA.main,
           total_count: 101,
           statuses: Array.from({ length: 100 }, (_, index) => ({
             id: index + 1, context: `Legacy ${index}`, state: "success"
@@ -204,7 +205,7 @@ test("release check evidence is complete and bound to the exact trusted workflow
         };
       }
       if (path.includes("/status?") && path.endsWith("page=2")) {
-        return { total_count: 101, statuses: [{ id: 101, context: "Security Scan", state: "success" }] };
+        return { sha: SHA.main, total_count: 101, statuses: [{ id: 101, context: "Security Scan", state: "success" }] };
       }
       throw new Error(`unexpected mocked request: ${path}`);
     }
@@ -301,7 +302,8 @@ test("release evidence inventories reject changing, duplicate, malformed, trunca
               check_suites: [{ id: 800, head_sha: SHA.main, app: { id: 15368 } }]
             };
           }
-          return scenario.response(kind, page);
+          const response = scenario.response(kind, page);
+          return kind === "statuses" ? { sha: SHA.main, ...response } : response;
         }
       };
       release.configureReleaseRuntime({ gh, controlRepo: { owner: "marius-patrik", repo: "DarkFactory" } });
@@ -324,6 +326,22 @@ test("release evidence inventories reject changing, duplicate, malformed, trunca
     controlRepo: { owner: "marius-patrik", repo: "DarkFactory" }
   });
   await assert.rejects(release.listCompleteCheckRuns(repo(), SHA.main), /check-suite inventory.*bounded limit/);
+
+  for (const badSha of [undefined, SHA.dev]) {
+    release.configureReleaseRuntime({
+      gh: {
+        request: async () => ({
+          ...(badSha ? { sha: badSha } : {}), total_count: 0, statuses: []
+        })
+      },
+      controlRepo: { owner: "marius-patrik", repo: "DarkFactory" }
+    });
+    await assert.rejects(
+      release.listCompleteCommitStatuses(repo(), SHA.main),
+      /commit-status inventory is malformed/,
+      badSha ? "mismatched status sha" : "missing status sha"
+    );
+  }
 });
 
 test("release inventories reject same-count evidence mutation between consistency passes", async () => {
@@ -347,6 +365,7 @@ test("release inventories reject same-count evidence mutation between consistenc
       if (path.includes("/status?")) {
         statusReads += 1;
         return {
+          sha: SHA.main,
           total_count: 1,
           statuses: [{ id: 901, context: "Legacy", state: statusReads === 1 ? "success" : "failure" }]
         };
@@ -622,7 +641,7 @@ test("green dev-ahead release creates one marker-owned branch/PR and arms autome
       if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
         return suiteCheckRuns(path, "success", 15368, SHA.dev);
       }
-      if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
+      if (method === "GET" && path.includes("/status?")) return { sha: SHA.dev, total_count: 0, statuses: [] };
       throw new Error(`unexpected mocked request: ${method} ${path}`);
     },
     graphql: async () => {
@@ -749,7 +768,7 @@ test("main-ahead reconciliation uses one reviewed PR and never writes dev direct
       if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
         return suiteCheckRuns(path, "success", 15368, SHA.main);
       }
-      if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
+      if (method === "GET" && path.includes("/status?")) return { sha: SHA.main, total_count: 0, statuses: [] };
       throw new Error(`unexpected mocked request: ${method} ${path}`);
     },
     graphql: async () => ({ enablePullRequestAutoMerge: { pullRequest: { url: pull.html_url } } })
@@ -827,7 +846,7 @@ test("diverged reconciliation resumes from the exact trusted two-parent merge", 
       if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
         return suiteCheckRuns(path, "success", 15368, SHA.merge);
       }
-      if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
+      if (method === "GET" && path.includes("/status?")) return { sha: SHA.merge, total_count: 0, statuses: [] };
       throw new Error(`unexpected mocked request: ${method} ${path}`);
     },
     graphql: async () => ({ enablePullRequestAutoMerge: { pullRequest: { url: pull.html_url } } })
@@ -888,7 +907,7 @@ test("red post-release main CI creates one exact evidence issue and blocks verif
       if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
         return { total_count: 1, check_runs: [{ id: 77, name: "Validate", head_sha: SHA.main, html_url: "https://example.test/check/77", status: "completed", conclusion: "failure", app: { id: 15368 }, check_suite: { id: 201 } }] };
       }
-      if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
+      if (method === "GET" && path.includes("/status?")) return { sha: SHA.main, total_count: 0, statuses: [] };
       if (method === "GET" && path.includes("/issues?state=open")) return [];
       if (method === "POST" && path.endsWith("/issues")) {
         writes.push(body);
@@ -943,7 +962,7 @@ test("green release verification proves the trusted PR and atomic cleanup eviden
       if (method === "GET" && path.includes("/check-suites/") && path.includes("/check-runs?")) {
         return suiteCheckRuns(path, "success", 15368, checkSha);
       }
-      if (method === "GET" && path.includes("/status?")) return { total_count: 0, statuses: [] };
+      if (method === "GET" && path.includes("/status?")) return { sha: checkSha, total_count: 0, statuses: [] };
       if (method === "GET" && path.includes("/pulls?state=closed")) return [pull];
       if (method === "GET" && path.endsWith("/pulls/12")) return pull;
       if (method === "GET" && path.includes("/compare/")) return { status: "ahead", ahead_by: 1, behind_by: 0 };
