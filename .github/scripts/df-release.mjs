@@ -168,7 +168,9 @@ export function evaluateRequiredChecks(protection, checkRuns, statuses, policyCh
       appId: Number.isInteger(run?.app?.id) ? run.app.id : null,
       id: Number.isInteger(run?.id) ? run.id : null,
       url: typeof run?.html_url === "string" ? run.html_url : null,
-      state: run.status === "completed" && run.conclusion === "success"
+      state: run?._trustedPolicyWorkflow === false
+        ? "red"
+        : run.status === "completed" && run.conclusion === "success"
         ? "green"
         : run.status === "completed" ? "red" : "pending"
     });
@@ -286,7 +288,12 @@ export async function bindTrustedPolicyCheckRuns(repository, sha, payload, polic
       continue;
     }
     const binding = TRUSTED_POLICY_WORKFLOWS[checkRun.name];
-    if (binding && await isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding)) bound.push(checkRun);
+    if (!binding) {
+      bound.push(checkRun);
+      continue;
+    }
+    const trusted = await isTrustedPolicyWorkflowRun(repository, sha, checkRun, binding);
+    bound.push({ ...checkRun, _trustedPolicyWorkflow: trusted });
   }
   return { ...payload, check_runs: bound };
 }

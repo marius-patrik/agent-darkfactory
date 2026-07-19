@@ -153,7 +153,10 @@ test("main evidence evaluates only policy-selected checks despite broader protec
 });
 
 test("release check evidence is complete and bound to the exact trusted workflow", async () => {
-  let workflowPath = ".github/workflows/ci.yml";
+  const workflowPaths = new Map([
+    [900, ".github/workflows/ci.yml"],
+    [901, ".github/workflows/untrusted.yml"]
+  ]);
   const finalCheck = {
     id: 500, name: "Validate", head_sha: SHA.main, status: "completed", conclusion: "success",
     app: { id: 15368 }, check_suite: { id: 900 }
@@ -172,9 +175,10 @@ test("release check evidence is complete and bound to the exact trusted workflow
       if (path.includes("/check-runs?") && path.endsWith("page=2")) {
         return { total_count: 101, check_runs: [finalCheck] };
       }
-      if (path.includes("/actions/runs?check_suite_id=900")) {
+      if (path.includes("/actions/runs?check_suite_id=")) {
+        const suiteId = Number(path.match(/check_suite_id=(\d+)/)?.[1]);
         return { total_count: 1, workflow_runs: [{
-          id: 700, check_suite_id: 900, head_sha: SHA.main, path: workflowPath,
+          id: suiteId + 700, check_suite_id: suiteId, head_sha: SHA.main, path: workflowPaths.get(suiteId),
           event: "push", status: "completed", conclusion: "success", run_attempt: 1
         }] };
       }
@@ -200,9 +204,20 @@ test("release check evidence is complete and bound to the exact trusted workflow
   const trusted = await release.bindTrustedPolicyCheckRuns(repo(), SHA.main, complete, ["Validate"]);
   assert.ok(trusted.check_runs.some((run: any) => run.id === finalCheck.id));
 
-  workflowPath = ".github/workflows/untrusted.yml";
-  const spoofed = await release.bindTrustedPolicyCheckRuns(repo(), SHA.main, complete, ["Validate"]);
-  assert.ok(!spoofed.check_runs.some((run: any) => run.id === finalCheck.id));
+  const spoof = { ...finalCheck, id: 501, check_suite: { id: 901 } };
+  const collision = await release.bindTrustedPolicyCheckRuns(
+    repo(), SHA.main, { total_count: 2, check_runs: [finalCheck, spoof] }, ["Validate"]
+  );
+  assert.equal(collision.check_runs.length, 2);
+  const rejected = release.evaluatePolicySelectedChecks(collision, { statuses: [] }, ["Validate"]);
+  assert.deepEqual(rejected.red, ["Validate"]);
+
+  const custom = { ...finalCheck, id: 502, name: "Artifact Scan", check_suite: { id: 902 } };
+  const additional = await release.bindTrustedPolicyCheckRuns(
+    repo(), SHA.main, { total_count: 1, check_runs: [custom] }, ["Artifact Scan"]
+  );
+  assert.equal(additional.check_runs[0].id, custom.id);
+  assert.equal(release.evaluatePolicySelectedChecks(additional, { statuses: [] }, ["Artifact Scan"]).green, true);
 });
 
 test("release plans are deterministic for identical, ahead, diverged, and blocked evidence", () => {
