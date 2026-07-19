@@ -10,6 +10,7 @@ import {
   attestAgyNativeInvocation,
   attestClaudeNativeInvocation,
   attestCodexExecutionPolicy,
+  assertFreshReadIsolatedTranscript,
   buildProviderArgs,
   canonicalProviderEnv,
   claudeSessionAdapter,
@@ -18,6 +19,7 @@ import {
   kimiSessionAdapter,
   loadCanonicalStartup,
   providerBinarySafetyReason,
+  providerProcessEnvironment,
   parseClaudeJsonResult,
   parseCodexJsonResult,
   resolveAgyModel,
@@ -232,6 +234,7 @@ describe("provider CLI session arguments", () => {
       );
       expect(attestAgyNativeInvocation({ providerArgs, stdinPiped: false })).toEqual({
         executionPolicy: "read-only",
+        toolPolicy: "standard",
         model: `Gemini 3.5 Flash (${effort[0]!.toUpperCase()}${effort.slice(1)})`,
         effort,
       });
@@ -276,6 +279,70 @@ describe("provider CLI session arguments", () => {
         stdinPiped: true,
       }),
     ).toThrow("Claude native invocation receipt is malformed");
+  });
+
+  test("zero-tool regression triplet: Claude has exact native zero-tool authority", () => {
+    const isolated: TurnRequest = {
+      prompt: "review the admitted snapshot",
+      executionPolicy: "read-only",
+      toolPolicy: "none",
+      effort: "high",
+    };
+    const args = buildProviderArgs(
+      "claude",
+      "claude-fable-5",
+      isolated,
+      transcript([{ role: "user", content: isolated.prompt }]),
+    );
+    expect(args).toContain("");
+    expect(attestClaudeNativeInvocation({ providerArgs: args, stdinPiped: true })).toEqual({
+      executionPolicy: "read-only",
+      toolPolicy: "none",
+      model: "claude-fable-5",
+      effort: "high",
+    });
+  });
+
+  test("zero-tool regression triplet: providers without a complete native boundary fail before spawn", () => {
+    const isolated: TurnRequest = { prompt: "fixture", executionPolicy: "read-only", toolPolicy: "none" };
+    const current = transcript([{ role: "user", content: isolated.prompt }]);
+    expect(() => buildProviderArgs("codex", "gpt-5.6-sol", isolated, current)).toThrow(
+      "Codex zero-tool execution is unsupported",
+    );
+    expect(() => buildProviderArgs("agy", AGY_LOW_MODEL, isolated, current)).toThrow(
+      "Agy zero-tool execution is unsupported",
+    );
+  });
+
+  test("zero-tool regression triplet: prior conversation and ambient state paths are denied", () => {
+    const isolated: TurnRequest = { prompt: "current", executionPolicy: "read-only", toolPolicy: "none" };
+    expect(() => assertFreshReadIsolatedTranscript(transcript([
+      { role: "user", content: "earlier" },
+      { role: "assistant", content: "tool-derived state" },
+      { role: "user", content: "current" },
+    ]), isolated)).toThrow("fresh read-isolated session");
+
+    const descriptor: SessionDescriptor = {
+      sessionId: "isolated-env",
+      provider: "claude",
+      model: "claude-fable-5",
+      mode: "task",
+      workdir: path.resolve("workspace"),
+      stateDir: path.resolve("private-agents-home"),
+    };
+    const env = providerProcessEnvironment("claude", descriptor, "none", {
+      AGENTS_HOME: "private-state",
+      HOME: "private-home",
+      USERPROFILE: "private-profile",
+      PRIVATE_TOKEN: "private-token",
+      PATH: "trusted-path",
+    });
+    expect(env.AGENTS_HOME).toBeUndefined();
+    expect(env.HOME).toBeUndefined();
+    expect(env.USERPROFILE).toBeUndefined();
+    expect(env.PRIVATE_TOKEN).toBeUndefined();
+    expect(env.PATH).toBe("trusted-path");
+    expect(env.CLAUDE_CONFIG_DIR).toBe(path.join(descriptor.stateDir, "clis", "claude"));
   });
 
   test("rejects broader or unknown execution policy before provider spawn", () => {
@@ -1527,6 +1594,47 @@ describe("managed Kimi native continuation (issue #254)", () => {
         nativeKimiReceipt(),
       );
       expect(Object.keys(result.receipt!).sort()).toEqual(["model", "provider", "providerSessionId", "transport"]);
+    } finally {
+      restore();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("zero-tool Kimi turn suppresses canonical startup and advertises no client tools", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-no-tools-"));
+    const stateDir = path.join(root, ".agents");
+    const userHome = path.join(root, "user-home");
+    const capturePath = path.join(root, "kimi-acp.json");
+    const restore = withDisposableHome(stateDir, userHome);
+    try {
+      const state = sharedStateAt(root, stateDir, userHome);
+      await seedKimiCanonicalStartup(state, stateDir);
+      const binary = await fakeKimiAcpBinary(stateDir, capturePath);
+      const descriptor = await createSession(state, {
+        provider: "kimi",
+        model: "kimi-test",
+        mode: "task",
+        workdir: root,
+      });
+      const result = await runSessionTurn(state, kimiSessionAdapter(binary), descriptor, {
+        prompt: "Review only the supplied snapshot.",
+        executionPolicy: "read-only",
+        toolPolicy: "none",
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.resolvedExecutionPolicy).toBe("read-only");
+      expect(result.resolvedToolPolicy).toBe("none");
+
+      const captured = JSON.parse(await readFile(capturePath, "utf8")) as FakeKimiAcpCapture;
+      expect(captured.agentsHome).toBeNull();
+      const initialize = captured.requests.find(({ method }) => method === "initialize");
+      expect(initialize?.params.clientCapabilities).toEqual({
+        fs: { readTextFile: false, writeTextFile: false },
+        terminal: false,
+      });
+      const promptRequest = captured.requests.at(-1)!.params.prompt as Array<{ text: string }>;
+      expect(promptRequest[0]!.text).toContain("Review only the supplied snapshot.");
+      expect(promptRequest[0]!.text).not.toContain("KIMI-CANONICAL-CONTEXT");
     } finally {
       restore();
       await rm(root, { recursive: true, force: true });

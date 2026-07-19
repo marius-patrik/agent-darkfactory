@@ -120,6 +120,8 @@ export interface TurnRequest {
   effort?: "low" | "medium" | "high";
   /** Narrow manager-owned filesystem policy. Broader policies are not representable. */
   executionPolicy?: "read-only" | "workspace-write";
+  /** Independent model tool surface. `none` is admitted only with provider-native zero-tool proof. */
+  toolPolicy?: "standard" | "none";
   /** Logical agent preset selected by the canonical tier route. */
   agentPreset?: string;
 }
@@ -135,6 +137,8 @@ export interface TurnResult {
   receipt?: Record<string, unknown>;
   /** Provider-attested effective policy for requested-vs-resolved enforcement. */
   resolvedExecutionPolicy?: "read-only" | "workspace-write";
+  /** Provider-attested effective tool surface for requested-vs-resolved enforcement. */
+  resolvedToolPolicy?: "standard" | "none";
 }
 
 export interface TurnChunk {
