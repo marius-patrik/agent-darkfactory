@@ -116,6 +116,21 @@ class WakeRuntime:
                 prior_result=prior_result,
                 self_state=self.policy.self_state,
             )
+            candidate_specs = []
+            for spec in self.registry.specs():
+                name = spec["name"]
+                if name == "tool.remove" and not self.registry.dynamic_names:
+                    continue
+                if name == "tool.create_python" and not self.settings.allow_python_tools:
+                    continue
+                if name == "tool.create_workflow" and not self.settings.allow_process_tools:
+                    continue
+                if prior_result and not prior_result.ok and prior_result.tool == name:
+                    continue
+                candidate_specs.append(spec)
+            if not candidate_specs:
+                candidate_specs = self.registry.specs()
+
             try:
                 call, raw = self.policy.generate_tool_call(
                     prompt,
@@ -123,7 +138,7 @@ class WakeRuntime:
                     max_new_tokens=self.settings.max_generation_tokens,
                     temperature=self.settings.temperature,
                     top_p=self.settings.top_p,
-                    tool_specs=self.registry.specs(),
+                    tool_specs=candidate_specs,
                 )
             except Exception as error:
                 raw = getattr(error, "raw", "")

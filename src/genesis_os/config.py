@@ -49,7 +49,7 @@ class RuntimeSettings(BaseModel):
 
     max_tool_steps: int = Field(default=8, ge=1, le=128)
     max_generation_tokens: int = Field(default=384, ge=16, le=8192)
-    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     top_p: float = Field(default=0.95, gt=0.0, le=1.0)
     memory_results: int = Field(default=8, ge=0, le=100)
     allow_python_tools: bool = False

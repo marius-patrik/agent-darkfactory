@@ -270,7 +270,7 @@ def wake(
     device: Annotated[str, typer.Option("--device")] = "auto",
     interactive: Annotated[bool, typer.Option("--interactive", "-i")] = False,
     max_tool_steps: Annotated[int, typer.Option("--max-tool-steps")] = 8,
-    temperature: Annotated[float, typer.Option("--temperature")] = 0.0,
+    temperature: Annotated[float, typer.Option("--temperature")] = 0.7,
 ) -> None:
     target_workspace = _resolve_workspace(workspace)
     target_lineage = _resolve_lineage(target_workspace, lineage)

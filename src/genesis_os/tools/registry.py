@@ -25,6 +25,10 @@ class ToolRegistry:
         if dynamic:
             self._dynamic_names.add(name)
 
+    @property
+    def dynamic_names(self) -> set[str]:
+        return set(self._dynamic_names)
+
     def get(self, name: str) -> Tool:
         try:
             return self._tools[name]
