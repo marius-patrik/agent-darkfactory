@@ -22,9 +22,9 @@ const requiredLayout = [
   "packages/migrate/harness",
   "packages/migrate/inference",
   "packages/migrate/manager",
-  "skills",
-  "hooks",
-  "roles",
+  "packages/mcp/migrate/skills",
+  "packages/mcp/migrate/hooks",
+  "packages/mcp/migrate/roles",
   "commands",
 ];
 for (const relative of requiredLayout) {
@@ -51,7 +51,7 @@ const nestedRepositoryMetadata = [
 // packages/migrate holds former standalone repositories verbatim, frozen for
 // migration. Their original metadata is evidence and is not rewritten here;
 // code leaves migrate by reimplementation against the sdk.
-const migrateTree = /^packages\/migrate(?:\/|$)/;
+const migrateTree = /^packages\/(?:migrate|mcp\/migrate)(?:\/|$)/;
 for (const relative of tracked) {
   if (migrateTree.test(relative)) continue;
   if (nestedRepositoryMetadata.some((pattern) => pattern.test(relative))) {

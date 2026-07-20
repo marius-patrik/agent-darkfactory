@@ -178,7 +178,7 @@
     "packages/migrate/experience",
     "packages/migrate/genesis-os",
     "packages/migrate/llm-gateway",
-    "packages/protocol",
+    "packages/mcp",
     "packages/sdk",
     "packages/server",
     "packages/web"
