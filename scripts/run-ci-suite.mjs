@@ -173,7 +173,7 @@ const suites = {
   },
   darkfactory() {
     run("initialize pinned DarkFactory", "git", ["submodule", "update", "--init", "--depth", "1", "agents/darkfactory"]);
-    const cwd = path.join(root, "packages", "darkfactory");
+    const cwd = path.join(root, "agents", "darkfactory");
     runNpm("DarkFactory dependency install", ["ci"], cwd);
     runNpm("DarkFactory full check", ["run", "check"], cwd);
   },

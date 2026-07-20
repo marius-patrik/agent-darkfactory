@@ -155,10 +155,11 @@ export function inventoryIssues(root = repositoryRoot) {
       issues.push(`managed package has conflicting CI classifications (${memberships.join(", ")}): ${managedPath}`);
     }
   }
-  const declaredPackageGitlinks = declaredGitlinks.filter((entry) => entry.startsWith("packages/")).sort();
-  const actualPackageGitlinks = actualGitlinks.filter((entry) => entry.path.startsWith("packages/"));
+  const isManagedComponentPath = (value) => value.startsWith("packages/") || value.startsWith("agents/");
+  const declaredPackageGitlinks = declaredGitlinks.filter(isManagedComponentPath).sort();
+  const actualPackageGitlinks = actualGitlinks.filter((entry) => isManagedComponentPath(entry.path));
   const classifiedPackageGitlinks = [...activeGitlinks, ...parkedPlugins, ...parkedApps]
-    .filter((entry) => entry.startsWith("packages/"))
+    .filter(isManagedComponentPath)
     .sort();
   const managedPackagePaths = unique([
     ...declaredPackageGitlinks,
@@ -166,8 +167,8 @@ export function inventoryIssues(root = repositoryRoot) {
     ...classifiedPackageGitlinks,
   ]).sort();
   for (const managedPath of managedPackagePaths) {
-    if (!/^packages\/(?:migrate\/)?[a-z0-9]+(?:-[a-z0-9]+)*$/.test(managedPath)) {
-      issues.push(`managed package path is not a lowercase direct child of packages/: ${managedPath}`);
+    if (!/^(?:packages\/(?:migrate\/)?|agents\/)[a-z0-9]+(?:-[a-z0-9]+)*$/.test(managedPath)) {
+      issues.push(`managed component path is not a lowercase child of packages/, packages/migrate/, or agents/: ${managedPath}`);
     }
     const declarationCount = declaredPackageGitlinks.filter((entry) => entry === managedPath).length;
     const gitlinks = actualPackageGitlinks.filter((entry) => entry.path === managedPath);
@@ -235,10 +236,10 @@ export function inventoryIssues(root = repositoryRoot) {
   if (!/^\s+name:\s+Repository contract\s*$/m.test(workflow)) {
     issues.push("CI workflow must preserve the exact repository contract job");
   }
-  if (!/^\s+fetch-depth:\s+0\s*$/m.test(workflow) || !workflow.includes("git submodule update --init --recursive -- agents/darkfactory packages/memory agents/lifequest agents/skyagent packages/migrate/singularity packages/fabrica")) {
+  if (!/^\s+fetch-depth:\s+0\s*$/m.test(workflow) || !workflow.includes("git submodule update --init --recursive -- agents/darkfactory agents/lifequest agents/skyagent packages/migrate/singularity")) {
     issues.push("repository contract must fetch full history and initialize every moved public gitlink");
   }
-  if (!workflow.includes('git diff --check "$BASE_SHA...$HEAD_SHA"') || !workflow.includes("git submodule status --recursive -- agents/darkfactory packages/memory agents/lifequest agents/skyagent packages/migrate/singularity packages/fabrica")) {
+  if (!workflow.includes('git diff --check "$BASE_SHA...$HEAD_SHA"') || !workflow.includes("git submodule status --recursive -- agents/darkfactory agents/lifequest agents/skyagent packages/migrate/singularity")) {
     issues.push("repository contract must verify the exact diff and moved recursive gitlink state");
   }
   if (!/^\s+needs:\s*\r?\n\s+-\s+suites\s*\r?\n\s+-\s+repository-contract\s*$/m.test(workflow)) {

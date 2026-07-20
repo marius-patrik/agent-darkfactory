@@ -31,6 +31,11 @@ function fixture() {
   for (const entry of inventory.activeComponents) {
     if (!entry.submodule) mkdirSync(path.join(target, entry.path), { recursive: true });
   }
+  // Scaffolded components exist as directories carrying only their contract
+  // README, so the fail-closed package enumeration must still see them.
+  for (const relative of inventory.scaffoldedComponents ?? []) {
+    mkdirSync(path.join(target, relative), { recursive: true });
+  }
   for (const entry of [...inventory.activeComponents, ...inventory.realBehaviorLegs, ...inventory.productSmokes, ...inventory.supportingSuites]) {
     for (const relative of entry.requiredPaths ?? []) {
       const destination = path.join(target, relative);
@@ -137,8 +142,8 @@ test("denied failure: managed package classifications must be unique and mutuall
     inventory.parkedPlugins.push("agents/darkfactory", "agents/lifequest");
     writeFileSync(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
     const issues = inventoryIssues(target).join("\n");
-    assert.match(issues, /managed package has conflicting CI classifications \(active, parked plugin\): packages\/darkfactory/);
-    assert.match(issues, /managed package is repeated in the parked plugin CI classification: packages\/lifequest/);
+    assert.match(issues, /managed package has conflicting CI classifications \(active, parked plugin\): agents\/darkfactory/);
+    assert.match(issues, /managed package is repeated in the parked plugin CI classification: agents\/lifequest/);
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
@@ -166,8 +171,8 @@ test("denied failure: declarations and index gitlinks outside data and packages 
     );
     addIndexEntries(target, `160000 ${fixtureGitlinkOid} 0\tapps/index-only\n`);
     const issues = inventoryIssues(target).join("\n");
-    assert.match(issues, /managed repository declaration is outside data\/ or packages\/: plugins\/legacy/);
-    assert.match(issues, /managed repository gitlink is outside data\/ or packages\/: apps\/index-only/);
+    assert.match(issues, /managed repository declaration is outside data\/, packages\/, or agents\/: plugins\/legacy/);
+    assert.match(issues, /managed repository gitlink is outside data\/, packages\/, or agents\/: apps\/index-only/);
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
@@ -179,7 +184,7 @@ test("denied failure: a classified managed package declaration without an index 
     git(target, "update-index", "--force-remove", "agents/darkfactory");
     assert.match(
       inventoryIssues(target).join("\n"),
-      /classified managed package is not a repository gitlink: packages\/darkfactory/,
+      /classified managed package is not a repository gitlink: agents\/darkfactory/,
     );
   } finally {
     rmSync(target, { recursive: true, force: true });
@@ -196,7 +201,7 @@ test("denied failure: duplicate managed package declarations cannot pass", () =>
     );
     assert.match(
       inventoryIssues(target).join("\n"),
-      /managed package is declared multiple times: packages\/darkfactory/,
+      /managed package is declared multiple times: agents\/darkfactory/,
     );
   } finally {
     rmSync(target, { recursive: true, force: true });
@@ -212,8 +217,8 @@ test("denied failure: conflicted managed package index entries cannot pass", () 
       `160000 ${fixtureGitlinkOid} 1\tagents/darkfactory\n160000 ${fixtureGitlinkOid} 2\tagents/darkfactory\n`,
     );
     const issues = inventoryIssues(target).join("\n");
-    assert.match(issues, /managed package has multiple index entries: packages\/darkfactory/);
-    assert.match(issues, /managed package has unmerged index entries: packages\/darkfactory/);
+    assert.match(issues, /managed package has multiple index entries: agents\/darkfactory/);
+    assert.match(issues, /managed package has unmerged index entries: agents\/darkfactory/);
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
@@ -232,8 +237,8 @@ test("denied failure: managed gitlinks must be lowercase direct package children
       `160000 ${fixtureGitlinkOid} 0\tpackages/Uppercase\n160000 ${fixtureGitlinkOid} 0\tpackages/nested/rogue\n`,
     );
     const issues = inventoryIssues(target).join("\n");
-    assert.match(issues, /managed package path is not a lowercase direct child of packages\/: packages\/Uppercase/);
-    assert.match(issues, /managed package path is not a lowercase direct child of packages\/: packages\/nested\/rogue/);
+    assert.match(issues, /managed component path is not a lowercase child of packages\/, packages\/migrate\/, or agents\/: packages\/Uppercase/);
+    assert.match(issues, /managed component path is not a lowercase child of packages\/, packages\/migrate\/, or agents\/: packages\/nested\/rogue/);
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
