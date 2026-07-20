@@ -8,5 +8,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["packages/manager/src/**/*.ts", "packages/manager/test/**/*.ts"]
+  "include": ["packages/migrate/manager/src/**/*.ts", "packages/migrate/manager/test/**/*.ts"]
 }

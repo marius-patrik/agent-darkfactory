@@ -1,0 +1,223 @@
+lessons:
+  - concept: observation_and_claim
+    title: Observation, Claim, and Evidence
+    explanation: >-
+      An observation is a recorded input. A claim is a proposition asserted about a world.
+      Evidence is an observation or derivation that supports or contradicts a claim. Keep the
+      source of each item explicit: observing a sentence does not by itself make the sentence true.
+    examples:
+      - "Observation: a sensor reports 7. Claim: the hidden value is 7. Evidence quality depends on sensor reliability."
+      - "Observation: a user states a preference. This is direct evidence of the user's stated preference, not a universal fact."
+    counterexamples:
+      - "Treating an unverified model-generated sentence as ground truth merely because it was generated confidently."
+    exercises:
+      - question: "A log says 'simulator output=12'. Is the existence of the log an observation, a claim, or both?"
+        answer: "The log entry is an observation; its content is a claim about the simulator output."
+        rationale: "Separating carrier from content preserves provenance."
+      - question: "Does repeatedly seeing an unsupported claim convert it into evidence?"
+        answer: "No. Repetition changes frequency, not evidential validity."
+
+  - concept: identity_and_equality
+    title: Identity and Equality
+    prerequisites: [observation_and_claim]
+    explanation: >-
+      Identity asks whether two references denote the same entity. Equality asks whether two
+      values are equivalent under a specified relation. Equality must name its representation or
+      rule; visual similarity and repeated naming do not prove identity.
+    examples:
+      - "The strings '03' and '3' are unequal as strings but equal as decimal integers."
+      - "Two event identifiers with different hashes refer to distinct immutable events even when their payloads match."
+    counterexamples:
+      - "Assuming two objects are identical because they have the same label."
+    exercises:
+      - question: "Are [1,2] and [2,1] equal as ordered sequences?"
+        answer: "No. Order is part of an ordered sequence."
+      - question: "Are 2+3 and 5 equal as integers?"
+        answer: "Yes. Both evaluate to the integer 5."
+
+  - concept: ordered_sequence
+    title: Ordered Sequences and State
+    prerequisites: [identity_and_equality]
+    explanation: >-
+      A sequence is a finite or infinite collection whose positions matter. A state is an explicit
+      representation of information needed to predict or choose the next transition. Update state
+      one transition at a time and preserve the order of operations.
+    examples:
+      - "Starting at 4 and applying +2 then -5 produces 1."
+      - "The sequence [a,b] differs from [b,a] unless the operation is explicitly commutative."
+    counterexamples:
+      - "Summing noncommuting matrix operations as though their order were irrelevant."
+    exercises:
+      - question: "Start at 8. Apply -3, +4, then -2. Return the final state."
+        answer: "7"
+        verifier: numeric
+      - question: "Which information is minimally required to continue a running sum?"
+        answer: "The current accumulated sum and the next input."
+
+  - concept: quantity_and_integer
+    title: Quantity and Integers
+    prerequisites: [identity_and_equality]
+    explanation: >-
+      A quantity represents how much or how many under a measurement convention. Integers include
+      zero, positive whole values, and negative whole values. Integer addition combines signed
+      changes; subtraction adds the additive inverse.
+    examples:
+      - "-4 + 9 = 5."
+      - "Subtracting -3 is equivalent to adding 3."
+    counterexamples:
+      - "Interpreting a numeric identifier as a measurable quantity without a defined scale."
+    exercises:
+      - question: "Compute -7 + 12."
+        answer: "5"
+        verifier: numeric
+      - question: "Compute 6 - (-4)."
+        answer: "10"
+        verifier: numeric
+
+  - concept: variable_binding
+    title: Variables and Local Binding
+    prerequisites: [ordered_sequence, quantity_and_integer]
+    explanation: >-
+      A variable is a symbol bound to a value within a scope. Resolve each use from the active
+      binding environment rather than from surface familiarity. Shadowing creates a new local
+      binding; it does not retroactively alter an outer immutable record.
+    examples:
+      - "With x=4 and y=x+3, y evaluates to 7."
+      - "Inside a local scope with x=9, x denotes 9 while the outer x may still denote 4."
+    counterexamples:
+      - "Using a memorized value for x after the task supplies a new local binding."
+    exercises:
+      - question: "Given a=3 and b=2*a+1, compute b."
+        answer: "7"
+        verifier: numeric
+      - question: "A local block binds q=8 while an outer scope has q=2. What does q denote inside the block?"
+        answer: "8"
+
+  - concept: proposition_and_negation
+    title: Propositions, Negation, and Consistency
+    prerequisites: [observation_and_claim]
+    explanation: >-
+      A proposition is a statement that can be evaluated under a model. Negation reverses its truth
+      condition. A set is inconsistent when it entails both a proposition and its negation. Detect
+      contradictions before deriving downstream conclusions.
+    examples:
+      - "If P means 'the switch is on', not P means 'the switch is not on'."
+      - "P and not P cannot both hold in a classical consistent state."
+    counterexamples:
+      - "Treating lack of evidence for P as proof of not P."
+    exercises:
+      - question: "Is the set {P, not P} classically consistent?"
+        answer: "No. It contains a direct contradiction."
+      - question: "Does 'P has not been observed' entail 'not P'?"
+        answer: "No. Absence of an observation is not the negation of the proposition."
+
+  - concept: implication_and_deduction
+    title: Implication and Deduction
+    prerequisites: [proposition_and_negation, variable_binding]
+    explanation: >-
+      An implication A -> B licenses deriving B when A is established. It does not license deriving
+      A from B. A proof records each premise and permitted inference, making the dependency graph
+      inspectable and checkable.
+    examples:
+      - "From A -> B and A, derive B by modus ponens."
+      - "From A -> B and not B, derive not A by contraposition in classical logic."
+    counterexamples:
+      - "From A -> B and B, concluding A; this affirms the consequent."
+    exercises:
+      - question: "Premises: R -> S, R. What follows directly?"
+        answer: "S"
+      - question: "Premises: M -> N, N. Must M be true?"
+        answer: "No. That would affirm the consequent."
+
+  - concept: algorithm_and_invariant
+    title: Algorithms and Invariants
+    prerequisites: [ordered_sequence, implication_and_deduction]
+    explanation: >-
+      An algorithm is a finite, explicit procedure. An invariant is a property preserved across its
+      transitions. To establish correctness, state a precondition, preserve an invariant at each
+      step, and show that termination plus the invariant entails the postcondition.
+    examples:
+      - "Insertion sort preserves that the processed prefix is sorted."
+      - "A running parity algorithm preserves whether the number of observed one-bits is odd."
+    counterexamples:
+      - "Testing three inputs and calling the procedure correct for all inputs without an invariant or exhaustive proof."
+    exercises:
+      - question: "What invariant supports a running sum over a prefix?"
+        answer: "After processing k items, the accumulator equals the sum of the first k items."
+      - question: "Why is termination required in a total-correctness proof?"
+        answer: "A preserved invariant alone does not guarantee that the algorithm ever produces its postcondition."
+
+  - concept: causal_intervention
+    title: Causality and Intervention
+    prerequisites: [ordered_sequence, implication_and_deduction]
+    explanation: >-
+      Correlation describes statistical association. A causal claim predicts how a distribution or
+      state changes under an intervention. Separate passive observation from actively setting a
+      variable, and include hidden-state uncertainty when the system is only partially observed.
+    examples:
+      - "Setting velocity to zero is an intervention; merely observing zero velocity is not."
+      - "A common cause can correlate two variables without either causing the other."
+    counterexamples:
+      - "Concluding that X causes Y solely because X and Y frequently occur together."
+    exercises:
+      - question: "Does observing X=1 have the same semantics as forcing X:=1?"
+        answer: "No. Observation conditions on a state; intervention changes the generating process."
+      - question: "What should a prediction contain when hidden causes are uncertain?"
+        answer: "A calibrated distribution over possible outcomes, not only one plausible outcome."
+
+  - concept: probability_and_calibration
+    title: Probability, Uncertainty, and Calibration
+    prerequisites: [quantity_and_integer, observation_and_claim]
+    explanation: >-
+      Probability represents uncertainty under an explicit model. A calibrated predictor assigns
+      probabilities that match empirical frequencies over comparable cases. Epistemic uncertainty
+      concerns missing knowledge; aleatoric uncertainty concerns variability remaining even with a
+      known model.
+    examples:
+      - "Among events assigned probability 0.8, roughly 80 percent should occur under calibration."
+      - "More observations may reduce epistemic uncertainty but need not remove intrinsic randomness."
+    counterexamples:
+      - "Reporting probability 1.0 for an unverified prediction because the model generated it fluently."
+    exercises:
+      - question: "A model's 0.9 predictions are correct only half the time. Is it calibrated at 0.9?"
+        answer: "No. It is substantially overconfident."
+      - question: "Which uncertainty can additional relevant data usually reduce?"
+        answer: "Epistemic uncertainty."
+
+  - concept: memory_and_provenance
+    title: Memory, Provenance, and Consolidation
+    prerequisites: [observation_and_claim, ordered_sequence, probability_and_calibration]
+    explanation: >-
+      Exact episodic memory preserves immutable events, timestamps, sources, and causal links.
+      Parametric memory compresses recurring structure into weights. Exact recall should cite the
+      ledger when precision matters; consolidation should be evaluated before a candidate model is
+      promoted.
+    examples:
+      - "A preference update is appended as a new event that may supersede, but never erase, the old event."
+      - "Weights can learn a user's recurring style while the ledger retains the exact original sentence."
+    counterexamples:
+      - "Deleting an old event and pretending the current belief was always held."
+    exercises:
+      - question: "Which memory layer is authoritative for an exact timestamp?"
+        answer: "The immutable episodic ledger."
+      - question: "Why should a candidate trained during Sleep be evaluated before promotion?"
+        answer: "Consolidation can introduce regressions, forgetting, contamination, or identity drift."
+
+  - concept: tool_mediated_agency
+    title: Tool-Mediated Agency
+    prerequisites: [algorithm_and_invariant, memory_and_provenance]
+    explanation: >-
+      An organism chooses intentions through inference, but every operational effect is represented
+      as a typed tool call. The tool kernel validates schemas and capabilities, executes the action,
+      and records the result. Dynamic tools extend the action vocabulary without creating hidden
+      side channels.
+    examples:
+      - "Speaking uses communication.respond; writing a file uses workspace.write."
+      - "A reusable sequence of safe tools can be installed as a workflow tool and discovered without restart."
+    counterexamples:
+      - "Letting generated text invoke an unlogged shell command outside the tool kernel."
+    exercises:
+      - question: "Which component authorizes and audits an operational action?"
+        answer: "The tool kernel."
+      - question: "Does installing a dynamic tool permit bypassing its nested capabilities?"
+        answer: "No. The workflow inherits and is checked against the capabilities of its component tools."

@@ -1,0 +1,141 @@
+schema_version: gateway-registry-v1
+models:
+  local-reasoner-s001:
+    id: local-reasoner-s001
+    name: s001 local GGUF reasoner
+    provider: llama.cpp
+    model: local-reasoner
+    api_base: http://s001:8082/v1
+    role: general
+    context_length: 131072
+    quant: GGUF deployment-selected
+    gpu: cpu-ram-offload
+    tensor_parallel: 1
+    fallback_model: null
+    enabled: true
+    cloud: false
+
+  local-reasoner-s002:
+    id: local-reasoner-s002
+    name: s002 local GGUF reasoner
+    provider: llama.cpp
+    model: local-reasoner
+    api_base: http://s002:8082/v1
+    role: general
+    context_length: 131072
+    quant: GGUF deployment-selected
+    gpu: cpu-ram-offload
+    tensor_parallel: 1
+    fallback_model: null
+    enabled: true
+    cloud: false
+
+  local-judge-s001:
+    id: local-judge-s001
+    name: s001 local GGUF judge
+    provider: llama.cpp
+    model: local-reasoner
+    api_base: http://s001:8082/v1
+    role: judge
+    context_length: 131072
+    quant: GGUF deployment-selected
+    gpu: cpu-ram-offload
+    tensor_parallel: 1
+    fallback_model: null
+    enabled: true
+    cloud: false
+
+  local-judge-s002:
+    id: local-judge-s002
+    name: s002 local GGUF judge
+    provider: llama.cpp
+    model: local-reasoner
+    api_base: http://s002:8082/v1
+    role: judge
+    context_length: 131072
+    quant: GGUF deployment-selected
+    gpu: cpu-ram-offload
+    tensor_parallel: 1
+    fallback_model: null
+    enabled: true
+    cloud: false
+
+  qwen-coder-s001:
+    id: qwen-coder-s001
+    name: s001 GPU coder
+    provider: vllm
+    model: qwen-coder
+    api_base: http://s001:8001/v1
+    role: coding
+    context_length: 8192
+    quant: AWQ
+    gpu: s001-rtx3090
+    tensor_parallel: 1
+    fallback_model: null
+    enabled: true
+    cloud: false
+
+  qwen-coder-s002:
+    id: qwen-coder-s002
+    name: s002 GPU coder
+    provider: vllm
+    model: qwen-coder
+    api_base: http://s002:8001/v1
+    role: coding
+    context_length: 8192
+    quant: AWQ
+    gpu: s002-rtx3090
+    tensor_parallel: 1
+    fallback_model: null
+    enabled: true
+    cloud: false
+
+  nvcf-burst-coder:
+    id: nvcf-burst-coder
+    name: Self-hosted NVCF burst coder
+    provider: nvcf
+    model: local-coder
+    api_base: http://nvcf-coder:8001/v1
+    role: coding
+    context_length: 131072
+    quant: deployment-selected
+    gpu: dynamic
+    tensor_parallel: 2
+    fallback_model: null
+    enabled: false
+    cloud: false
+    extra:
+      pp_api_base: http://nvcf-coder-pp:8001/v1
+      pp_model: local-coder-pp
+
+  gpt-4o:
+    id: gpt-4o
+    name: GPT-4o
+    provider: litellm-remote
+    model: openai/gpt-4o
+    api_base: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    role: general
+    context_length: 128000
+    quant: null
+    gpu: null
+    tensor_parallel: null
+    fallback_model: null
+    enabled: false
+    cloud: true
+
+  claude-sonnet-4:
+    id: claude-sonnet-4
+    name: Claude Sonnet 4
+    provider: litellm-remote
+    model: anthropic/claude-sonnet-4-20250514
+    api_base: https://api.anthropic.com/v1
+    api_key_env: ANTHROPIC_API_KEY
+    role: general
+    context_length: 200000
+    quant: null
+    gpu: null
+    tensor_parallel: null
+    fallback_model: null
+    enabled: false
+    cloud: true

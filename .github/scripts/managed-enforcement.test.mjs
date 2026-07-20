@@ -17,7 +17,7 @@ test("managed Validate provisions Go and uv before dependency installation", asy
   const install = workflow.indexOf("- name: Install dependencies");
   assert.ok(go >= 0, "managed Validate must provision Go");
   assert.ok(uv >= 0, "managed Validate must provision uv");
-  assert.match(workflow, /cache-dependency-path: packages\/core\/contracts-go\/go\.sum/);
+  assert.match(workflow, /cache-dependency-path: packages\/migrate\/core\/contracts-go\/go\.sum/);
   assert.ok(go < install && uv < install, "language runtimes must be ready before install and validation");
 });
 
@@ -26,7 +26,7 @@ test("monorepo validation uses the uv CLI without a cross-repository go.work", a
   assert.doesNotMatch(commands, /python(?:3)?\s+-m\s+uv/);
   assert.match(commands, /\buv sync --frozen\b/);
   assert.equal(existsSync("go.work"), false);
-  assert.equal(existsSync("packages/core/contracts-go/go.mod"), true);
+  assert.equal(existsSync("packages/migrate/core/contracts-go/go.mod"), true);
 });
 
 test("Autoreview loads provider-agnostic control from protected DarkFactory main", async () => {

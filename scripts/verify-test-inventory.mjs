@@ -20,6 +20,10 @@ function unique(values) {
   return [...new Set(values)];
 }
 
+// Managed repositories live under data/ (state), packages/ (components), and
+// agents/ (agent projects built on packages/agent).
+const MANAGED_REPOSITORY_PREFIXES = ["data/", "packages/", "agents/"];
+
 export function parseIndexedGitlinks(output) {
   return output
     .split("\0")
@@ -77,6 +81,10 @@ export function inventoryIssues(root = repositoryRoot) {
   const activeComponents = Array.isArray(inventory.activeComponents) ? inventory.activeComponents : [];
   const parkedPlugins = Array.isArray(inventory.parkedPlugins) ? inventory.parkedPlugins : [];
   const parkedApps = Array.isArray(inventory.parkedApps) ? inventory.parkedApps : [];
+  // Components scaffolded for the target architecture that hold only their
+  // contract README. Declaring them keeps the fail-closed rule intact: the
+  // moment one gains code it must also gain a suite.
+  const scaffoldedComponents = Array.isArray(inventory.scaffoldedComponents) ? inventory.scaffoldedComponents : [];
 
   const ids = groups.map((entry) => entry.id);
   const duplicateIds = unique(ids.filter((id, index) => ids.indexOf(id) !== index));
@@ -96,10 +104,16 @@ export function inventoryIssues(root = repositoryRoot) {
     ...activeComponents.map((entry) => entry.path),
     ...parkedPlugins,
     ...parkedApps,
+    ...scaffoldedComponents,
   ]
     .filter((entry) => typeof entry === "string" && entry.startsWith("packages/"))
     .sort();
-  const actualPackages = sortedDirectories(root, "packages");
+  // packages/migrate nests one level deeper: its children are frozen former
+  // components, each still individually declared in the inventory.
+  const actualPackages = [
+    ...sortedDirectories(root, "packages"),
+    ...sortedDirectories(root, "packages/migrate"),
+  ].sort();
   for (const packagePath of actualPackages) {
     if (!declaredPackages.includes(packagePath)) issues.push(`package has no fail-closed CI inventory entry: ${packagePath}`);
   }
@@ -110,13 +124,13 @@ export function inventoryIssues(root = repositoryRoot) {
   const declaredGitlinks = declaredSubmodulePaths(root);
   const actualGitlinks = indexedGitlinks(root);
   for (const declaredPath of declaredGitlinks) {
-    if (!declaredPath.startsWith("packages/") && !declaredPath.startsWith("data/")) {
-      issues.push(`managed repository declaration is outside data/ or packages/: ${declaredPath}`);
+    if (!MANAGED_REPOSITORY_PREFIXES.some((prefix) => declaredPath.startsWith(prefix))) {
+      issues.push(`managed repository declaration is outside data/, packages/, or agents/: ${declaredPath}`);
     }
   }
   for (const gitlink of actualGitlinks) {
-    if (!gitlink.path.startsWith("packages/") && !gitlink.path.startsWith("data/")) {
-      issues.push(`managed repository gitlink is outside data/ or packages/: ${gitlink.path}`);
+    if (!MANAGED_REPOSITORY_PREFIXES.some((prefix) => gitlink.path.startsWith(prefix))) {
+      issues.push(`managed repository gitlink is outside data/, packages/, or agents/: ${gitlink.path}`);
     }
   }
   const activeGitlinks = activeComponents
@@ -141,10 +155,11 @@ export function inventoryIssues(root = repositoryRoot) {
       issues.push(`managed package has conflicting CI classifications (${memberships.join(", ")}): ${managedPath}`);
     }
   }
-  const declaredPackageGitlinks = declaredGitlinks.filter((entry) => entry.startsWith("packages/")).sort();
-  const actualPackageGitlinks = actualGitlinks.filter((entry) => entry.path.startsWith("packages/"));
+  const isManagedComponentPath = (value) => value.startsWith("packages/") || value.startsWith("agents/");
+  const declaredPackageGitlinks = declaredGitlinks.filter(isManagedComponentPath).sort();
+  const actualPackageGitlinks = actualGitlinks.filter((entry) => isManagedComponentPath(entry.path));
   const classifiedPackageGitlinks = [...activeGitlinks, ...parkedPlugins, ...parkedApps]
-    .filter((entry) => entry.startsWith("packages/"))
+    .filter(isManagedComponentPath)
     .sort();
   const managedPackagePaths = unique([
     ...declaredPackageGitlinks,
@@ -152,8 +167,8 @@ export function inventoryIssues(root = repositoryRoot) {
     ...classifiedPackageGitlinks,
   ]).sort();
   for (const managedPath of managedPackagePaths) {
-    if (!/^packages\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(managedPath)) {
-      issues.push(`managed package path is not a lowercase direct child of packages/: ${managedPath}`);
+    if (!/^(?:packages\/(?:migrate\/)?|agents\/)[a-z0-9]+(?:-[a-z0-9]+)*$/.test(managedPath)) {
+      issues.push(`managed component path is not a lowercase child of packages/, packages/migrate/, or agents/: ${managedPath}`);
     }
     const declarationCount = declaredPackageGitlinks.filter((entry) => entry === managedPath).length;
     const gitlinks = actualPackageGitlinks.filter((entry) => entry.path === managedPath);
@@ -221,10 +236,10 @@ export function inventoryIssues(root = repositoryRoot) {
   if (!/^\s+name:\s+Repository contract\s*$/m.test(workflow)) {
     issues.push("CI workflow must preserve the exact repository contract job");
   }
-  if (!/^\s+fetch-depth:\s+0\s*$/m.test(workflow) || !workflow.includes("git submodule update --init --recursive -- packages/darkfactory packages/memory packages/lifequest packages/skyagent packages/singularity packages/fabrica")) {
+  if (!/^\s+fetch-depth:\s+0\s*$/m.test(workflow) || !workflow.includes("git submodule update --init --recursive -- agents/darkfactory agents/lifequest agents/skyagent packages/migrate/singularity")) {
     issues.push("repository contract must fetch full history and initialize every moved public gitlink");
   }
-  if (!workflow.includes('git diff --check "$BASE_SHA...$HEAD_SHA"') || !workflow.includes("git submodule status --recursive -- packages/darkfactory packages/memory packages/lifequest packages/skyagent packages/singularity packages/fabrica")) {
+  if (!workflow.includes('git diff --check "$BASE_SHA...$HEAD_SHA"') || !workflow.includes("git submodule status --recursive -- agents/darkfactory agents/lifequest agents/skyagent packages/migrate/singularity")) {
     issues.push("repository contract must verify the exact diff and moved recursive gitlink state");
   }
   if (!/^\s+needs:\s*\r?\n\s+-\s+suites\s*\r?\n\s+-\s+repository-contract\s*$/m.test(workflow)) {

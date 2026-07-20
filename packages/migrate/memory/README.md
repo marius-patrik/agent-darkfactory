@@ -1,0 +1,9 @@
+# Memory plugin
+
+The Memory plugin converts canonical session events into typed, provenance-backed memory records. It also runs idle dream distillation, prepares explicitly admitted historical corpus entries as reviewable candidates, and migrates the operational Dream v1.3 cursor.
+
+The plugin never writes memory projections or event files itself. Every accepted candidate crosses the manager's canonical memory mutation API, so replay, projection, supersession, and startup-context rules remain centralized. Provider-native transcripts and historical files are evidence inputs only; processing them does not make them state authority. The migrated v1.3 cursor is a sensitive canonical memory record; its runtime JSON is only a reconstructible projection.
+
+Dream cycles bound the session count, scanned directory entries, events per session, and total admitted events and bytes before reading event content. Corpus processing is opt-in, rejects links and path escapes, bounds files, directories, depth, and bytes, and uses the manager-owned secret admission policy. The v1.3 migration scans raw and decoded cursor fields before transforming paths into URIs, records the validated cursor through canonical mutation with source provenance, and leaves the source file unchanged. Earlier cursor formats are rejected.
+
+Run the installed package through `agents packages run memory -- <command>`. Commands are `reflect SESSION_ID`, `dream`, `corpus ROOT [--apply]`, `migrate SOURCE`, `restore`, and `status`. Reflection accepts event and byte limits; dreams accept session, per-session event/byte, and total event/byte limits. Until #221 supplies the scheduler surface, its scheduler-facing contract is `agents packages run memory -- dream`; the command itself enforces the idle threshold and scan bounds.

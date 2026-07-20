@@ -7,11 +7,11 @@ import {
   listMemoryRecords,
   rebuildMemoryProjections,
   renderStartupMemory,
-} from "../../../packages/manager/src/memory";
-import { enableEventSync, exportEventBundle, importEventBundle } from "../../../packages/manager/src/event-sync";
-import { writeSecret } from "../../../packages/manager/src/secrets";
-import { ensureSharedState, sharedStateAt, type SharedState } from "../../../packages/manager/src/state";
-import { createSession, loadSessionEvents, withSessionWriteTransaction } from "../../../packages/harness/session";
+} from "../../../packages/migrate/manager/src/memory";
+import { enableEventSync, exportEventBundle, importEventBundle } from "../../../packages/migrate/manager/src/event-sync";
+import { writeSecret } from "../../../packages/migrate/manager/src/secrets";
+import { ensureSharedState, sharedStateAt, type SharedState } from "../../../packages/migrate/manager/src/state";
+import { createSession, loadSessionEvents, withSessionWriteTransaction } from "../../../packages/migrate/harness/session";
 import {
   applyMemoryCandidate,
   dreamCursorPath,

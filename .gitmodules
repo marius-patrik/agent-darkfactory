@@ -7,26 +7,18 @@
 	url = https://github.com/marius-patrik/darkfactory-data.git
 	branch = main
 [submodule "packages/darkfactory"]
-	path = packages/darkfactory
+	path = agents/darkfactory
 	url = https://github.com/marius-patrik/DarkFactory.git
 	branch = main
-[submodule "packages/memory"]
-	path = packages/memory
-	url = https://github.com/marius-patrik/Memory.git
-	branch = main
 [submodule "packages/lifequest"]
-	path = packages/lifequest
+	path = agents/lifequest
 	url = https://github.com/marius-patrik/LifeQuest.git
 	branch = main
 [submodule "packages/skyagent"]
-	path = packages/skyagent
+	path = agents/skyagent
 	url = https://github.com/marius-patrik/SkyAgent.git
 	branch = main
 [submodule "packages/singularity"]
-	path = packages/singularity
+	path = packages/migrate/singularity
 	url = https://github.com/marius-patrik/Singularity.git
 	branch = main
-[submodule "packages/fabrica"]
-	path = packages/fabrica
-	url = https://github.com/marius-patrik/Fabrica.git
-	branch = dev

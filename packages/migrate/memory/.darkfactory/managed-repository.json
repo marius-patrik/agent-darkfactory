@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "managedBy": "darkfactory",
+  "requiredSecrets": ["CODEX_AUTH_JSON"],
+  "requiredFiles": [
+    "AGENTS.md",
+    ".darkfactory/branching-policy.md",
+    ".darkfactory/managed-repository.json",
+    ".github/workflows/ci.yml",
+    ".github/workflows/codex-review.yml"
+  ]
+}
