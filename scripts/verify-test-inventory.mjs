@@ -113,7 +113,6 @@ export function inventoryIssues(root = repositoryRoot) {
   const actualPackages = [
     ...sortedDirectories(root, "packages"),
     ...sortedDirectories(root, "packages/migrate"),
-    ...sortedDirectories(root, "packages/clients"),
   ].sort();
   for (const packagePath of actualPackages) {
     if (!declaredPackages.includes(packagePath)) issues.push(`package has no fail-closed CI inventory entry: ${packagePath}`);

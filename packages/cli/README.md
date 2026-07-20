@@ -1,4 +1,4 @@
-# terminal
+# cli
 
 The terminal client.
 

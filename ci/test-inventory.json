@@ -170,14 +170,13 @@
     "packages/migrate/singularity"
   ],
   "scaffoldedComponents": [
-    "packages/clients",
-    "packages/clients/app",
-    "packages/clients/terminal",
-    "packages/clients/web",
+    "packages/app",
+    "packages/cli",
     "packages/migrate",
     "packages/migrate/memory",
     "packages/protocol",
     "packages/sdk",
-    "packages/server"
+    "packages/server",
+    "packages/web"
   ]
 }
