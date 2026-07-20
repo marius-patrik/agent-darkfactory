@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const cli = path.join(root, "packages", "migrate", "manager", "src", "cli.ts");
+const cli = path.join(root, "src", "migrate", "manager", "src", "cli.ts");
 const sandbox = mkdtempSync(path.join(tmpdir(), "andromeda-sync-smoke-"));
 const keyFile = path.join(sandbox, "shared-sync-key");
 const key = "7b".repeat(32);

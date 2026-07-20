@@ -79,7 +79,7 @@ ready. Do not use an old product checkout or installer as an update source.
   is scheduled; it is the only public JavaScript package and `agents` CLI
   surface.
 - **agents** is the CLI.
-- `packages/` contains one direct child for each implementation domain,
+- `src/` contains one direct child for each implementation domain,
   managed product plugins, and managed product applications.
 - `plugins/` remains the authored root for repository-owned plugin capabilities;
   it does not contain managed product repository gitlinks.
@@ -168,19 +168,19 @@ older snapshot-sync or provider-adoption command to fall back to.
 
 ## Repository layout
 
-- `packages/migrate/manager/src/` — `agents` CLI and Agent OS state/runtime logic;
+- `src/migrate/manager/src/` — `agents` CLI and Agent OS state/runtime logic;
   see [manager documentation](docs/manager.md).
-- `packages/migrate/core/` — shared contracts, schemas, and generated clients;
+- `src/migrate/core/` — shared contracts, schemas, and generated clients;
   see [core documentation](docs/core.md).
-- `packages/migrate/harness/` — managed runtime harness; see
+- `src/migrate/harness/` — managed runtime harness; see
   [harness documentation](docs/harness.md).
-- `packages/migrate/gateway/` — model gateway and provider routing; see
+- `src/migrate/gateway/` — model gateway and provider routing; see
   [gateway documentation](docs/gateway-runtime.md).
-- `packages/migrate/inference/` — agent loop and inference runtime; see
+- `src/migrate/inference/` — agent loop and inference runtime; see
   [inference documentation](docs/inference.md).
-- `agents/darkfactory/`, `packages/memory/`, `agents/lifequest/`, and
+- `agents/darkfactory/`, `src/memory/`, `agents/lifequest/`, and
   `agents/skyagent/` — managed product plugins.
-- `packages/migrate/singularity/` and `packages/fabrica/` — managed product applications.
+- `src/migrate/singularity/` and `src/fabrica/` — managed product applications.
 - `skills/`, `plugins/`, `hooks/`, `roles/`, and `commands/` — authored capability roots;
   `persona.md` is the authored identity persona.
 - `data/andromeda/` — the development pin for Andromeda-data; the live
@@ -197,7 +197,7 @@ The repository authors its capability floor directly at `skills/`, `plugins/`,
 `hooks/`, `roles/`, and `commands/`. The installer validates and publishes that
 source into the canonical `AGENTS_HOME` state tree; provider-specific copies are
 not another authority. Managed product plugins and authored plugin capabilities
-have separate `packages/` and `plugins/` roots, so moving the managed repositories
+have separate `src/` and `plugins/` roots, so moving the managed repositories
 does not change the authored capability-source contract.
 
 ## Validation

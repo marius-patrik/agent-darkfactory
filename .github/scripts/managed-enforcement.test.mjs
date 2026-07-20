@@ -17,7 +17,7 @@ test("managed Validate provisions Go and uv before dependency installation", asy
   const install = workflow.indexOf("- name: Install dependencies");
   assert.ok(go >= 0, "managed Validate must provision Go");
   assert.ok(uv >= 0, "managed Validate must provision uv");
-  assert.match(workflow, /cache-dependency-path: packages\/migrate\/core\/contracts-go\/go\.sum/);
+  assert.match(workflow, /cache-dependency-path: src\/migrate\/core\/contracts-go\/go\.sum/);
   assert.ok(go < install && uv < install, "language runtimes must be ready before install and validation");
 });
 
@@ -26,7 +26,7 @@ test("monorepo validation uses the uv CLI without a cross-repository go.work", a
   assert.doesNotMatch(commands, /python(?:3)?\s+-m\s+uv/);
   assert.match(commands, /\buv sync --frozen\b/);
   assert.equal(existsSync("go.work"), false);
-  assert.equal(existsSync("packages/migrate/core/contracts-go/go.mod"), true);
+  assert.equal(existsSync("src/migrate/core/contracts-go/go.mod"), true);
 });
 
 test("Autoreview loads provider-agnostic control from protected DarkFactory main", async () => {
@@ -71,10 +71,13 @@ test("legacy provider-specific review assets are absent and no longer required",
 
 test("documented branch policy matches the enforced check names", async () => {
   const policy = await readFile(".darkfactory/branching-policy.md", "utf8");
-  assert.match(policy, /Both `dev` and `main` use strict GitHub-Actions-bound branch protection with\s+`Validate` and `DarkFactory Autoreview` required/);
+  // Assert the substance rather than the exact prose: both protected branches,
+  // strict GitHub-Actions-bound protection, and both required check names.
+  assert.match(policy, /`dev` and `main`/);
+  assert.match(policy, /strict,? GitHub-Actions-bound/);
+  assert.match(policy, /`Validate` and\s+`DarkFactory Autoreview`/);
   assert.match(policy, /independent schema-valid\s+clean high confirmation/);
-  assert.match(policy, /Force pushes and branch deletion are disabled/);
-  assert.match(policy, /Administrator enforcement remains disabled/);
+  assert.match(policy, /Force-pushes, deletion, and administrative gate bypass remain disabled/);
 });
 
 test("Andromeda-data posture records the compensating control without choosing billing or visibility", async () => {

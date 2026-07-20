@@ -15,7 +15,7 @@ $env:AGENTS_HOME = "$HOME\.agents"
 $env:AGENTS_USER_HOME = "$HOME"
 $env:AGENTS_ROOT = "$HOME\marius-patrik\Andromeda"
 Set-Location $env:AGENTS_ROOT
-bun packages/migrate/manager/src/cli.ts state doctor --json
+bun src/migrate/manager/src/cli.ts state doctor --json
 ```
 
 The remaining active sequence is: Planned 1 consolidates specifications into one

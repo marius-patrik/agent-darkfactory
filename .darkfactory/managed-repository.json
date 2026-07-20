@@ -93,11 +93,13 @@
   ],
   "removedFiles": [
     ".darkfactory/release-conventions.md",
-    ".github/scripts/dark-factory-release-check.mjs",
-    ".github/workflows/dark-factory-release.yml",
-    ".github/workflows/codex-review.yml",
     ".github/codex-review.Dockerfile",
     ".github/codex-review.schema.json",
-    ".github/scripts/run-codex-review.sh"
+    ".github/scripts/dark-factory-release-check.mjs",
+    ".github/scripts/run-codex-review.sh",
+    ".github/scripts/run-kimi-review.mjs",
+    ".github/scripts/run-kimi-review.test.mjs",
+    ".github/workflows/codex-review.yml",
+    ".github/workflows/dark-factory-release.yml"
   ]
 }

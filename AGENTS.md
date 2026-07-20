@@ -14,23 +14,23 @@ Shared identity, memory, roles, and skills are installed once under
 Andromeda-owned repository policy, agent guidance, and documentation are
 root-owned. Do not add `.agents`, `.darkfactory`, `docs/`, `AGENTS.md`,
 `README.md`, or `PRD.md` inside superproject-owned implementation packages.
-Managed repository gitlinks below `packages/` retain their independently owned
+Managed repository gitlinks below `src/` retain their independently owned
 child policy and documentation; those child files do not become Andromeda
 authority. Andromeda component documentation belongs under root `docs/`, and
 component-specific validation commands belong in `.agents/.project/COMMANDS.md`.
 
 Component boundaries:
 
-- `packages/migrate/manager` owns the `agents` CLI, canonical state, installs,
+- `src/migrate/manager` owns the `agents` CLI, canonical state, installs,
   credentials/secrets, providers, sessions, memory, packages, lifecycle
   management, and — until the #218 harness migration is implemented and
   accepted — orchestration.
-- `packages/migrate/core` owns protobuf contracts and generated Go, TypeScript, and
+- `src/migrate/core` owns protobuf contracts and generated Go, TypeScript, and
   Python clients.
-- `packages/migrate/harness` owns canonical session events and the event-backed tool
+- `src/migrate/harness` owns canonical session events and the event-backed tool
   loop, with the owner-ruled target (#218) of becoming the operation engine
   owning orchestration; it does not own state-root or provider-discovery
   policy.
-- `packages/migrate/gateway` owns local model routing and transient gateway runtime
+- `src/migrate/gateway` owns local model routing and transient gateway runtime
   state; it requires an explicit absolute `AGENTS_HOME`.
-- `packages/migrate/inference` owns the Python inference loop and private runtime state.
+- `src/migrate/inference` owns the Python inference loop and private runtime state.
