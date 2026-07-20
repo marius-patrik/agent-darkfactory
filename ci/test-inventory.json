@@ -3,84 +3,84 @@
   "activeComponents": [
     {
       "id": "core",
-      "path": "packages/migrate/core",
+      "path": "src/migrate/core",
       "suite": "core",
       "platforms": [
         "ubuntu-latest",
         "windows-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/core/tests/ts-import-smoke.ts",
-        "packages/migrate/core/tests/codegen-retry.test.ts",
-        "packages/migrate/core/tests/python-import-smoke.py",
-        "packages/migrate/core/contracts-go/smoke_test.go",
-        "packages/migrate/core/scripts/python-smoke.mjs"
+        "src/migrate/core/tests/ts-import-smoke.ts",
+        "src/migrate/core/tests/codegen-retry.test.ts",
+        "src/migrate/core/tests/python-import-smoke.py",
+        "src/migrate/core/contracts-go/smoke_test.go",
+        "src/migrate/core/scripts/python-smoke.mjs"
       ]
     },
     {
       "id": "gateway",
-      "path": "packages/migrate/gateway",
+      "path": "src/migrate/gateway",
       "suite": "gateway",
       "platforms": [
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/gateway/tests/test_app.py",
-        "packages/migrate/gateway/tests/test_real_process.py"
+        "src/migrate/gateway/tests/test_app.py",
+        "src/migrate/gateway/tests/test_real_process.py"
       ]
     },
     {
       "id": "harness",
-      "path": "packages/migrate/harness",
+      "path": "src/migrate/harness",
       "suite": "harness",
       "platforms": [
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/harness/test/tools.test.ts",
-        "packages/migrate/manager/test/session.test.ts",
-        "packages/migrate/manager/test/session-adapters.test.ts",
-        "packages/migrate/manager/test/tui-tools.test.ts"
+        "src/migrate/harness/test/tools.test.ts",
+        "src/migrate/manager/test/session.test.ts",
+        "src/migrate/manager/test/session-adapters.test.ts",
+        "src/migrate/manager/test/tui-tools.test.ts"
       ]
     },
     {
       "id": "inference",
-      "path": "packages/migrate/inference",
+      "path": "src/migrate/inference",
       "suite": "inference",
       "platforms": [
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/inference/python-agent/tests/test_loop.py",
-        "packages/migrate/inference/tests/layering/check_planted_violations.py",
-        "packages/migrate/inference/scripts/validate.mjs"
+        "src/migrate/inference/python-agent/tests/test_loop.py",
+        "src/migrate/inference/tests/layering/check_planted_violations.py",
+        "src/migrate/inference/scripts/validate.mjs"
       ]
     },
     {
       "id": "manager",
-      "path": "packages/migrate/manager",
+      "path": "src/migrate/manager",
       "suite": "manager",
       "platforms": [
         "ubuntu-latest",
         "windows-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/manager/test/state-doctor.test.ts",
-        "packages/migrate/manager/test/state-v2.test.ts",
-        "packages/migrate/manager/test/event-sync.test.ts"
+        "src/migrate/manager/test/state-doctor.test.ts",
+        "src/migrate/manager/test/state-v2.test.ts",
+        "src/migrate/manager/test/event-sync.test.ts"
       ]
     },
     {
       "id": "memory-plugin",
-      "path": "packages/migrate/memory",
+      "path": "src/migrate/memory",
       "suite": "memory-plugin",
       "platforms": [
         "ubuntu-latest",
         "windows-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/memory/test/memory-plugin.test.ts",
-        "packages/migrate/memory/src/index.ts"
+        "src/migrate/memory/test/memory-plugin.test.ts",
+        "src/migrate/memory/src/index.ts"
       ]
     }
   ],
@@ -92,7 +92,7 @@
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/gateway/tests/test_real_process.py"
+        "src/migrate/gateway/tests/test_real_process.py"
       ]
     },
     {
@@ -102,7 +102,7 @@
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/gateway/tests/test_real_process.py"
+        "src/migrate/gateway/tests/test_real_process.py"
       ]
     }
   ],
@@ -153,22 +153,21 @@
     }
   ],
   "parkedPlugins": [],
-  "parkedApps": [
-    "packages/migrate/singularity"
-  ],
+  "parkedApps": [],
   "scaffoldedComponents": [
-    "packages/app",
-    "packages/cli",
-    "packages/mcp",
-    "packages/migrate",
-    "packages/migrate/agents-manager-legacy",
-    "packages/migrate/darkfactory",
-    "packages/migrate/dream",
-    "packages/migrate/experience",
-    "packages/migrate/genesis-os",
-    "packages/migrate/llm-gateway",
-    "packages/sdk",
-    "packages/server",
-    "packages/web"
+    "sdk",
+    "src/app",
+    "src/cli",
+    "src/mcp",
+    "src/migrate",
+    "src/migrate/agents-manager-legacy",
+    "src/migrate/darkfactory",
+    "src/migrate/dream",
+    "src/migrate/experience",
+    "src/migrate/genesis-os",
+    "src/migrate/llm-gateway",
+    "src/migrate/singularity",
+    "src/sdk",
+    "src/server"
   ]
 }

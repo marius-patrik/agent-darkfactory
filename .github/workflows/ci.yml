@@ -84,7 +84,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: stable
-          cache-dependency-path: packages/migrate/core/contracts-go/go.sum
+          cache-dependency-path: src/migrate/core/contracts-go/go.sum
 
       - name: Set up uv
         if: contains(fromJSON('["gateway", "gateway-real", "engine-real", "inference"]'), matrix.suite)
@@ -113,8 +113,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           git diff --check "$BASE_SHA...$HEAD_SHA"
-          git submodule update --init --recursive -- packages/migrate/singularity
-          status="$(git submodule status --recursive -- packages/migrate/singularity)"
+          git submodule update --init --recursive -- src/migrate/singularity
+          status="$(git submodule status --recursive -- src/migrate/singularity)"
           printf '%s\n' "$status"
           if printf '%s\n' "$status" | grep -Eq '^[-+U]'; then
             echo "One or more recursive submodules are missing, mismatched, or conflicted." >&2

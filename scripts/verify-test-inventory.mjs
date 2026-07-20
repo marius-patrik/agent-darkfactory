@@ -22,7 +22,7 @@ function unique(values) {
 
 // Managed repositories live under data/ (state), packages/ (components), and
 // agents/ (agent projects built on packages/agent).
-const MANAGED_REPOSITORY_PREFIXES = ["packages/"];
+const MANAGED_REPOSITORY_PREFIXES = ["src/"];
 
 export function parseIndexedGitlinks(output) {
   return output
@@ -106,13 +106,13 @@ export function inventoryIssues(root = repositoryRoot) {
     ...parkedApps,
     ...scaffoldedComponents,
   ]
-    .filter((entry) => typeof entry === "string" && entry.startsWith("packages/"))
+    .filter((entry) => typeof entry === "string" && entry.startsWith("src/"))
     .sort();
   // packages/migrate nests one level deeper: its children are frozen former
   // components, each still individually declared in the inventory.
   const actualPackages = [
     ...sortedDirectories(root, "packages"),
-    ...sortedDirectories(root, "packages/migrate"),
+    ...sortedDirectories(root, "src/migrate"),
   ].sort();
   for (const packagePath of actualPackages) {
     if (!declaredPackages.includes(packagePath)) issues.push(`package has no fail-closed CI inventory entry: ${packagePath}`);
@@ -155,7 +155,7 @@ export function inventoryIssues(root = repositoryRoot) {
       issues.push(`managed package has conflicting CI classifications (${memberships.join(", ")}): ${managedPath}`);
     }
   }
-  const isManagedComponentPath = (value) => value.startsWith("packages/") || value.startsWith("agents/");
+  const isManagedComponentPath = (value) => value.startsWith("src/") || value.startsWith("agents/");
   const declaredPackageGitlinks = declaredGitlinks.filter(isManagedComponentPath).sort();
   const actualPackageGitlinks = actualGitlinks.filter((entry) => isManagedComponentPath(entry.path));
   const classifiedPackageGitlinks = [...activeGitlinks, ...parkedPlugins, ...parkedApps]
