@@ -1,11 +1,3 @@
-[submodule "packages/lifequest"]
-	path = agents/lifequest
-	url = https://github.com/marius-patrik/LifeQuest.git
-	branch = main
-[submodule "packages/skyagent"]
-	path = agents/skyagent
-	url = https://github.com/marius-patrik/SkyAgent.git
-	branch = main
 [submodule "packages/singularity"]
 	path = packages/migrate/singularity
 	url = https://github.com/marius-patrik/Singularity.git

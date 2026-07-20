@@ -22,7 +22,7 @@ function unique(values) {
 
 // Managed repositories live under data/ (state), packages/ (components), and
 // agents/ (agent projects built on packages/agent).
-const MANAGED_REPOSITORY_PREFIXES = ["Andromeda-data", "data/", "packages/", "agents/"];
+const MANAGED_REPOSITORY_PREFIXES = ["Andromeda-data", "packages/"];
 
 export function parseIndexedGitlinks(output) {
   return output
@@ -236,10 +236,10 @@ export function inventoryIssues(root = repositoryRoot) {
   if (!/^\s+name:\s+Repository contract\s*$/m.test(workflow)) {
     issues.push("CI workflow must preserve the exact repository contract job");
   }
-  if (!/^\s+fetch-depth:\s+0\s*$/m.test(workflow) || !workflow.includes("git submodule update --init --recursive -- agents/lifequest agents/skyagent packages/migrate/singularity")) {
+  if (!/^\s+fetch-depth:\s+0\s*$/m.test(workflow) || !workflow.includes("git submodule update --init --recursive -- packages/migrate/singularity")) {
     issues.push("repository contract must fetch full history and initialize every moved public gitlink");
   }
-  if (!workflow.includes('git diff --check "$BASE_SHA...$HEAD_SHA"') || !workflow.includes("git submodule status --recursive -- agents/lifequest agents/skyagent packages/migrate/singularity")) {
+  if (!workflow.includes('git diff --check "$BASE_SHA...$HEAD_SHA"') || !workflow.includes("git submodule status --recursive -- packages/migrate/singularity")) {
     issues.push("repository contract must verify the exact diff and moved recursive gitlink state");
   }
   if (!/^\s+needs:\s*\r?\n\s+-\s+suites\s*\r?\n\s+-\s+repository-contract\s*$/m.test(workflow)) {
