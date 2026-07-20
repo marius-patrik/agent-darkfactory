@@ -1,6 +1,6 @@
 {
   "name": "@marius-patrik/agents-manager",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "description": "Authoritative Agent OS package surface for the unified `agents` CLI and the Andromeda system implementation.",
   "type": "module",
   "workspaces": [

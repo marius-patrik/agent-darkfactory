@@ -78,7 +78,6 @@ export const CI_SUITE_NAMES = Object.freeze([
   "inference",
   "manager",
   "memory-plugin",
-  "darkfactory",
   "release",
   "sync",
   "review",
@@ -170,12 +169,6 @@ const suites = {
       "--max-concurrency=1",
       ...discoverBunTests(path.join("plugins", "memory", "test")),
     ]);
-  },
-  darkfactory() {
-    run("initialize pinned DarkFactory", "git", ["submodule", "update", "--init", "--depth", "1", "agents/darkfactory"]);
-    const cwd = path.join(root, "agents", "darkfactory");
-    runNpm("DarkFactory dependency install", ["ci"], cwd);
-    runNpm("DarkFactory full check", ["run", "check"], cwd);
   },
   release() {
     run("installer and release smoke", "bun", ["scripts/run-release-smoke.mjs"]);

@@ -82,16 +82,6 @@
         "packages/migrate/memory/test/memory-plugin.test.ts",
         "packages/migrate/memory/src/index.ts"
       ]
-    },
-    {
-      "id": "darkfactory",
-      "path": "agents/darkfactory",
-      "suite": "darkfactory",
-      "platforms": [
-        "ubuntu-latest"
-      ],
-      "submodule": true,
-      "requiredPaths": []
     }
   ],
   "realBehaviorLegs": [
@@ -172,13 +162,14 @@
   "scaffoldedComponents": [
     "packages/app",
     "packages/cli",
+    "packages/mcp",
     "packages/migrate",
     "packages/migrate/agents-manager-legacy",
+    "packages/migrate/darkfactory",
     "packages/migrate/dream",
     "packages/migrate/experience",
     "packages/migrate/genesis-os",
     "packages/migrate/llm-gateway",
-    "packages/mcp",
     "packages/sdk",
     "packages/server",
     "packages/web"

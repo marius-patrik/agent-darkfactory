@@ -1,7 +1,3 @@
-[submodule "packages/darkfactory"]
-	path = agents/darkfactory
-	url = https://github.com/marius-patrik/DarkFactory.git
-	branch = main
 [submodule "packages/lifequest"]
 	path = agents/lifequest
 	url = https://github.com/marius-patrik/LifeQuest.git

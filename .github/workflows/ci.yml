@@ -56,9 +56,6 @@ jobs:
           - suite: memory-plugin
             runner: windows-latest
             label: memory plugin platform
-          - suite: darkfactory
-            runner: ubuntu-latest
-            label: DarkFactory plugin
           - suite: release
             runner: ubuntu-latest
             label: installer and release smoke
@@ -116,8 +113,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           git diff --check "$BASE_SHA...$HEAD_SHA"
-          git submodule update --init --recursive -- agents/darkfactory agents/lifequest agents/skyagent packages/migrate/singularity
-          status="$(git submodule status --recursive -- agents/darkfactory agents/lifequest agents/skyagent packages/migrate/singularity)"
+          git submodule update --init --recursive -- agents/lifequest agents/skyagent packages/migrate/singularity
+          status="$(git submodule status --recursive -- agents/lifequest agents/skyagent packages/migrate/singularity)"
           printf '%s\n' "$status"
           if printf '%s\n' "$status" | grep -Eq '^[-+U]'; then
             echo "One or more recursive submodules are missing, mismatched, or conflicted." >&2
