@@ -97,7 +97,7 @@ export function validateModelPolicy(raw) {
   }
 
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 3,
     description: raw.description.trim(),
     purposes: Object.freeze(normalizedPurposes)
   });
@@ -125,7 +125,7 @@ export function modelRequestForPurpose(policy, purpose, options = {}) {
     request = validated.purposes[purpose];
   }
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 3,
     purpose,
     modelTier: request.modelTier,
     effort: request.effort,
@@ -255,7 +255,10 @@ export function validateAgentExecutionReceipt(raw, expectedRequest, options = {}
     receiptRouteCandidate(candidate, `Agent OS execution receipt routing.skipped ${index}`, true)
   );
   if (!isRecord(raw.resolved)) throw new Error("Agent OS execution receipt resolved is invalid");
-  exactKeys(raw.resolved, ["provider", "model", "agentPreset", "providerVersion"], "Agent OS execution receipt resolved");
+  exactKeys(raw.resolved, ["provider", "model", "agentPreset", "providerVersion", "toolPolicy"], "Agent OS execution receipt resolved");
+  if (!TOOL_POLICIES.has(raw.resolved.toolPolicy) && raw.resolved.toolPolicy !== "unresolved") {
+    throw new Error("Agent OS execution receipt resolved.toolPolicy is invalid");
+  }
   const resolved = {
     provider: safeRouteString(raw.resolved.provider, "resolved.provider"),
     model: safeRouteModel(raw.resolved.model, "resolved.model"),
