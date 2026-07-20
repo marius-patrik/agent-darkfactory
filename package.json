@@ -5,17 +5,15 @@
   "type": "module",
   "workspaces": [
     "src/migrate/manager",
-    "src/migrate/core/clients/*",
-    "sdk",
-    "mcp"
+    "src/migrate/core/clients/*"
   ],
   "bin": {
     "agents": "./src/migrate/manager/src/cli.ts"
   },
   "scripts": {
-    "agents": "bun packages/migrate/manager/src/cli.ts",
+    "agents": "bun src/migrate/manager/src/cli.ts",
     "check": "bunx tsc --noEmit",
-    "test": "bun test packages/migrate/manager/test/*.test.ts",
+    "test": "bun test src/migrate/manager/test/*.test.ts",
     "proto:check": "bun scripts/verify-codegen.ts",
     "layout:check": "node scripts/verify-single-product.mjs",
     "ci": "node scripts/run-ci-suite.mjs all",

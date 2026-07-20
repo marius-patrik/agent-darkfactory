@@ -142,7 +142,7 @@
       "engine": "df plan",
       "eventWorkflows": [".github/workflows/df-plan.yml"],
       "recoveryWorkflow": ".github/workflows/df-plan.yml",
-      "eventTriggers": [{ "event": "push", "types": ["PRD.md", "packages/**/PRD.md"] }, { "event": "workflow_dispatch", "types": [] }],
+      "eventTriggers": [{ "event": "push", "types": ["PRD.md", "src/**/PRD.md"] }, { "event": "workflow_dispatch", "types": [] }],
       "recovery": { "cron": "17 */6 * * *", "intervalMinutes": 360, "maxDetectionMinutes": 390 },
       "settleSeconds": 30,
       "debounceSeconds": 90,

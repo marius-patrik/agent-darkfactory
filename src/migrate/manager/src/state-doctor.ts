@@ -566,7 +566,7 @@ async function launcherCheck(state: SharedState): Promise<StateDoctorCheck> {
         issues.push(`agents launcher is missing canonical binding: ${name}=${value}`);
       }
     }
-    const cliPath = path.join(state.root, "packages", "migrate", "manager", "src", "cli.ts");
+    const cliPath = path.join(state.root, "src", "migrate", "manager", "src", "cli.ts");
     const entrypointBinding = windows
       ? `$env:AGENTS_ENTRYPOINT = ${powerShellQuote(cliPath)}`
       : `export AGENTS_ENTRYPOINT=${shellQuote(cliPath)}`;

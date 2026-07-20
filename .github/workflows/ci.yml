@@ -113,11 +113,11 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           git diff --check "$BASE_SHA...$HEAD_SHA"
-          git submodule update --init --recursive -- src/migrate/singularity
-          status="$(git submodule status --recursive -- src/migrate/singularity)"
-          printf '%s\n' "$status"
-          if printf '%s\n' "$status" | grep -Eq '^[-+U]'; then
-            echo "One or more recursive submodules are missing, mismatched, or conflicted." >&2
+          # No submodules remain: every former gitlink is folded into src/migrate
+          # with its history. If one is ever declared again, verify-test-inventory
+          # fails until this job initializes and verifies exactly that set.
+          if [ -s .gitmodules ]; then
+            echo ".gitmodules declares submodules but this job initializes none." >&2
             exit 1
           fi
 

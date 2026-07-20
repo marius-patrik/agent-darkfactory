@@ -20,8 +20,8 @@ function unique(values) {
   return [...new Set(values)];
 }
 
-// Managed repositories live under data/ (state), packages/ (components), and
-// agents/ (agent projects built on packages/agent).
+// Managed repositories live under data/ (state), src/ (components), and
+// agents/ (agent projects built on src/agent).
 const MANAGED_REPOSITORY_PREFIXES = ["src/"];
 
 export function parseIndexedGitlinks(output) {
@@ -115,7 +115,7 @@ export function inventoryIssues(root = repositoryRoot) {
   ]
     .filter((entry) => typeof entry === "string" && (["sdk", "mcp", "hooks", "roles", "skills"].includes(entry) || entry.startsWith("src/")))
     .sort();
-  // packages/migrate nests one level deeper: its children are frozen former
+  // src/migrate nests one level deeper: its children are frozen former
   // components, each still individually declared in the inventory.
   const actualPackages = [
     ...sortedDirectories(root, "src"),
@@ -137,12 +137,12 @@ export function inventoryIssues(root = repositoryRoot) {
   const actualGitlinks = indexedGitlinks(root);
   for (const declaredPath of declaredGitlinks) {
     if (!MANAGED_REPOSITORY_PREFIXES.some((prefix) => declaredPath.startsWith(prefix))) {
-      issues.push(`managed repository declaration is outside data/, packages/, or agents/: ${declaredPath}`);
+      issues.push(`managed repository declaration is outside data/, src/, or agents/: ${declaredPath}`);
     }
   }
   for (const gitlink of actualGitlinks) {
     if (!MANAGED_REPOSITORY_PREFIXES.some((prefix) => gitlink.path.startsWith(prefix))) {
-      issues.push(`managed repository gitlink is outside data/, packages/, or agents/: ${gitlink.path}`);
+      issues.push(`managed repository gitlink is outside data/, src/, or agents/: ${gitlink.path}`);
     }
   }
   const activeGitlinks = activeComponents
@@ -179,8 +179,8 @@ export function inventoryIssues(root = repositoryRoot) {
     ...classifiedPackageGitlinks,
   ]).sort();
   for (const managedPath of managedPackagePaths) {
-    if (!/^(?:packages\/(?:migrate\/)?|agents\/)[a-z0-9]+(?:-[a-z0-9]+)*$/.test(managedPath)) {
-      issues.push(`managed component path is not a lowercase child of packages/, packages/migrate/, or agents/: ${managedPath}`);
+    if (!/^(?:src\/(?:migrate\/)?|agents\/)[a-z0-9]+(?:-[a-z0-9]+)*$/.test(managedPath)) {
+      issues.push(`managed component path is not a lowercase child of src/, src/migrate/, or agents/: ${managedPath}`);
     }
     const declarationCount = declaredPackageGitlinks.filter((entry) => entry === managedPath).length;
     const gitlinks = actualPackageGitlinks.filter((entry) => entry.path === managedPath);
@@ -213,6 +213,12 @@ export function inventoryIssues(root = repositoryRoot) {
   for (const gitlink of actualDataGitlinks) {
     if (!allowedDataGitlinks.includes(gitlink.path)) issues.push(`data repository gitlink is not allowlisted: ${gitlink.path}`);
   }
+  // The data allowlist is intentionally empty: state lives in the separate
+  // private-data repository and is no longer a submodule of this one. The
+  // guards above still reject ANY data/ declaration or gitlink, which is the
+  // direction that matters. Per-entry allowlist checks are omitted rather than
+  // kept as unreachable code; reintroducing an allowed data repository means
+  // restoring them together with their coverage.
   for (const allowedPath of allowedDataGitlinks) {
     const declarationCount = declaredDataGitlinks.filter((entry) => entry === allowedPath).length;
     const gitlinks = actualDataGitlinks.filter((entry) => entry.path === allowedPath);
@@ -247,6 +253,29 @@ export function inventoryIssues(root = repositoryRoot) {
   if (!/^\s+name:\s+Validate\s*$/m.test(workflow)) issues.push("CI workflow must preserve the required Validate context");
   if (!/^\s+name:\s+Repository contract\s*$/m.test(workflow)) {
     issues.push("CI workflow must preserve the exact repository contract job");
+  }
+  // Fresh-clone evidence. The expected submodule set is derived from
+  // .gitmodules rather than hardcoded, so folding a submodule in cannot
+  // silently leave a stale initialization behind, and adding one cannot
+  // silently skip initialization.
+  if (!/^\s+fetch-depth:\s+0\s*$/m.test(workflow)) {
+    issues.push("repository contract must fetch full history for fresh-clone evidence");
+  }
+  if (!workflow.includes('git diff --check "$BASE_SHA...$HEAD_SHA"')) {
+    issues.push("repository contract must verify the exact diff");
+  }
+  const declaredForWorkflow = declaredGitlinks.join(" ");
+  if (declaredGitlinks.length > 0) {
+    for (const [command, label] of [
+      ["git submodule update --init --recursive -- ", "initialize"],
+      ["git submodule status --recursive -- ", "verify"],
+    ]) {
+      if (!workflow.includes(`${command}${declaredForWorkflow}`)) {
+        issues.push(`repository contract must ${label} exactly the declared gitlinks: ${declaredForWorkflow}`);
+      }
+    }
+  } else if (/git submodule (?:update|status)[^\n]*--\s+\S/.test(workflow)) {
+    issues.push("repository contract initializes a submodule that is no longer declared in .gitmodules");
   }
   if (!/^\s+needs:\s*\r?\n\s+-\s+suites\s*\r?\n\s+-\s+repository-contract\s*$/m.test(workflow)) {
     issues.push("Validate must aggregate every suite matrix leg and the repository contract");

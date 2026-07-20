@@ -48,28 +48,38 @@ done < <(git -C "$ROOT_DIR" ls-files --others --exclude-standard -z)
 git -C "$SOURCE_DIR" add -A
 STUB_ROOT="$SANDBOX/component-stubs"
 mkdir -p "$STUB_ROOT"
+# The state repository is cloned into AGENTS_HOME below whether or not it is a
+# submodule of this repository, so its fixture is built unconditionally. As of
+# the migrate consolidation no submodules remain, and the loop that follows is
+# a no-op until one is declared again.
+data_stub="$STUB_ROOT/data"
+mkdir -p "$data_stub"
+git -C "$data_stub" init -q -b main
+git -C "$data_stub" config user.name "Agent OS smoke"
+git -C "$data_stub" config user.email "agent-os-smoke@invalid"
+printf '%s\n' '/bin/' '/clis/' '/memory/' '/runtime/' '/secrets/' '/sessions/' '/sync/' >"$data_stub/.gitignore"
+printf '%s\n' '{"schemaVersion":1,"id":"agent-os-data","kind":"data"}' >"$data_stub/agent.package.json"
+printf '%s\n' '# Agent OS Data smoke fixture' >"$data_stub/README.md"
+mkdir -p "$data_stub/scripts"
+printf '%s\n' '// smoke fixture' >"$data_stub/scripts/validate.mjs"
+git -C "$data_stub" add .
+git -C "$data_stub" commit -q -m "stub data"
+
 while read -r _key component_name; do
+  [ "$component_name" = "data" ] && continue
   component_path="$(git -C "$SOURCE_DIR" config --file .gitmodules --get "submodule.$component_name.path")"
   stub_repo="$STUB_ROOT/$component_name"
   mkdir -p "$stub_repo"
   git -C "$stub_repo" init -q -b main
   git -C "$stub_repo" config user.name "Agent OS smoke"
   git -C "$stub_repo" config user.email "agent-os-smoke@invalid"
-  if [ "$component_name" = "data" ]; then
-    printf '%s\n' '/bin/' '/clis/' '/memory/' '/runtime/' '/secrets/' '/sessions/' '/sync/' >"$stub_repo/.gitignore"
-    printf '%s\n' '{"schemaVersion":1,"id":"agent-os-data","kind":"data"}' >"$stub_repo/agent.package.json"
-    printf '%s\n' '# Agent OS Data smoke fixture' >"$stub_repo/README.md"
-    mkdir -p "$stub_repo/scripts"
-    printf '%s\n' '// smoke fixture' >"$stub_repo/scripts/validate.mjs"
-  else
-    printf '%s\n' "$component_path" >"$stub_repo/COMPONENT"
-  fi
+  printf '%s\n' "$component_path" >"$stub_repo/COMPONENT"
   git -C "$stub_repo" add .
   git -C "$stub_repo" commit -q -m "stub $component_name"
   stub_commit="$(git -C "$stub_repo" rev-parse HEAD)"
   git -C "$SOURCE_DIR" config --file .gitmodules "submodule.$component_name.url" "$stub_repo"
   git -C "$SOURCE_DIR" update-index --add --cacheinfo "160000,$stub_commit,$component_path"
-done < <(git -C "$SOURCE_DIR" config --file .gitmodules --name-only --get-regexp '^submodule\..*\.path$' | sed -E 's/^submodule\.([^.]*)\.path$/path \1/')
+done < <(git -C "$SOURCE_DIR" config --file .gitmodules --name-only --get-regexp '^submodule\..*\.path$' 2>/dev/null | sed -E 's/^submodule\.([^.]*)\.path$/path \1/')
 
 git -C "$SOURCE_DIR" config user.name "Agent OS smoke"
 git -C "$SOURCE_DIR" config user.email "agent-os-smoke@invalid"

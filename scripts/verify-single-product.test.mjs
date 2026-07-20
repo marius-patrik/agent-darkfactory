@@ -8,19 +8,19 @@ import { javascriptPackageVersionIssues } from "./verify-single-product-versions
 test("ordinary future JavaScript workspaces cannot drift from the product version", (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "andromeda-product-version-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(path.join(root, "packages", "future-client"), { recursive: true });
+  mkdirSync(path.join(root, "src", "future-client"), { recursive: true });
   writeFileSync(path.join(root, "package.json"), JSON.stringify({ version: "0.1.0" }));
   writeFileSync(
-    path.join(root, "packages", "future-client", "package.json"),
+    path.join(root, "src", "future-client", "package.json"),
     JSON.stringify({ version: "9.9.9" }),
   );
 
   assert.deepEqual(
     javascriptPackageVersionIssues(
       root,
-      ["package.json", "packages/future-client/package.json", "packages/future-client/agent.package.json"],
+      ["package.json", "src/future-client/package.json", "src/future-client/agent.package.json"],
       "0.1.0",
     ),
-    ["JavaScript package version drift in packages/future-client/package.json: 9.9.9 != 0.1.0"],
+    ["JavaScript package version drift in src/future-client/package.json: 9.9.9 != 0.1.0"],
   );
 });
