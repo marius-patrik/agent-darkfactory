@@ -1,0 +1,21 @@
+services:
+  gateway:
+    build: .
+    container_name: agents-gateway
+    ports:
+      - "4000:4000"
+    environment:
+      - GATEWAY_REGISTRY_PATH=/app/registry/models.yaml
+      - GATEWAY_ACTIVE_PATH=/app/registry/active.yaml
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./registry:/app/registry:rw
+      - ./traces:/app/traces:rw
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
