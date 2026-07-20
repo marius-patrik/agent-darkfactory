@@ -1,0 +1,27 @@
+{
+  "name": "darkfactory-templates",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run --filter '*' build",
+    "check:branch-protection": "node scripts/check-branch-protection.mjs",
+    "check:managed-conformance": "node scripts/check-managed-conformance.mjs",
+    "check:managed-stack": "node scripts/check-managed-stack.mjs",
+    "ci": "bun install --frozen-lockfile && bun run check:managed-conformance && bun run check:managed-stack && bun run typecheck && bun run test && bun run build",
+    "dev:cli": "bun --filter @template/cli run dev",
+    "dev:web": "bun --filter @template/web run dev",
+    "start": "bun --filter @template/web run start",
+    "sync:submodules": "git submodule update --init --recursive",
+    "test": "bun run --filter '*' test",
+    "typecheck": "bun run --filter '*' typecheck"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14",
+    "typescript": "^5.8.3"
+  }
+}
