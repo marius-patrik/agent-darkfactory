@@ -17,7 +17,7 @@ test("managed Validate provisions Go and uv before dependency installation", asy
   const install = workflow.indexOf("- name: Install dependencies");
   assert.ok(go >= 0, "managed Validate must provision Go");
   assert.ok(uv >= 0, "managed Validate must provision uv");
-  assert.match(workflow, /cache-dependency-path: packages\/core\/contracts-go\/go\.sum/);
+  assert.match(workflow, /cache-dependency-path: packages\/migrate\/core\/contracts-go\/go\.sum/);
   assert.ok(go < install && uv < install, "language runtimes must be ready before install and validation");
 });
 

@@ -63,7 +63,7 @@ function requireUv() {
 function runGatewayPytest(marker) {
   requireUv();
   const uv = process.env.UV || "uv";
-  const cwd = path.join(root, "packages", "gateway");
+  const cwd = path.join(root, "packages", "migrate", "gateway");
   run("gateway dependency sync", uv, ["sync", "--frozen"], { cwd });
   run(`gateway pytest (${marker})`, uv, ["run", "pytest", "-q", "-m", marker], { cwd });
 }
@@ -104,13 +104,13 @@ const suites = {
     run("generated contract freshness", "bun", ["scripts/verify-codegen.ts"]);
     run("core Python import smoke", "bun", ["packages/migrate/core/scripts/python-smoke.mjs"]);
     run("core Go contracts", "go", ["test", "./..."], {
-      cwd: path.join(root, "packages", "core", "contracts-go"),
+      cwd: path.join(root, "packages", "migrate", "core", "contracts-go"),
     });
   },
   gateway() {
     requireUv();
     const uv = process.env.UV || "uv";
-    const cwd = path.join(root, "packages", "gateway");
+    const cwd = path.join(root, "packages", "migrate", "gateway");
     const sandbox = mkdtempSync(path.join(tmpdir(), "andromeda-gateway-ci-"));
     const userHome = path.join(sandbox, "user");
     const stateHome = path.join(userHome, ".agents");
@@ -144,7 +144,7 @@ const suites = {
   inference() {
     requireUv();
     const uv = process.env.UV || "uv";
-    const cwd = path.join(root, "packages", "inference", "python-agent");
+    const cwd = path.join(root, "packages", "migrate", "inference", "python-agent");
     run("inference dependency sync", uv, ["sync", "--frozen"], { cwd });
     run("inference validation", "bun", ["packages/migrate/inference/scripts/validate.mjs"]);
   },

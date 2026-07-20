@@ -56,14 +56,14 @@ test("success: the checked-in component inventory and workflow are complete", ()
 test("success: new core and harness Bun tests join their suites automatically", () => {
   const target = fixture();
   try {
-    const coreTest = path.join(target, "packages", "core", "tests", "new-contract.spec.ts");
-    const harnessTest = path.join(target, "packages", "harness", "test", "nested", "new-tool.test.js");
+    const coreTest = path.join(target, "packages", "migrate", "core", "tests", "new-contract.spec.ts");
+    const harnessTest = path.join(target, "packages", "migrate", "harness", "test", "nested", "new-tool.test.js");
     mkdirSync(path.dirname(coreTest), { recursive: true });
     mkdirSync(path.dirname(harnessTest), { recursive: true });
     writeFileSync(coreTest, "fixture\n");
     writeFileSync(harnessTest, "fixture\n");
-    assert.ok(discoverBunTests(path.join("packages", "core", "tests"), target).includes(path.relative(target, coreTest)));
-    assert.ok(discoverBunTests(path.join("packages", "harness", "test"), target).includes(path.relative(target, harnessTest)));
+    assert.ok(discoverBunTests(path.join("packages", "migrate", "core", "tests"), target).includes(path.relative(target, coreTest)));
+    assert.ok(discoverBunTests(path.join("packages", "migrate", "harness", "test"), target).includes(path.relative(target, harnessTest)));
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
@@ -78,7 +78,7 @@ test("success: serialized manager tests retain a bounded Windows filesystem time
 test("edge input: a missing manager-coupled harness test fails the inventory", () => {
   const target = fixture();
   try {
-    rmSync(path.join(target, "packages", "manager", "test", "session.test.ts"));
+    rmSync(path.join(target, "packages", "migrate", "manager", "test", "session.test.ts"));
     assert.match(inventoryIssues(target).join("\n"), /harness is missing required suite path/);
   } finally {
     rmSync(target, { recursive: true, force: true });

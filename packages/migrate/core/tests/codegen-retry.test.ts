@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { isRetryableBufFailure } from "../../../scripts/verify-codegen";
+import { isRetryableBufFailure } from "../../../../scripts/verify-codegen";
 
 describe("Buf codegen transient failure classification", () => {
   test("success output is not classified as retryable", () => {

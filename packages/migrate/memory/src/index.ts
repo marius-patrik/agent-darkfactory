@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { lstat, open, opendir, readFile, realpath } from "node:fs/promises";
-import { findSecretLikePath } from "../../../packages/manager/src/event-sync";
+import { findSecretLikePath } from "../../manager/src/event-sync";
 import {
   listMemoryRecords,
   rememberMemory,
@@ -11,13 +11,13 @@ import {
   type MemoryRecord,
   type MemoryRecordStatus,
   type MemorySensitivity,
-} from "../../../packages/manager/src/memory";
-import type { SharedState } from "../../../packages/manager/src/state";
+} from "../../manager/src/memory";
+import type { SharedState } from "../../manager/src/state";
 import {
   pluginRuntimeProjectionPath,
   publishPluginRuntimeProjection,
-} from "../../../packages/manager/src/state-v2";
-import { listSessionIds, loadSessionEventBatch, type SessionEvent } from "../../../packages/harness/session";
+} from "../../manager/src/state-v2";
+import { listSessionIds, loadSessionEventBatch, type SessionEvent } from "../../harness/session";
 
 export const MEMORY_PLUGIN_SCHEMA_VERSION = 1 as const;
 export const DREAM_V13_CURSOR_VERSION = "1.3" as const;
