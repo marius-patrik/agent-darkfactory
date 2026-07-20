@@ -26,7 +26,7 @@ test("monorepo validation uses the uv CLI without a cross-repository go.work", a
   assert.doesNotMatch(commands, /python(?:3)?\s+-m\s+uv/);
   assert.match(commands, /\buv sync --frozen\b/);
   assert.equal(existsSync("go.work"), false);
-  assert.equal(existsSync("packages/core/contracts-go/go.mod"), true);
+  assert.equal(existsSync("packages/migrate/core/contracts-go/go.mod"), true);
 });
 
 test("Autoreview loads provider-agnostic control from protected DarkFactory main", async () => {

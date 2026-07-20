@@ -59,12 +59,6 @@ jobs:
           - suite: darkfactory
             runner: ubuntu-latest
             label: DarkFactory plugin
-          - suite: memory
-            runner: ubuntu-latest
-            label: Memory plugin
-          - suite: memory
-            runner: windows-latest
-            label: Memory plugin platform
           - suite: release
             runner: ubuntu-latest
             label: installer and release smoke
@@ -93,7 +87,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: stable
-          cache-dependency-path: packages/core/contracts-go/go.sum
+          cache-dependency-path: packages/migrate/core/contracts-go/go.sum
 
       - name: Set up uv
         if: contains(fromJSON('["gateway", "gateway-real", "engine-real", "inference"]'), matrix.suite)
@@ -122,8 +116,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           git diff --check "$BASE_SHA...$HEAD_SHA"
-          git submodule update --init --recursive -- packages/darkfactory packages/memory packages/lifequest packages/skyagent packages/singularity packages/fabrica
-          status="$(git submodule status --recursive -- packages/darkfactory packages/memory packages/lifequest packages/skyagent packages/singularity packages/fabrica)"
+          git submodule update --init --recursive -- agents/darkfactory agents/lifequest agents/skyagent packages/migrate/singularity
+          status="$(git submodule status --recursive -- agents/darkfactory agents/lifequest agents/skyagent packages/migrate/singularity)"
           printf '%s\n' "$status"
           if printf '%s\n' "$status" | grep -Eq '^[-+U]'; then
             echo "One or more recursive submodules are missing, mismatched, or conflicted." >&2

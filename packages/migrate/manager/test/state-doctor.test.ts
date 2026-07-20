@@ -13,7 +13,7 @@ import { enableEventSync } from "../src/event-sync";
 import { createSession, rebuildSessionProjections, sessionPaths } from "../../harness/session";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
-const sourceRoot = path.resolve(repoRoot, "../..");
+const sourceRoot = path.resolve(repoRoot, "../../..");
 const cliPath = path.join(repoRoot, "src", "cli.ts");
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 

@@ -59,12 +59,12 @@ retire. They are not supported aliases or compatibility contracts.
 
 | Component | Role |
 | --- | --- |
-| `packages/core` | Protobuf sources and generated Go, TypeScript, and Python contracts |
-| `packages/manager` | `agents` CLI, state, installs, credentials/secrets, providers, sessions, memory, package/capability registries, and lifecycle management — the single local management surface; hosts the orchestrator runtime until the #218 migration is implemented and accepted |
-| `packages/harness` | Canonical session event handling and tool execution today. Owner-ruled target (2026-07-13, #218): the operation engine owning orchestration, with the orchestrator runtime migrating from the manager |
-| `packages/gateway` | Local model registry, routing, health, quota, and transient control-plane relay; switcher control plane and cloud OAuth dispatch |
-| `packages/inference` | Gateway-backed Python agent loop, status, persistence, redaction, and package validation; engine discovery and serve profiles |
-| `packages/darkfactory` | Thin GitHub control-plane adapter: issues/PRs/labels ↔ work units, enforcement sync, review gates. No second brain. |
+| `packages/migrate/core` | Protobuf sources and generated Go, TypeScript, and Python contracts |
+| `packages/migrate/manager` | `agents` CLI, state, installs, credentials/secrets, providers, sessions, memory, package/capability registries, and lifecycle management — the single local management surface; hosts the orchestrator runtime until the #218 migration is implemented and accepted |
+| `packages/migrate/harness` | Canonical session event handling and tool execution today. Owner-ruled target (2026-07-13, #218): the operation engine owning orchestration, with the orchestrator runtime migrating from the manager |
+| `packages/migrate/gateway` | Local model registry, routing, health, quota, and transient control-plane relay; switcher control plane and cloud OAuth dispatch |
+| `packages/migrate/inference` | Gateway-backed Python agent loop, status, persistence, redaction, and package validation; engine discovery and serve profiles |
+| `agents/darkfactory` | Thin GitHub control-plane adapter: issues/PRs/labels ↔ work units, enforcement sync, review gates. No second brain. |
 
 Binding architecture rule: the manager manages and the harness operates — as
 the owner-ruled target architecture. Local system management (state, installs,
@@ -359,7 +359,7 @@ strictly through them.
 
 - Every active component's full test suite runs in Validate on every PR:
   `packages/{core,gateway,harness,inference,manager}` and
-  `packages/darkfactory`; parked plugins and applications stay excluded.
+  `agents/darkfactory`; parked plugins and applications stay excluded.
 - Real-behavior legs, not only mocks: a real gateway process round-trip
   (plain and streaming) against an OpenAI-wire backend and an engine
   discovery→registration→routing pass; no hardcoded registry counts.
@@ -465,16 +465,16 @@ tombstones, and produces identical projection hashes on participating machines.
 ## Repository layout
 
 ```text
-packages/core/
-packages/manager/
-packages/harness/
-packages/gateway/
-packages/inference/
-packages/darkfactory/
+packages/migrate/core/
+packages/migrate/manager/
+packages/migrate/harness/
+packages/migrate/gateway/
+packages/migrate/inference/
+agents/darkfactory/
 packages/memory/
-packages/lifequest/
-packages/skyagent/
-packages/singularity/
+agents/lifequest/
+agents/skyagent/
+packages/migrate/singularity/
 packages/fabrica/
 skills/
 hooks/

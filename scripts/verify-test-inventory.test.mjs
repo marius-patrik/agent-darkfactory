@@ -118,7 +118,7 @@ test("denied failure: Validate cannot omit fresh-clone evidence for the moved pu
     const workflowPath = path.join(target, ".github", "workflows", "ci.yml");
     writeFileSync(
       workflowPath,
-      requireText(workflowPath).replace("git submodule update --init --recursive -- packages/darkfactory", "git submodule update --init --recursive -- packages/omitted"),
+      requireText(workflowPath).replace("git submodule update --init --recursive -- agents/darkfactory", "git submodule update --init --recursive -- packages/omitted"),
     );
     assert.match(
       inventoryIssues(target).join("\n"),
@@ -134,7 +134,7 @@ test("denied failure: managed package classifications must be unique and mutuall
   try {
     const inventoryPath = path.join(target, "ci", "test-inventory.json");
     const inventory = JSON.parse(requireText(inventoryPath));
-    inventory.parkedPlugins.push("packages/darkfactory", "packages/lifequest");
+    inventory.parkedPlugins.push("agents/darkfactory", "agents/lifequest");
     writeFileSync(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
     const issues = inventoryIssues(target).join("\n");
     assert.match(issues, /managed package has conflicting CI classifications \(active, parked plugin\): packages\/darkfactory/);
@@ -176,7 +176,7 @@ test("denied failure: declarations and index gitlinks outside data and packages 
 test("denied failure: a classified managed package declaration without an index gitlink cannot pass", () => {
   const target = fixture();
   try {
-    git(target, "update-index", "--force-remove", "packages/darkfactory");
+    git(target, "update-index", "--force-remove", "agents/darkfactory");
     assert.match(
       inventoryIssues(target).join("\n"),
       /classified managed package is not a repository gitlink: packages\/darkfactory/,
@@ -192,7 +192,7 @@ test("denied failure: duplicate managed package declarations cannot pass", () =>
     const gitmodulesPath = path.join(target, ".gitmodules");
     writeFileSync(
       gitmodulesPath,
-      `${requireText(gitmodulesPath)}[submodule "duplicate-darkfactory"]\n\tpath = packages/darkfactory\n\turl = https://example.test/duplicate.git\n`,
+      `${requireText(gitmodulesPath)}[submodule "duplicate-darkfactory"]\n\tpath = agents/darkfactory\n\turl = https://example.test/duplicate.git\n`,
     );
     assert.match(
       inventoryIssues(target).join("\n"),
@@ -206,10 +206,10 @@ test("denied failure: duplicate managed package declarations cannot pass", () =>
 test("denied failure: conflicted managed package index entries cannot pass", () => {
   const target = fixture();
   try {
-    git(target, "update-index", "--force-remove", "packages/darkfactory");
+    git(target, "update-index", "--force-remove", "agents/darkfactory");
     addIndexEntries(
       target,
-      `160000 ${fixtureGitlinkOid} 1\tpackages/darkfactory\n160000 ${fixtureGitlinkOid} 2\tpackages/darkfactory\n`,
+      `160000 ${fixtureGitlinkOid} 1\tagents/darkfactory\n160000 ${fixtureGitlinkOid} 2\tagents/darkfactory\n`,
     );
     const issues = inventoryIssues(target).join("\n");
     assert.match(issues, /managed package has multiple index entries: packages\/darkfactory/);

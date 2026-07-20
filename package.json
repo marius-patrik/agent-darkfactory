@@ -4,17 +4,17 @@
   "description": "Authoritative Agent OS package surface for the unified `agents` CLI and the Andromeda system implementation.",
   "type": "module",
   "workspaces": [
-    "packages/manager",
-    "packages/core/clients/*",
+    "packages/migrate/manager",
+    "packages/migrate/core/clients/*",
     "plugins/memory"
   ],
   "bin": {
-    "agents": "./packages/manager/src/cli.ts"
+    "agents": "./packages/migrate/manager/src/cli.ts"
   },
   "scripts": {
-    "agents": "bun packages/manager/src/cli.ts",
+    "agents": "bun packages/migrate/manager/src/cli.ts",
     "check": "bunx tsc --noEmit",
-    "test": "bun test packages/manager/test/*.test.ts",
+    "test": "bun test packages/migrate/manager/test/*.test.ts",
     "proto:check": "bun scripts/verify-codegen.ts",
     "layout:check": "node scripts/verify-single-product.mjs",
     "ci": "node scripts/run-ci-suite.mjs all",

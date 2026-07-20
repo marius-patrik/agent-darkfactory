@@ -22,23 +22,23 @@ subshell is shown:
 
 ```sh
 # Core contracts and generated clients
-bunx tsc --noEmit -p packages/core/tsconfig.json
-bunx buf lint packages/core/proto
+bunx tsc --noEmit -p packages/migrate/core/tsconfig.json
+bunx buf lint packages/migrate/core/proto
 bun scripts/verify-codegen.ts
-(cd packages/core/contracts-go && go test ./...)
+(cd packages/migrate/core/contracts-go && go test ./...)
 
 # Harness behavior
 node scripts/run-ci-suite.mjs harness
 
 # The exhaustive manager-coupled harness files remain:
-bun test packages/harness/test/tools.test.ts \
-  packages/manager/test/session.test.ts \
-  packages/manager/test/session-adapters.test.ts \
-  packages/manager/test/tui-tools.test.ts
+bun test packages/migrate/harness/test/tools.test.ts \
+  packages/migrate/manager/test/session.test.ts \
+  packages/migrate/manager/test/session-adapters.test.ts \
+  packages/migrate/manager/test/tui-tools.test.ts
 
 # Gateway package
 (
-  cd packages/gateway
+  cd packages/migrate/gateway
   uv sync --frozen
   uv run ruff check llm_gateway tests scripts
   uv run mypy llm_gateway
@@ -51,7 +51,7 @@ bun test packages/harness/test/tools.test.ts \
 )
 
 # Inference package
-bun packages/inference/scripts/validate.mjs
+bun packages/migrate/inference/scripts/validate.mjs
 
 # Pinned DarkFactory plugin
 node scripts/run-ci-suite.mjs darkfactory
