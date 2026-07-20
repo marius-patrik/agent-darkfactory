@@ -1,0 +1,24 @@
+{
+  "name": "memory",
+  "version": "0.1.0",
+  "description": "Canonical reflection, idle dream distillation, corpus candidate processing, and Dream cursor migration.",
+  "author": {
+    "name": "marius-patrik"
+  },
+  "repository": "https://github.com/marius-patrik/Memory",
+  "license": "MIT",
+  "keywords": ["memory", "reflection", "dreams", "provenance"],
+  "interface": {
+    "displayName": "Memory",
+    "shortDescription": "Reflect and distill canonical session history.",
+    "longDescription": "Turns canonical session events and explicitly admitted historical corpora into provenance-backed memory records through the canonical mutation boundary.",
+    "developerName": "marius-patrik",
+    "category": "Productivity",
+    "capabilities": ["Reflection", "Dream distillation", "Corpus processing", "Cursor migration"],
+    "defaultPrompt": [
+      "Reflect the latest canonical session into memory.",
+      "Run an idle dream distillation cycle.",
+      "Process an admitted historical corpus into candidates."
+    ]
+  }
+}

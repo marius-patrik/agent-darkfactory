@@ -1,0 +1,59 @@
+# Replace the endpoint/model with any OpenAI-compatible teacher service.
+# Teacher calls occur only while compiling Birth data; Wake never depends on this endpoint.
+name: genesis-reasoning-teacher-distilled
+seed: 42
+genome:
+  d_model: 256
+  n_layers: 8
+  n_heads: 8
+  ff_multiplier: 4.0
+  max_sequence_length: 2048
+  memory_slots: 16
+  world_latent_dim: 128
+curriculum:
+  seed: 42
+  validation_fraction: 0.08
+  teacher:
+    base_url: http://127.0.0.1:8000/v1
+    model: teacher-model
+    api_key_env: TEACHER_API_KEY
+    timeout_seconds: 120
+    max_retries: 2
+    temperature: 0.0
+    max_tokens: 1024
+    required: true
+  stages:
+    - name: textbook_foundations
+      generator: textbook
+      examples: 128
+      parameters:
+        paths:
+          - ../examples/textbooks/foundations.yaml
+    - name: procedural_reasoning
+      generator: procedural_distillation
+      examples: 100000
+      prerequisites: [textbook_foundations]
+      weight: 1.6
+      parameters:
+        teacher_required: true
+    - name: tools
+      generator: tool_use
+      examples: 100000
+      prerequisites: [textbook_foundations]
+      weight: 1.6
+    - name: memory
+      generator: memory_recall
+      examples: 100000
+      prerequisites: [textbook_foundations]
+      weight: 1.4
+training:
+  epochs: 3
+  batch_size: 16
+  learning_rate: 0.0003
+  warmup_steps: 2000
+  gradient_accumulation_steps: 4
+  device: auto
+viability:
+  max_validation_loss: 5.0
+  min_tool_name_accuracy: 0.35
+  generation_samples: 128

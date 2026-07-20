@@ -1,0 +1,5 @@
+interface:
+  display_name: "Dream"
+  short_description: "Run a full temporal-replay workflow and persist proactive retrospective memory."
+  default_prompt: "Use $dream to run the full sequential replay workflow that extracts unfinished work and updates SHORT.md, cache.md, and handoff."
+

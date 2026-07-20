@@ -1,0 +1,23 @@
+seed: 1337
+min_new_events: 1
+validation_fraction: 0.15
+replay_examples: 50000
+max_experience_examples: 250000
+generation_samples: 64
+max_generation_tokens: 384
+training:
+  epochs: 1
+  max_steps: 5000
+  batch_size: 16
+  learning_rate: 0.00005
+  weight_decay: 0.05
+  warmup_steps: 200
+  gradient_accumulation_steps: 4
+  world_loss_weight: 0.25
+  device: auto
+gate:
+  max_new_loss_regression: 0.0
+  min_new_loss_improvement: 0.0
+  max_foundation_relative_regression: 0.02
+  max_tool_accuracy_drop: 0.02
+  require_ledger_integrity: true

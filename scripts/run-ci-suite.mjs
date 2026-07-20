@@ -21,15 +21,15 @@ export function discoverBunTests(relativeDirectory, repositoryRoot = root) {
 }
 
 function managerTests() {
-  return discoverBunTests(path.join("packages", "manager", "test"));
+  return discoverBunTests(path.join("packages", "migrate", "manager", "test"));
 }
 
 function harnessTests() {
   return [
-    ...discoverBunTests(path.join("packages", "harness", "test")),
-    path.join("packages", "manager", "test", "session.test.ts"),
-    path.join("packages", "manager", "test", "session-adapters.test.ts"),
-    path.join("packages", "manager", "test", "tui-tools.test.ts"),
+    ...discoverBunTests(path.join("packages", "migrate", "harness", "test")),
+    path.join("packages", "migrate", "manager", "test", "session.test.ts"),
+    path.join("packages", "migrate", "manager", "test", "session-adapters.test.ts"),
+    path.join("packages", "migrate", "manager", "test", "tui-tools.test.ts"),
   ];
 }
 
@@ -63,7 +63,7 @@ function requireUv() {
 function runGatewayPytest(marker) {
   requireUv();
   const uv = process.env.UV || "uv";
-  const cwd = path.join(root, "packages", "gateway");
+  const cwd = path.join(root, "packages", "migrate", "gateway");
   run("gateway dependency sync", uv, ["sync", "--frozen"], { cwd });
   run(`gateway pytest (${marker})`, uv, ["run", "pytest", "-q", "-m", marker], { cwd });
 }
@@ -79,7 +79,6 @@ export const CI_SUITE_NAMES = Object.freeze([
   "manager",
   "memory-plugin",
   "darkfactory",
-  "memory",
   "release",
   "sync",
   "review",
@@ -99,19 +98,19 @@ const suites = {
     run("repository layout and suite inventory", "bun", ["run", "layout:check"]);
   },
   core() {
-    run("core TypeScript types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "packages/core/tsconfig.json"]);
-    run("core TypeScript import smoke", "bun", ["packages/core/tests/ts-import-smoke.ts"]);
-    run("core TypeScript tests", "bun", ["test", ...discoverBunTests(path.join("packages", "core", "tests"))]);
+    run("core TypeScript types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "packages/migrate/core/tsconfig.json"]);
+    run("core TypeScript import smoke", "bun", ["packages/migrate/core/tests/ts-import-smoke.ts"]);
+    run("core TypeScript tests", "bun", ["test", ...discoverBunTests(path.join("packages", "migrate", "core", "tests"))]);
     run("generated contract freshness", "bun", ["scripts/verify-codegen.ts"]);
-    run("core Python import smoke", "bun", ["packages/core/scripts/python-smoke.mjs"]);
+    run("core Python import smoke", "bun", ["packages/migrate/core/scripts/python-smoke.mjs"]);
     run("core Go contracts", "go", ["test", "./..."], {
-      cwd: path.join(root, "packages", "core", "contracts-go"),
+      cwd: path.join(root, "packages", "migrate", "core", "contracts-go"),
     });
   },
   gateway() {
     requireUv();
     const uv = process.env.UV || "uv";
-    const cwd = path.join(root, "packages", "gateway");
+    const cwd = path.join(root, "packages", "migrate", "gateway");
     const sandbox = mkdtempSync(path.join(tmpdir(), "andromeda-gateway-ci-"));
     const userHome = path.join(sandbox, "user");
     const stateHome = path.join(userHome, ".agents");
@@ -145,9 +144,9 @@ const suites = {
   inference() {
     requireUv();
     const uv = process.env.UV || "uv";
-    const cwd = path.join(root, "packages", "inference", "python-agent");
+    const cwd = path.join(root, "packages", "migrate", "inference", "python-agent");
     run("inference dependency sync", uv, ["sync", "--frozen"], { cwd });
-    run("inference validation", "bun", ["packages/inference/scripts/validate.mjs"]);
+    run("inference validation", "bun", ["packages/migrate/inference/scripts/validate.mjs"]);
   },
   manager() {
     run("manager types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit"]);
@@ -173,20 +172,10 @@ const suites = {
     ]);
   },
   darkfactory() {
-    run("initialize pinned DarkFactory", "git", ["submodule", "update", "--init", "--depth", "1", "packages/darkfactory"]);
-    const cwd = path.join(root, "packages", "darkfactory");
+    run("initialize pinned DarkFactory", "git", ["submodule", "update", "--init", "--depth", "1", "agents/darkfactory"]);
+    const cwd = path.join(root, "agents", "darkfactory");
     runNpm("DarkFactory dependency install", ["ci"], cwd);
     runNpm("DarkFactory full check", ["run", "check"], cwd);
-  },
-  memory() {
-    run("initialize pinned Memory", "git", ["submodule", "update", "--init", "--depth", "1", "packages/memory"]);
-    run("Memory types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "packages/memory/tsconfig.json"]);
-    run("Memory integration", "bun", [
-      "test",
-      "--timeout=30000",
-      "--max-concurrency=1",
-      "packages/memory/test/memory-plugin.test.ts",
-    ]);
   },
   release() {
     run("installer and release smoke", "bun", ["scripts/run-release-smoke.mjs"]);

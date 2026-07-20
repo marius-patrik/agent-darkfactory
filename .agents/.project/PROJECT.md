@@ -22,18 +22,18 @@ child authority and documentation without becoming Andromeda authority.
 
 Component ownership:
 
-- `packages/manager` — `agents` CLI, state, installs, credentials/secrets,
+- `packages/migrate/manager` — `agents` CLI, state, installs, credentials/secrets,
   providers, sessions, memory, package/capability registries, lifecycle
   management, and — until the #218 harness migration is implemented and
   accepted — the orchestrator runtime.
-- `packages/core` — protobuf sources and generated Go, TypeScript, and Python
+- `packages/migrate/core` — protobuf sources and generated Go, TypeScript, and Python
   contracts.
-- `packages/harness` — canonical session event handling and tool execution.
+- `packages/migrate/harness` — canonical session event handling and tool execution.
   Owner-ruled target (2026-07-13, #218): the operation engine owning
   orchestration, with the orchestrator runtime migrating from the manager.
-- `packages/gateway` — local model registry, routing, health, quota, and
+- `packages/migrate/gateway` — local model registry, routing, health, quota, and
   transient control-plane relay.
-- `packages/inference` — gateway-backed Python agent loop, status, persistence,
+- `packages/migrate/inference` — gateway-backed Python agent loop, status, persistence,
   redaction, and package validation.
 
 Historical product names, provider-home paths, launchers, and variables are

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "agentos-gateway",
+  "name": "Agentos Gateway",
+  "kind": "agent",
+  "description": "OpenAI-format Agentos gateway with registry routing, fallback, switchers, quota, OAuth dispatch seams, and gateway tests.",
+  "provides": ["llm-gateway", "model-routing", "switchers"]
+}

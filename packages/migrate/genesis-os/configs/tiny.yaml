@@ -1,0 +1,43 @@
+name: genesis-tiny
+genome:
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_multiplier: 3.0
+  max_sequence_length: 384
+  memory_slots: 4
+  world_latent_dim: 32
+  max_modality_tokens: 32
+  structured_feature_dim: 16
+  image_patch_size: 8
+  audio_kernel_size: 64
+  audio_stride: 32
+curriculum:
+  seed: 42
+  validation_fraction: 0.1
+  remediation_rounds: 0
+  stages:
+    - name: arithmetic
+      generator: arithmetic
+      examples: 64
+    - name: tools
+      generator: tool_use
+      examples: 128
+      weight: 1.5
+    - name: memory
+      generator: memory_recall
+      examples: 64
+      weight: 1.4
+training:
+  seed: 42
+  epochs: 10
+  max_steps: 100
+  batch_size: 8
+  learning_rate: 0.001
+  warmup_steps: 10
+  world_loss_weight: 0.1
+  device: auto
+viability:
+  max_validation_loss: 20.0
+  generation_samples: 0
+  max_generation_tokens: 128

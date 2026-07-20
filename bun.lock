@@ -11,7 +11,7 @@
         "typescript": "5.9.3",
       },
     },
-    "packages/core/clients/shared-ts": {
+    "packages/migrate/core/clients/shared-ts": {
       "name": "@agent-os/shared-ts",
       "version": "0.1.0",
       "dependencies": {
@@ -19,15 +19,15 @@
         "@connectrpc/connect": "2.1.2",
       },
     },
-    "packages/core/clients/tui": {
+    "packages/migrate/core/clients/tui": {
       "name": "@agent-os/tui",
       "version": "0.1.0",
     },
-    "packages/core/clients/web": {
+    "packages/migrate/core/clients/web": {
       "name": "@agent-os/web",
       "version": "0.1.0",
     },
-    "packages/manager": {
+    "packages/migrate/manager": {
       "name": "@marius-patrik/andromeda-manager",
       "version": "0.1.0",
       "dependencies": {
@@ -47,11 +47,11 @@
     },
   },
   "packages": {
-    "@agent-os/shared-ts": ["@agent-os/shared-ts@workspace:packages/core/clients/shared-ts"],
+    "@agent-os/shared-ts": ["@agent-os/shared-ts@workspace:packages/migrate/core/clients/shared-ts"],
 
-    "@agent-os/tui": ["@agent-os/tui@workspace:packages/core/clients/tui"],
+    "@agent-os/tui": ["@agent-os/tui@workspace:packages/migrate/core/clients/tui"],
 
-    "@agent-os/web": ["@agent-os/web@workspace:packages/core/clients/web"],
+    "@agent-os/web": ["@agent-os/web@workspace:packages/migrate/core/clients/web"],
 
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.23.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-wIGDQMSXwhoSPNCJflSQvf4WeSU2Jq1bbPRAwwb49euo9qMcND5Pb80hD7hVfuAwz9ZvvDuzVrNTOZrvKPR9Eg=="],
 
@@ -75,7 +75,7 @@
 
     "@connectrpc/connect": ["@connectrpc/connect@2.1.2", "", { "peerDependencies": { "@bufbuild/protobuf": "^2.7.0" } }, "sha512-MXkBijtcX09R10Eb6sFeIetc6w6746eio6xtfuyVOH7oQAacT1X0GzMIQFux6Qy8cq3W/T5qX5Bei8YbFtmRGA=="],
 
-    "@marius-patrik/andromeda-manager": ["@marius-patrik/andromeda-manager@workspace:packages/manager"],
+    "@marius-patrik/andromeda-manager": ["@marius-patrik/andromeda-manager@workspace:packages/migrate/manager"],
 
     "@marius-patrik/andromeda-memory-plugin": ["@marius-patrik/andromeda-memory-plugin@workspace:plugins/memory"],
 

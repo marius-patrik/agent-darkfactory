@@ -3,66 +3,81 @@
   "activeComponents": [
     {
       "id": "core",
-      "path": "packages/core",
+      "path": "packages/migrate/core",
       "suite": "core",
-      "platforms": ["ubuntu-latest", "windows-latest"],
+      "platforms": [
+        "ubuntu-latest",
+        "windows-latest"
+      ],
       "requiredPaths": [
-        "packages/core/tests/ts-import-smoke.ts",
-        "packages/core/tests/codegen-retry.test.ts",
-        "packages/core/tests/python-import-smoke.py",
-        "packages/core/contracts-go/smoke_test.go",
-        "packages/core/scripts/python-smoke.mjs"
+        "packages/migrate/core/tests/ts-import-smoke.ts",
+        "packages/migrate/core/tests/codegen-retry.test.ts",
+        "packages/migrate/core/tests/python-import-smoke.py",
+        "packages/migrate/core/contracts-go/smoke_test.go",
+        "packages/migrate/core/scripts/python-smoke.mjs"
       ]
     },
     {
       "id": "gateway",
-      "path": "packages/gateway",
+      "path": "packages/migrate/gateway",
       "suite": "gateway",
-      "platforms": ["ubuntu-latest"],
+      "platforms": [
+        "ubuntu-latest"
+      ],
       "requiredPaths": [
-        "packages/gateway/tests/test_app.py",
-        "packages/gateway/tests/test_real_process.py"
+        "packages/migrate/gateway/tests/test_app.py",
+        "packages/migrate/gateway/tests/test_real_process.py"
       ]
     },
     {
       "id": "harness",
-      "path": "packages/harness",
+      "path": "packages/migrate/harness",
       "suite": "harness",
-      "platforms": ["ubuntu-latest"],
+      "platforms": [
+        "ubuntu-latest"
+      ],
       "requiredPaths": [
-        "packages/harness/test/tools.test.ts",
-        "packages/manager/test/session.test.ts",
-        "packages/manager/test/session-adapters.test.ts",
-        "packages/manager/test/tui-tools.test.ts"
+        "packages/migrate/harness/test/tools.test.ts",
+        "packages/migrate/manager/test/session.test.ts",
+        "packages/migrate/manager/test/session-adapters.test.ts",
+        "packages/migrate/manager/test/tui-tools.test.ts"
       ]
     },
     {
       "id": "inference",
-      "path": "packages/inference",
+      "path": "packages/migrate/inference",
       "suite": "inference",
-      "platforms": ["ubuntu-latest"],
+      "platforms": [
+        "ubuntu-latest"
+      ],
       "requiredPaths": [
-        "packages/inference/python-agent/tests/test_loop.py",
-        "packages/inference/tests/layering/check_planted_violations.py",
-        "packages/inference/scripts/validate.mjs"
+        "packages/migrate/inference/python-agent/tests/test_loop.py",
+        "packages/migrate/inference/tests/layering/check_planted_violations.py",
+        "packages/migrate/inference/scripts/validate.mjs"
       ]
     },
     {
       "id": "manager",
-      "path": "packages/manager",
+      "path": "packages/migrate/manager",
       "suite": "manager",
-      "platforms": ["ubuntu-latest", "windows-latest"],
+      "platforms": [
+        "ubuntu-latest",
+        "windows-latest"
+      ],
       "requiredPaths": [
-        "packages/manager/test/state-doctor.test.ts",
-        "packages/manager/test/state-v2.test.ts",
-        "packages/manager/test/event-sync.test.ts"
+        "packages/migrate/manager/test/state-doctor.test.ts",
+        "packages/migrate/manager/test/state-v2.test.ts",
+        "packages/migrate/manager/test/event-sync.test.ts"
       ]
     },
     {
       "id": "memory-plugin",
       "path": "plugins/memory",
       "suite": "memory-plugin",
-      "platforms": ["ubuntu-latest", "windows-latest"],
+      "platforms": [
+        "ubuntu-latest",
+        "windows-latest"
+      ],
       "requiredPaths": [
         "plugins/memory/test/memory-plugin.test.ts",
         "plugins/memory/src/index.ts"
@@ -70,17 +85,11 @@
     },
     {
       "id": "darkfactory",
-      "path": "packages/darkfactory",
+      "path": "agents/darkfactory",
       "suite": "darkfactory",
-      "platforms": ["ubuntu-latest"],
-      "submodule": true,
-      "requiredPaths": []
-    },
-    {
-      "id": "memory",
-      "path": "packages/memory",
-      "suite": "memory",
-      "platforms": ["ubuntu-latest", "windows-latest"],
+      "platforms": [
+        "ubuntu-latest"
+      ],
       "submodule": true,
       "requiredPaths": []
     }
@@ -89,35 +98,54 @@
     {
       "id": "gateway-process",
       "suite": "gateway-real",
-      "platforms": ["ubuntu-latest"],
-      "requiredPaths": ["packages/gateway/tests/test_real_process.py"]
+      "platforms": [
+        "ubuntu-latest"
+      ],
+      "requiredPaths": [
+        "packages/migrate/gateway/tests/test_real_process.py"
+      ]
     },
     {
       "id": "engine-routing",
       "suite": "engine-real",
-      "platforms": ["ubuntu-latest"],
-      "requiredPaths": ["packages/gateway/tests/test_real_process.py"]
+      "platforms": [
+        "ubuntu-latest"
+      ],
+      "requiredPaths": [
+        "packages/migrate/gateway/tests/test_real_process.py"
+      ]
     }
   ],
   "productSmokes": [
     {
       "id": "installer-release",
       "suite": "release",
-      "platforms": ["ubuntu-latest"],
-      "requiredPaths": ["install/smoke-release.sh", "install/smoke.sh"]
+      "platforms": [
+        "ubuntu-latest"
+      ],
+      "requiredPaths": [
+        "install/smoke-release.sh",
+        "install/smoke.sh"
+      ]
     },
     {
       "id": "encrypted-sync",
       "suite": "sync",
-      "platforms": ["ubuntu-latest"],
-      "requiredPaths": ["scripts/run-sync-smoke.mjs"]
+      "platforms": [
+        "ubuntu-latest"
+      ],
+      "requiredPaths": [
+        "scripts/run-sync-smoke.mjs"
+      ]
     }
   ],
   "supportingSuites": [
     {
       "id": "inventory",
       "suite": "inventory",
-      "platforms": ["ubuntu-latest"],
+      "platforms": [
+        "ubuntu-latest"
+      ],
       "requiredPaths": [
         "scripts/verify-test-inventory.mjs",
         "scripts/verify-test-inventory.test.mjs"
@@ -126,18 +154,34 @@
     {
       "id": "review-regressions",
       "suite": "review",
-      "platforms": ["ubuntu-latest"],
+      "platforms": [
+        "ubuntu-latest"
+      ],
       "requiredPaths": [
         ".github/scripts/managed-enforcement.test.mjs"
       ]
     }
   ],
   "parkedPlugins": [
-    "packages/lifequest",
-    "packages/skyagent"
+    "agents/lifequest",
+    "agents/skyagent"
   ],
   "parkedApps": [
-    "packages/fabrica",
-    "packages/singularity"
+    "packages/migrate/singularity"
+  ],
+  "scaffoldedComponents": [
+    "packages/app",
+    "packages/cli",
+    "packages/migrate",
+    "packages/migrate/agents-manager-legacy",
+    "packages/migrate/dream",
+    "packages/migrate/experience",
+    "packages/migrate/genesis-os",
+    "packages/migrate/llm-gateway",
+    "packages/migrate/memory",
+    "packages/protocol",
+    "packages/sdk",
+    "packages/server",
+    "packages/web"
   ]
 }

@@ -168,19 +168,19 @@ older snapshot-sync or provider-adoption command to fall back to.
 
 ## Repository layout
 
-- `packages/manager/src/` — `agents` CLI and Agent OS state/runtime logic;
+- `packages/migrate/manager/src/` — `agents` CLI and Agent OS state/runtime logic;
   see [manager documentation](docs/manager.md).
-- `packages/core/` — shared contracts, schemas, and generated clients;
+- `packages/migrate/core/` — shared contracts, schemas, and generated clients;
   see [core documentation](docs/core.md).
-- `packages/harness/` — managed runtime harness; see
+- `packages/migrate/harness/` — managed runtime harness; see
   [harness documentation](docs/harness.md).
-- `packages/gateway/` — model gateway and provider routing; see
+- `packages/migrate/gateway/` — model gateway and provider routing; see
   [gateway documentation](docs/gateway-runtime.md).
-- `packages/inference/` — agent loop and inference runtime; see
+- `packages/migrate/inference/` — agent loop and inference runtime; see
   [inference documentation](docs/inference.md).
-- `packages/darkfactory/`, `packages/memory/`, `packages/lifequest/`, and
-  `packages/skyagent/` — managed product plugins.
-- `packages/singularity/` and `packages/fabrica/` — managed product applications.
+- `agents/darkfactory/`, `packages/memory/`, `agents/lifequest/`, and
+  `agents/skyagent/` — managed product plugins.
+- `packages/migrate/singularity/` and `packages/fabrica/` — managed product applications.
 - `skills/`, `plugins/`, `hooks/`, `roles/`, and `commands/` — authored capability roots;
   `persona.md` is the authored identity persona.
 - `data/andromeda/` — the development pin for Andromeda-data; the live

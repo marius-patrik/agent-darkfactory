@@ -1,0 +1,16 @@
+.git
+.github
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+*.pyc
+*.egg-info
+legacy
+traces
+
+# The DarkFactory Codex Review workflow builds a review image from the repo root
+# and needs these two .github paths in the Docker context.
+!.github/codex-review.schema.json
+!.github/scripts/run-codex-review.sh

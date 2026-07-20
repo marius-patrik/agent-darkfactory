@@ -18,11 +18,11 @@ issues.push(...inventoryIssues(root));
 const requiredLayout = [
   "data",
   "plugins",
-  "packages/core",
-  "packages/gateway",
-  "packages/harness",
-  "packages/inference",
-  "packages/manager",
+  "packages/migrate/core",
+  "packages/migrate/gateway",
+  "packages/migrate/harness",
+  "packages/migrate/inference",
+  "packages/migrate/manager",
   "skills",
   "hooks",
   "roles",
@@ -33,7 +33,7 @@ for (const relative of requiredLayout) {
     issues.push(`required repository root is missing: ${relative}`);
   }
 }
-for (const retired of ["packages/core/src", "packages/core/test", "packages/core/capabilities"]) {
+for (const retired of ["packages/migrate/core/src", "packages/migrate/core/test", "packages/migrate/core/capabilities"]) {
   if (fs.statSync(path.join(root, retired), { throwIfNoEntry: false })) {
     issues.push(`retired nested repository root remains: ${retired}`);
   }
@@ -41,9 +41,20 @@ for (const retired of ["packages/core/src", "packages/core/test", "packages/core
 
 const nestedRepositoryMetadata = [
   /^packages\/(?:.*\/)?(?:\.agents|\.darkfactory|docs)(?:\/|$)/i,
-  /^packages\/(?:.*\/)?(?:AGENTS|README|PRD)\.md$/i,
+  /^packages\/(?:.*\/)?(?:AGENTS|PRD)\.md$/i,
+  // A component may carry exactly one contract README at its own root; anything
+  // deeper is a package pretending to be its own repository again.
+  // clients/ groups the client components one level deeper; each still owns
+  // exactly one contract README at its own root.
+  /^packages\/(?!clients\/)[a-z0-9-]+\/.+\/README\.md$/i,
+  /^packages\/clients\/[a-z0-9-]+\/.+\/README\.md$/i,
 ];
+// packages/migrate holds former standalone repositories verbatim, frozen for
+// migration. Their original metadata is evidence and is not rewritten here;
+// code leaves migrate by reimplementation against the sdk.
+const migrateTree = /^packages\/migrate(?:\/|$)/;
 for (const relative of tracked) {
+  if (migrateTree.test(relative)) continue;
   if (nestedRepositoryMetadata.some((pattern) => pattern.test(relative))) {
     issues.push(`package-local repository metadata or documentation is tracked: ${relative}`);
   }
@@ -52,8 +63,8 @@ for (const relative of tracked) {
 const gitmodules = fs.readFileSync(path.join(root, ".gitmodules"), "utf8");
 for (const match of gitmodules.matchAll(/^\s*path\s*=\s*(.+)\s*$/gm)) {
   const submodulePath = match[1].trim();
-  if (!["data/", "packages/"].some((prefix) => submodulePath.startsWith(prefix))) {
-    issues.push(`managed repository submodule is outside data/ or packages/: ${submodulePath}`);
+  if (!["data/", "packages/", "agents/"].some((prefix) => submodulePath.startsWith(prefix))) {
+    issues.push(`managed repository submodule is outside data/, packages/, or agents/: ${submodulePath}`);
   }
 }
 
@@ -64,6 +75,7 @@ const forbiddenPaths = [
   [/(^|\/)rommie\/v1(\/|$)/, "retired wire namespace"],
 ];
 for (const relative of tracked) {
+  if (migrateTree.test(relative)) continue;
   for (const [pattern, label] of forbiddenPaths) {
     if (pattern.test(relative)) issues.push(`${label} is tracked: ${relative}`);
   }
@@ -87,17 +99,25 @@ const retiredContent = [
 
 const retiredVariableRejectionFiles = new Set([
   "install/install.sh",
-  "packages/manager/src/runtime-paths.ts",
-  "packages/manager/src/state-doctor.ts",
-  "packages/manager/test/state.test.ts",
+  "packages/migrate/manager/src/runtime-paths.ts",
+  "packages/migrate/manager/src/state-doctor.ts",
+  "packages/migrate/manager/test/state.test.ts",
 ]);
 
 // This policy file necessarily spells the retired identifiers it rejects.
 // Product source, manifests, scripts, and documentation remain fully scanned.
-const policyFiles = new Set(["scripts/verify-single-product.mjs"]);
+// The CI inventory necessarily names the frozen packages/migrate directories,
+// which keep the original repository names they were retired under. Its schema,
+// paths, suites, and gitlinks are enforced by verify-test-inventory instead.
+const policyFiles = new Set(["scripts/verify-single-product.mjs", "ci/test-inventory.json"]);
 
 for (const relative of tracked) {
   if (policyFiles.has(relative)) continue;
+  // packages/migrate holds former standalone repositories verbatim as frozen
+  // evidence, and those histories necessarily spell the names they were retired
+  // for. Retired-name enforcement stays fully active on every surface that is
+  // still built, imported, or shipped; nothing imports migrate.
+  if (migrateTree.test(relative)) continue;
   const absolute = path.join(root, relative);
   const content = fs.readFileSync(absolute);
   if (content.includes(0)) continue;
@@ -116,18 +136,18 @@ if (typeof productVersion !== "string" || !productVersion) issues.push("root pac
 if (rootPackage.name !== "@marius-patrik/agents-manager") {
   issues.push("root package.json must remain the recorded @marius-patrik/agents-manager package-name exception");
 }
-if (rootPackage.bin?.agents !== "./packages/manager/src/cli.ts") {
+if (rootPackage.bin?.agents !== "./packages/migrate/manager/src/cli.ts") {
   issues.push("root package.json must own the authoritative agents CLI entrypoint");
 }
 
 const expectedJavaScriptWorkspaces = new Map([
-  ["packages/manager/package.json", "@marius-patrik/andromeda-manager"],
-  ["packages/core/clients/shared-ts/package.json", "@agent-os/shared-ts"],
-  ["packages/core/clients/tui/package.json", "@agent-os/tui"],
-  ["packages/core/clients/web/package.json", "@agent-os/web"],
+  ["packages/migrate/manager/package.json", "@marius-patrik/andromeda-manager"],
+  ["packages/migrate/core/clients/shared-ts/package.json", "@agent-os/shared-ts"],
+  ["packages/migrate/core/clients/tui/package.json", "@agent-os/tui"],
+  ["packages/migrate/core/clients/web/package.json", "@agent-os/web"],
 ]);
 const declaredWorkspaces = new Set(rootPackage.workspaces ?? []);
-for (const required of ["packages/manager", "packages/core/clients/*"]) {
+for (const required of ["packages/migrate/manager", "packages/migrate/core/clients/*"]) {
   if (!declaredWorkspaces.has(required)) issues.push(`root package.json does not own workspace pattern: ${required}`);
 }
 for (const [relative, expectedName] of expectedJavaScriptWorkspaces) {
@@ -139,7 +159,11 @@ for (const [relative, expectedName] of expectedJavaScriptWorkspaces) {
   if (manifest.name !== expectedName) issues.push(`JavaScript package name drift in ${relative}: ${manifest.name} != ${expectedName}`);
 }
 for (const relative of tracked.filter(
-  (name) => name.startsWith("packages/") && name.endsWith("package.json") && !name.endsWith("agent.package.json"),
+  (name) =>
+    name.startsWith("packages/") &&
+    !migrateTree.test(name) &&
+    name.endsWith("package.json") &&
+    !name.endsWith("agent.package.json"),
 )) {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, relative), "utf8"));
   if (manifest.private !== true) issues.push(`nested JavaScript package must be private implementation metadata: ${relative}`);
@@ -160,7 +184,7 @@ for (const retired of [
 }
 
 const manifests = [];
-for (const relative of tracked.filter((name) => name.endsWith("agent.package.json"))) {
+for (const relative of tracked.filter((name) => name.endsWith("agent.package.json") && !migrateTree.test(name))) {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, relative), "utf8"));
   manifests.push({ relative, manifest });
   if (manifest.schemaVersion !== 1 || typeof manifest.id !== "string" || !manifest.id || manifest.kind === "agent") {
@@ -174,8 +198,11 @@ for (const { relative, manifest } of manifests) {
   ids.set(manifest.id, relative);
 }
 
-issues.push(...javascriptPackageVersionIssues(root, tracked, productVersion));
-for (const relative of tracked.filter((name) => name.endsWith("pyproject.toml"))) {
+// Frozen former repositories keep the versions they were released at; the
+// single-product version contract governs what is still built and shipped.
+const versionedTracked = tracked.filter((name) => !migrateTree.test(name));
+issues.push(...javascriptPackageVersionIssues(root, versionedTracked, productVersion));
+for (const relative of versionedTracked.filter((name) => name.endsWith("pyproject.toml"))) {
   const text = fs.readFileSync(path.join(root, relative), "utf8");
   const version = text.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
   if (version && version !== productVersion) issues.push(`Python package version drift in ${relative}: ${version} != ${productVersion}`);

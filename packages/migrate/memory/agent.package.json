@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "memory",
+  "name": "Memory",
+  "kind": "plugin",
+  "description": "Canonical reflection, dream distillation, corpus processing, and operational cursor migration.",
+  "entry": "bun src/cli.ts",
+  "workingDirectory": ".",
+  "requires": {
+    "state": ["sessions", "memory/events", "runtime/plugins/memory"]
+  },
+  "provides": ["reflection", "dream-distillation", "corpus-candidates", "dream-cursor-migration"]
+}

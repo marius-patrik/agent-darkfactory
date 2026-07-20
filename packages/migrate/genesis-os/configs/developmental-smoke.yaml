@@ -1,0 +1,82 @@
+# CPU-scale validation of every built-in developmental curriculum generator.
+# This is a pipeline proof, not a useful intelligence checkpoint.
+name: genesis-developmental-smoke
+seed: 42
+genome:
+  d_model: 64
+  n_layers: 2
+  n_heads: 4
+  ff_multiplier: 3.0
+  max_sequence_length: 512
+  memory_slots: 4
+  world_latent_dim: 32
+  max_modality_tokens: 32
+  structured_feature_dim: 16
+  image_patch_size: 8
+  audio_kernel_size: 64
+  audio_stride: 32
+curriculum:
+  seed: 42
+  validation_fraction: 0.1
+  mastery_threshold: 0.0
+  remediation_rounds: 0
+  stages:
+    - name: textbook_foundations
+      generator: textbook
+      examples: 36
+      parameters:
+        paths:
+          - ../examples/textbooks/foundations.yaml
+    - name: procedural_reasoning
+      generator: procedural_distillation
+      examples: 32
+      prerequisites: [textbook_foundations]
+      weight: 1.5
+      parameters:
+        teacher_required: false
+    - name: language
+      generator: language_foundations
+      examples: 32
+      prerequisites: [textbook_foundations]
+    - name: arithmetic
+      generator: arithmetic
+      examples: 32
+      prerequisites: [language]
+    - name: logic
+      generator: symbolic_logic
+      examples: 32
+      prerequisites: [language]
+    - name: algorithms
+      generator: algorithms
+      examples: 32
+      prerequisites: [arithmetic, logic]
+    - name: causality
+      generator: causal_worlds
+      examples: 32
+      prerequisites: [logic]
+      weight: 1.2
+    - name: tools
+      generator: tool_use
+      examples: 64
+      prerequisites: [language]
+      weight: 1.5
+    - name: memory
+      generator: memory_recall
+      examples: 32
+      prerequisites: [language]
+      weight: 1.4
+training:
+  seed: 42
+  epochs: 1
+  max_steps: 20
+  batch_size: 8
+  learning_rate: 0.001
+  warmup_steps: 2
+  world_loss_weight: 0.1
+  device: auto
+  cpu_threads: 4
+viability:
+  max_validation_loss: 20.0
+  min_tool_name_accuracy: 0.0
+  generation_samples: 0
+  max_generation_tokens: 128
