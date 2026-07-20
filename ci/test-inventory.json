@@ -155,11 +155,13 @@
   "parkedPlugins": [],
   "parkedApps": [],
   "scaffoldedComponents": [
+    "hooks",
+    "mcp",
+    "roles",
     "sdk",
-    "sdk",
+    "skills",
     "src/app",
     "src/cli",
-    "src/mcp",
     "src/migrate",
     "src/migrate/agents-manager-legacy",
     "src/migrate/darkfactory",
@@ -169,5 +171,6 @@
     "src/migrate/llm-gateway",
     "src/migrate/singularity",
     "src/server"
-  ]
+  ],
+  "requiredPaths": []
 }

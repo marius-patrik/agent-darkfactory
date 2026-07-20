@@ -113,13 +113,18 @@ export function inventoryIssues(root = repositoryRoot) {
     ...parkedApps,
     ...scaffoldedComponents,
   ]
-    .filter((entry) => typeof entry === "string" && entry.startsWith("src/"))
+    .filter((entry) => typeof entry === "string" && (["sdk", "mcp", "hooks", "roles", "skills"].includes(entry) || entry.startsWith("src/")))
     .sort();
   // packages/migrate nests one level deeper: its children are frozen former
   // components, each still individually declared in the inventory.
   const actualPackages = [
     ...sortedDirectories(root, "src"),
     ...sortedDirectories(root, "src/migrate"),
+    ...(fs.existsSync(path.join(root, "sdk")) ? ["sdk"] : []),
+    ...(fs.existsSync(path.join(root, "mcp")) ? ["mcp"] : []),
+    ...(fs.existsSync(path.join(root, "hooks")) ? ["hooks"] : []),
+    ...(fs.existsSync(path.join(root, "roles")) ? ["roles"] : []),
+    ...(fs.existsSync(path.join(root, "skills")) ? ["skills"] : []),
   ].sort();
   for (const packagePath of actualPackages) {
     if (!declaredPackages.includes(packagePath)) issues.push(`package has no fail-closed CI inventory entry: ${packagePath}`);

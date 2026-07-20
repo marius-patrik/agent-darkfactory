@@ -158,7 +158,7 @@ const suites = {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      "src/mcp/migrate/skills/compact/scripts/test_write_compaction_capsule.ps1",
+      "skills/compact/scripts/test_write_compaction_capsule.ps1",
     ]);
   },
   "memory-plugin"() {
