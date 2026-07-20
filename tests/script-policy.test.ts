@@ -986,6 +986,8 @@ test("repository doctor workflow schedules trusted diagnosis with explicit repor
   const targetToken = steps.find((step: any) => step.name === "Mint least-privilege target doctor token");
   const ledgerToken = steps.find((step: any) => step.name === "Mint repository-scoped ledger token");
   const doctorStep = steps.find((step: any) => step.name === "Run deterministic repository doctor");
+  const summaryStep = steps.find((step: any) => step.name === "Publish doctor summary");
+  const uploadStep = steps.find((step: any) => step.name === "Upload deterministic evidence");
   const gate = workflow.indexOf("Validate trusted control ref");
   const checkout = workflow.indexOf("Checkout trusted doctor source");
   const token = workflow.indexOf("Mint least-privilege target doctor token");
@@ -1016,6 +1018,11 @@ test("repository doctor workflow schedules trusted diagnosis with explicit repor
   assert.equal(ledgerToken.with["permission-contents"], "write");
   assert.match(ledgerToken.if, /schedule.*push.*write_issues/);
   assert.match(doctorStep.env.DF_LEDGER_TOKEN, /ledger-token\.outputs\.token/);
+  assert.equal(doctorStep.id, "doctor");
+  assert.match(doctorStep.run, /report_exists=/);
+  assert.equal(summaryStep.if, "always() && steps.doctor.outputs.report_exists == 'true'");
+  assert.equal(uploadStep.if, "always() && steps.doctor.outputs.report_exists == 'true'");
+  assert.doesNotMatch(workflow, /hashFiles\('repository-doctor-report\.json'\)/);
   assert.equal(steps.some((step: any) => /label/i.test(step.name || "") && /POST|PATCH/.test(step.run || "")), false);
   assert.match(workflow, /DF_DOCTOR_ALL/);
   assert.match(workflow, /DF_DOCTOR_MODE/);
