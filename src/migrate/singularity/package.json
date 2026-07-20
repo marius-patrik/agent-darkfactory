@@ -1,0 +1,310 @@
+{
+  "name": "vsdaw",
+  "displayName": "VSDAW",
+  "description": "OpenDAW-powered digital audio workstation inside VS Code.",
+  "version": "0.3.0",
+  "publisher": "marius-patrik",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marius-patrik/vsdaw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/marius-patrik/vsdaw/issues"
+  },
+  "homepage": "https://github.com/marius-patrik/vsdaw#readme",
+  "icon": "media/icon.png",
+  "type": "module",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Visualization", "Debuggers", "Other"],
+  "keywords": ["daw", "audio", "music", "midi", "opendaw", "production"],
+  "activationEvents": [
+    "onCommand:vsdaw.newProject",
+    "onCommand:vsdaw.openProject",
+    "onCommand:vsdaw.undo",
+    "onCommand:vsdaw.redo",
+    "onCommand:vsdaw.showTimeline",
+    "onCommand:vsdaw.showMixer",
+    "onCommand:vsdaw.showPianoRoll",
+    "onCommand:vsdaw.showBrowser",
+    "onCommand:vsdaw.showGraph",
+    "onCommand:vsdaw.importAudio",
+    "onCommand:vsdaw.importMidi",
+    "onCommand:vsdaw.export",
+    "onCommand:vsdaw.settings",
+    "onCommand:vsdaw.engineHealth",
+    "onCustomEditor:vsdaw.editor"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "vsdaw.newProject",
+        "title": "New Project",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.openProject",
+        "title": "Open Project",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.undo",
+        "title": "Undo",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.redo",
+        "title": "Redo",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.showTimeline",
+        "title": "Show Timeline",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.showMixer",
+        "title": "Show Mixer",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.showPianoRoll",
+        "title": "Show Piano Roll",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.showBrowser",
+        "title": "Show Browser",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.showGraph",
+        "title": "Show Graph",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.importAudio",
+        "title": "Import Audio",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.importMidi",
+        "title": "Import MIDI",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.export",
+        "title": "Export Audio",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.settings",
+        "title": "Open Settings",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.showEngineMenu",
+        "title": "Show Engine Menu",
+        "category": "VSDAW"
+      },
+      {
+        "command": "vsdaw.engineHealth",
+        "title": "Check Engine Health",
+        "category": "VSDAW"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "vsdaw.undo",
+        "key": "ctrl+z",
+        "mac": "cmd+z",
+        "when": "editorFocus || webviewPanelFocus"
+      },
+      {
+        "command": "vsdaw.redo",
+        "key": "ctrl+shift+z",
+        "mac": "cmd+shift+z",
+        "when": "editorFocus || webviewPanelFocus"
+      },
+      {
+        "command": "vsdaw.showMixer",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "editorFocus || webviewPanelFocus"
+      },
+      {
+        "command": "vsdaw.showBrowser",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorFocus || webviewPanelFocus"
+      },
+      {
+        "command": "vsdaw.export",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorFocus || webviewPanelFocus"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "vsdaw.editor",
+        "displayName": "VSDAW Project",
+        "selector": [
+          {
+            "filenamePattern": "*.vsdaw"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configuration": {
+      "title": "VSDAW",
+      "properties": {
+        "vsdaw.audio.defaultSampleRate": {
+          "type": "number",
+          "default": 48000,
+          "description": "Default sample rate for new projects."
+        },
+        "vsdaw.audio.defaultBufferSize": {
+          "type": "number",
+          "default": 128,
+          "description": "Default audio buffer size."
+        },
+        "vsdaw.audio.inputDeviceId": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Default audio input device identifier."
+        },
+        "vsdaw.audio.outputDeviceId": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Default audio output device identifier."
+        },
+        "vsdaw.autoSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable auto-save after edits."
+        },
+        "vsdaw.autoSaveDelay": {
+          "type": "number",
+          "default": 500,
+          "description": "Delay in milliseconds before auto-save triggers."
+        },
+        "vsdaw.recording.countInBars": {
+          "type": "number",
+          "default": 1,
+          "description": "Number of count-in bars before recording."
+        },
+        "vsdaw.export.defaultDirectory": {
+          "type": "string",
+          "default": "${workspaceFolder}/exports",
+          "description": "Default directory for exported audio files."
+        }
+      }
+    }
+  },
+  "main": "./out/extension/extension.js",
+  "scripts": {
+    "build": "bun run typecheck && bun run typecheck:engine && bun run build:engine && bun run build:extension && bun run build:views",
+    "build:integration-tests": "node scripts/build-integration-tests.mjs",
+    "build:engine": "node scripts/build-engine.mjs",
+    "build:extension": "node scripts/build-extension.mjs",
+    "build:views": "node scripts/build-views.mjs",
+    "prepare": "husky",
+    "watch:engine": "node scripts/build-engine.mjs --watch",
+    "watch:extension": "node scripts/build-extension.mjs --watch",
+    "watch:views": "node scripts/build-views.mjs --watch",
+    "test": "jest",
+    "test:integration": "bun run build:integration-tests && bunx vscode-test",
+    "test:smoke": "node scripts/smoke.js",
+    "test:engine": "node scripts/test-engine-isolated.mjs",
+    "test:server": "bun out/extension/server.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "typecheck:engine": "tsc --noEmit --project tsconfig.engine.json",
+    "package": "bun run build && node scripts/package.mjs",
+    "version": "standard-version"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mjs,js,json,md,yml,yaml}": ["biome check --write --no-errors-on-unmatched"]
+  },
+  "dependencies": {
+    "chrome-launcher": "^1.2.1",
+    "playwright-core": "^1.61.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "@hookform/resolvers": "^5.4.0",
+    "@opendaw/lib-dsp": "^0.0.85",
+    "@opendaw/lib-runtime": "^0.0.80",
+    "@opendaw/lib-std": "^0.0.79",
+    "@opendaw/studio-adapters": "^0.0.117",
+    "@opendaw/studio-boxes": "^0.0.95",
+    "@opendaw/studio-core": "^0.0.153",
+    "@opendaw/studio-enums": "^0.0.78",
+    "@opendaw/studio-sdk": "^0.0.155",
+    "@radix-ui/react-accordion": "^1.2.14",
+    "@radix-ui/react-checkbox": "^1.3.5",
+    "@radix-ui/react-context-menu": "^2.3.1",
+    "@radix-ui/react-dialog": "^1.1.17",
+    "@radix-ui/react-dropdown-menu": "^2.1.18",
+    "@radix-ui/react-label": "^2.1.10",
+    "@radix-ui/react-popover": "^1.1.17",
+    "@radix-ui/react-progress": "^1.1.10",
+    "@radix-ui/react-radio-group": "^1.4.1",
+    "@radix-ui/react-scroll-area": "^1.2.12",
+    "@radix-ui/react-select": "^2.3.1",
+    "@radix-ui/react-separator": "^1.1.10",
+    "@radix-ui/react-slider": "^1.4.1",
+    "@radix-ui/react-slot": "^1.3.0",
+    "@radix-ui/react-tabs": "^1.1.15",
+    "@radix-ui/react-tooltip": "^1.2.10",
+    "@tanstack/react-query": "^5.101.1",
+    "@types/bun": "^1.1.0",
+    "@types/dagre": "^0.7.54",
+    "@types/jest": "^29.5.14",
+    "@types/jszip": "^3.4.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/vscode": "^1.80.0",
+    "@types/webmidi": "^3.0.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "@vscode/vsce": "^3.3.0",
+    "autoprefixer": "^10.5.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dagre": "^0.8.5",
+    "esbuild": "^0.25.0",
+    "framer-motion": "^12.42.0",
+    "husky": "^9.1.7",
+    "immer": "^11.1.8",
+    "jest": "^29.7.0",
+    "jszip": "^3.10.1",
+    "lint-staged": "^15.4.0",
+    "lucide-react": "^1.21.0",
+    "mocha": "^10.7.0",
+    "ovsx": "^0.10.0",
+    "postcss": "^8.5.15",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-hook-form": "^7.80.0",
+    "standard-version": "^9.5.0",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^3.4.0",
+    "ts-jest": "^29.4.11",
+    "typescript": "^5.7.0",
+    "webmidi": "^3.1.16",
+    "zod": "^3.24.3",
+    "zustand": "^5.0.14"
+  }
+}

@@ -97,11 +97,11 @@ const suites = {
     run("repository layout and suite inventory", "bun", ["run", "layout:check"]);
   },
   core() {
-    run("core TypeScript types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "packages/migrate/core/tsconfig.json"]);
-    run("core TypeScript import smoke", "bun", ["packages/migrate/core/tests/ts-import-smoke.ts"]);
+    run("core TypeScript types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "src/migrate/core/tsconfig.json"]);
+    run("core TypeScript import smoke", "bun", ["src/migrate/core/tests/ts-import-smoke.ts"]);
     run("core TypeScript tests", "bun", ["test", ...discoverBunTests(path.join("packages", "migrate", "core", "tests"))]);
     run("generated contract freshness", "bun", ["scripts/verify-codegen.ts"]);
-    run("core Python import smoke", "bun", ["packages/migrate/core/scripts/python-smoke.mjs"]);
+    run("core Python import smoke", "bun", ["src/migrate/core/scripts/python-smoke.mjs"]);
     run("core Go contracts", "go", ["test", "./..."], {
       cwd: path.join(root, "packages", "migrate", "core", "contracts-go"),
     });
@@ -145,7 +145,7 @@ const suites = {
     const uv = process.env.UV || "uv";
     const cwd = path.join(root, "packages", "migrate", "inference", "python-agent");
     run("inference dependency sync", uv, ["sync", "--frozen"], { cwd });
-    run("inference validation", "bun", ["packages/migrate/inference/scripts/validate.mjs"]);
+    run("inference validation", "bun", ["src/migrate/inference/scripts/validate.mjs"]);
   },
   manager() {
     run("manager types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit"]);
@@ -158,11 +158,11 @@ const suites = {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      "packages/mcp/migrate/skills/compact/scripts/test_write_compaction_capsule.ps1",
+      "src/mcp/migrate/skills/compact/scripts/test_write_compaction_capsule.ps1",
     ]);
   },
   "memory-plugin"() {
-    run("memory plugin types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "packages/migrate/memory/tsconfig.json"]);
+    run("memory plugin types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "src/migrate/memory/tsconfig.json"]);
     run("memory plugin tests", "bun", [
       "test",
       "--timeout=30000",
