@@ -44,7 +44,14 @@ Root CI runs:
 bun run ci
 ```
 
-This executes `bun run typecheck && bun run build` across all workspace packages. Submodule validation is run inside each submodule repository.
+This installs dependencies, checks the managed file set across the root and template submodules, runs each repository's managed stack verifier, then executes typecheck, test, and build across all workspace packages. Submodule package validation is run inside each submodule repository.
+
+Managed enforcement can be checked without running the full workspace CI:
+
+```powershell
+bun run check:managed-conformance
+bun run check:managed-stack
+```
 
 ## Sync
 
