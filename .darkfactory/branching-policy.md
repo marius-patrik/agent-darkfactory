@@ -1,22 +1,27 @@
 # DarkFactory Branching Policy
 
-Managed code repositories use `dev` as the integration branch and `main` as the release branch.
+Managed code repositories use `dev` for work integration and `main` for each
+repository's canonical released product state.
 
 - Work pull requests target `dev`.
-- `dev` to `main` pull requests are release synchronization only.
-- Merging to `main` should correspond to tag and GitHub release automation where the repository ships releases.
-- Both `dev` and `main` use strict GitHub-Actions-bound branch protection with
-  `Validate` and `DarkFactory Autoreview` required. A clean medium review alone
-  is insufficient; Autoreview succeeds only after an independent schema-valid
-  clean high confirmation.
-- Force pushes and branch deletion are disabled on both protected branches.
-- Repository auto-merge may be enabled, but a queued merge lands only after the
-  protected branch is current and both required checks report success.
-- A separate pull-request approval is not required; `DarkFactory Autoreview` is
-  the automated review gate. Administrator enforcement remains disabled, and
-  automation does not use the available bypass.
-- State and data repositories may use continuous `main` only when their own
-  documented protection and admission policy permits it.
+- `dev` and `main` require strict, GitHub-Actions-bound `Validate` and
+  `DarkFactory Autoreview` checks. A clean medium review alone is insufficient;
+  Autoreview succeeds only after an independent schema-valid clean high confirmation.
+- Force-pushes, deletion, and administrative gate bypass remain disabled.
+- Release pull requests move reviewed `dev` state to `main` through an eligible
+  `release/<id>` branch without deleting long-lived `dev`.
+- Post-merge convergence is exact Git tree identity backed by trusted reviewed
+  PR ancestry; merge-commit SHA identity is neither required nor simulated with
+  protected-ref writes. Main-ahead state returns to `dev` through a reviewed PR.
+- DarkFactory and Andromeda retain their explicit independent product, version,
+  tag, and release authority.
+- Only `marius-patrik/Andromeda-data` and `marius-patrik/darkfactory-data` use
+  the private, main-only data policy. Their protection remains required. An
+  exact plan-upgrade HTTP 403 is recorded as `accepted_residue`, not healthy
+  protection, with [Andromeda PR #190](https://github.com/marius-patrik/Andromeda/pull/190)
+  encrypted-bundle admission and plaintext rejection as the compensating
+  control. Every other missing, inaccessible, or unsafe posture fails closed.
 
-The live Andromeda settings and evidence for this policy are recorded in
-[`docs/managed-enforcement.md`](../docs/managed-enforcement.md).
+DarkFactory owns the executable policy contract. Shared managed-policy source
+is canonical Andromeda-data under `$AGENTS_HOME`; runtime ledgers remain in the
+separate darkfactory-data repository.

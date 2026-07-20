@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "1.0.0",
+  "reminderAfterHours": 72,
+  "expiryAfterHours": 168,
+  "maxDraftFiles": 500,
+  "maxDraftBytes": 1100000
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "promptVersion": "darkfactory-autoreview-v1",
+  "roundBudgets": {
+    "medium": 4,
+    "high": 3
+  },
+  "limits": {
+    "summaryBytes": 8000,
+    "findingCount": 100,
+    "findingBytes": 16000,
+    "nonBlockingNoteCount": 100,
+    "targetContextBytes": 600000,
+    "changeCount": 100,
+    "changedFileBytes": 1000000
+  },
+  "protectedAutofixPaths": [
+    ".agents/",
+    ".darkfactory/",
+    ".github/",
+    "AGENTS.md",
+    "bun.lock",
+    "bun.lockb",
+    "package-lock.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    "yarn.lock"
+  ]
+}

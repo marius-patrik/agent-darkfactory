@@ -24,7 +24,7 @@
     {
       "name": "df:ready",
       "color": "0E8A16",
-      "description": "DarkFactory work loop may pick up this issue"
+      "description": "Machine-evaluated issue eligible for DarkFactory dispatch"
     },
     {
       "name": "df:running",
@@ -44,22 +44,42 @@
     {
       "name": "df:class:mechanical",
       "color": "C5DEF5",
-      "description": "Mechanical worker task; use low reasoning effort"
+      "description": "Mechanical worker task with a narrow deterministic surface"
     },
     {
       "name": "df:class:standard",
       "color": "BFDADC",
-      "description": "Standard worker task; use medium reasoning effort"
+      "description": "Standard worker task with normal implementation complexity"
     },
     {
       "name": "df:class:hard",
       "color": "D4C5F9",
-      "description": "Hard worker task; use high reasoning effort"
+      "description": "Hard worker task with substantial implementation complexity"
     },
     {
       "name": "df:ask-owner",
       "color": "F9D0C4",
       "description": "Needs owner input before DarkFactory continues"
+    },
+    {
+      "name": "df:no-dispatch",
+      "color": "6E7781",
+      "description": "Record or owner-executed issue categorically excluded from dispatch"
+    },
+    {
+      "name": "df:prd-drift",
+      "color": "B60205",
+      "description": "DarkFactory PRD drift report"
+    },
+    {
+      "name": "df:audit",
+      "color": "0E8A16",
+      "description": "Legacy DarkFactory aggregate audit finding"
+    },
+    {
+      "name": "df:doctor",
+      "color": "0E8A16",
+      "description": "DarkFactory repository-doctor repair finding"
     }
   ]
 }

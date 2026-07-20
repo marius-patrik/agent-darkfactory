@@ -1,15 +1,16 @@
 {
   "schemaVersion": 1,
   "installer": {
-    "required": true,
-    "paths": ["install/install.sh"],
+    "required": false,
+    "paths": ["install/install.sh", "install/install.ps1"],
     "postInstallChecks": ["state-init", "doctor"],
-    "notes": "install/install.sh performs the canonical source install: pinned dev checkout, recursive pinned components, dependencies, one launcher, capability activation, provider pinning, and a strict state doctor."
+    "notes": "CLI repos should provide platform installers and smoke them in their authoritative validation gates. Library, app, and documentation repos may leave installers absent."
   },
   "autoUpdater": {
     "centralized": true,
     "workflow": ".github/workflows/dark-factory-autoupdate.yml",
-    "source": "marius-patrik/agents-data",
+    "source": "marius-patrik/Andromeda-data",
+    "ledger": "marius-patrik/darkfactory-data",
     "notes": "DarkFactory performs central managed setup sync through its GitHub App. Per-repo updater workflows verify that managed files are present and current enough to receive updates."
   }
 }
