@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "id": "dream",
-  "name": "Dream",
-  "kind": "plugin",
-  "version": "0.1.1",
-  "description": "Dream plugin package: temporal replay and retrospective continuity across sessions."
-}
-

@@ -5,7 +5,7 @@ description: Run temporal replay of rollout sessions and produce proactive retro
 
 # Dream
 
-Use `dream` when Agentos needs to replay unresolved sessions end-to-end and persist what should be carried forward into the next active session.
+Use `dream` when Andromeda needs to replay unresolved sessions end-to-end and persist what should be carried forward into the next active session.
 
 ## Workflow
 
@@ -34,7 +34,7 @@ Optional flags:
 - `-VerboseRun` prints stage-by-stage worker output.
 - `-MemoryRoot "C:\Users\patrik\.codex\memories"` overrides memory location.
 
-## Compatibility markers
+## Continuity markers
 
 The generated memory files (`cache.md`, `SHORT.md`, `handoff.md`) use
 `<!-- rommie:dream:* -->` HTML comment blocks as continuity markers. These

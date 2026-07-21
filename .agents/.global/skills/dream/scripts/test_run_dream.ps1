@@ -2,8 +2,7 @@ param()
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$runner = Join-Path $repoRoot "skills/dream/scripts/run_dream.ps1"
+$runner = Join-Path $PSScriptRoot "run_dream.ps1"
 
 function Assert-True {
     param(
