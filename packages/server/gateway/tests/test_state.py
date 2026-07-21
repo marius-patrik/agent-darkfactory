@@ -10,7 +10,7 @@ from llm_gateway.trace import TraceLogger
 
 def test_default_trace_state_is_below_agents_home(monkeypatch, tmp_path):
     andromeda_home = tmp_path / ".andromeda"
-    monkeypatch.setenv("andromeda_home", str(andromeda_home))
+    monkeypatch.setenv("ANDROMEDA_HOME", str(andromeda_home))
     tracer = TraceLogger()
     try:
         assert tracer.trace_dir == andromeda_home / "runtime" / "gateway" / "traces"

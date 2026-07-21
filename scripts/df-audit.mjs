@@ -1066,7 +1066,7 @@ export async function auditRepositoryTree(repository, tree, options = {}) {
     const nestedDarkFactory = lower.includes(".darkfactory") && !allowedDarkFactoryAuthority;
     const providerState = lower.some((segment) => PROVIDER_STATE_SEGMENTS.has(segment));
     const generated = lower.some((segment) => GENERATED_SEGMENTS.has(segment));
-    const sensitive = lower.some((segment) => ["ANDROMEDA_secrets", "secrets"].includes(segment)) || /(^|\/)(auth\.json|\.env)$/i.test(filePath);
+    const sensitive = lower.some((segment) => ["andromeda_secrets", "secrets"].includes(segment)) || /(^|\/)(auth\.json|\.env)$/i.test(filePath);
     const nestedGitMetadata = /(^|\/)\.git($|\/)/i.test(filePath) || (filePath !== ".gitmodules" && filePath.endsWith("/.gitmodules"));
 
     if (!options.isData && (nestedAgents || nestedDarkFactory)) {

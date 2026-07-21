@@ -10,17 +10,17 @@ from agent.state import AgentStateError, inference_runs_dir, inference_runtime_d
 
 
 def test_agents_home_is_required_and_absolute(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("andromeda_home", raising=False)
+    monkeypatch.delenv("ANDROMEDA_HOME", raising=False)
     with pytest.raises(AgentStateError, match="required"):
         require_agents_home()
-    monkeypatch.setenv("andromeda_home", "relative/state")
+    monkeypatch.setenv("ANDROMEDA_HOME", "relative/state")
     with pytest.raises(AgentStateError, match="absolute"):
         require_agents_home()
 
 
 def test_default_inference_state_stays_below_agents_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     andromeda_home = tmp_path / ".andromeda"
-    monkeypatch.setenv("andromeda_home", str(andromeda_home))
+    monkeypatch.setenv("ANDROMEDA_HOME", str(andromeda_home))
 
     SessionConfig(
         session_id="state-test",
