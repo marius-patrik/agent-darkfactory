@@ -20,7 +20,7 @@ Agent OS remains one product inside or outside a container:
 - `packages/memory` is the cognitive memory-operations plugin; it reads and
   mutates memory only through manager-owned canonical contracts.
 - `packages/lifequest` and `packages/skyagent` are managed plugins;
-  `packages/singularity` and `packages/fabrica` are managed applications.
+  `packages/fabrica` is a managed application.
 - `data/andromeda` and `data/darkfactory` pin the separate Andromeda and
   DarkFactory data repositories for development.
 - private-data is checked out at `AGENTS_HOME`; it is the same physical root
