@@ -58,7 +58,7 @@ async function ensureDoctorProduct(state: ReturnType<typeof tempState>): Promise
   const identitySource = path.join(state.root, "identity-source");
   await mkdir(path.join(identitySource, "roles"), { recursive: true });
   await mkdir(path.join(identitySource, "prompts"), { recursive: true });
-  await copyFile(path.join(sourceRoot, "persona.md"), path.join(identitySource, "persona.md"));
+  await copyFile(path.join(sourceRoot, ".agents", ".global", "persona.md"), path.join(identitySource, "persona.md"));
   for (const name of await readdir(path.join(sourceRoot, ".agents", ".global", "roles"))) {
     if (name.endsWith(".yaml")) await copyFile(path.join(sourceRoot, ".agents", ".global", "roles", name), path.join(identitySource, "roles", name));
   }

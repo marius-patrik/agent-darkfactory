@@ -1,3 +1,0 @@
-# Handoff
-
-No active handoff.

@@ -1,6 +1,0 @@
-schema_version: gateway-active-v1
-active:
-  general: null
-  coding: null
-  judge: null
-  embedding: null

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Memory"
-  short_description: "Use the layered Codex memory system."
-  default_prompt: "Use the memory system for this session."

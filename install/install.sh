@@ -322,7 +322,7 @@ install_default_capabilities() {
   local skill_root="$AGENTS_ROOT/.agents/.global/skills"
   local role_root="$AGENTS_ROOT/.agents/.global/roles"
   local command_root="$AGENTS_ROOT/.agents/.global/commands"
-  local persona="$AGENTS_ROOT/persona.md"
+  local persona="$AGENTS_ROOT/.agents/.global/persona.md"
   local identity_bundle skill_path name
 
   [ -d "$skill_root" ] || die "bundled skill floor is missing: $skill_root"
