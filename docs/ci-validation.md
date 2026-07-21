@@ -29,8 +29,8 @@ session tests remain under `packages/cli/test`. The inventory names those
 files individually and fails if any disappear; `packages/sdk/harness/test` owns
 the package-local tool-boundary regression triplet.
 
-The parked `packages/lifequest`, `packages/skyagent`, `packages/singularity`, and
-`packages/fabrica` gitlinks are classified but intentionally have no CI suite.
+The parked `packages/lifequest`, `packages/skyagent`, and `packages/fabrica`
+gitlinks are classified but intentionally have no CI suite.
 Adding any package, plugin, or app without classifying and wiring it makes
 layout validation fail.
 
