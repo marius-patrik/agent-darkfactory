@@ -115,7 +115,8 @@ export function inventoryIssues(root = repositoryRoot) {
   ]
     .filter((entry) => typeof entry === "string" && (["templates"].includes(entry) || entry.startsWith("src/") || entry.startsWith("agents/") || entry.startsWith("templates/")))
     .sort();
-  // sdk and server nest one level deeper, holding the contract and deployment`n  // components. Each child is individually declared in the inventory.
+  // sdk and server nest one level deeper, holding the contract and deployment
+  // components. Each child is individually declared in the inventory.
   const actualPackages = [
     ...sortedDirectories(root, "src"),
     ...sortedDirectories(root, "src/server"),
