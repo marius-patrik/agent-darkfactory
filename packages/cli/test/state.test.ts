@@ -20,14 +20,14 @@ import {
 describe("shared state from environment", () => {
   test("respects explicit ANDROMEDA_ROOT separate from ANDROMEDA_HOME", () => {
     const state = sharedStateFromEnv("/ignored", {
-      ANDROMEDA_ROOT: "/opt/agents-os",
+      ANDROMEDA_ROOT: "/opt/andromeda-os",
       ANDROMEDA_HOME: "/agents/state",
       ANDROMEDA_USER_HOME: "/Users/patrik",
       ANDROMEDA_DATA: "/second/data/root",
       ANDROMEDA_WORKSPACE: "/second/workspace/root",
     });
 
-    expect(state.root).toBe(path.resolve("/opt/agents-os"));
+    expect(state.root).toBe(path.resolve("/opt/andromeda-os"));
     expect(state.userHome).toBe(path.resolve("/Users/patrik"));
     expect(state.stateDir).toBe(path.resolve("/agents/state"));
     expect(state.creditsFile).toBe(path.resolve("/agents/state/credits.json"));

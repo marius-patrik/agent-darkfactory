@@ -47,9 +47,9 @@ The custom distro/container scope is parked in the program plan and PRD. These
 files preserve supporting design material only; they are not implementation
 authority or permission to resume the scope:
 
-- [Container architecture](agents-os/ARCHITECTURE.md)
-- [Image build and release](agents-os/BUILD.md)
-- [Container data contracts](agents-os/DATA-CONTRACTS.md)
+- [Container architecture](andromeda-os/ARCHITECTURE.md)
+- [Image build and release](andromeda-os/BUILD.md)
+- [Container data contracts](andromeda-os/DATA-CONTRACTS.md)
 - [Packages and environments groundwork](packages-and-environments.md)
 
 ## Retired design evidence

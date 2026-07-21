@@ -1328,7 +1328,7 @@ describe("session runtime", () => {
   });
 });
 
-describe("agents run / sessions CLI", () => {
+describe("andromeda run / sessions CLI", () => {
   test("run starts a session and prints the reply", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-run-"));
     try {

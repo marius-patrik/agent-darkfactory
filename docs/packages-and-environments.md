@@ -22,7 +22,7 @@ Implemented now:
 Not implemented now:
 
 - Installing host OS packages.
-- Real container image builds or pulls against a published `agents-os` image (the scaffold records metadata and produces dry-run plans).
+- Real container image builds or pulls against a published `andromeda-os` image (the scaffold records metadata and produces dry-run plans).
 - Creating, switching, or syncing named environments.
 - Per-agent workspace environment provisioning.
 
@@ -41,13 +41,13 @@ Path: `.andromeda/environments.json`
       "manager": "apt",
       "name": "curl",
       "version": "8.0.0",
-      "source": "agents-os"
+      "source": "andromeda-os"
     }
   ],
   "containerPackages": [
     {
-      "id": "agents-os-base",
-      "image": "ghcr.io/marius-patrik/agents-os",
+      "id": "andromeda-os-base",
+      "image": "ghcr.io/marius-patrik/andromeda-os",
       "digest": "sha256:...",
       "tags": ["latest"],
       "runtime": "docker"
@@ -64,10 +64,10 @@ Path: `.andromeda/environments.json`
   ],
   "containers": [
     {
-      "id": "agents-os-dev",
-      "name": "agents-os-dev",
+      "id": "andromeda-os-dev",
+      "name": "andromeda-os-dev",
       "environment": "dev",
-      "image": "agents-os:dev",
+      "image": "andromeda-os:dev",
       "channel": "dev",
       "createdAt": "2026-07-04T00:00:00.000Z",
       "status": "running",
@@ -93,7 +93,7 @@ agents os doctor [--json]
 agents os image list [--json]
 agents os image build --image <image> [--channel dev] [--file path] [--context path] [--dry-run]
 agents os image pull --image <image> [--channel dev] [--dry-run]
-agents os create --name <name> --image <image> [--env agents-os] [--channel dev] [--dry-run]
+agents os create --name <name> --image <image> [--env andromeda-os] [--channel dev] [--dry-run]
 agents os start <name> [--dry-run]
 agents os stop <name> [--dry-run]
 agents os status <name> [--json]
@@ -101,7 +101,7 @@ agents os logs <name> [--follow]
 agents os exec <name> -- <args...>
 agents os terminal <name> [--shell bash]
 agents os remove <name> [--prune-data] [--dry-run]
-agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
+agents os deploy <profile> [--image andromeda-os] [--env andromeda-os] [--channel dev] [--dry-run]
 ```
 
 `agents env list` may read local desired-state records. Unsupported mutating

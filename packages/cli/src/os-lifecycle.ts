@@ -95,7 +95,7 @@ export function toPosixPath(input: string): string {
 
 export function containerEnv(dataRepos: DataRepoRegistration[]): Record<string, string> {
   const env: Record<string, string> = {
-    ANDROMEDA_ROOT: "/opt/agents-os",
+    ANDROMEDA_ROOT: "/opt/andromeda-os",
     ANDROMEDA_HOME: "/agents/state",
     ANDROMEDA_WORKSPACE: "/workspace/agents",
     ANDROMEDA_DATA_REPOS: "/agents/state/data-repos.json",
@@ -172,7 +172,7 @@ export async function containerMounts(
 }
 
 export function defaultContainerName(environment: string): string {
-  return `agents-os-${environment}`;
+  return `andromeda-os-${environment}`;
 }
 
 export function dockerCreateArgs(options: {
@@ -616,7 +616,7 @@ async function osDoctor(state: SharedState, flags: Record<string, string | boole
   }
 
   const osState = await readOsState(state);
-  if (osState.images.length === 0) stateIssues.push("no OS images configured; run agents os image build or pull");
+  if (osState.images.length === 0) stateIssues.push("no OS images configured; run andromeda os image build or pull");
 
   const pathSharing = docker.code === 0 ? await checkPathSharing(state) : undefined;
   const profiles = await configuredProfiles(state);
@@ -679,7 +679,7 @@ async function osImageBuild(
   const image = requireFlag("image", flags.image);
   const channel = String(flags.channel || "dev");
   const tag = resolveImageRef(image, channel);
-  const dockerfile = String(flags.file || "os/agents-os/Dockerfile");
+  const dockerfile = String(flags.file || "os/andromeda-os/Dockerfile");
   const context = String(flags.context || ".");
   const dryRun = Boolean(flags["dry-run"]);
 
@@ -738,7 +738,7 @@ async function osCreate(
 ): Promise<void> {
   const name = validateContainerName(requireFlag("name", flags.name));
   const image = requireFlag("image", flags.image);
-  const environment = String(flags.env || "agents-os");
+  const environment = String(flags.env || "andromeda-os");
   const channel = String(flags.channel || "dev");
   const dryRun = Boolean(flags["dry-run"]);
 
@@ -941,8 +941,8 @@ async function osDeploy(
   if (!Object.prototype.hasOwnProperty.call(profileConfigs, profile)) {
     throw new Error(`unknown profile: ${profile}`);
   }
-  const environment = String(flags.env || "agents-os");
-  const image = String(flags.image || "agents-os");
+  const environment = String(flags.env || "andromeda-os");
+  const image = String(flags.image || "andromeda-os");
   const channel = String(flags.channel || "dev");
   const name = validateContainerName(String(flags.name || defaultContainerName(environment)));
   const dryRun = Boolean(flags["dry-run"]);

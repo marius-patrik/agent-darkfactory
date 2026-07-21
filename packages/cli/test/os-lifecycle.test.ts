@@ -81,12 +81,12 @@ describe("os lifecycle pure helpers", () => {
   });
 
   test("containerEnv exports required variables", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-env-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-env-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
       const env = containerEnv(await readDataRepos(state));
-      expect(env.ANDROMEDA_ROOT).toBe("/opt/agents-os");
+      expect(env.ANDROMEDA_ROOT).toBe("/opt/andromeda-os");
       expect(env.ANDROMEDA_HOME).toBe("/agents/state");
       expect(env.ANDROMEDA_DATA).toBeUndefined();
       expect(env.ANDROMEDA_WORKSPACE).toBe("/workspace/agents");
@@ -98,7 +98,7 @@ describe("os lifecycle pure helpers", () => {
   });
 
   test("containerMounts include state, data, workspace and registered repos", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-mounts-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-mounts-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
@@ -142,8 +142,8 @@ describe("os lifecycle pure helpers", () => {
 
   test("dockerCreateArgs includes labels, env, mounts and ports", () => {
     const args = dockerCreateArgs({
-      name: "agents-os-dev",
-      image: "agents-os:dev",
+      name: "andromeda-os-dev",
+      image: "andromeda-os:dev",
       environment: "dev",
       channel: "dev",
       hostRoot: "/home/user/Projects/agents-manager",
@@ -152,12 +152,12 @@ describe("os lifecycle pure helpers", () => {
       ],
       env: { ANDROMEDA_HOME: "/agents/state" },
       ports: [{ name: "http", container: 8080, host: 8080 }],
-      network: "agents-os",
+      network: "andromeda-os",
       restart: "no",
     });
     expect(args).toContain("--name");
-    expect(args).toContain("agents-os-dev");
-    expect(args).toContain("agents-os:dev");
+    expect(args).toContain("andromeda-os-dev");
+    expect(args).toContain("andromeda-os:dev");
     expect(args).toContain("io.andromeda.os.managed=true");
     expect(args).toContain("io.andromeda.os.environment=dev");
     expect(args).toContain("-e");
@@ -167,55 +167,55 @@ describe("os lifecycle pure helpers", () => {
     expect(args).toContain("-p");
     expect(args).toContain("8080:8080");
     expect(args).toContain("--network");
-    expect(args).toContain("agents-os");
+    expect(args).toContain("andromeda-os");
   });
 
   test("buildCreatePlan produces a reproducible docker create plan", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-plan-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-plan-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
       const plan = await buildCreatePlan(state, {
-        name: "agents-os-dev",
-        image: "agents-os:dev",
+        name: "andromeda-os-dev",
+        image: "andromeda-os:dev",
         environment: "dev",
       });
       expect(plan.command).toBe("docker");
-      expect(plan.description).toContain("agents-os-dev");
+      expect(plan.description).toContain("andromeda-os-dev");
       expect(plan.args).toContain("container");
       expect(plan.args).toContain("create");
       expect(plan.args.some((a) => a.includes("/agents/state"))).toBe(true);
-      expect(plan.args.some((a) => a.includes("ANDROMEDA_ROOT=/opt/agents-os"))).toBe(true);
+      expect(plan.args.some((a) => a.includes("ANDROMEDA_ROOT=/opt/andromeda-os"))).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
   test("defaultContainerName uses environment", () => {
-    expect(defaultContainerName("agents-os")).toBe("agents-os-agents-os");
-    expect(defaultContainerName("dev")).toBe("agents-os-dev");
+    expect(defaultContainerName("andromeda-os")).toBe("andromeda-os-andromeda-os");
+    expect(defaultContainerName("dev")).toBe("andromeda-os-dev");
   });
 
   test("resolveImageRef appends channel only when reference is untagged", () => {
-    expect(resolveImageRef("agents-os", "dev")).toBe("agents-os:dev");
-    expect(resolveImageRef("agents-os", "latest")).toBe("agents-os:latest");
+    expect(resolveImageRef("andromeda-os", "dev")).toBe("andromeda-os:dev");
+    expect(resolveImageRef("andromeda-os", "latest")).toBe("andromeda-os:latest");
     expect(resolveImageRef("ubuntu:22.04", "dev")).toBe("ubuntu:22.04");
     expect(resolveImageRef("repo/image@sha256:abc123", "dev")).toBe("repo/image@sha256:abc123");
-    expect(resolveImageRef("my.registry.io/agents-os", "stable")).toBe("my.registry.io/agents-os:stable");
-    expect(resolveImageRef("localhost:5000/agents-os", "dev")).toBe("localhost:5000/agents-os:dev");
+    expect(resolveImageRef("my.registry.io/andromeda-os", "stable")).toBe("my.registry.io/andromeda-os:stable");
+    expect(resolveImageRef("localhost:5000/andromeda-os", "dev")).toBe("localhost:5000/andromeda-os:dev");
   });
 });
 
-describe("agents os CLI", () => {
+describe("andromeda os CLI", () => {
   test("doctor passes when docker and prerequisites are present", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-doctor-ok-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-doctor-ok-"));
     try {
       const { env } = await fakeDocker(root);
-      const dockerfile = path.join(root, "os", "agents-os", "Dockerfile");
+      const dockerfile = path.join(root, "os", "andromeda-os", "Dockerfile");
       await mkdir(path.dirname(dockerfile), { recursive: true });
       await Bun.write(dockerfile, "FROM scratch\n");
       await mkdir(path.join(root, "data", "agent-os"), { recursive: true });
-      const build = await runAgents(root, ["os", "image", "build", "--image", "agents-os"], env);
+      const build = await runAgents(root, ["os", "image", "build", "--image", "andromeda-os"], env);
       if (build.code !== 0) throw new Error(build.stderr);
       expect(build.code).toBe(0);
       const doctor = await runAgents(root, ["os", "doctor"], env);
@@ -227,7 +227,7 @@ describe("agents os CLI", () => {
   });
 
   test("doctor warns on missing prerequisites", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-doctor-warn-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-doctor-warn-"));
     try {
       const { env } = await fakeDocker(root);
       const doctor = await runAgents(root, ["os", "doctor"], env);
@@ -240,12 +240,12 @@ describe("agents os CLI", () => {
   });
 
   test("image build --dry-run prints plan without recording image", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-image-build-dry-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-image-build-dry-"));
     try {
-      const result = await runAgents(root, ["os", "image", "build", "--image", "agents-os", "--channel", "dev", "--dry-run"]);
+      const result = await runAgents(root, ["os", "image", "build", "--image", "andromeda-os", "--channel", "dev", "--dry-run"]);
       expect(result.code).toBe(0);
       expect(result.stdout).toContain("docker image build");
-      expect(result.stdout).toContain("agents-os:dev");
+      expect(result.stdout).toContain("andromeda-os:dev");
       const list = await runAgents(root, ["os", "image", "list", "--json"]);
       expect(list.code).toBe(0);
       const images = JSON.parse(list.stdout) as Array<{ id: string; image: string; tags: string[] }>;
@@ -256,19 +256,19 @@ describe("agents os CLI", () => {
   });
 
   test("image build records image after successful docker build", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-image-build-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-image-build-"));
     try {
       const { env } = await fakeDocker(root);
-      const dockerfile = path.join(root, "os", "agents-os", "Dockerfile");
+      const dockerfile = path.join(root, "os", "andromeda-os", "Dockerfile");
       await mkdir(path.dirname(dockerfile), { recursive: true });
       await Bun.write(dockerfile, "FROM scratch\n");
-      const result = await runAgents(root, ["os", "image", "build", "--image", "agents-os", "--channel", "dev"], env);
+      const result = await runAgents(root, ["os", "image", "build", "--image", "andromeda-os", "--channel", "dev"], env);
       expect(result.code).toBe(0);
       const list = await runAgents(root, ["os", "image", "list", "--json"]);
       expect(list.code).toBe(0);
       const images = JSON.parse(list.stdout) as Array<{ id: string; image: string; tags: string[] }>;
       expect(images).toHaveLength(1);
-      expect(images[0].id).toBe("agents-os");
+      expect(images[0].id).toBe("andromeda-os");
       expect(images[0].tags).toContain("dev");
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -276,7 +276,7 @@ describe("agents os CLI", () => {
   });
 
   test("image build preserves explicit tag and does not append channel", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-image-build-tagged-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-image-build-tagged-"));
     try {
       const result = await runAgents(root, ["os", "image", "build", "--image", "ubuntu:22.04", "--channel", "dev", "--dry-run"]);
       expect(result.code).toBe(0);
@@ -288,31 +288,31 @@ describe("agents os CLI", () => {
   });
 
   test("create --dry-run prints plan with normalized paths", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-create-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-create-"));
     try {
       const result = await runAgents(root, [
         "os",
         "create",
         "--name",
-        "agents-os-dev",
+        "andromeda-os-dev",
         "--image",
-        "agents-os",
+        "andromeda-os",
         "--env",
         "dev",
         "--dry-run",
       ]);
       expect(result.code).toBe(0);
       expect(result.stdout).toContain("docker container create");
-      expect(result.stdout).toContain("agents-os-dev");
+      expect(result.stdout).toContain("andromeda-os-dev");
       expect(result.stdout).toContain(toPosixPath(path.join(root, ".andromeda")));
-      expect(result.stdout).toContain("ANDROMEDA_ROOT=/opt/agents-os");
+      expect(result.stdout).toContain("ANDROMEDA_ROOT=/opt/andromeda-os");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
   test("create masks secrets by default and mounts them with --with-secrets", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-create-secrets-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-create-secrets-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
@@ -320,9 +320,9 @@ describe("agents os CLI", () => {
         "os",
         "create",
         "--name",
-        "agents-os-dev",
+        "andromeda-os-dev",
         "--image",
-        "agents-os",
+        "andromeda-os",
         "--env",
         "dev",
         "--dry-run",
@@ -336,9 +336,9 @@ describe("agents os CLI", () => {
         "os",
         "create",
         "--name",
-        "agents-os-dev",
+        "andromeda-os-dev",
         "--image",
-        "agents-os",
+        "andromeda-os",
         "--env",
         "dev",
         "--with-secrets",
@@ -352,9 +352,9 @@ describe("agents os CLI", () => {
         "os",
         "create",
         "--name",
-        "agents-os-dev",
+        "andromeda-os-dev",
         "--image",
-        "agents-os",
+        "andromeda-os",
         "--env",
         "dev",
         "--trusted",
@@ -369,15 +369,15 @@ describe("agents os CLI", () => {
   });
 
   test("create records container after successful docker create", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-create-record-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-create-record-"));
     try {
       const { env } = await fakeDocker(root);
-      const create = await runAgents(root, ["os", "create", "--name", "agents-os-dev", "--image", "agents-os", "--env", "dev"], env);
+      const create = await runAgents(root, ["os", "create", "--name", "andromeda-os-dev", "--image", "andromeda-os", "--env", "dev"], env);
       expect(create.code).toBe(0);
-      const status = await runAgents(root, ["os", "status", "agents-os-dev", "--json"]);
+      const status = await runAgents(root, ["os", "status", "andromeda-os-dev", "--json"]);
       expect(status.code).toBe(0);
       const container = JSON.parse(status.stdout) as { name: string; status: string };
-      expect(container.name).toBe("agents-os-dev");
+      expect(container.name).toBe("andromeda-os-dev");
       expect(container.status).toBe("created");
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -385,13 +385,13 @@ describe("agents os CLI", () => {
   });
 
   test("remove deletes container record after successful docker rm", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-remove-record-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-remove-record-"));
     try {
       const { env } = await fakeDocker(root);
-      await runAgents(root, ["os", "create", "--name", "agents-os-dev", "--image", "agents-os", "--env", "dev"], env);
-      const remove = await runAgents(root, ["os", "remove", "agents-os-dev"], env);
+      await runAgents(root, ["os", "create", "--name", "andromeda-os-dev", "--image", "andromeda-os", "--env", "dev"], env);
+      const remove = await runAgents(root, ["os", "remove", "andromeda-os-dev"], env);
       expect(remove.code).toBe(0);
-      const status = await runAgents(root, ["os", "status", "agents-os-dev", "--json"]);
+      const status = await runAgents(root, ["os", "status", "andromeda-os-dev", "--json"]);
       expect(status.code).toBe(1);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -399,7 +399,7 @@ describe("agents os CLI", () => {
   });
 
   test("failed docker create does not record container", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-create-fail-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-create-fail-"));
     try {
       const { dir, env } = await fakeDocker(root);
       const failing = path.join(dir, process.platform === "win32" ? "docker.ps1" : "docker");
@@ -415,9 +415,9 @@ describe("agents os CLI", () => {
         );
         await Bun.$`chmod +x ${failing}`;
       }
-      const create = await runAgents(root, ["os", "create", "--name", "agents-os-dev", "--image", "agents-os"], env);
+      const create = await runAgents(root, ["os", "create", "--name", "andromeda-os-dev", "--image", "andromeda-os"], env);
       expect(create.code).toBe(1);
-      const status = await runAgents(root, ["os", "status", "agents-os-dev", "--json"]);
+      const status = await runAgents(root, ["os", "status", "andromeda-os-dev", "--json"]);
       expect(status.code).toBe(1);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -425,23 +425,23 @@ describe("agents os CLI", () => {
   });
 
   test("logs --dry-run prints plan without invoking docker", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-logs-dry-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-logs-dry-"));
     try {
-      const result = await runAgents(root, ["os", "logs", "agents-os-dev", "--dry-run"]);
+      const result = await runAgents(root, ["os", "logs", "andromeda-os-dev", "--dry-run"]);
       expect(result.code).toBe(0);
-      expect(result.stdout).toContain("docker container logs agents-os-dev");
+      expect(result.stdout).toContain("docker container logs andromeda-os-dev");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
   test("remove --dry-run excludes data prune by default", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-remove-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-remove-"));
     try {
-      await runAgents(root, ["os", "create", "--name", "agents-os-dev", "--image", "agents-os", "--dry-run"]);
-      const result = await runAgents(root, ["os", "remove", "agents-os-dev", "--dry-run"]);
+      await runAgents(root, ["os", "create", "--name", "andromeda-os-dev", "--image", "andromeda-os", "--dry-run"]);
+      const result = await runAgents(root, ["os", "remove", "andromeda-os-dev", "--dry-run"]);
       expect(result.code).toBe(0);
-      expect(result.stdout).toContain("docker container rm agents-os-dev");
+      expect(result.stdout).toContain("docker container rm andromeda-os-dev");
       expect(result.stdout).not.toContain("rm -rf");
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -449,21 +449,21 @@ describe("agents os CLI", () => {
   });
 
   test("remove --prune-data --dry-run includes prune steps", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-remove-prune-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-remove-prune-"));
     try {
-      await runAgents(root, ["os", "create", "--name", "agents-os-dev", "--image", "agents-os", "--dry-run"]);
-      const result = await runAgents(root, ["os", "remove", "agents-os-dev", "--prune-data", "--dry-run"]);
+      await runAgents(root, ["os", "create", "--name", "andromeda-os-dev", "--image", "andromeda-os", "--dry-run"]);
+      const result = await runAgents(root, ["os", "remove", "andromeda-os-dev", "--prune-data", "--dry-run"]);
       expect(result.code).toBe(0);
-      expect(result.stdout).toContain("docker container rm agents-os-dev");
+      expect(result.stdout).toContain("docker container rm andromeda-os-dev");
       expect(result.stdout).toContain("rm -rf");
-      expect(result.stdout).toContain("/agents/state/containers/agents-os-dev");
+      expect(result.stdout).toContain("/agents/state/containers/andromeda-os-dev");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
   test("deploy --dry-run prints create and start with profile ports", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-deploy-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-deploy-"));
     try {
       const result = await runAgents(root, ["os", "deploy", "agent-os-gateway", "--dry-run"]);
       expect(result.code).toBe(0);
@@ -477,7 +477,7 @@ describe("agents os CLI", () => {
   });
 
   test("deploy unknown profile errors", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-deploy-unknown-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-deploy-unknown-"));
     try {
       const result = await runAgents(root, ["os", "deploy", "unknown-profile", "--dry-run"]);
       expect(result.code).toBe(1);
@@ -488,15 +488,15 @@ describe("agents os CLI", () => {
   });
 
   test("deploy records running container after successful docker create/start", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-deploy-record-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-deploy-record-"));
     try {
       const { env } = await fakeDocker(root);
-      const deploy = await runAgents(root, ["os", "deploy", "agent-os-gateway", "--name", "agents-os-deploy", "--env", "dev"], env);
+      const deploy = await runAgents(root, ["os", "deploy", "agent-os-gateway", "--name", "andromeda-os-deploy", "--env", "dev"], env);
       expect(deploy.code).toBe(0);
-      const status = await runAgents(root, ["os", "status", "agents-os-deploy", "--json"]);
+      const status = await runAgents(root, ["os", "status", "andromeda-os-deploy", "--json"]);
       expect(status.code).toBe(0);
       const container = JSON.parse(status.stdout) as { name: string; status: string; profiles: string[] };
-      expect(container.name).toBe("agents-os-deploy");
+      expect(container.name).toBe("andromeda-os-deploy");
       expect(container.status).toBe("running");
       expect(container.profiles).toContain("agent-os-gateway");
     } finally {
@@ -505,12 +505,12 @@ describe("agents os CLI", () => {
   });
 
   test("failed deploy does not overwrite existing container record", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-deploy-fail-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-deploy-fail-"));
     try {
       const { env, dir } = await fakeDocker(root);
-      await runAgents(root, ["os", "create", "--name", "agents-os-deploy", "--image", "agents-os", "--env", "dev"], env);
-      await runAgents(root, ["os", "start", "agents-os-deploy"], env);
-      const before = await runAgents(root, ["os", "status", "agents-os-deploy", "--json"]);
+      await runAgents(root, ["os", "create", "--name", "andromeda-os-deploy", "--image", "andromeda-os", "--env", "dev"], env);
+      await runAgents(root, ["os", "start", "andromeda-os-deploy"], env);
+      const before = await runAgents(root, ["os", "status", "andromeda-os-deploy", "--json"]);
       expect(before.code).toBe(0);
 
       const failing = path.join(dir, process.platform === "win32" ? "docker.ps1" : "docker");
@@ -527,9 +527,9 @@ describe("agents os CLI", () => {
         await Bun.$`chmod +x ${failing}`;
       }
 
-      const deploy = await runAgents(root, ["os", "deploy", "agent-os-gateway", "--name", "agents-os-deploy", "--env", "dev"], env);
+      const deploy = await runAgents(root, ["os", "deploy", "agent-os-gateway", "--name", "andromeda-os-deploy", "--env", "dev"], env);
       expect(deploy.code).toBe(1);
-      const after = await runAgents(root, ["os", "status", "agents-os-deploy", "--json"]);
+      const after = await runAgents(root, ["os", "status", "andromeda-os-deploy", "--json"]);
       expect(after.code).toBe(0);
       const container = JSON.parse(after.stdout) as { status: string };
       expect(container.status).toBe("running");
@@ -539,13 +539,13 @@ describe("agents os CLI", () => {
   });
 
   test("rejects invalid container names", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-name-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-name-"));
     try {
       const status = await runAgents(root, ["os", "status", "../../etc"]);
       expect(status.code).toBe(1);
       expect(status.stderr).toContain("invalid container name");
 
-      const create = await runAgents(root, ["os", "create", "--name", "bad name", "--image", "agents-os", "--dry-run"]);
+      const create = await runAgents(root, ["os", "create", "--name", "bad name", "--image", "andromeda-os", "--dry-run"]);
       expect(create.code).toBe(1);
       expect(create.stderr).toContain("invalid container name");
 
@@ -558,7 +558,7 @@ describe("agents os CLI", () => {
   });
 
   test("exec parses command after --", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-exec-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-exec-"));
     try {
       const { env, log } = await fakeDocker(root);
       const result = await runAgents(root, ["os", "exec", "mycontainer", "--", "echo", "hi"], env);
@@ -573,7 +573,7 @@ describe("agents os CLI", () => {
 
 describe("os doctor acceptance additions", () => {
   test("checkPathSharing validates each configured host path through docker using the configured OS image", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-path-share-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-path-share-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
@@ -598,7 +598,7 @@ describe("os doctor acceptance additions", () => {
   });
 
   test("configuredProfiles reads profiles from container records", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-profiles-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-profiles-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
@@ -606,10 +606,10 @@ describe("os doctor acceptance additions", () => {
 
       const { ensureContainerRecord } = await import("../src/os-lifecycle");
       await ensureContainerRecord(state, {
-        id: "agents-os-dev",
-        name: "agents-os-dev",
+        id: "andromeda-os-dev",
+        name: "andromeda-os-dev",
         environment: "dev",
-        image: "agents-os:dev",
+        image: "andromeda-os:dev",
         channel: "dev",
         status: "created",
         profiles: ["agent-os-inference", "agent-os-gateway"],
@@ -621,7 +621,7 @@ describe("os doctor acceptance additions", () => {
   });
 
   test("preflightProfile checks required data repos, secrets and ports", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-preflight-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-preflight-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
@@ -648,7 +648,7 @@ describe("os doctor acceptance additions", () => {
   });
 
   test("preflightProfiles aggregates issues across profiles", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-preflight-multi-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-preflight-multi-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
@@ -676,7 +676,7 @@ describe("os doctor acceptance additions", () => {
   });
 
   test("preflightProfile respects expected ports from running containers", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-expected-ports-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-expected-ports-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
@@ -704,17 +704,17 @@ describe("os doctor acceptance additions", () => {
   });
 
   test("doctor warns on profile preflight failures", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents-os-doctor-profiles-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-os-doctor-profiles-"));
     try {
       const { env } = await fakeDocker(root);
       const { ensureContainerRecord } = await import("../src/os-lifecycle");
       const state = sharedState(root);
       await ensureSharedState(state);
       await ensureContainerRecord(state, {
-        id: "agents-os-dev",
-        name: "agents-os-dev",
+        id: "andromeda-os-dev",
+        name: "andromeda-os-dev",
         environment: "dev",
-        image: "agents-os:dev",
+        image: "andromeda-os:dev",
         channel: "dev",
         status: "created",
         profiles: ["agent-os-gateway"],

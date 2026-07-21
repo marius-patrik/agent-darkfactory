@@ -298,7 +298,7 @@ export async function pinAdapter(
 }
 
 async function writeGlobalWrapper(state: SharedState, id: CliId, binary: string) {
-  // The launcher contract reserves state bin/ for the agents launcher alone;
+  // The launcher contract reserves state bin/ for the andromeda launcher alone;
   // pinned-CLI wrappers live under runtime/. Exposing them on PATH is the
   // #217 global-entrypoint lane's decision.
   const binDir = path.join(state.stateDir, "bin");

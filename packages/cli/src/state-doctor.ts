@@ -547,9 +547,9 @@ async function launcherCheck(state: SharedState): Promise<StateDoctorCheck> {
       issues.push(`bin must contain exactly one ${launcherName} launcher`);
     }
     const launcherInfo = await lstat(launcher);
-    if (!launcherInfo.isFile() || launcherInfo.isSymbolicLink()) issues.push("agents launcher must be a physical file");
+    if (!launcherInfo.isFile() || launcherInfo.isSymbolicLink()) issues.push("andromeda launcher must be a physical file");
     if (process.platform !== "win32" && (launcherInfo.mode & 0o777) !== 0o700) {
-      issues.push(`agents launcher mode is ${modeString(launcherInfo.mode)}, expected 0o700`);
+      issues.push(`andromeda launcher mode is ${modeString(launcherInfo.mode)}, expected 0o700`);
     }
     const content = await readFile(launcher, "utf8");
     const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
@@ -563,7 +563,7 @@ async function launcherCheck(state: SharedState): Promise<StateDoctorCheck> {
     ] as const) {
       const binding = windows ? `$env:${name} = ${powerShellQuote(value)}` : `export ${name}=${shellQuote(value)}`;
       if (!content.includes(binding)) {
-        issues.push(`agents launcher is missing canonical binding: ${name}=${value}`);
+        issues.push(`andromeda launcher is missing canonical binding: ${name}=${value}`);
       }
     }
     const cliPath = path.join(state.root, "packages", "cli", "src", "cli.ts");
@@ -571,9 +571,9 @@ async function launcherCheck(state: SharedState): Promise<StateDoctorCheck> {
       ? `$env:ANDROMEDA_ENTRYPOINT = ${powerShellQuote(cliPath)}`
       : `export ANDROMEDA_ENTRYPOINT=${shellQuote(cliPath)}`;
     if (!content.includes(entrypointBinding)) {
-      issues.push(`agents launcher is missing canonical binding: ${cliPath}`);
+      issues.push(`andromeda launcher is missing canonical binding: ${cliPath}`);
     }
-    if (content.includes("export ANDROMEDA_DATA=")) issues.push("agents launcher exports the removed ANDROMEDA_DATA parent path");
+    if (content.includes("export ANDROMEDA_DATA=")) issues.push("andromeda launcher exports the removed ANDROMEDA_DATA parent path");
   } catch (error) {
     issues.push((error as Error).message);
   }

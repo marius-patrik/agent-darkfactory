@@ -1345,7 +1345,7 @@ async function assertAgyLaunchExecutable(
   }
   if (resolved !== resolvedExecutable) {
     throw new Error(
-      `agy launch binary ${configuredExecutable} is not the pinned executable ${resolvedExecutable} ${phase}; re-pin through \`agents cli pin agy\``,
+      `agy launch binary ${configuredExecutable} is not the pinned executable ${resolvedExecutable} ${phase}; re-pin through \`andromeda cli pin agy\``,
     );
   }
   const relative = path.relative(boundary.binDir, resolved);
@@ -1372,14 +1372,14 @@ async function assertAgyPinnedExecutable(
   const registry = await readProviderRegistry(state);
   const registration = registry.providers.agy;
   if (!registration) {
-    throw new Error("agy executable is not pinned in the canonical registry before launch; repair with `agents cli pin agy`");
+    throw new Error("agy executable is not pinned in the canonical registry before launch; repair with `andromeda cli pin agy`");
   }
   const verification = await verifyProviderRegistration(registration);
   if (!verification.ok) {
     throw new Error(
       `agy pinned executable drift detected before launch (${verification.issues.join(
         "; ",
-      )}); the executable changed behind the pin, so the run is refused; re-pin only through the trusted Agent OS upgrade path with \`agents cli pin agy\``,
+      )}); the executable changed behind the pin, so the run is refused; re-pin only through the trusted Agent OS upgrade path with \`andromeda cli pin agy\``,
     );
   }
   let resolvedLaunch: string;
@@ -1390,7 +1390,7 @@ async function assertAgyPinnedExecutable(
   }
   if (resolvedLaunch !== registration.resolvedExecutable) {
     throw new Error(
-      `agy launch binary ${binary} is not the pinned executable ${registration.executable} before launch; re-pin through \`agents cli pin agy\``,
+      `agy launch binary ${binary} is not the pinned executable ${registration.executable} before launch; re-pin through \`andromeda cli pin agy\``,
     );
   }
   return { registration, resolvedLaunch };
@@ -1458,7 +1458,7 @@ async function verifyAgyAttestedState(
   }
   if (digest !== attestation.sha256) {
     throw new Error(
-      `agy pinned executable drift detected ${phase} (attested executable checksum changed); the executable no longer matches immutable initial authority, so ${phase === "immediately before launch" ? "launch" : "the result"} is refused; re-pin only through the trusted Agent OS upgrade path with \`agents cli pin agy\``,
+      `agy pinned executable drift detected ${phase} (attested executable checksum changed); the executable no longer matches immutable initial authority, so ${phase === "immediately before launch" ? "launch" : "the result"} is refused; re-pin only through the trusted Agent OS upgrade path with \`andromeda cli pin agy\``,
     );
   }
 }

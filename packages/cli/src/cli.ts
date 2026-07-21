@@ -108,86 +108,86 @@ function runtimeState(): SharedState {
 }
 
 function help(): void {
-  console.log(`agents - Bun agent package manager
+  console.log(`andromeda - Bun agent package manager
 
 Usage:
-  agents run --model-tier low|medium|high|max --effort low|medium|high --execution-policy read-only|workspace-write --tool-policy standard|none --receipt <absolute-new-path> [--mode orchestrator|default|chat|task] [--prompt-file <absolute-path> | --prompt-stdin | <prompt>]
-  agents run [--mode orchestrator|default] [--provider <id>] [--model <model>] [--tui] <prompt>
-  agents route probe [--model-tier low|medium|high|max] [--effort low|medium|high] [--json]
-  agents tui [--provider <id>] [--model <model>] [--mode <mode>]
-  agents sessions list [--json]
-  agents sessions resume <id> <prompt>
-  agents list [--json]
-  agents info <name-or-path> [--json]
-  agents add <name> <git-url> [--kind app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
-  agents remove <name-or-path>
-  agents sync [source]
-  agents sync enable [--generate-key]
-  agents sync disable
-  agents sync status [--json]
-  agents sync export <bundle-file> [--json]
-  agents sync import <bundle-file> [--json]
-  agents sync recover [--json]
-  agents state init
-  agents state env
-  agents state doctor [--json]
-  agents state record-install
-  agents state status [--json]
-  agents state repo-status [--json]
-  agents state backup [--json]
-  agents state restore [--json]
-  agents state sync [--json]
-  agents memory <remember|list|status|supersede|retract|render> [options]
+  andromeda run --model-tier low|medium|high|max --effort low|medium|high --execution-policy read-only|workspace-write --tool-policy standard|none --receipt <absolute-new-path> [--mode orchestrator|default|chat|task] [--prompt-file <absolute-path> | --prompt-stdin | <prompt>]
+  andromeda run [--mode orchestrator|default] [--provider <id>] [--model <model>] [--tui] <prompt>
+  andromeda route probe [--model-tier low|medium|high|max] [--effort low|medium|high] [--json]
+  andromeda tui [--provider <id>] [--model <model>] [--mode <mode>]
+  andromeda sessions list [--json]
+  andromeda sessions resume <id> <prompt>
+  andromeda list [--json]
+  andromeda info <name-or-path> [--json]
+  andromeda add <name> <git-url> [--kind app|data|package|template|workspace|harness|cli|plugin] [--branch main] [--path path]
+  andromeda remove <name-or-path>
+  andromeda sync [source]
+  andromeda sync enable [--generate-key]
+  andromeda sync disable
+  andromeda sync status [--json]
+  andromeda sync export <bundle-file> [--json]
+  andromeda sync import <bundle-file> [--json]
+  andromeda sync recover [--json]
+  andromeda state init
+  andromeda state env
+  andromeda state doctor [--json]
+  andromeda state record-install
+  andromeda state status [--json]
+  andromeda state repo-status [--json]
+  andromeda state backup [--json]
+  andromeda state restore [--json]
+  andromeda state sync [--json]
+  andromeda memory <remember|list|status|supersede|retract|render> [options]
     mutations require --source <uri> --hash <sha256> --source-class <verified|inferred> --confidence <0..1>
-  agents identity activate <source-directory> [--replace]
-  agents cli list|doctor
-  agents cli pin [codex|claude|kimi|agy|all]
-  agents cli env <codex|claude|kimi|agy>
-  agents packages register <path>
-  agents packages list [--json]
-  agents packages run <name-or-path> -- <args...>
-  agents packages distro <define|install|upgrade|remove> ...
-  agents packages container <define|pull|pin|upgrade|remove> ...
-  agents env list [--json]
-  agents env create <id> [--kind host|container|agent-workspace]
-  agents env switch <id>
-  agents env sync <id>
-  agents data repo list [--json]
-  agents data repo set <id> <owner/name> [--path data/name] [--branch main] [--managed-path path] [--env NAME]
-  agents data repo path <id>
-  agents data repo env <id>
-  agents harness list [--json]
-  agents harness doctor <name>
-  agents harness run <name> -- <args...>
-  agents session run --provider <id> --model <model> [--mode chat|task] [--session <id>] [--stream] <prompt>
-  agents session list [--json]
-  agents session show <id> [--json]
-  agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-git-url> [--replace]
-  agents installs [--json]
-  agents secrets list [--json]
-  agents secrets set <NAME> [--from-file path]
-  agents secrets path <NAME>
-  agents secrets github sync <NAME> [--as SECRET_NAME] [--repo owner/name | --owner owner] [--dry-run]
-  agents credits [--json]
-  agents credits credit <provider> <consumer> <amount> [--note text] [--json]
-  agents credits debit <provider> <consumer> <amount> [--note text] [--json]
-  agents credits usage <provider> <consumer> [--amount n] [--tokens-in n] [--tokens-out n] [--note text] [--json]
-  agents credits provider <provider> [--balance n] [--soft-limit n] [--window-seconds n] [--window-started-at iso] [--json]
-  agents doctor
-  agents os doctor [--json]
-  agents os image list [--json]
-  agents os image build --image <image> [--channel dev] [--file path] [--context path] [--dry-run]
-  agents os image pull --image <image> [--channel dev] [--dry-run]
-  agents os create --name <name> --image <image> [--env agents-os] [--channel dev] [--dry-run]
-  agents os start <name> [--dry-run]
-  agents os stop <name> [--dry-run]
-  agents os status <name> [--json]
-  agents os logs <name> [--follow]
-  agents os exec <name> -- <args...>
-  agents os terminal <name> [--shell bash]
-  agents os remove <name> [--prune-data] [--dry-run]
-  agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
-  agents runner install|enable|disable|status|repair [--json]
+  andromeda identity activate <source-directory> [--replace]
+  andromeda cli list|doctor
+  andromeda cli pin [codex|claude|kimi|agy|all]
+  andromeda cli env <codex|claude|kimi|agy>
+  andromeda packages register <path>
+  andromeda packages list [--json]
+  andromeda packages run <name-or-path> -- <args...>
+  andromeda packages distro <define|install|upgrade|remove> ...
+  andromeda packages container <define|pull|pin|upgrade|remove> ...
+  andromeda env list [--json]
+  andromeda env create <id> [--kind host|container|agent-workspace]
+  andromeda env switch <id>
+  andromeda env sync <id>
+  andromeda data repo list [--json]
+  andromeda data repo set <id> <owner/name> [--path data/name] [--branch main] [--managed-path path] [--env NAME]
+  andromeda data repo path <id>
+  andromeda data repo env <id>
+  andromeda harness list [--json]
+  andromeda harness doctor <name>
+  andromeda harness run <name> -- <args...>
+  andromeda session run --provider <id> --model <model> [--mode chat|task] [--session <id>] [--stream] <prompt>
+  andromeda session list [--json]
+  andromeda session show <id> [--json]
+  andromeda install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-git-url> [--replace]
+  andromeda installs [--json]
+  andromeda secrets list [--json]
+  andromeda secrets set <NAME> [--from-file path]
+  andromeda secrets path <NAME>
+  andromeda secrets github sync <NAME> [--as SECRET_NAME] [--repo owner/name | --owner owner] [--dry-run]
+  andromeda credits [--json]
+  andromeda credits credit <provider> <consumer> <amount> [--note text] [--json]
+  andromeda credits debit <provider> <consumer> <amount> [--note text] [--json]
+  andromeda credits usage <provider> <consumer> [--amount n] [--tokens-in n] [--tokens-out n] [--note text] [--json]
+  andromeda credits provider <provider> [--balance n] [--soft-limit n] [--window-seconds n] [--window-started-at iso] [--json]
+  andromeda doctor
+  andromeda os doctor [--json]
+  andromeda os image list [--json]
+  andromeda os image build --image <image> [--channel dev] [--file path] [--context path] [--dry-run]
+  andromeda os image pull --image <image> [--channel dev] [--dry-run]
+  andromeda os create --name <name> --image <image> [--env andromeda-os] [--channel dev] [--dry-run]
+  andromeda os start <name> [--dry-run]
+  andromeda os stop <name> [--dry-run]
+  andromeda os status <name> [--json]
+  andromeda os logs <name> [--follow]
+  andromeda os exec <name> -- <args...>
+  andromeda os terminal <name> [--shell bash]
+  andromeda os remove <name> [--prune-data] [--dry-run]
+  andromeda os deploy <profile> [--image andromeda-os] [--env andromeda-os] [--channel dev] [--dry-run]
+  andromeda runner install|enable|disable|status|repair [--json]
 
 All runtime data is shared through .andromeda so every managed CLI sees the same
 skills, plugins, CLI metadata, and credit store.`);
@@ -218,7 +218,7 @@ const ROUTE_PROBE_EFFORTS = new Set(["low", "medium", "high"]);
 
 async function routeCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
   const [action, ...rest] = args;
-  if (action !== "probe" || rest.length > 0) throw new Error("usage: agents route probe [options]");
+  if (action !== "probe" || rest.length > 0) throw new Error("usage: andromeda route probe [options]");
 
   const allowedFlags = new Set(["model-tier", "effort", "json"]);
   if (Object.keys(flags).some((name) => !allowedFlags.has(name))) {
@@ -517,7 +517,7 @@ async function packageCommand(args: string[], flags: Record<string, string | boo
     return;
   }
   if (action === "distro" || action === "container") {
-    throw notImplementedPackagesAndEnvironments(`agents packages ${action}`);
+    throw notImplementedPackagesAndEnvironments(`andromeda packages ${action}`);
   }
   throw new Error(`unknown packages action: ${action}`);
 }
@@ -535,7 +535,7 @@ async function envCommand(args: string[], flags: Record<string, string | boolean
   }
 
   if (action === "create" || action === "switch" || action === "sync") {
-    throw notImplementedPackagesAndEnvironments(`agents env ${action}`);
+    throw notImplementedPackagesAndEnvironments(`andromeda env ${action}`);
   }
 
   throw new Error(`unknown env action: ${action}`);
@@ -1318,6 +1318,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(`agents: ${error.message}`);
+  console.error(`andromeda: ${error.message}`);
   process.exitCode = 1;
 });

@@ -296,7 +296,7 @@ describe("model execution CLI prompt boundary", () => {
     }
   });
 
-  test("agents run routes the complete logical-tier contract and emits only a stable block", async () => {
+  test("andromeda run routes the complete logical-tier contract and emits only a stable block", async () => {
     const { root, state, receiptDir } = await executionFixture();
     const receiptPath = path.join(receiptDir, "direct receipt.json");
     const prompt = "DIRECT_TIER_PROMPT_SENTINEL";
@@ -362,7 +362,7 @@ describe("model execution CLI prompt boundary", () => {
 
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr.trim()).toBe("agents: run requires --model-tier");
+    expect(result.stderr.trim()).toBe("andromeda: run requires --model-tier");
     await expect(readFile(receiptPath, "utf8")).rejects.toThrow();
 
     const policyOnly = await runProcess(
@@ -379,10 +379,10 @@ describe("model execution CLI prompt boundary", () => {
     );
     expect(policyOnly.code).toBe(1);
     expect(policyOnly.stdout).toBe("");
-    expect(policyOnly.stderr.trim()).toBe("agents: run requires --model-tier");
+    expect(policyOnly.stderr.trim()).toBe("andromeda: run requires --model-tier");
   });
 
-  test("agents run keeps receipt authority in the caller worktree when ANDROMEDA_ROOT differs", async () => {
+  test("andromeda run keeps receipt authority in the caller worktree when ANDROMEDA_ROOT differs", async () => {
     const { distributionRoot, workdir, state, receiptDir } = await splitExecutionFixture();
     const receiptPath = path.join(receiptDir, "caller receipt.json");
     const result = await runProcess(
@@ -414,7 +414,7 @@ describe("model execution CLI prompt boundary", () => {
     expect(receiptPath.startsWith(`${distributionRoot}${path.sep}`)).toBe(false);
   });
 
-  test("agents run rejects a receipt under ANDROMEDA_ROOT when the caller worktree differs", async () => {
+  test("andromeda run rejects a receipt under ANDROMEDA_ROOT when the caller worktree differs", async () => {
     const { distributionRoot, workdir, state } = await splitExecutionFixture();
     const receiptDir = path.join(distributionRoot, ".darkfactory");
     const receiptPath = path.join(receiptDir, "distribution receipt.json");
@@ -442,7 +442,7 @@ describe("model execution CLI prompt boundary", () => {
 
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr.trim()).toBe("agents: execution receipt path must be inside the execution workdir");
+    expect(result.stderr.trim()).toBe("andromeda: execution receipt path must be inside the execution workdir");
     await expect(readFile(receiptPath, "utf8")).rejects.toThrow();
   });
 

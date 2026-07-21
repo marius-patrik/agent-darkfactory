@@ -306,7 +306,7 @@ describe("orchestrator state helpers", () => {
   });
 });
 
-describe("agents run --mode orchestrator", () => {
+describe("andromeda run --mode orchestrator", () => {
   test("mode loading creates an orchestrator session", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-run-orch-mode-"));
     try {

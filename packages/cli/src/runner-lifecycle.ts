@@ -15,7 +15,7 @@ import { commandInvocation } from "./process-command";
  * runner (issue #245). The manager provisions and registers the runner, persists
  * it across reboot/logon with a least-privilege per-user scheduled task, binds
  * execution to the canonical `bin\agents.ps1` launcher, gates every start on a
- * healthy `agents state doctor`, never persists a registration token, reconciles
+ * healthy `andromeda state doctor`, never persists a registration token, reconciles
  * stale/duplicate registrations and processes, and reports redacted health for
  * DarkFactory doctor/dispatcher consumption.
  *
@@ -30,7 +30,7 @@ export const RUNNER_SCHEDULED_TASK = "AgentOS-df-local-runner";
 export const RUNNER_SCHEDULED_TASK_PATH = "\\";
 // Agent OS secret names use the same uppercase identifier contract as every
 // other canonical secret. Keep the runner credential inside that public CLI
-// surface so `agents secrets set` can actually provision the live control
+// surface so `andromeda secrets set` can actually provision the live control
 // plane instead of referring to an impossible lowercase filename.
 export const RUNNER_GITHUB_CREDENTIAL = "GITHUB_TOKEN";
 
@@ -2196,7 +2196,7 @@ export async function enableRunner(state: SharedState, overrides: RunnerDeps = {
     requireHealthyDoctor(observation.doctor, redact);
     const record = observation.record;
     if (!record || !record.registered) {
-      throw new Error("runner is not installed/registered; run `agents runner install` first");
+      throw new Error("runner is not installed/registered; run `andromeda runner install` first");
     }
     requireCanonicalRunnerPersistence(state, record);
     requireRunnerBinding(observation.configured, observation.config, RUNNER_REPOSITORY);
@@ -2206,17 +2206,17 @@ export async function enableRunner(state: SharedState, overrides: RunnerDeps = {
       observation.config === null ||
       !observation.config.disableUpdate
     ) {
-      throw new Error("runner software or configuration is incomplete; run `agents runner repair`");
+      throw new Error("runner software or configuration is incomplete; run `andromeda runner repair`");
     }
     if (record.runnerId !== observation.config.agentId) {
-      throw new Error("runner record and local configuration identify different runners; run `agents runner repair`");
+      throw new Error("runner record and local configuration identify different runners; run `andromeda runner repair`");
     }
     const principalUser = resolveWindowsPrincipal(deps.principal);
     const spec = buildRunnerTaskSpec(state, principalUser);
     const task = observation.task;
-    if (!task) throw new Error(`scheduled task ${RUNNER_SCHEDULED_TASK} is missing; run \`agents runner repair\``);
+    if (!task) throw new Error(`scheduled task ${RUNNER_SCHEDULED_TASK} is missing; run \`andromeda runner repair\``);
     if (!taskMatchesSpec(task, spec) || !taskHasCanonicalPersistence(task, spec)) {
-      throw new Error(`scheduled task ${RUNNER_SCHEDULED_TASK} does not have the canonical definition; run \`agents runner repair\``);
+      throw new Error(`scheduled task ${RUNNER_SCHEDULED_TASK} does not have the canonical definition; run \`andromeda runner repair\``);
     }
 
     const registration = await reconcileRegistrations(
@@ -2226,7 +2226,7 @@ export async function enableRunner(state: SharedState, overrides: RunnerDeps = {
       observation.registrations,
       markMutationBoundary,
     );
-    if (!registration.kept) throw new Error("exact GitHub runner registration is missing; run `agents runner repair`");
+    if (!registration.kept) throw new Error("exact GitHub runner registration is missing; run `andromeda runner repair`");
     readinessRunnerId = registration.kept.id;
     const processes = await reconcileProcesses(deps.host, observation.processes, markMutationBoundary);
     readinessProcess = processes.kept;
@@ -2242,7 +2242,7 @@ export async function enableRunner(state: SharedState, overrides: RunnerDeps = {
     if (!enabledTask?.enabled || !taskMatchesSpec(enabledTask, spec) || !taskHasCanonicalPersistence(enabledTask, spec)) {
       throw new Error("scheduled task enable postcondition failed");
     }
-    // Commit authority before Start-ScheduledTask. Its `agents runner run`
+    // Commit authority before Start-ScheduledTask. Its `andromeda runner run`
     // child must see enabled truth after this lock is released.
     if (!record.enabled) {
       record.enabled = true;
@@ -2531,10 +2531,10 @@ export async function runRunner(state: SharedState, overrides: RunnerDeps = {}):
       observation.config === null ||
       !observation.config.disableUpdate
     ) {
-      throw new Error("runner software or configuration is incomplete; run `agents runner repair`");
+      throw new Error("runner software or configuration is incomplete; run `andromeda runner repair`");
     }
     if (record.runnerId !== observation.config.agentId) {
-      throw new Error("runner record and local configuration identify different runners; run `agents runner repair`");
+      throw new Error("runner record and local configuration identify different runners; run `andromeda runner repair`");
     }
     const principalUser = resolveWindowsPrincipal(deps.principal);
     const spec = buildRunnerTaskSpec(state, principalUser);
@@ -2544,7 +2544,7 @@ export async function runRunner(state: SharedState, overrides: RunnerDeps = {}):
       !taskMatchesSpec(observation.task, spec) ||
       !taskHasCanonicalPersistence(observation.task, spec)
     ) {
-      throw new Error("scheduled task is not enabled with the canonical definition; run `agents runner repair`");
+      throw new Error("scheduled task is not enabled with the canonical definition; run `andromeda runner repair`");
     }
     const registration = await reconcileRegistrations(
       github,
@@ -2553,7 +2553,7 @@ export async function runRunner(state: SharedState, overrides: RunnerDeps = {}):
       observation.registrations,
       markMutationBoundary,
     );
-    if (!registration.kept) throw new Error("exact GitHub runner registration is missing; run `agents runner repair`");
+    if (!registration.kept) throw new Error("exact GitHub runner registration is missing; run `andromeda runner repair`");
     readinessRunnerId = registration.kept.id;
     const processes = await reconcileProcesses(deps.host, observation.processes, markMutationBoundary);
     if (processes.kept !== null) {

@@ -2566,7 +2566,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
   }, 30000);
 
   test("edge: a spaced Windows-style canonical root stays quoted and isolated from the user-profile .gemini", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "agents agy edge "));
+    const root = await mkdtemp(path.join(os.tmpdir(), "andromeda agy edge "));
     const stateDir = path.join(root, ".andromeda state");
     const userHome = path.join(root, "user home");
     const restore = withDisposableHome(stateDir, userHome);

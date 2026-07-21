@@ -126,7 +126,7 @@ describe("route probe CLI regression triplet", () => {
       expect(await snapshotTree(state.stateDir)).toEqual(before);
 
       const help = await runAgents(root, ["help"]);
-      expect(help.stdout).toContain("agents route probe [--model-tier low|medium|high|max]");
+      expect(help.stdout).toContain("andromeda route probe [--model-tier low|medium|high|max]");
     });
   });
 
@@ -262,7 +262,7 @@ describe("route probe CLI regression triplet", () => {
       expect(result.code).toBe(1);
       expect(result.stdout).toBe("");
       expect(result.stderr.trim()).toBe(
-        "agents: route probe accepts only --model-tier, --effort, and --json",
+        "andromeda: route probe accepts only --model-tier, --effort, and --json",
       );
       expect(await Bun.file(path.join(root, ".andromeda")).exists()).toBe(false);
     } finally {

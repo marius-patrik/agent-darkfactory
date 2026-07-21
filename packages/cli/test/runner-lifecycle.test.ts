@@ -69,7 +69,7 @@ function makeDoctor(overrides: { ok?: boolean; launcherOk?: boolean; failId?: Do
   const launcherOk = overrides.launcherOk ?? overrides.ok ?? true;
   const checks: StateDoctorReport["checks"] = [
     { id: "state_root", ok: true, message: "canonical root is healthy" },
-    { id: "launcher", ok: launcherOk, message: launcherOk ? "launcher bound" : "agents launcher is missing" },
+    { id: "launcher", ok: launcherOk, message: launcherOk ? "launcher bound" : "andromeda launcher is missing" },
   ];
   if (overrides.failId) checks.push({ id: overrides.failId, ok: false, message: `${overrides.failId} failed` });
   const everyOk = checks.every((check) => check.ok);
@@ -2723,20 +2723,20 @@ describe("scheduled task mutation barriers", () => {
       query?: "missing" | "duplicate" | "provider" | "malformed";
       principalFailure?: boolean;
     }> = [
-      { label: "missing", expectedIssue: `scheduled task ${RUNNER_SCHEDULED_TASK} is missing; run \`agents runner repair\``, query: "missing" },
+      { label: "missing", expectedIssue: `scheduled task ${RUNNER_SCHEDULED_TASK} is missing; run \`andromeda runner repair\``, query: "missing" },
       {
         label: "drifted action",
-        expectedIssue: `scheduled task ${RUNNER_SCHEDULED_TASK} does not have the canonical definition; run \`agents runner repair\``,
+        expectedIssue: `scheduled task ${RUNNER_SCHEDULED_TASK} does not have the canonical definition; run \`andromeda runner repair\``,
         mutateTask: (task) => { task.actionExecutable = "cmd.exe"; },
       },
       {
         label: "extra action",
-        expectedIssue: `scheduled task ${RUNNER_SCHEDULED_TASK} does not have the canonical definition; run \`agents runner repair\``,
+        expectedIssue: `scheduled task ${RUNNER_SCHEDULED_TASK} does not have the canonical definition; run \`andromeda runner repair\``,
         mutateTask: (task) => { task.actionCount = 2; task.actionExecutable = null; task.actionArguments = null; },
       },
       {
         label: "extra trigger",
-        expectedIssue: `scheduled task ${RUNNER_SCHEDULED_TASK} does not have the canonical definition; run \`agents runner repair\``,
+        expectedIssue: `scheduled task ${RUNNER_SCHEDULED_TASK} does not have the canonical definition; run \`andromeda runner repair\``,
         mutateTask: (task) => { task.triggerCount = 2; task.triggerKind = null; task.triggerUser = null; },
       },
       {
@@ -4459,7 +4459,7 @@ describe("runner run (supervised host)", () => {
       expect(result.ok, mode).toBe(false);
       expect(result.changed, mode).toBe(false);
       expect(result.issues, mode).toEqual([
-        "scheduled task is not enabled with the canonical definition; run `agents runner repair`",
+        "scheduled task is not enabled with the canonical definition; run `andromeda runner repair`",
       ]);
       expect(kit.hostCalls, mode).toEqual([]);
       expect(kit.githubCalls, mode).toEqual(["listRunners"]);
@@ -4693,7 +4693,7 @@ describe("runner run (supervised host)", () => {
 // CLI wiring
 // ---------------------------------------------------------------------------
 
-describe("agents runner CLI", () => {
+describe("andromeda runner CLI", () => {
   const envBackup: Record<string, string | undefined> = {};
 
   function setAgentsEnv(root: string): void {

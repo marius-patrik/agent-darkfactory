@@ -43,8 +43,8 @@ A future image must:
 6. record source commit, build time, channel, version, and immutable digest;
 7. pass `agents state doctor` against a disposable mounted state root.
 
-Expected references are `agents-os:<version>` locally and
-`ghcr.io/marius-patrik/agents-os:<version>` when a publication workflow exists.
+Expected references are `andromeda-os:<version>` locally and
+`ghcr.io/marius-patrik/andromeda-os:<version>` when a publication workflow exists.
 Moving tags such as `dev` are discovery channels, never provenance.
 
 ## Runtime contract

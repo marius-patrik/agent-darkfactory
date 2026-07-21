@@ -757,7 +757,7 @@ function unavailableOrderedReport(
 }
 
 /**
- * Resolve the complete canonical candidate order used by `agents route probe`.
+ * Resolve the complete canonical candidate order used by `andromeda route probe`.
  * Explicitly disabled/decommissioned providers are skipped from config alone,
  * before their doctor (and therefore their provider home) can be touched.
  */

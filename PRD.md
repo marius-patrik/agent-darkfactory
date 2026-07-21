@@ -37,7 +37,7 @@ at `context/PLAN.md` records the detailed execution lanes and parked scopes
 under that board and supersedes neither the board nor repository-owned
 specification. Owner instruction outranks all of them; issues implement this
 PRD. The program's end-state demo — the full system running in one container
-from an agents-os image — is parked with all custom distro/distribution work
+from an andromeda-os image — is parked with all custom distro/distribution work
 until the owner reopens it.
 
 ## Naming and authority

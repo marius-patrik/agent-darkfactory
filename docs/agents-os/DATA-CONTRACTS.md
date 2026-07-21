@@ -25,7 +25,7 @@ projected container paths.
 
 | Variable | Container path | Purpose |
 | --- | --- | --- |
-| `ANDROMEDA_ROOT` | `/opt/agents-os` | Read-only distribution/package root |
+| `ANDROMEDA_ROOT` | `/opt/andromeda-os` | Read-only distribution/package root |
 | `ANDROMEDA_HOME` | `/agents/state` | The one canonical state root |
 | `ANDROMEDA_USER_HOME` | `/home/agents` | Runtime account home, not state |
 | `ANDROMEDA_SYSTEM_DATA_ROOT` | `/agents/state` | The same private-data checkout as `ANDROMEDA_HOME` |
@@ -57,7 +57,7 @@ state roots. A minimum plan maps:
 | Host source | Container target | Mode |
 | --- | --- | --- |
 | `$ANDROMEDA_HOME` | `/agents/state` | read-write, private |
-| `$ANDROMEDA_ROOT` or packaged distribution | `/opt/agents-os` | read-only |
+| `$ANDROMEDA_ROOT` or packaged distribution | `/opt/andromeda-os` | read-only |
 | each additional registered data repo | declared `/agents/data/<id>` | package-declared |
 | the active registered workspace | declared `/workspace/<id>` | package-declared |
 
