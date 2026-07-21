@@ -72,15 +72,15 @@
     },
     {
       "id": "memory-plugin",
-      "path": "packages/migrate/memory",
+      "path": "packages/memory",
       "suite": "memory-plugin",
       "platforms": [
         "ubuntu-latest",
         "windows-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/memory/test/memory-plugin.test.ts",
-        "packages/migrate/memory/src/index.ts"
+        "packages/memory/test/memory-plugin.test.ts",
+        "packages/memory/src/index.ts"
       ]
     }
   ],
@@ -165,7 +165,7 @@
     "packages/migrate",
     "packages/migrate/dream",
     "packages/migrate/genesis-os",
-    "packages/migrate/memory",
+    "packages/memory",
     "packages/sdk",
     "packages/sdk/contracts-go",
     "packages/sdk/shared-ts",

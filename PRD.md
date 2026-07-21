@@ -328,9 +328,9 @@ come first: the system may only learn in ways it can prove it can stop.
   flag.
 - The substrate serves per-role adapters behind the same engine contract.
 
-### Cognitive memory operations (src/memory — owner-ruled, epic #227)
+### Cognitive memory operations (packages/memory — owner-ruled, epic #227)
 
-The reflection/cognitive layer lives in a new `src/memory` plugin, which
+The reflection/cognitive layer lives in a new `packages/memory` plugin, which
 also absorbs existing memory operations tooling. The canonical memory
 authority and state contracts remain manager/core-owned — the plugin operates
 strictly through them.
@@ -569,7 +569,7 @@ the lane breakdown lives in the program plan (`context/PLAN.md`):
 8. **Autolearn** — the #225 epic: brakes-first self-improvement, recorded
    scope only, execution owner-gated.
 9. **Memory plugin** — the #227 epic: reflection, dreams, and corpus
-   processing in `src/memory` through the canonical memory contract, with
+   processing in `packages/memory` through the canonical memory contract, with
    the Dream tooling migrated.
 
 Program acceptance: one continuous woven live session — an operator task from

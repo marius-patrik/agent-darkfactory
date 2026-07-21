@@ -162,12 +162,12 @@ const suites = {
     ]);
   },
   "memory-plugin"() {
-    run("memory plugin types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "packages/migrate/memory/tsconfig.json"]);
+    run("memory plugin types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "packages/memory/tsconfig.json"]);
     run("memory plugin tests", "bun", [
       "test",
       "--timeout=30000",
       "--max-concurrency=1",
-      ...discoverBunTests(path.join("packages", "migrate", "memory", "test")),
+      ...discoverBunTests(path.join("packages", "memory", "test")),
     ]);
   },
   release() {

@@ -1,6 +1,6 @@
 {
   "name": "@marius-patrik/andromeda-memory-plugin",
-  "version": "0.1.0",
+  "version": "0.10.0",
   "description": "Canonical memory reflection and distillation plugin for Andromeda.",
   "type": "module",
   "private": true,
