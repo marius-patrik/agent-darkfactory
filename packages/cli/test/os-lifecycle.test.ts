@@ -60,7 +60,7 @@ async function runAgents(
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn([process.execPath, cliPath, ...args], {
     cwd,
-    env: { ...cleanEnv(), ANDROMEDA_HOME: path.join(cwd, ".andromeda"), ANDROMEDA_ROOT: cwd, ...env },
+    env: { ...cleanEnv(), ANDROMEDA_HOME: path.join(cwd, ".agents"), ANDROMEDA_ROOT: cwd, ...env },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -148,7 +148,7 @@ describe("os lifecycle pure helpers", () => {
       channel: "dev",
       hostRoot: "/home/user/Projects/agents-manager",
       mounts: [
-        { host: "/home/user/.andromeda", container: "/agents/state", mode: "rw" },
+        { host: "/home/user/.agents", container: "/agents/state", mode: "rw" },
       ],
       env: { ANDROMEDA_HOME: "/agents/state" },
       ports: [{ name: "http", container: 8080, host: 8080 }],
@@ -158,12 +158,12 @@ describe("os lifecycle pure helpers", () => {
     expect(args).toContain("--name");
     expect(args).toContain("andromeda-os-dev");
     expect(args).toContain("andromeda-os:dev");
-    expect(args).toContain("io.andromeda.os.managed=true");
-    expect(args).toContain("io.andromeda.os.environment=dev");
+    expect(args).toContain("io.andromeda.managed=true");
+    expect(args).toContain("io.andromeda.environment=dev");
     expect(args).toContain("-e");
     expect(args).toContain("ANDROMEDA_HOME=/agents/state");
     expect(args).toContain("-v");
-    expect(args).toContain("/home/user/.andromeda:/agents/state:rw");
+    expect(args).toContain("/home/user/.agents:/agents/state:rw");
     expect(args).toContain("-p");
     expect(args).toContain("8080:8080");
     expect(args).toContain("--network");
@@ -304,7 +304,7 @@ describe("andromeda os CLI", () => {
       expect(result.code).toBe(0);
       expect(result.stdout).toContain("docker container create");
       expect(result.stdout).toContain("andromeda-os-dev");
-      expect(result.stdout).toContain(toPosixPath(path.join(root, ".andromeda")));
+      expect(result.stdout).toContain(toPosixPath(path.join(root, ".agents")));
       expect(result.stdout).toContain("ANDROMEDA_ROOT=/opt/andromeda-os");
     } finally {
       await rm(root, { recursive: true, force: true });

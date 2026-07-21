@@ -22,7 +22,7 @@ test("managed Validate provisions Go and uv before dependency installation", asy
 });
 
 test("monorepo validation uses the uv CLI without a cross-repository go.work", async () => {
-  const commands = await readFile("tools/capabilities/project/COMMANDS.md", "utf8");
+  const commands = await readFile(".agents/capabilities/project/COMMANDS.md", "utf8");
   assert.doesNotMatch(commands, /python(?:3)?\s+-m\s+uv/);
   assert.match(commands, /\buv sync --frozen\b/);
   assert.equal(existsSync("go.work"), false);
@@ -63,14 +63,14 @@ test("legacy provider-specific review assets are absent and no longer required",
   ];
   for (const legacyPath of legacyPaths) assert.equal(existsSync(legacyPath), false, legacyPath);
 
-  const managed = JSON.parse(await readFile(".darkfactory/managed-repository.json", "utf8"));
+  const managed = JSON.parse(await readFile(".agents/managed-repository.json", "utf8"));
   assert.deepEqual(managed.requiredSecrets, ["DARK_FACTORY_APP_ID", "DARK_FACTORY_PRIVATE_KEY"]);
   assert.ok(managed.requiredFiles.includes(reviewWorkflowPath));
   assert.ok(legacyPaths.every((legacyPath) => managed.removedFiles.includes(legacyPath)));
 });
 
 test("documented branch policy matches the enforced check names", async () => {
-  const policy = await readFile(".darkfactory/branching-policy.md", "utf8");
+  const policy = await readFile(".agents/branching-policy.md", "utf8");
   // Assert the substance rather than the exact prose: both protected branches,
   // strict GitHub-Actions-bound protection, and both required check names.
   // Trunk-based: main is the only long-lived branch.

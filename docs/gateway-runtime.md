@@ -8,8 +8,8 @@ package, service, and CLI identity is `agent-os-gateway`.
 
 ## State contract
 
-`andromeda_home` is required and must be absolute. Append-only traces live below
-`$andromeda_home/runtime/gateway`. The static local model
+`ANDROMEDA_HOME` is required and must be absolute. Append-only traces live below
+`$ANDROMEDA_HOME/runtime/gateway`. The static local model
 registry is `registry/models.yaml`; runtime variables cannot replace its path
 or endpoints. The gateway does not read provider CLI credentials and does not
 write Agent OS memory, sessions, capabilities, provider configuration, or the
@@ -21,7 +21,7 @@ manager-owned provider harnesses.
 ```sh
 cd packages/server/gateway
 uv sync --frozen
-andromeda_home=/absolute/.andromeda uv run agent-os-gateway serve
+ANDROMEDA_HOME=/absolute/.agents uv run agent-os-gateway serve
 ```
 
 The native service listens only on `127.0.0.1:8787` by default and provides:
@@ -42,7 +42,7 @@ cd packages/server/gateway
 uv run ruff check llm_gateway tests scripts
 uv run mypy llm_gateway
 uv run pytest -q -m 'not live'
-andromeda_home=/tmp/agent-os-gateway-smoke uv run python scripts/packaging_smoke.py
+ANDROMEDA_HOME=/tmp/agent-os-gateway-smoke uv run python scripts/packaging_smoke.py
 uv build
 ```
 

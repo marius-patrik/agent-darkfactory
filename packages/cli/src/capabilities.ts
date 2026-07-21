@@ -151,7 +151,7 @@ const packageManifestFields = new Set([
 ]);
 const forbiddenTreeSegments = new Set([
   ".git",
-  ".andromeda",
+  ".agents",
   // The state root was named .agents before the rebrand. It stays rejected for
   // the same reason .rommie does: a provider or state home leaking into a
   // capability tree is the failure, whatever it was called at the time.

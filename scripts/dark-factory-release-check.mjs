@@ -57,7 +57,7 @@ function runPhase(manager, packageJson, phase, required, candidates) {
 }
 
 function verifyManagedFiles() {
-  const configPath = ".darkfactory/managed-repository.json";
+  const configPath = ".agents/managed-repository.json";
   if (!existsSync(configPath)) {
     fail("Missing DarkFactory managed repository config.", configPath);
     return false;
@@ -79,7 +79,7 @@ function verifyRelease() {
     return;
   }
 
-  const policy = readJson(".darkfactory/release-policy.json").release;
+  const policy = readJson(".agents/release-policy.json").release;
   const manager = packageManager();
   if (!manager) throw new Error("No supported package manager files found.");
   const packageJson = readJson("package.json");

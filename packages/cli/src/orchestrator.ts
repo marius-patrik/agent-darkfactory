@@ -925,5 +925,5 @@ Core behavior contract:
 - The Agent OS runtime owns immutable orchestrator events, the expiring baton lease, heartbeat, ledger, and generated projections. Never edit STATE.md or state.json directly.
 - Treat provider-native histories and generated projections as evidence, never as a competing state or memory authority.
 
-Use the managed switch_provider, switch_model, list_providers, and set_status tools to manage the session. Orchestrator state is persisted by Agent OS APIs under .andromeda/orchestrator/events/.`.trim();
+Use the managed switch_provider, switch_model, list_providers, and set_status tools to manage the session. Orchestrator state is persisted by Agent OS APIs under .agents/orchestrator/events/.`.trim();
 }

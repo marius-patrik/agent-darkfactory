@@ -12,7 +12,7 @@ trap 'rm -rf "$SANDBOX"' EXIT
 
 SOURCE_DIR="$SANDBOX/source"
 ANDROMEDA_USER_HOME="$SANDBOX/home"
-ANDROMEDA_HOME="$ANDROMEDA_USER_HOME/.andromeda"
+ANDROMEDA_HOME="$ANDROMEDA_USER_HOME/.agents"
 ANDROMEDA_ROOT="$ANDROMEDA_USER_HOME/marius-patrik/Andromeda"
 FAKE_BIN="$SANDBOX/bin"
 REAL_BUN="$(command -v bun)"
@@ -155,7 +155,7 @@ run_installer
 # A submodule or linked worktree stores .git as a file. It is still a valid
 # canonical checkout when its origin and branch agree with the installer.
 EDGE_USER_HOME="$SANDBOX/edge-home"
-EDGE_ANDROMEDA_HOME="$EDGE_USER_HOME/.andromeda"
+EDGE_ANDROMEDA_HOME="$EDGE_USER_HOME/.agents"
 EDGE_ROOT="$EDGE_USER_HOME/marius-patrik/Andromeda"
 mkdir -p "$(dirname "$EDGE_ROOT")" "$SANDBOX/edge-git"
 git clone --quiet --branch main --separate-git-dir="$SANDBOX/edge-git/repository" "$SOURCE_DIR" "$EDGE_ROOT"
@@ -175,7 +175,7 @@ env \
 # A populated pre-checkout state root is migrated by staging, overlaying, and
 # atomically swapping while retaining a sibling rollback tree.
 LEGACY_USER_HOME="$SANDBOX/legacy-home"
-LEGACY_ANDROMEDA_HOME="$LEGACY_USER_HOME/.andromeda"
+LEGACY_ANDROMEDA_HOME="$LEGACY_USER_HOME/.agents"
 LEGACY_ROOT="$LEGACY_USER_HOME/marius-patrik/Andromeda"
 mkdir -p "$LEGACY_ANDROMEDA_HOME/memory" "$(dirname "$LEGACY_ROOT")"
 printf '%s\n' 'preserve-me' >"$LEGACY_ANDROMEDA_HOME/memory/legacy-marker"
@@ -192,7 +192,7 @@ env \
   bash "$SOURCE_DIR/install/install.sh"
 test -d "$LEGACY_ANDROMEDA_HOME/.git"
 grep -F 'preserve-me' "$LEGACY_ANDROMEDA_HOME/memory/legacy-marker"
-legacy_backups=("$LEGACY_USER_HOME"/.andromeda.pre-andromeda-data-*)
+legacy_backups=("$LEGACY_USER_HOME"/.agents.pre-andromeda-data-*)
 [ "${#legacy_backups[@]}" -eq 1 ]
 grep -F 'preserve-me' "${legacy_backups[0]}/memory/legacy-marker"
 case "$(uname -s)" in
@@ -215,7 +215,7 @@ if env \
   ANDROMEDA_SOURCE="$SOURCE_DIR" \
   ANDROMEDA_DATA_SOURCE="$STUB_ROOT/data" \
   ANDROMEDA_BRANCH=main \
-  ANDROMEDA_HOME="$DENIED_USER_HOME/.andromeda" \
+  ANDROMEDA_HOME="$DENIED_USER_HOME/.agents" \
   ANDROMEDA_USER_HOME="$DENIED_USER_HOME" \
   ANDROMEDA_ROOT="$DENIED_ROOT" \
   GIT_ALLOW_PROTOCOL=file \
@@ -237,7 +237,7 @@ if env \
   ANDROMEDA_SOURCE="$SOURCE_DIR" \
   ANDROMEDA_DATA_SOURCE="$STUB_ROOT/data" \
   ANDROMEDA_BRANCH=main \
-  ANDROMEDA_HOME="$NESTED_USER_HOME/.andromeda" \
+  ANDROMEDA_HOME="$NESTED_USER_HOME/.agents" \
   ANDROMEDA_USER_HOME="$NESTED_USER_HOME" \
   ANDROMEDA_ROOT="$NESTED_ROOT" \
   GIT_ALLOW_PROTOCOL=file \

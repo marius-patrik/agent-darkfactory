@@ -13,7 +13,7 @@ export const PARKED_REPOS = new Set([
   "marius-patrik/lifequest",
   "marius-patrik/life-support"
 ]);
-export const MANAGED_REPOS_PATH = ".darkfactory/managed-repos.json";
+export const MANAGED_REPOS_PATH = ".agents/managed-repos.json";
 export const MANAGED_REPO_STATES = new Set(["active", "parked", "archived", "completed", "removed"]);
 export const TRUSTED_GATE_APP_ID = 15368;
 export const MANAGED_REQUIRED_CHECKS = Object.freeze(["Validate", "DarkFactory Autoreview"]);

@@ -158,7 +158,7 @@ async def test_redaction_at_tool_message_and_event_boundary(monkeypatch, tmp_pat
             max_turns=3,
         )
     )
-    root = tmp_path / ".andromeda" / "runtime" / "inference" / "runs" / "redact"
+    root = tmp_path / ".agents" / "runtime" / "inference" / "runs" / "redact"
     event_text = (root / "events.ndjson").read_text()
     assert secret not in event_text
     assert "SuperSecret123ABC" not in event_text

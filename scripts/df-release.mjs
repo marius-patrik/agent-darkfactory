@@ -16,7 +16,7 @@ import {
   writeRunLedger
 } from "./df-lib.mjs";
 
-export const RELEASE_POLICY_PATH = ".darkfactory/release-policy.json";
+export const RELEASE_POLICY_PATH = ".agents/release-policy.json";
 export const RELEASE_MODES = new Set(["status", "plan", "reconcile", "run", "verify"]);
 const DATA_REPOSITORIES = new Set([
   "marius-patrik/andromeda-data",

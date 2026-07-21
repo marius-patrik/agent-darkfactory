@@ -118,7 +118,7 @@ const suites = {
     const cwd = path.join(root, "packages", "server", "gateway");
     const sandbox = mkdtempSync(path.join(tmpdir(), "andromeda-gateway-ci-"));
     const userHome = path.join(sandbox, "user");
-    const stateHome = path.join(userHome, ".andromeda");
+    const stateHome = path.join(userHome, ".agents");
     mkdirSync(stateHome, { recursive: true });
     const env = {
       ...process.env,
@@ -164,7 +164,7 @@ const suites = {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      "tools/capabilities/global/skills/compact/scripts/test_write_compaction_capsule.ps1",
+      ".agents/capabilities/global/skills/compact/scripts/test_write_compaction_capsule.ps1",
     ]);
   },
   "memory-plugin"() {

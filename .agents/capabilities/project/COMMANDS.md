@@ -43,7 +43,7 @@ bun test packages/sdk/harness/test/tools.test.ts \
   uv run ruff check llm_gateway tests scripts
   uv run mypy llm_gateway
   uv run pytest -q -m 'not live'
-  andromeda_home=/absolute/disposable/.andromeda \
+  ANDROMEDA_HOME=/absolute/disposable/.agents \
   ANDROMEDA_USER_HOME=/absolute/disposable \
   ANDROMEDA_ROOT=/absolute/Andromeda \
     uv run python scripts/packaging_smoke.py
@@ -67,7 +67,7 @@ node scripts/run-ci-suite.mjs engine-real
 Explicit temporary or live state commands must always set all three roots:
 
 ```sh
-andromeda_home=/absolute/.andromeda \
+ANDROMEDA_HOME=/absolute/.agents \
 ANDROMEDA_USER_HOME=/absolute/user-home \
 ANDROMEDA_ROOT=/absolute/Andromeda \
   bun run agents -- state doctor

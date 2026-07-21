@@ -18,7 +18,7 @@
     "proto:check": "bun scripts/verify-codegen.ts",
     "layout:check": "node scripts/verify-single-product.mjs",
     "ci": "node scripts/run-ci-suite.mjs all",
-    "test:compact": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/capabilities/global/skills/compact/scripts/test_write_compaction_capsule.ps1",
+    "test:compact": "pwsh -NoProfile -ExecutionPolicy Bypass -File .agents/capabilities/global/skills/compact/scripts/test_write_compaction_capsule.ps1",
     "smoke:release": "bun scripts/run-release-smoke.mjs",
     "smoke:sync": "bun scripts/run-sync-smoke.mjs"
   },

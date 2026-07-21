@@ -150,7 +150,7 @@ export function sharedStateAt(root: string, stateDir: string, userHome = resolve
 }
 
 export function sharedState(root: string): SharedState {
-  return sharedStateAt(root, path.join(root, ".andromeda"));
+  return sharedStateAt(root, path.join(root, ".agents"));
 }
 
 export function sharedStateFromEnv(cwd: string, env: RuntimePathEnv = process.env): SharedState {

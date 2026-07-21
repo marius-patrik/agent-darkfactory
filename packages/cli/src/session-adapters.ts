@@ -322,7 +322,7 @@ export function assertFreshReadIsolatedTranscript(
 
 function isAgentsBinPath(candidate: string): boolean {
   const parent = path.dirname(path.resolve(candidate));
-  return path.basename(parent) === "bin" && path.basename(path.dirname(parent)) === ".andromeda";
+  return path.basename(parent) === "bin" && path.basename(path.dirname(parent)) === ".agents";
 }
 
 function isManagerShim(candidate: string): boolean {
@@ -342,7 +342,7 @@ function isManagerShim(candidate: string): boolean {
 }
 
 export function providerBinarySafetyReason(candidate: string): string | null {
-  if (isAgentsBinPath(candidate)) return "the shared .andromeda/bin entrypoint is a manager shim";
+  if (isAgentsBinPath(candidate)) return "the shared .agents/bin entrypoint is a manager shim";
   if (isManagerShim(candidate)) return "the entrypoint delegates back to a retired manager shim";
   return null;
 }

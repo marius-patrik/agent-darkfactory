@@ -15,7 +15,7 @@ describe("secrets", () => {
 
       expect(await listSecrets(state)).toEqual(["CODEX_AUTH_JSON"]);
       expect(await readSecret(state, "CODEX_AUTH_JSON")).toBe("{\"token\":\"redacted\"}\n");
-      expect(secretPath(state, "CODEX_AUTH_JSON")).toBe(path.join(root, ".andromeda", "secrets", "CODEX_AUTH_JSON.secret"));
+      expect(secretPath(state, "CODEX_AUTH_JSON")).toBe(path.join(root, ".agents", "secrets", "CODEX_AUTH_JSON.secret"));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

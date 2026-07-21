@@ -26,7 +26,7 @@ const FAILED_GATE_CONCLUSIONS = new Set(["failure", "cancelled", "timed_out", "a
 const CHECK_RUN_STATUSES = new Set(["queued", "in_progress", "completed"]);
 const PENDING_WORKFLOW_RUN_STATUSES = new Set(["queued", "in_progress", "pending", "requested", "waiting"]);
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DATA_POLICY_PATH = path.join(CONTROL_ROOT, ".darkfactory", "data-repository-policy.json");
+const DATA_POLICY_PATH = path.join(CONTROL_ROOT, ".agents", "data-repository-policy.json");
 const PENDING_MARKER = "<!-- darkfactory:clean-autoreview";
 
 let gh;

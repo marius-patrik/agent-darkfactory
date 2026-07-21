@@ -20,7 +20,7 @@ import {
 } from "./df-lib.mjs";
 import { evaluateRequiredChecks, validateReleasePolicy } from "./df-release.mjs";
 
-export const SUBMODULE_POLICY_PATH = ".darkfactory/submodule-policy.json";
+export const SUBMODULE_POLICY_PATH = ".agents/submodule-policy.json";
 export const SUBMODULE_MODES = new Set(["status", "plan", "update", "verify"]);
 export const TRUSTED_GATE_APP_ID = 15368;
 const MAX_PAGINATION_PAGES = 100;

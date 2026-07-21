@@ -19,7 +19,7 @@ const ALLOWED_TRACKED_ROOT_FILES = new Set([
   ".gitignore", "agent.package.json", "agents.md", "package-lock.json", "package.json", "readme.md",
 ]);
 const ALLOWED_TRACKED_STATIC_ROOTS = new Set([
-  ".darkfactory", ".github", "context", "managed-repository", "research", "scripts", "wiki",
+  ".agents", ".github", "context", "managed-repository", "research", "scripts", "wiki",
 ]);
 const SENSITIVE_TRACKED_SEGMENTS = new Set([
   "auth", "binaries", "cache", "caches", "capabilities", "capability", "clis",
@@ -44,7 +44,7 @@ function allowedTrackedFile(file: string): boolean {
   const canonicalCase = file.toLowerCase();
   if (sensitiveTrackedPath(canonicalCase)) return false;
   if (!canonicalCase.includes("/")) return ALLOWED_TRACKED_ROOT_FILES.has(canonicalCase);
-  if (canonicalCase.startsWith(".andromeda/")) return canonicalCase.startsWith("capabilities/.project/");
+  if (canonicalCase.startsWith(".agents/")) return canonicalCase.startsWith("capabilities/.project/");
   if (canonicalCase.startsWith("backups/")) {
     return /^backups\/events\/[a-z0-9][a-z0-9._-]{0,127}\/[a-f0-9]{64}\.bundle\.json$/.test(canonicalCase);
   }

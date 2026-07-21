@@ -50,7 +50,7 @@ check_dependencies() {
 
 prepare_paths() {
   ANDROMEDA_USER_HOME="$(real_user_home)"
-  ANDROMEDA_HOME="${ANDROMEDA_HOME:-$ANDROMEDA_USER_HOME/.andromeda}"
+  ANDROMEDA_HOME="${ANDROMEDA_HOME:-$ANDROMEDA_USER_HOME/.agents}"
   ANDROMEDA_ROOT="${ANDROMEDA_ROOT:-$ANDROMEDA_USER_HOME/marius-patrik/Andromeda}"
 
   require_absolute "ANDROMEDA_HOME" "$ANDROMEDA_HOME"
@@ -134,7 +134,7 @@ install_or_update_state_checkout() {
 migrate_legacy_state_checkout() {
   local parent stage backup stamp
   parent="$(dirname "$ANDROMEDA_HOME")"
-  stage="${ANDROMEDA_HOME}.andromeda-data-stage-$$"
+  stage="${ANDROMEDA_HOME}.agents-data-stage-$$"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   backup="${ANDROMEDA_HOME}.pre-andromeda-data-${stamp}"
   [ ! -e "$stage" ] || die "state migration staging path already exists: $stage"
@@ -251,7 +251,7 @@ install_launcher() {
   if is_windows; then
     command -v bun.exe >/dev/null 2>&1 || die "a native bun.exe is required for the Windows launcher"
     bun_bin="$(command -v bun.exe)"
-    temporary="$(mktemp "$bin_dir/.andromeda-launcher.XXXXXX.ps1")"
+    temporary="$(mktemp "$bin_dir/.agents-launcher.XXXXXX.ps1")"
     {
       printf '$ErrorActionPreference = '\''Stop'\''\n'
       printf 'Get-ChildItem Env: | Where-Object { $_.Name -like '\''ROMMIE_*'\'' -or $_.Name -like '\''AGENTOS_*'\'' } | ForEach-Object { Remove-Item "Env:$($_.Name)" }\n'
@@ -283,7 +283,7 @@ install_launcher() {
     } >"$temporary"
   else
     bun_bin="$(command -v bun)"
-    temporary="$(mktemp "$bin_dir/.andromeda-launcher.XXXXXX")"
+    temporary="$(mktemp "$bin_dir/.agents-launcher.XXXXXX")"
     {
       echo '#!/usr/bin/env bash'
       echo 'set -euo pipefail'
@@ -321,10 +321,10 @@ install_launcher() {
 }
 
 install_default_capabilities() {
-  local skill_root="$ANDROMEDA_ROOT/tools/capabilities/global/skills"
-  local role_root="$ANDROMEDA_ROOT/tools/capabilities/global/roles"
-  local command_root="$ANDROMEDA_ROOT/tools/capabilities/global/commands"
-  local persona="$ANDROMEDA_ROOT/tools/capabilities/global/persona.md"
+  local skill_root="$ANDROMEDA_ROOT/.agents/capabilities/global/skills"
+  local role_root="$ANDROMEDA_ROOT/.agents/capabilities/global/roles"
+  local command_root="$ANDROMEDA_ROOT/.agents/capabilities/global/commands"
+  local persona="$ANDROMEDA_ROOT/.agents/capabilities/global/persona.md"
   local identity_bundle skill_path name
 
   [ -d "$skill_root" ] || die "bundled skill floor is missing: $skill_root"

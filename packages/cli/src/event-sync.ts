@@ -611,7 +611,7 @@ function secretLikeText(value: string): boolean {
       while (leafIndex >= 0 && !(pathSegments[leafIndex] ?? "").trim()) leafIndex -= 1;
       const normalizedPath = absolutePath.replaceAll("\\", "/");
       const compactionSnapshot = normalizedPath.match(
-        /\/\.andromeda\/memory\/snapshots\/compaction\/([^/]+)\.json$/,
+        /\/\.agents\/memory\/snapshots\/compaction\/([^/]+)\.json$/,
       );
       const canonicalCompactionSnapshotLeaf = COMPACTION_SNAPSHOT_STEM.test(compactionSnapshot?.[1] ?? "");
       if (pathSegments.some((segment, index) =>

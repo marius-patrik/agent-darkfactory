@@ -10,7 +10,7 @@ import {
   repoName
 } from "./df-lib.mjs";
 
-export const ENFORCEMENT_RULES_PATH = ".darkfactory/enforcement-rules.json";
+export const ENFORCEMENT_RULES_PATH = ".agents/enforcement-rules.json";
 
 export const BUILTIN_RULES = [
   "parked-repos-untouched",

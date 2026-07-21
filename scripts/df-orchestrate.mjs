@@ -35,7 +35,7 @@ import {
 } from "../../src/issue-spec.ts";
 
 const CONTROL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ORCHESTRATION_POLICY_PATH = ".darkfactory/orchestration.json";
+const ORCHESTRATION_POLICY_PATH = ".agents/orchestration.json";
 export const DASHBOARD_MARKER = "df-dashboard:orchestration";
 export const ASK_OWNER_MARKER = "dark-factory:orchestrator-ask-owner";
 export const RESUME_MARKER = "dark-factory:worker-resume";

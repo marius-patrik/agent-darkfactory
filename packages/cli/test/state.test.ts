@@ -36,11 +36,11 @@ describe("shared state from environment", () => {
 
   test("uses the invocation root when ANDROMEDA_ROOT is absent", () => {
     const state = sharedStateFromEnv("/repo", {
-      ANDROMEDA_HOME: "/repo/.andromeda",
+      ANDROMEDA_HOME: "/repo/.agents",
     });
 
     expect(state.root).toBe(path.resolve("/repo"));
-    expect(state.stateDir).toBe(path.resolve("/repo/.andromeda"));
+    expect(state.stateDir).toBe(path.resolve("/repo/.agents"));
   });
 
   test("does not collide with project guidance when state env is absent", () => {
@@ -48,7 +48,7 @@ describe("shared state from environment", () => {
     const first = sharedStateFromEnv("/repo-one", env);
     const second = sharedStateFromEnv("/repo-two", env);
 
-    expect(first.stateDir).toBe(path.resolve("/Users/patrik/.andromeda"));
+    expect(first.stateDir).toBe(path.resolve("/Users/patrik/.agents"));
     expect(second.stateDir).toBe(first.stateDir);
     expect(first.root).toBe(path.resolve("/repo-one"));
     expect(second.root).toBe(path.resolve("/repo-two"));
@@ -132,30 +132,30 @@ describe("runtime path resolution", () => {
     expect(
       resolveUserHome(
         {
-          HOME: "/Users/patrik/.andromeda/clis/codex",
+          HOME: "/Users/patrik/.agents/clis/codex",
           ANDROMEDA_USER_HOME: "/Users/patrik",
         },
-        "/Users/patrik/.andromeda/clis/codex",
+        "/Users/patrik/.agents/clis/codex",
       ),
     ).toBe(path.resolve("/Users/patrik"));
   });
 
   test("recovers the real home from the canonical provider path", () => {
-    expect(resolveUserHome({}, "/Users/patrik/.andromeda/clis/codex")).toBe(path.resolve("/Users/patrik"));
+    expect(resolveUserHome({}, "/Users/patrik/.agents/clis/codex")).toBe(path.resolve("/Users/patrik"));
   });
 
   test("personal and runtime state honor explicit roots", () => {
     const env = {
-      HOME: "/Users/patrik/.andromeda/clis/codex",
-      ANDROMEDA_HOME: "/Users/patrik/.andromeda",
+      HOME: "/Users/patrik/.agents/clis/codex",
+      ANDROMEDA_HOME: "/Users/patrik/.agents",
     };
-    expect(resolvePersonalAgentsHome(env, env.HOME)).toBe(path.resolve("/Users/patrik/.andromeda"));
-    expect(resolveRuntimeAgentsHome("/repo", env)).toBe(path.resolve("/Users/patrik/.andromeda"));
+    expect(resolvePersonalAgentsHome(env, env.HOME)).toBe(path.resolve("/Users/patrik/.agents"));
+    expect(resolveRuntimeAgentsHome("/repo", env)).toBe(path.resolve("/Users/patrik/.agents"));
   });
 
   test("runtime state is independent of cwd when no explicit state root exists", () => {
     const env = { ANDROMEDA_USER_HOME: "/Users/patrik" };
-    expect(resolveRuntimeAgentsHome("/repo-one", env)).toBe(path.resolve("/Users/patrik/.andromeda"));
-    expect(resolveRuntimeAgentsHome("/repo-two", env)).toBe(path.resolve("/Users/patrik/.andromeda"));
+    expect(resolveRuntimeAgentsHome("/repo-one", env)).toBe(path.resolve("/Users/patrik/.agents"));
+    expect(resolveRuntimeAgentsHome("/repo-two", env)).toBe(path.resolve("/Users/patrik/.agents"));
   });
 });

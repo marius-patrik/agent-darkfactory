@@ -4,7 +4,7 @@ import { access, lstat, mkdir, open, readFile, readdir, realpath } from "node:fs
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const ISSUE_DRAFT_POLICY_PATH = ".darkfactory/issue-draft-policy.json";
+export const ISSUE_DRAFT_POLICY_PATH = ".agents/issue-draft-policy.json";
 export const ISSUE_DRAFT_DIRECTORY = path.join("runtime", "darkfactory", "drafts");
 export const ISSUE_DRAFT_HYGIENE_DIRECTORY = path.join("runtime", "darkfactory", "draft-hygiene", "receipts");
 

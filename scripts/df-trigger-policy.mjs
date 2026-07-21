@@ -1,7 +1,7 @@
 import path from "node:path";
 import { readRequiredJson, repoName } from "./df-lib.mjs";
 
-export const TRIGGER_POLICY_PATH = ".darkfactory/trigger-policy.json";
+export const TRIGGER_POLICY_PATH = ".agents/trigger-policy.json";
 export const REQUIRED_LOOP_IDS = [
   "repository-doctor",
   "managed-baseline-sync",

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from "node:fs";
 
-const CONFIG_PATH = ".darkfactory/managed-repository.json";
+const CONFIG_PATH = ".agents/managed-repository.json";
 
 function fail(message, file = CONFIG_PATH) {
   console.error(`::error file=${file}::${message}`);

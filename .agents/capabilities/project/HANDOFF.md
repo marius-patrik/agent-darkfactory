@@ -10,7 +10,7 @@ refactor and the template consolidation are complete, and the full CI gate
 passes including the DarkFactory managed setup check.
 
 ```powershell
-$env:ANDROMEDA_HOME = "$HOME\.andromeda"
+$env:ANDROMEDA_HOME = "$HOME\.agents"
 $env:ANDROMEDA_USER_HOME = "$HOME"
 $env:ANDROMEDA_ROOT = "$HOME\marius-patrik\Andromeda"
 Set-Location $env:ANDROMEDA_ROOT

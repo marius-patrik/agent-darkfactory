@@ -27,9 +27,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const DOCTOR_SCHEMA_VERSION = 2;
-export const DATA_REPOSITORY_POLICY_PATH = ".darkfactory/data-repository-policy.json";
+export const DATA_REPOSITORY_POLICY_PATH = ".agents/data-repository-policy.json";
 export const DOCTOR_REPAIR_CLASSES = ["auto", "pr", "owner", "blocked"];
-export const DOC_PATHS = ["PRD.md", "AGENTS.md", "tools/capabilities/project/STATUS.md", "tools/capabilities/project/PROJECT.md"];
+export const DOC_PATHS = ["PRD.md", "AGENTS.md", ".agents/capabilities/project/STATUS.md", ".agents/capabilities/project/PROJECT.md"];
 export const DOC_STALE_DAYS = 90;
 export const STALE_PR_DAYS = 7;
 export const STALE_ISSUE_DAYS = 30;
@@ -72,7 +72,7 @@ const REPOSITORY_TREE_ENTRY_TYPES = new Set(["blob", "tree", "commit"]);
 export const DOCTOR_REPORT_LABEL_NAMES = ["P0", "P1", "P2", "df:doctor", "df:class:mechanical"];
 const GENERATED_SEGMENTS = new Set([
   ".cache",
-  ".darkfactory-verification",
+  ".agents-verification",
   ".pytest_cache",
   ".turbo",
   ".venv",
@@ -970,7 +970,7 @@ export async function auditManagedFileDrift(github, repository, targetRef, contr
   }
 
   const releaseControlPaths = new Set([
-    ".darkfactory/release-policy.json",
+    ".agents/release-policy.json",
     "scripts/df-release.mjs",
     ".github/workflows/df-release.yml"
   ]);
@@ -1032,7 +1032,7 @@ async function auditProjectOverlay(github, repository, targetRef, agentOsDataRev
   const files = await listRemoteDirectoryFiles(github, dataRepo, prefix, agentOsDataRevision);
   for (const source of files) {
     const relative = source.path.slice(prefix.length + 1);
-    const targetPath = `tools/capabilities/project/${relative}`;
+    const targetPath = `.agents/capabilities/project/${relative}`;
     const expected = await readListedRemoteFile(github, dataRepo, source, agentOsDataRevision);
     const actual = await getOptionalFileContent(github, repository, targetPath, targetRef);
     if (actual === null || normalizeText(actual) !== normalizeText(expected)) {
@@ -1060,10 +1060,14 @@ export async function auditRepositoryTree(repository, tree, options = {}) {
     const filePath = entry.path.replace(/\\/g, "/");
     const segments = filePath.split("/");
     const lower = segments.map((segment) => segment.toLowerCase());
-    const allowedProjectAuthority = filePath === ".andromeda" || filePath === "tools/capabilities/project" || filePath.startsWith("tools/capabilities/project/");
-    const allowedDarkFactoryAuthority = filePath === ".darkfactory" || filePath.startsWith(".darkfactory/");
-    const nestedAgents = lower.includes(".andromeda") && !allowedProjectAuthority;
-    const nestedDarkFactory = lower.includes(".darkfactory") && !allowedDarkFactoryAuthority;
+    // .agents at the repository root is the authored config authority - policies
+    // and the capability floor. The same name nested anywhere below the root is
+    // a leaked state home, because the runtime state root is also ~/.agents.
+    // .agents is the retired state-root spelling and stays rejected outright.
+    const allowedProjectAuthority = filePath === ".agents/capabilities/project" || filePath.startsWith(".agents/capabilities/project/");
+    const allowedConfigAuthority = filePath === ".agents" || filePath.startsWith(".agents/");
+    const nestedAgents = lower.includes(".agents");
+    const nestedDarkFactory = lower.includes(".agents") && !allowedConfigAuthority && !allowedProjectAuthority;
     const providerState = lower.some((segment) => PROVIDER_STATE_SEGMENTS.has(segment));
     const generated = lower.some((segment) => GENERATED_SEGMENTS.has(segment));
     const sensitive = lower.some((segment) => ["andromeda_secrets", "secrets"].includes(segment)) || /(^|\/)(auth\.json|\.env)$/i.test(filePath);
@@ -1941,16 +1945,16 @@ export async function auditRetiredAuthorityNames(github, repository, ref) {
     "README.md",
     "PRD.md",
     "AGENTS.md",
-    "tools/capabilities/project/AGENTS.md",
-    "tools/capabilities/project/COMMANDS.md",
-    "tools/capabilities/project/DECISIONS.md",
-    "tools/capabilities/project/HANDOFF.md",
-    "tools/capabilities/project/PROJECT.md",
-    "tools/capabilities/project/STATUS.md",
-    "tools/capabilities/project/STRUCTURE.md",
-    ".darkfactory/branching-policy.md",
-    ".darkfactory/installer-policy.json",
-    ".darkfactory/managed-repository.json",
+    ".agents/capabilities/project/AGENTS.md",
+    ".agents/capabilities/project/COMMANDS.md",
+    ".agents/capabilities/project/DECISIONS.md",
+    ".agents/capabilities/project/HANDOFF.md",
+    ".agents/capabilities/project/PROJECT.md",
+    ".agents/capabilities/project/STATUS.md",
+    ".agents/capabilities/project/STRUCTURE.md",
+    ".agents/branching-policy.md",
+    ".agents/installer-policy.json",
+    ".agents/managed-repository.json",
     ".github/workflows/sync-managed-repos.yml",
     "src/managed-files.ts"
   ];
@@ -1968,7 +1972,7 @@ export async function auditRetiredAuthorityNames(github, repository, ref) {
     },
     {
       id: "retired-agent-os-data-path",
-      pattern: /(?:\$ANDROMEDA_ROOT|ANDROMEDA_ROOT|\.andromeda)\s*[\\/]data[\\/]agent-os\b/i,
+      pattern: /(?:\$ANDROMEDA_ROOT|ANDROMEDA_ROOT|\.agents)\s*[\\/]data[\\/]agent-os\b/i,
       message: "Active authority still names the retired nested Agent OS data path; canonical state is the `$ANDROMEDA_HOME` checkout of private-data."
     },
     {

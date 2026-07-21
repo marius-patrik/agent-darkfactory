@@ -18,7 +18,7 @@ describe("Agent OS state v2 bootstrap", () => {
   test("publishes bounded plugin runtime projections through the manager boundary", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-plugin-projection-"));
     try {
-      const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
+      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
       await ensureSharedState(state);
       const filePath = await publishPluginRuntimeProjection(state, "memory", "dream-v1.3-cursor", {
         schemaVersion: 1,
@@ -277,7 +277,7 @@ describe("Agent OS state v2 bootstrap", () => {
   test("creates one stable Rommie manifest and canonical bootstrap paths", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-v2-"));
     try {
-      const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
+      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
       await ensureSharedState(state);
       const first = await readStateManifest(state);
       expect(first?.schemaVersion).toBe(2);

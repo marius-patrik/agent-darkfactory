@@ -143,7 +143,7 @@ def real_gateway(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str,
         }))
         env = {
             **os.environ,
-            "ANDROMEDA_HOME": str(root / ".andromeda"),
+            "ANDROMEDA_HOME": str(root / ".agents"),
             "ANDROMEDA_USER_HOME": str(root / "user"),
             "ANDROMEDA_ROOT": str(GATEWAY_ROOT.parents[1]),
             "GATEWAY_INFERCTL_STATUS_PATH": str(status_path),
