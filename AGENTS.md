@@ -31,6 +31,6 @@ Component boundaries:
   loop, with the owner-ruled target (#218) of becoming the operation engine
   owning orchestration; it does not own state-root or provider-discovery
   policy.
-- `packages/migrate/gateway` owns local model routing and transient gateway runtime
+- `packages/server/gateway` owns local model routing and transient gateway runtime
   state; it requires an explicit absolute `AGENTS_HOME`.
-- `packages/migrate/inference` owns the Python inference loop and private runtime state.
+- `packages/server/inference` owns the Python inference loop and private runtime state.

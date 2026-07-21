@@ -19,14 +19,14 @@
     },
     {
       "id": "gateway",
-      "path": "packages/migrate/gateway",
+      "path": "packages/server/gateway",
       "suite": "gateway",
       "platforms": [
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/gateway/tests/test_app.py",
-        "packages/migrate/gateway/tests/test_real_process.py"
+        "packages/server/gateway/tests/test_app.py",
+        "packages/server/gateway/tests/test_real_process.py"
       ]
     },
     {
@@ -45,15 +45,15 @@
     },
     {
       "id": "inference",
-      "path": "packages/migrate/inference",
+      "path": "packages/server/inference",
       "suite": "inference",
       "platforms": [
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/inference/python-agent/tests/test_loop.py",
-        "packages/migrate/inference/tests/layering/check_planted_violations.py",
-        "packages/migrate/inference/scripts/validate.mjs"
+        "packages/server/inference/python-agent/tests/test_loop.py",
+        "packages/server/inference/tests/layering/check_planted_violations.py",
+        "packages/server/inference/scripts/validate.mjs"
       ]
     },
     {
@@ -92,7 +92,7 @@
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/gateway/tests/test_real_process.py"
+        "packages/server/gateway/tests/test_real_process.py"
       ]
     },
     {
@@ -102,7 +102,7 @@
         "ubuntu-latest"
       ],
       "requiredPaths": [
-        "packages/migrate/gateway/tests/test_real_process.py"
+        "packages/server/gateway/tests/test_real_process.py"
       ]
     }
   ],

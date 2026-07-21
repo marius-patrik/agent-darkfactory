@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -72,7 +73,7 @@ class TestHealthCheck:
         monkeypatch.setenv("AGENTS_BUILD_TIME", "2026-07-10T12:00:00Z")
         monkeypatch.setenv("AGENTS_NODE_ID", "node-test")
         report = await checker.check()
-        assert report["version"] == "0.1.0"
+        assert report["version"] == version("agent-os-gateway")
         assert report["git_sha"] == "abc123"
         assert report["build_time"] == "2026-07-10T12:00:00Z"
         assert report["node_id"] == "node-test"

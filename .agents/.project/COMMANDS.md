@@ -38,7 +38,7 @@ bun test packages/sdk/harness/test/tools.test.ts \
 
 # Gateway package
 (
-  cd packages/migrate/gateway
+  cd packages/server/gateway
   uv sync --frozen
   uv run ruff check llm_gateway tests scripts
   uv run mypy llm_gateway
@@ -51,7 +51,7 @@ bun test packages/sdk/harness/test/tools.test.ts \
 )
 
 # Inference package
-bun packages/migrate/inference/scripts/validate.mjs
+bun packages/server/inference/scripts/validate.mjs
 
 # Pinned DarkFactory plugin
 node scripts/run-ci-suite.mjs darkfactory

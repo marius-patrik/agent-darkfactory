@@ -10,9 +10,9 @@ succeeds. The same commands run locally through
 | Component | Suite | Hosted platforms | Coverage |
 | --- | --- | --- | --- |
 | `packages/migrate/core` | `core` | Ubuntu, Windows | TypeScript types/imports, generated contract freshness, Python imports, Go tests |
-| `packages/migrate/gateway` | `gateway` | Ubuntu | uv lock sync, lint, types, all non-live tests, packaging smoke, build |
+| `packages/server/gateway` | `gateway` | Ubuntu | uv lock sync, lint, types, all non-live tests, packaging smoke, build |
 | `packages/sdk/harness` | `harness` | Ubuntu | direct tool-boundary tests plus the complete manager-coupled session, adapter, and tool-loop suites |
-| `packages/migrate/inference` | `inference` | Ubuntu | uv lock sync, lint, types, all non-live tests, build, CLI/import/layering checks |
+| `packages/server/inference` | `inference` | Ubuntu | uv lock sync, lint, types, all non-live tests, build, CLI/import/layering checks |
 | `packages/cli` | `manager` | Ubuntu, Windows | TypeScript types, all manager tests, compact-capsule regression |
 | `packages/darkfactory` | `darkfactory` | Ubuntu | pinned public submodule, npm clean install, full check including templates and build |
 | `packages/memory` | `memory` | Ubuntu, Windows | pinned public submodule, manager-integrated TypeScript and plugin behavior tests |

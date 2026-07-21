@@ -49,9 +49,9 @@ reimplementation:
 - `packages/sdk/harness` — canonical session event handling and tool execution.
   Owner-ruled target (2026-07-13, #218): the operation engine owning
   orchestration, with the orchestrator runtime migrating from the manager.
-- `packages/migrate/gateway` — local model registry, routing, health, quota, and
+- `packages/server/gateway` — local model registry, routing, health, quota, and
   transient control-plane relay.
-- `packages/migrate/inference` — gateway-backed Python agent loop, status, persistence,
+- `packages/server/inference` — gateway-backed Python agent loop, status, persistence,
   redaction, and package validation.
 
 Historical product names, provider-home paths, launchers, and variables are

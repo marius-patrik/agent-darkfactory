@@ -151,7 +151,7 @@ Default outputs (all committable, all in this repo):
   ```sh
   (cd packages/migrate/core && bunx --bun @bufbuild/buf generate proto --template buf.gen.python.yaml)
   ```
-  That writes to `packages/migrate/inference/python-agent/agent/gen` and is run whenever the
+  That writes to `packages/server/inference/python-agent/agent/gen` and is run whenever the
   in-repository Python consumer changes. Import as:
   ```python
   import agent.gen                      # puts the gen root on sys.path
@@ -168,20 +168,20 @@ validated separately from generated output.
 
 | File | Kind | Purpose |
 |------|------|---------|
-| `packages/migrate/inference/python-agent/agent/gen/__init__.py` | source | `sys.path` bootstrap so `from agent_os.v1 import ...` resolves after `import agent.gen` |
-| `packages/migrate/inference/python-agent/agent/gen/agent_os/__init__.py` | source | Python package marker for the `agent_os` namespace |
-| `packages/migrate/inference/python-agent/agent/gen/agent_os/v1/__init__.py` | source | Python package marker for the `agent_os.v1` namespace |
+| `packages/server/inference/python-agent/agent/gen/__init__.py` | source | `sys.path` bootstrap so `from agent_os.v1 import ...` resolves after `import agent.gen` |
+| `packages/server/inference/python-agent/agent/gen/agent_os/__init__.py` | source | Python package marker for the `agent_os` namespace |
+| `packages/server/inference/python-agent/agent/gen/agent_os/v1/__init__.py` | source | Python package marker for the `agent_os.v1` namespace |
 | `packages/migrate/core/clients/shared-ts/src/gen/index.ts` | hand-authored | Re-export barrel so consumers import from `@agent-os/shared-ts/gen` |
-| `packages/migrate/inference/python-agent/agent/gen/agent_os/v1/*_pb2.py` | **buf-generated** | Protobuf message classes - regenerate, never hand-edit |
-| `packages/migrate/inference/python-agent/agent/gen/agent_os/v1/*_pb2.pyi` | **buf-generated** | Type stubs - regenerate, never hand-edit |
+| `packages/server/inference/python-agent/agent/gen/agent_os/v1/*_pb2.py` | **buf-generated** | Protobuf message classes - regenerate, never hand-edit |
+| `packages/server/inference/python-agent/agent/gen/agent_os/v1/*_pb2.pyi` | **buf-generated** | Type stubs - regenerate, never hand-edit |
 | `packages/migrate/core/clients/shared-ts/src/gen/agent_os/v1/*_pb.ts` | **buf-generated** | protobuf-es v2 message + service descriptors — regenerate, never hand-edit |
 | `packages/sdk/contracts-go/gen/...` | **buf-generated** | Go message + Connect stubs - regenerate, never hand-edit |
 
 ### Python bindings
 
 The inference worker consumes the plain protobuf bindings below
-`packages/migrate/inference/python-agent/agent/gen`. The gateway consumes the generated
-protobuf and Connect bindings below `packages/migrate/gateway/agent_os/v1` and mounts
+`packages/server/inference/python-agent/agent/gen`. The gateway consumes the generated
+protobuf and Connect bindings below `packages/server/gateway/agent_os/v1` and mounts
 the implemented services described in [Gateway architecture](../gateway.md).
 
 ---
@@ -227,7 +227,7 @@ bun run check
 
 # Refresh and validate the in-repository Python consumer:
 (cd packages/migrate/core && bunx --bun @bufbuild/buf generate proto --template buf.gen.python.yaml)
-(cd packages/migrate/inference/python-agent && uv sync && uv run python -c "import agent.gen; from agent_os.v1 import session_frames_pb2")
+(cd packages/server/inference/python-agent && uv sync && uv run python -c "import agent.gen; from agent_os.v1 import session_frames_pb2")
 ```
 
 ---
@@ -243,10 +243,10 @@ surface.
 
 | Language | Internal path / module identity | Import example | In-repository consumer |
 |----------|---------------------------------|----------------|------------------------|
-| **Go** | `packages/sdk/contracts-go` | `agent_osv1 "github.com/marius-patrik/agents-manager/src/migrate/core/contracts-go/gen/agent_os/v1"` | Go services under `packages/migrate/inference/` |
+| **Go** | `packages/sdk/contracts-go` | `agent_osv1 "github.com/marius-patrik/agents-manager/src/migrate/core/contracts-go/gen/agent_os/v1"` | Go services under `packages/server/inference/` |
 | **Go Connect** | `packages/sdk/contracts-go/gen/agent_os/v1/agent_osv1connect` | `import "github.com/marius-patrik/agents-manager/src/migrate/core/contracts-go/gen/agent_os/v1/agent_osv1connect"` | Go services that speak the Connect control plane |
 | **TypeScript** | private workspace `@agent-os/shared-ts` | `import { RegistryService } from "@agent-os/shared-ts/gen"` | `packages/migrate/core/clients/tui` and `packages/migrate/core/clients/web` |
-| **Python** | `agent.gen` bootstrap + `agent_os.v1` | `import agent.gen; from agent_os.v1 import session_frames_pb2, registry_pb2` | `packages/migrate/inference/python-agent` |
+| **Python** | `agent.gen` bootstrap + `agent_os.v1` | `import agent.gen; from agent_os.v1 import session_frames_pb2, registry_pb2` | `packages/server/inference/python-agent` |
 
 `packages/migrate/core/clients/tui` and `packages/migrate/core/clients/web` are currently
 private placeholder workspaces. They import the private `@agent-os/shared-ts`

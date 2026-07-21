@@ -19,7 +19,7 @@ manager-owned provider harnesses.
 ## Run
 
 ```sh
-cd packages/migrate/gateway
+cd packages/server/gateway
 uv sync --frozen
 AGENTS_HOME=/absolute/.agents uv run agent-os-gateway serve
 ```
@@ -38,7 +38,7 @@ provider/model events remain owned by the TypeScript runtime.
 ## Verify
 
 ```sh
-cd packages/migrate/gateway
+cd packages/server/gateway
 uv run ruff check llm_gateway tests scripts
 uv run mypy llm_gateway
 uv run pytest -q -m 'not live'

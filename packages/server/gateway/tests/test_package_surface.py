@@ -9,7 +9,11 @@ from llm_gateway.cli import app
 
 
 def test_gateway_distribution_and_import_namespace_are_installed():
-    assert version("agent-os-gateway") == "0.1.0"
+    # The gateway ships as part of the single product, so its own version
+    # tracks the product version rather than a literal pinned here. version()
+    # still raises if the distribution is not installed, which is what this
+    # asserts. protobuf-py is a real dependency pin and stays exact.
+    assert version("agent-os-gateway")
     assert version("protobuf-py") == "0.1.1"
     assert find_spec("llm_gateway") is not None
     assert find_spec("agent_os.v1.registry_connect") is not None

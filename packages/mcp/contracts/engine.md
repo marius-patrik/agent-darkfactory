@@ -10,10 +10,10 @@
 
 > **Design ref:** `.plans/design/03-inferctl.md` §I3 (line 29 — authoritative)  
 > **Scope decisions:** `EXECUTION-STATE.md` D-028 (Dynamo RESERVED; KTransformers on-demand; vLLM/llama.cpp 4.0 core)  
-> **Implementation:** `packages/migrate/inference/python-agent/agent/engines/contract.py`
+> **Implementation:** `packages/server/inference/python-agent/agent/engines/contract.py`
 
 Every inference engine sits behind a single Python Protocol.  inferctl
-(`packages/migrate/inference/services/inferctl`, Go) is the controller; the Python contract is the seam
+(`packages/server/inference/services/inferctl`, Go) is the controller; the Python contract is the seam
 that agent-side code — the gateway registry consumer, the autolearn adapter
 flywheel, and any future tool that needs to call an engine — uses to talk to
 whatever engine inferctl has brought up.
@@ -38,7 +38,7 @@ EngineAdapter (Protocol, runtime-checkable)
 
 Supporting types (`NodePlacement`, `ResourceBudget`, `CapabilityFlags`,
 `EngineDescriptor`) live alongside the Protocol in the sibling
-`packages/migrate/inference/python-agent/agent/engines/contract.py` implementation and
+`packages/server/inference/python-agent/agent/engines/contract.py` implementation and
 provide the metadata that inferctl uses for placement decisions and gateway
 registry publication.  They are NOT part of the `EngineAdapter` call surface.
 
@@ -48,7 +48,7 @@ registry publication.  They are NOT part of the `EngineAdapter` call surface.
 the first `health() == True`.
 
 All implementation types live in
-`packages/migrate/inference/python-agent/agent/engines/contract.py` and use Python >=
+`packages/server/inference/python-agent/agent/engines/contract.py` and use Python >=
 3.12 stdlib only (no third-party imports).
 
 ---
@@ -99,7 +99,7 @@ overlap, time-of-day profiles) is a post-4.0 optimisation.
 
 To drop in NVIDIA Dynamo behind this contract:
 
-1. Create `packages/migrate/inference/python-agent/agent/engines/dynamo.py`, `class DynamoAdapter`.
+1. Create `packages/server/inference/python-agent/agent/engines/dynamo.py`, `class DynamoAdapter`.
 2. Implement the full `EngineAdapter` Protocol (`start`, `health`, `stop`,
    `capabilities`):
    - `start(profile, model, nodes)` — call Dynamo's deployment API / apply
@@ -150,7 +150,7 @@ changes only in `api_base` URL and `capabilities.multi_node_tp`.
 
 ---
 
-*This document tracks `packages/migrate/inference/python-agent/agent/engines/contract.py`. It must be updated
+*This document tracks `packages/server/inference/python-agent/agent/engines/contract.py`. It must be updated
 whenever `EngineAdapter` (the §03 I3 surface), `EngineDescriptor`, or
 `CapabilityFlags` gain new surface area — and any change to `EngineAdapter`
 requires a prior ratifying update to `.plans/design/03-inferctl.md` §I3.*

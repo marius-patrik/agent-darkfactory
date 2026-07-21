@@ -63,7 +63,7 @@ function requireUv() {
 function runGatewayPytest(marker) {
   requireUv();
   const uv = process.env.UV || "uv";
-  const cwd = path.join(root, "packages", "migrate", "gateway");
+  const cwd = path.join(root, "packages", "server", "gateway");
   run("gateway dependency sync", uv, ["sync", "--frozen"], { cwd });
   run(`gateway pytest (${marker})`, uv, ["run", "pytest", "-q", "-m", marker], { cwd });
 }
@@ -109,7 +109,7 @@ const suites = {
   gateway() {
     requireUv();
     const uv = process.env.UV || "uv";
-    const cwd = path.join(root, "packages", "migrate", "gateway");
+    const cwd = path.join(root, "packages", "server", "gateway");
     const sandbox = mkdtempSync(path.join(tmpdir(), "andromeda-gateway-ci-"));
     const userHome = path.join(sandbox, "user");
     const stateHome = path.join(userHome, ".agents");
@@ -143,9 +143,9 @@ const suites = {
   inference() {
     requireUv();
     const uv = process.env.UV || "uv";
-    const cwd = path.join(root, "packages", "migrate", "inference", "python-agent");
+    const cwd = path.join(root, "packages", "server", "inference", "python-agent");
     run("inference dependency sync", uv, ["sync", "--frozen"], { cwd });
-    run("inference validation", "bun", ["packages/migrate/inference/scripts/validate.mjs"]);
+    run("inference validation", "bun", ["packages/server/inference/scripts/validate.mjs"]);
   },
   manager() {
     run("manager types", "bun", ["./node_modules/typescript/bin/tsc", "--noEmit"]);

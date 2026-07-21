@@ -22,7 +22,7 @@ canonical `agent_os.v1` protocol emitted from `packages/mcp/proto`.
 ## Verify
 
 ```sh
-bun packages/migrate/inference/scripts/validate.mjs
+bun packages/server/inference/scripts/validate.mjs
 ```
 
 That command runs ruff, mypy, pytest, the Python package build, generated

@@ -19,11 +19,11 @@ application. It ships generated wire-contract stubs for downstream OS components
 - **Go:** module `github.com/marius-patrik/agents-manager/src/migrate/core/contracts-go`
   - Messages: `agent_osv1 "github.com/marius-patrik/agents-manager/src/migrate/core/contracts-go/gen/agent_os/v1"`
   - Connect services: `"github.com/marius-patrik/agents-manager/src/migrate/core/contracts-go/gen/agent_os/v1/agent_osv1connect"`
-  - Consumers: the Go services under `packages/migrate/inference/`.
+  - Consumers: the Go services under `packages/server/inference/`.
 - **TypeScript:** workspace packages `@agent-os/shared-ts`, `@agent-os/tui`, `@agent-os/web`
   - Shared descriptors and types: `@agent-os/shared-ts/gen`
   - Consumers: the TUI and web clients (`clients/tui` and `clients/web` are placeholders).
-- **Python:** plain protobuf stubs generated to `packages/migrate/inference/python-agent/agent/gen`
+- **Python:** plain protobuf stubs generated to `packages/server/inference/python-agent/agent/gen`
   - Bootstrap: `import agent.gen`
   - Messages: `from agent_os.v1 import session_frames_pb2, registry_pb2`
   - Consumer: the Agent OS inference Python agent.

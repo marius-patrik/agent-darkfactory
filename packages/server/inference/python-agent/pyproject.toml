@@ -1,6 +1,6 @@
 [project]
 name = "agent-os-inference"
-version = "0.1.0"
+version = "0.10.0"
 description = "Agent OS gateway-backed inference worker and private runtime boundary."
 requires-python = ">=3.12"
 dependencies = [
