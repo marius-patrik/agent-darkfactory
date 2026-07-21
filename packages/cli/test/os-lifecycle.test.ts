@@ -27,7 +27,7 @@ const cliPath = path.join(repoRoot, "src", "cli.ts");
 function cleanEnv(): Record<string, string | undefined> {
   const copy = { ...process.env };
   for (const key of Object.keys(copy)) {
-    if (key.startsWith("AGENTS_")) delete copy[key];
+    if (key.startsWith("ANDROMEDA_")) delete copy[key];
   }
   return copy;
 }
@@ -48,7 +48,7 @@ async function fakeDocker(root: string): Promise<{ dir: string; log: string; env
     log,
     env: {
       PATH: `${dir}${path.delimiter}${process.env.PATH ?? ""}`,
-      AGENTS_DOCKER_BIN: script,
+      ANDROMEDA_DOCKER_BIN: script,
     },
   };
 }
@@ -60,7 +60,7 @@ async function runAgents(
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn([process.execPath, cliPath, ...args], {
     cwd,
-    env: { ...cleanEnv(), AGENTS_HOME: path.join(cwd, ".agents"), AGENTS_ROOT: cwd, ...env },
+    env: { ...cleanEnv(), ANDROMEDA_HOME: path.join(cwd, ".andromeda"), ANDROMEDA_ROOT: cwd, ...env },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -86,12 +86,12 @@ describe("os lifecycle pure helpers", () => {
       const state = sharedState(root);
       await ensureSharedState(state);
       const env = containerEnv(await readDataRepos(state));
-      expect(env.AGENTS_ROOT).toBe("/opt/agents-os");
-      expect(env.AGENTS_HOME).toBe("/agents/state");
-      expect(env.AGENTS_DATA).toBeUndefined();
-      expect(env.AGENTS_WORKSPACE).toBe("/workspace/agents");
-      expect(env.AGENTS_SYSTEM_DATA_ROOT).toBe("/agents/state");
-      expect(env.AGENTS_CREDITS).toBe("/agents/state/credits.json");
+      expect(env.ANDROMEDA_ROOT).toBe("/opt/agents-os");
+      expect(env.ANDROMEDA_HOME).toBe("/agents/state");
+      expect(env.ANDROMEDA_DATA).toBeUndefined();
+      expect(env.ANDROMEDA_WORKSPACE).toBe("/workspace/agents");
+      expect(env.ANDROMEDA_SYSTEM_DATA_ROOT).toBe("/agents/state");
+      expect(env.ANDROMEDA_CREDITS).toBe("/agents/state/credits.json");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -114,7 +114,7 @@ describe("os lifecycle pure helpers", () => {
       expect(mounts.find((m) => m.container === "/agents/state")?.host).toBe(toPosixPath(state.stateDir));
       expect(mounts.find((m) => m.container === "/agents/state")?.mode).toBe("ro");
       expect(mounts.filter((m) => m.container === "/agents/state")).toHaveLength(1);
-      expect(containerEnv(dataRepos).AGENTS_SYSTEM_DATA_ROOT).toBe("/agents/state");
+      expect(containerEnv(dataRepos).ANDROMEDA_SYSTEM_DATA_ROOT).toBe("/agents/state");
       expect(mounts.find((m) => m.container === "/workspace/agents")?.host).toBe(toPosixPath(state.workspaceDir));
       expect(mounts.find((m) => m.container === "/agents/data/project-data")?.host).toBe(
         toPosixPath(path.join(root, "data", "project")),
@@ -148,9 +148,9 @@ describe("os lifecycle pure helpers", () => {
       channel: "dev",
       hostRoot: "/home/user/Projects/agents-manager",
       mounts: [
-        { host: "/home/user/.agents", container: "/agents/state", mode: "rw" },
+        { host: "/home/user/.andromeda", container: "/agents/state", mode: "rw" },
       ],
-      env: { AGENTS_HOME: "/agents/state" },
+      env: { ANDROMEDA_HOME: "/agents/state" },
       ports: [{ name: "http", container: 8080, host: 8080 }],
       network: "agents-os",
       restart: "no",
@@ -158,12 +158,12 @@ describe("os lifecycle pure helpers", () => {
     expect(args).toContain("--name");
     expect(args).toContain("agents-os-dev");
     expect(args).toContain("agents-os:dev");
-    expect(args).toContain("io.agents.os.managed=true");
-    expect(args).toContain("io.agents.os.environment=dev");
+    expect(args).toContain("io.andromeda.os.managed=true");
+    expect(args).toContain("io.andromeda.os.environment=dev");
     expect(args).toContain("-e");
-    expect(args).toContain("AGENTS_HOME=/agents/state");
+    expect(args).toContain("ANDROMEDA_HOME=/agents/state");
     expect(args).toContain("-v");
-    expect(args).toContain("/home/user/.agents:/agents/state:rw");
+    expect(args).toContain("/home/user/.andromeda:/agents/state:rw");
     expect(args).toContain("-p");
     expect(args).toContain("8080:8080");
     expect(args).toContain("--network");
@@ -185,7 +185,7 @@ describe("os lifecycle pure helpers", () => {
       expect(plan.args).toContain("container");
       expect(plan.args).toContain("create");
       expect(plan.args.some((a) => a.includes("/agents/state"))).toBe(true);
-      expect(plan.args.some((a) => a.includes("AGENTS_ROOT=/opt/agents-os"))).toBe(true);
+      expect(plan.args.some((a) => a.includes("ANDROMEDA_ROOT=/opt/agents-os"))).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -304,8 +304,8 @@ describe("agents os CLI", () => {
       expect(result.code).toBe(0);
       expect(result.stdout).toContain("docker container create");
       expect(result.stdout).toContain("agents-os-dev");
-      expect(result.stdout).toContain(toPosixPath(path.join(root, ".agents")));
-      expect(result.stdout).toContain("AGENTS_ROOT=/opt/agents-os");
+      expect(result.stdout).toContain(toPosixPath(path.join(root, ".andromeda")));
+      expect(result.stdout).toContain("ANDROMEDA_ROOT=/opt/agents-os");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

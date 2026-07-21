@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 export const DOCTOR_SCHEMA_VERSION = 2;
 export const DATA_REPOSITORY_POLICY_PATH = ".darkfactory/data-repository-policy.json";
 export const DOCTOR_REPAIR_CLASSES = ["auto", "pr", "owner", "blocked"];
-export const DOC_PATHS = ["PRD.md", "AGENTS.md", ".agents/.project/STATUS.md", ".agents/.project/PROJECT.md"];
+export const DOC_PATHS = ["PRD.md", "AGENTS.md", "capabilities/.project/STATUS.md", "capabilities/.project/PROJECT.md"];
 export const DOC_STALE_DAYS = 90;
 export const STALE_PR_DAYS = 7;
 export const STALE_ISSUE_DAYS = 30;
@@ -112,7 +112,7 @@ async function main() {
     mode,
     ledgerGithub,
     localPath: process.env.DF_LOCAL_PATH?.trim() || "",
-    agentsHome: (process.env.DF_AGENTS_HOME || process.env.AGENTS_HOME || "").trim(),
+    agentsHome: (process.env.DF_AGENTS_HOME || process.env.ANDROMEDA_HOME || "").trim(),
     provenSecrets: (process.env.DF_PROVEN_SECRETS || "").split(",").map((item) => item.trim()).filter(Boolean)
   });
 
@@ -482,7 +482,7 @@ async function auditTargetRepository(github, repository, metadata, options) {
     findings.push(...machine.findings);
     observations.push(...machine.observations);
   } else if (normalizedName(repository) === normalizedName(options.controlRepo)) {
-    findings.push(doctorFinding("machine-runtime-unobservable", "machine runtime", "Canonical Agent OS state, package binding, runner lifecycle, provider route, and local ledger reachability are unobservable because AGENTS_HOME was not supplied.", {
+    findings.push(doctorFinding("machine-runtime-unobservable", "machine runtime", "Canonical Agent OS state, package binding, runner lifecycle, provider route, and local ledger reachability are unobservable because ANDROMEDA_HOME was not supplied.", {
       severity: "critical",
       repairClass: "blocked",
       repair: ["Run the control-repository doctor on the canonical df-local machine or provide a trusted current machine-readiness receipt; do not infer readiness from repository state alone."]
@@ -1032,7 +1032,7 @@ async function auditProjectOverlay(github, repository, targetRef, agentOsDataRev
   const files = await listRemoteDirectoryFiles(github, dataRepo, prefix, agentOsDataRevision);
   for (const source of files) {
     const relative = source.path.slice(prefix.length + 1);
-    const targetPath = `.agents/.project/${relative}`;
+    const targetPath = `capabilities/.project/${relative}`;
     const expected = await readListedRemoteFile(github, dataRepo, source, agentOsDataRevision);
     const actual = await getOptionalFileContent(github, repository, targetPath, targetRef);
     if (actual === null || normalizeText(actual) !== normalizeText(expected)) {
@@ -1060,13 +1060,13 @@ export async function auditRepositoryTree(repository, tree, options = {}) {
     const filePath = entry.path.replace(/\\/g, "/");
     const segments = filePath.split("/");
     const lower = segments.map((segment) => segment.toLowerCase());
-    const allowedProjectAuthority = filePath === ".agents" || filePath === ".agents/.project" || filePath.startsWith(".agents/.project/");
+    const allowedProjectAuthority = filePath === ".andromeda" || filePath === "capabilities/.project" || filePath.startsWith("capabilities/.project/");
     const allowedDarkFactoryAuthority = filePath === ".darkfactory" || filePath.startsWith(".darkfactory/");
-    const nestedAgents = lower.includes(".agents") && !allowedProjectAuthority;
+    const nestedAgents = lower.includes(".andromeda") && !allowedProjectAuthority;
     const nestedDarkFactory = lower.includes(".darkfactory") && !allowedDarkFactoryAuthority;
     const providerState = lower.some((segment) => PROVIDER_STATE_SEGMENTS.has(segment));
     const generated = lower.some((segment) => GENERATED_SEGMENTS.has(segment));
-    const sensitive = lower.some((segment) => ["agents_secrets", "secrets"].includes(segment)) || /(^|\/)(auth\.json|\.env)$/i.test(filePath);
+    const sensitive = lower.some((segment) => ["andromeda_secrets", "secrets"].includes(segment)) || /(^|\/)(auth\.json|\.env)$/i.test(filePath);
     const nestedGitMetadata = /(^|\/)\.git($|\/)/i.test(filePath) || (filePath !== ".gitmodules" && filePath.endsWith("/.gitmodules"));
 
     if (!options.isData && (nestedAgents || nestedDarkFactory)) {
@@ -1174,15 +1174,15 @@ export async function auditRuntimeAuthority(github, repository, ref, controlRepo
   if (!work) {
     return [doctorFinding("canonical-worker-workflow-missing", "runtime authority", "Trusted control df-work workflow is missing.", { severity: "critical" })];
   }
-  if (!/AGENTS_HOME/.test(work) || !/bin\\agents\.ps1/.test(work) || !/state doctor --json/.test(work)) {
-    findings.push(doctorFinding("canonical-launcher-binding-invalid", "runtime authority", "df-work does not prove absolute AGENTS_HOME, exact `bin\\agents.ps1`, and `state doctor --json` before execution.", { severity: "critical" }));
+  if (!/ANDROMEDA_HOME/.test(work) || !/bin\\agents\.ps1/.test(work) || !/state doctor --json/.test(work)) {
+    findings.push(doctorFinding("canonical-launcher-binding-invalid", "runtime authority", "df-work does not prove absolute ANDROMEDA_HOME, exact `bin\\agents.ps1`, and `state doctor --json` before execution.", { severity: "critical" }));
   }
   if (/\b(kimi|agy|claude)\s+(?:-p|--|\$)/i.test(work) || /\bcodex\s+exec\b/i.test(work)) {
     findings.push(doctorFinding("direct-provider-cli-in-worker", "runtime authority", "df-work contains a direct provider CLI invocation instead of canonical `agents` execution.", { severity: "critical" }));
   }
   const agents = await getOptionalFileContent(github, repository, "AGENTS.md", ref);
-  if (!/\$AGENTS_HOME|AGENTS_HOME/.test(agents || "")) {
-    findings.push(doctorFinding("agents-home-authority-undocumented", "runtime authority", "AGENTS.md does not point to canonical AGENTS_HOME authority.", { severity: "error" }));
+  if (!/\$ANDROMEDA_HOME|ANDROMEDA_HOME/.test(agents || "")) {
+    findings.push(doctorFinding("agents-home-authority-undocumented", "runtime authority", "AGENTS.md does not point to canonical ANDROMEDA_HOME authority.", { severity: "error" }));
   }
   const enforcementText = await getOptionalFileContent(github, repository, ".darkfactory/enforcement-rules.json", ref);
   try {
@@ -1258,9 +1258,9 @@ export function auditMachineRuntimeEvidence(evidence) {
     repairClass: "auto",
     repair: [repair]
   }));
-  if (!observed.agentsHomeExists) blocked("agents-home-checkout-missing", "Canonical AGENTS_HOME checkout is missing or inaccessible.", "Restore the canonical Andromeda-data checkout before machine convergence.");
+  if (!observed.agentsHomeExists) blocked("agents-home-checkout-missing", "Canonical ANDROMEDA_HOME checkout is missing or inaccessible.", "Restore the canonical Andromeda-data checkout before machine convergence.");
   if (!observed.stateDoctorOk) blocked("agents-state-doctor-failed", "Canonical Agent OS state doctor did not complete cleanly.", "Repair every canonical Agent OS state-doctor finding before DarkFactory may treat machine wiring as healthy.");
-  if (!observed.stateRepositoryOk) blocked("agents-home-checkout-invalid", "AGENTS_HOME is not proven as the clean canonical Andromeda-data main checkout.", "Repair canonical state repository identity and tracked cleanliness through Agent OS.");
+  if (!observed.stateRepositoryOk) blocked("agents-home-checkout-invalid", "ANDROMEDA_HOME is not proven as the clean canonical Andromeda-data main checkout.", "Repair canonical state repository identity and tracked cleanliness through Agent OS.");
   if (!observed.launcherBound) blocked("canonical-launcher-binding-invalid", "Canonical Agent OS launcher binding is missing, unrunnable, or not bound to the observed state root.", "Repair the canonical launcher through Agent OS; never fall back to PATH selection.");
   if (!observed.versionObserved) blocked("canonical-launcher-version-unobservable", "Canonical launcher/source version is unobservable.", "Expose a stable Agent OS version/source-install receipt.");
   if (!observed.packageRegistered) automatic("darkfactory-package-unregistered", "DarkFactory is not registered in the canonical Agent OS package registry.", "Build the trusted landed package and register it through the exact canonical Agent OS launcher.");
@@ -1941,13 +1941,13 @@ export async function auditRetiredAuthorityNames(github, repository, ref) {
     "README.md",
     "PRD.md",
     "AGENTS.md",
-    ".agents/.project/AGENTS.md",
-    ".agents/.project/COMMANDS.md",
-    ".agents/.project/DECISIONS.md",
-    ".agents/.project/HANDOFF.md",
-    ".agents/.project/PROJECT.md",
-    ".agents/.project/STATUS.md",
-    ".agents/.project/STRUCTURE.md",
+    "capabilities/.project/AGENTS.md",
+    "capabilities/.project/COMMANDS.md",
+    "capabilities/.project/DECISIONS.md",
+    "capabilities/.project/HANDOFF.md",
+    "capabilities/.project/PROJECT.md",
+    "capabilities/.project/STATUS.md",
+    "capabilities/.project/STRUCTURE.md",
     ".darkfactory/branching-policy.md",
     ".darkfactory/installer-policy.json",
     ".darkfactory/managed-repository.json",
@@ -1968,8 +1968,8 @@ export async function auditRetiredAuthorityNames(github, repository, ref) {
     },
     {
       id: "retired-agent-os-data-path",
-      pattern: /(?:\$AGENTS_ROOT|AGENTS_ROOT|\.agents)\s*[\\/]data[\\/]agent-os\b/i,
-      message: "Active authority still names the retired nested Agent OS data path; canonical state is the `$AGENTS_HOME` checkout of Andromeda-data."
+      pattern: /(?:\$ANDROMEDA_ROOT|ANDROMEDA_ROOT|\.andromeda)\s*[\\/]data[\\/]agent-os\b/i,
+      message: "Active authority still names the retired nested Agent OS data path; canonical state is the `$ANDROMEDA_HOME` checkout of Andromeda-data."
     },
     {
       id: "retired-agents-manager-owner-name",

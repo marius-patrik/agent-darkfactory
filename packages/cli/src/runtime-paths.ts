@@ -3,7 +3,7 @@ import path from "node:path";
 
 export type RuntimePathEnv = Record<string, string | undefined>;
 
-const projectedPathVariables = new Set(["AGENTS_DATA", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT"]);
+const projectedPathVariables = new Set(["ANDROMEDA_DATA", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"]);
 
 /** Build a child-process environment without retired or manager-projected path variables. */
 export function canonicalChildEnvironment(env: RuntimePathEnv = process.env): RuntimePathEnv {
@@ -44,7 +44,7 @@ function resolved(value: string): string {
 
 function userHomeFromAgentsHome(agentsHome: string): string | null {
   const normalized = path.normalize(agentsHome);
-  return path.basename(normalized) === ".agents" ? path.dirname(normalized) : null;
+  return path.basename(normalized) === ".andromeda" ? path.dirname(normalized) : null;
 }
 
 function accountHome(): string {
@@ -57,22 +57,22 @@ function accountHome(): string {
 
 /**
  * Recover the real OS user home even when a provider wrapper has isolated
- * HOME under ~/.agents/clis/<provider>.
+ * HOME under ~/.andromeda/clis/<provider>.
  */
 export function resolveUserHome(
   env: RuntimePathEnv = process.env,
   platformHome = accountHome(),
 ): string {
-  if (env.AGENTS_USER_HOME?.trim()) return resolved(env.AGENTS_USER_HOME);
+  if (env.ANDROMEDA_USER_HOME?.trim()) return resolved(env.ANDROMEDA_USER_HOME);
 
-  if (env.AGENTS_HOME?.trim()) {
-    const inferred = userHomeFromAgentsHome(resolved(env.AGENTS_HOME));
+  if (env.ANDROMEDA_HOME?.trim()) {
+    const inferred = userHomeFromAgentsHome(resolved(env.ANDROMEDA_HOME));
     if (inferred) return inferred;
   }
 
   const normalized = path.normalize(platformHome);
   const parts = normalized.split(path.sep);
-  const agentsIndex = parts.lastIndexOf(".agents");
+  const agentsIndex = parts.lastIndexOf(".andromeda");
   if (agentsIndex >= 0 && parts[agentsIndex + 1] === "clis" && parts[agentsIndex + 2]) {
     const prefix = parts.slice(0, agentsIndex).join(path.sep);
     return prefix ? path.resolve(prefix) : path.parse(normalized).root;
@@ -86,20 +86,20 @@ export function resolvePersonalAgentsHome(
   env: RuntimePathEnv = process.env,
   platformHome = accountHome(),
 ): string {
-  if (env.AGENTS_HOME?.trim()) return resolved(env.AGENTS_HOME);
-  return path.join(resolveUserHome(env, platformHome), ".agents");
+  if (env.ANDROMEDA_HOME?.trim()) return resolved(env.ANDROMEDA_HOME);
+  return path.join(resolveUserHome(env, platformHome), ".andromeda");
 }
 
 /**
  * Resolve state for a manager invocation. Source checkouts remain repo-local
  * when no state environment is present; installed/rooted harnesses use their
- * explicit AGENTS_HOME.
+ * explicit ANDROMEDA_HOME.
  */
 export function resolveRuntimeAgentsHome(
   cwd: string,
   env: RuntimePathEnv = process.env,
   platformHome = accountHome(),
 ): string {
-  if (env.AGENTS_HOME?.trim()) return resolved(env.AGENTS_HOME);
-  return path.join(resolveUserHome(env, platformHome), ".agents");
+  if (env.ANDROMEDA_HOME?.trim()) return resolved(env.ANDROMEDA_HOME);
+  return path.join(resolveUserHome(env, platformHome), ".andromeda");
 }

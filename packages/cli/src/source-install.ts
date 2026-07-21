@@ -58,7 +58,7 @@ async function currentSource(state: SharedState): Promise<Omit<SourceInstallReco
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`source root must be a physical directory: ${root}`);
   const topLevel = path.resolve(await git(root, ["rev-parse", "--show-toplevel"]));
   if ((await realpath(topLevel)) !== (await realpath(root))) {
-    throw new Error(`AGENTS_ROOT is not the Git top level: ${root}`);
+    throw new Error(`ANDROMEDA_ROOT is not the Git top level: ${root}`);
   }
   const status = await git(root, ["status", "--porcelain=v1", "--untracked-files=all"]);
   if (status) throw new Error(`canonical source checkout is dirty: ${root}`);

@@ -5,8 +5,8 @@ verification.
 
 ## State authority
 
-`AGENTS_HOME` is required and must be absolute. Inference owns only private
-runtime state below `$AGENTS_HOME/runtime/inference`:
+`ANDROMEDA_HOME` is required and must be absolute. Inference owns only private
+runtime state below `$ANDROMEDA_HOME/runtime/inference`:
 
 - worker runs: `runs/`
 

@@ -10,15 +10,15 @@ record, render canonical startup context, synchronize the encrypted state
 repository, and refresh hook-compatible projections. The projections are never
 memory authority.
 
-Invariant: `$AGENTS_HOME/memory` immutable events are the sole compaction
+Invariant: `$ANDROMEDA_HOME/memory` immutable events are the sole compaction
 authority. Never redirect the script to `.codex/memories`, write a second
 canonical handoff, or bypass an authority mismatch with a path override.
-The authority path must be physically contained in `AGENTS_HOME`; links,
+The authority path must be physically contained in `ANDROMEDA_HOME`; links,
 symlinks, and Windows reparse-point/junction escapes are rejected. All path
 construction must remain portable across Windows, macOS, and Linux. Apply the
 same physical-path checks to compatibility roots and every projection file;
 provider-local projections are untrusted destinations, not an authority carveout.
-The compatibility root and the complete `AGENTS_HOME` tree must be disjoint in
+The compatibility root and the complete `ANDROMEDA_HOME` tree must be disjoint in
 both directions; neither may be an ancestor or descendant of the other. The
 compatibility root stays under the resolved user home so macOS system aliases
 above that boundary do not get mistaken for provider-local link escapes. Resolve
@@ -30,8 +30,8 @@ cycles; link entries at or below either configured root remain forbidden.
 
 1. Capture the current objective, completed work, repo/path state, validation, blockers, and exact next actions.
 2. Prefer facts that a fresh agent needs to resume, not a transcript summary.
-3. Run the capsule script with explicit values. It discovers `AGENTS_HOME` and
-   `AGENTS_MEMORY` from `agents state env`; no memory-root or mandatory-step
+3. Run the capsule script with explicit values. It discovers `ANDROMEDA_HOME` and
+   `ANDROMEDA_MEMORY` from `agents state env`; no memory-root or mandatory-step
    bypass is allowed. The script preflights repository synchronization before
    mutation and only then selects the active scalar, holds a persistent-file
    exclusive canonical lock through publication, then rolls canonical memory

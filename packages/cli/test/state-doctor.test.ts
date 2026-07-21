@@ -19,7 +19,7 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")
 
 function tempState(root: string) {
   const userHome = path.join(root, "user");
-  return sharedStateAt(root, path.join(userHome, ".agents"), userHome);
+  return sharedStateAt(root, path.join(userHome, ".andromeda"), userHome);
 }
 
 async function git(root: string, args: string[]): Promise<void> {
@@ -53,17 +53,17 @@ async function ensureDoctorProduct(state: ReturnType<typeof tempState>): Promise
   await installCapability(state, {
     kind: "skill",
     name: "test",
-    source: path.join(sourceRoot, ".agents", ".global", "skills", "test"),
+    source: path.join(sourceRoot, "capabilities", ".global", "skills", "test"),
   });
   const identitySource = path.join(state.root, "identity-source");
   await mkdir(path.join(identitySource, "roles"), { recursive: true });
   await mkdir(path.join(identitySource, "prompts"), { recursive: true });
-  await copyFile(path.join(sourceRoot, ".agents", ".global", "persona.md"), path.join(identitySource, "persona.md"));
-  for (const name of await readdir(path.join(sourceRoot, ".agents", ".global", "roles"))) {
-    if (name.endsWith(".yaml")) await copyFile(path.join(sourceRoot, ".agents", ".global", "roles", name), path.join(identitySource, "roles", name));
+  await copyFile(path.join(sourceRoot, "capabilities", ".global", "persona.md"), path.join(identitySource, "persona.md"));
+  for (const name of await readdir(path.join(sourceRoot, "capabilities", ".global", "roles"))) {
+    if (name.endsWith(".yaml")) await copyFile(path.join(sourceRoot, "capabilities", ".global", "roles", name), path.join(identitySource, "roles", name));
   }
-  for (const name of await readdir(path.join(sourceRoot, ".agents", ".global", "commands"))) {
-    if (name.endsWith(".md")) await copyFile(path.join(sourceRoot, ".agents", ".global", "commands", name), path.join(identitySource, "prompts", name));
+  for (const name of await readdir(path.join(sourceRoot, "capabilities", ".global", "commands"))) {
+    if (name.endsWith(".md")) await copyFile(path.join(sourceRoot, "capabilities", ".global", "commands", name), path.join(identitySource, "prompts", name));
   }
   await activateIdentityBundle(state, identitySource, { replace: true });
   await rm(identitySource, { recursive: true, force: true });
@@ -72,8 +72,8 @@ async function ensureDoctorProduct(state: ReturnType<typeof tempState>): Promise
   const launcher = path.join(bin, launcherNameForPlatform(process.platform));
   const launcherContent =
     process.platform === "win32"
-      ? `$env:AGENTS_HOME = '${state.stateDir.replaceAll("'", "''")}'\n$env:AGENTS_USER_HOME = '${state.userHome.replaceAll("'", "''")}'\n$env:AGENTS_ROOT = '${state.root.replaceAll("'", "''")}'\n$env:AGENTS_WORKSPACE = '${state.workspaceDir.replaceAll("'", "''")}'\n$env:AGENTS_SYSTEM_DATA_ROOT = '${systemDataPath(state).replaceAll("'", "''")}'\n$env:AGENTS_ENTRYPOINT = '${path.join(state.root, "packages", "cli", "src", "cli.ts").replaceAll("'", "''")}'\n& bun $env:AGENTS_ENTRYPOINT @args\n`
-      : `#!/usr/bin/env bash\nexport AGENTS_HOME=${shellQuote(state.stateDir)}\nexport AGENTS_USER_HOME=${shellQuote(state.userHome)}\nexport AGENTS_ROOT=${shellQuote(state.root)}\nexport AGENTS_WORKSPACE=${shellQuote(state.workspaceDir)}\nexport AGENTS_SYSTEM_DATA_ROOT=${shellQuote(systemDataPath(state))}\nexport AGENTS_ENTRYPOINT=${shellQuote(path.join(state.root, "packages", "cli", "src", "cli.ts"))}\nexec bun "$AGENTS_ENTRYPOINT" "$@"\n`;
+      ? `$env:ANDROMEDA_HOME = '${state.stateDir.replaceAll("'", "''")}'\n$env:ANDROMEDA_USER_HOME = '${state.userHome.replaceAll("'", "''")}'\n$env:ANDROMEDA_ROOT = '${state.root.replaceAll("'", "''")}'\n$env:ANDROMEDA_WORKSPACE = '${state.workspaceDir.replaceAll("'", "''")}'\n$env:ANDROMEDA_SYSTEM_DATA_ROOT = '${systemDataPath(state).replaceAll("'", "''")}'\n$env:ANDROMEDA_ENTRYPOINT = '${path.join(state.root, "packages", "cli", "src", "cli.ts").replaceAll("'", "''")}'\n& bun $env:ANDROMEDA_ENTRYPOINT @args\n`
+      : `#!/usr/bin/env bash\nexport ANDROMEDA_HOME=${shellQuote(state.stateDir)}\nexport ANDROMEDA_USER_HOME=${shellQuote(state.userHome)}\nexport ANDROMEDA_ROOT=${shellQuote(state.root)}\nexport ANDROMEDA_WORKSPACE=${shellQuote(state.workspaceDir)}\nexport ANDROMEDA_SYSTEM_DATA_ROOT=${shellQuote(systemDataPath(state))}\nexport ANDROMEDA_ENTRYPOINT=${shellQuote(path.join(state.root, "packages", "cli", "src", "cli.ts"))}\nexec bun "$ANDROMEDA_ENTRYPOINT" "$@"\n`;
   await writeFile(
     launcher,
     launcherContent,
@@ -206,9 +206,9 @@ describe("read-only Agent OS state doctor", () => {
         cwd: root,
         env: {
           ...process.env,
-          AGENTS_ROOT: root,
-          AGENTS_HOME: state.stateDir,
-          AGENTS_USER_HOME: state.userHome,
+          ANDROMEDA_ROOT: root,
+          ANDROMEDA_HOME: state.stateDir,
+          ANDROMEDA_USER_HOME: state.userHome,
         },
         stdout: "pipe",
         stderr: "pipe",

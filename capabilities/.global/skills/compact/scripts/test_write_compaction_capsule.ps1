@@ -15,19 +15,19 @@ function New-FakeAgents {
     @'
 param([Parameter(ValueFromRemainingArguments=$true)][string[]]$CommandArgs)
 $ErrorActionPreference = "Stop"
-Add-Content -LiteralPath $env:FAKE_AGENTS_LOG -Value ($CommandArgs -join " ")
+Add-Content -LiteralPath $env:FAKE_ANDROMEDA_LOG -Value ($CommandArgs -join " ")
 
 if ($CommandArgs[0] -eq "state" -and $CommandArgs[1] -eq "env") {
-    "AGENTS_HOME=$env:FAKE_AGENTS_HOME"
-    "AGENTS_MEMORY=$env:FAKE_AGENTS_MEMORY"
+    "ANDROMEDA_HOME=$env:FAKE_ANDROMEDA_HOME"
+    "ANDROMEDA_MEMORY=$env:FAKE_ANDROMEDA_MEMORY"
     exit 0
 }
 if ($CommandArgs[0] -eq "memory" -and $CommandArgs[1] -eq "list") {
-    $listCalls = @((Get-Content -LiteralPath $env:FAKE_AGENTS_LOG) | Where-Object { $_ -match '^memory list ' }).Count
+    $listCalls = @((Get-Content -LiteralPath $env:FAKE_ANDROMEDA_LOG) | Where-Object { $_ -match '^memory list ' }).Count
     if ($env:FAKE_POST_ACTIVE_IDS -and $listCalls -ge 2) {
         @($env:FAKE_POST_ACTIVE_IDS.Split(",") | ForEach-Object { @{ id = $_; status = "active"; value = "remote-value"; sensitivity = "internal" } }) | ConvertTo-Json -Compress
     } elseif ($listCalls -ge 2) {
-        $publishedId = if ((Get-Content -LiteralPath $env:FAKE_AGENTS_LOG) -match '^memory supersede (prior-record|preflight-record) ') { "record-superseded" } else { "record-new" }
+        $publishedId = if ((Get-Content -LiteralPath $env:FAKE_ANDROMEDA_LOG) -match '^memory supersede (prior-record|preflight-record) ') { "record-superseded" } else { "record-new" }
         @(@{ id = $publishedId; status = "active"; value = "published-value"; sensitivity = "internal" }) | ConvertTo-Json -Compress
     } elseif ($env:FAKE_PREFLIGHT_ACTIVE_ID) {
         @(@{ id = $env:FAKE_PREFLIGHT_ACTIVE_ID; status = "active"; value = "preflight-value"; sensitivity = "internal" }) | ConvertTo-Json -Compress
@@ -53,7 +53,7 @@ if ($CommandArgs[0] -eq "memory" -and $CommandArgs[1] -eq "retract") {
     exit 0
 }
 if ($CommandArgs[0] -eq "memory" -and $CommandArgs[1] -eq "render") {
-    @{ filePath = (Join-Path $env:FAKE_AGENTS_MEMORY "views/startup.md"); changed = $true } | ConvertTo-Json -Compress
+    @{ filePath = (Join-Path $env:FAKE_ANDROMEDA_MEMORY "views/startup.md"); changed = $true } | ConvertTo-Json -Compress
     exit 0
 }
 if ($CommandArgs[0] -eq "memory" -and $CommandArgs[1] -eq "status") {
@@ -65,7 +65,7 @@ if ($CommandArgs[0] -eq "memory" -and $CommandArgs[1] -eq "status") {
     exit 0
 }
 if ($CommandArgs[0] -eq "state" -and $CommandArgs[1] -eq "sync") {
-    $syncCalls = @((Get-Content -LiteralPath $env:FAKE_AGENTS_LOG) | Where-Object { $_ -eq "state sync --json" }).Count
+    $syncCalls = @((Get-Content -LiteralPath $env:FAKE_ANDROMEDA_LOG) | Where-Object { $_ -eq "state sync --json" }).Count
     $pushed = -not ($env:FAKE_SYNC_FAIL_ON_CALL -and $syncCalls -eq [int]$env:FAKE_SYNC_FAIL_ON_CALL)
     $committed = $env:FAKE_BACKUP_COMMITTED -ne "false"
     $payloadHash = "a" * 64
@@ -88,18 +88,18 @@ throw "Unexpected fake agents command: $($CommandArgs -join ' ')"
 function Initialize-Case {
     param([string]$Name)
     $root = Join-Path $testRoot $Name
-    $agentsHome = Join-Path $root ".agents"
-    $memoryRoot = Join-Path $agentsHome "memory"
+    $andromedaHome = Join-Path $root ".andromeda"
+    $memoryRoot = Join-Path $andromedaHome "memory"
     $compatibilityRoot = Join-Path $root ".codex/memories"
     New-Item -ItemType Directory -Path $memoryRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $compatibilityRoot -Force | Out-Null
     $log = Join-Path $root "agents.log"
     New-Item -ItemType File -Path $log -Force | Out-Null
-    @{ schemaVersion = 2; agentId = "rommie" } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $agentsHome "manifest.json") -Encoding UTF8
+    @{ schemaVersion = 2; agentId = "rommie" } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $andromedaHome "manifest.json") -Encoding UTF8
     $fake = New-FakeAgents -Root $root
     return [ordered]@{
         Root = $root
-        AgentsHome = $agentsHome
+        AgentsHome = $andromedaHome
         MemoryRoot = $memoryRoot
         CompatibilityRoot = $compatibilityRoot
         Log = $log
@@ -112,9 +112,9 @@ try {
 
     # Primary path: first capsule becomes canonical, renders, syncs, and projects.
     $primary = Initialize-Case -Name "primary"
-    $env:FAKE_AGENTS_HOME = $primary.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $primary.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $primary.Log
+    $env:FAKE_ANDROMEDA_HOME = $primary.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $primary.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $primary.Log
     $env:FAKE_ACTIVE_ID = ""
     $env:FAKE_ACTIVE_IDS = ""
     $env:FAKE_SYNC_FAIL_ON_CALL = ""
@@ -160,9 +160,9 @@ try {
         Set-Content -LiteralPath $linkedLockOutside -Value "outside must remain" -NoNewline
         New-Item -ItemType SymbolicLink -Path $linkedLockPath -Target $linkedLockOutside | Out-Null
     }
-    $env:FAKE_AGENTS_HOME = $linkedLock.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $linkedLock.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $linkedLock.Log
+    $env:FAKE_ANDROMEDA_HOME = $linkedLock.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $linkedLock.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $linkedLock.Log
     $linkedLockMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "invalid" -Next "none" -AgentsCommand $linkedLock.Fake -UserHome $linkedLock.Root -CompatibilityRoot $linkedLock.CompatibilityRoot | Out-Null
@@ -177,9 +177,9 @@ try {
 
     # Concurrent local publications are serialized across the complete workflow.
     $locked = Initialize-Case -Name "locked"
-    $env:FAKE_AGENTS_HOME = $locked.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $locked.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $locked.Log
+    $env:FAKE_ANDROMEDA_HOME = $locked.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $locked.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $locked.Log
     $heldLockPath = Join-Path $locked.MemoryRoot ".compact.lock"
     $heldLock = [System.IO.File]::Open($heldLockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
     $lockedMessage = ""
@@ -198,9 +198,9 @@ try {
 
     # Edge path: an existing active capsule is explicitly superseded.
     $edge = Initialize-Case -Name "edge"
-    $env:FAKE_AGENTS_HOME = $edge.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $edge.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $edge.Log
+    $env:FAKE_ANDROMEDA_HOME = $edge.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $edge.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $edge.Log
     $env:FAKE_ACTIVE_ID = "prior-record"
     $env:FAKE_ACTIVE_IDS = ""
     $env:FAKE_BACKUP_COMMITTED = "false"
@@ -211,9 +211,9 @@ try {
 
     # Preflight-imported authority determines remember versus supersede.
     $preflightImport = Initialize-Case -Name "preflight-import"
-    $env:FAKE_AGENTS_HOME = $preflightImport.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $preflightImport.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $preflightImport.Log
+    $env:FAKE_ANDROMEDA_HOME = $preflightImport.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $preflightImport.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $preflightImport.Log
     $env:FAKE_ACTIVE_ID = ""
     $env:FAKE_ACTIVE_IDS = ""
     $env:FAKE_PREFLIGHT_ACTIVE_ID = "preflight-record"
@@ -224,13 +224,13 @@ try {
     Assert-True ([array]::IndexOf($preflightImportLog, "state sync --json") -lt [array]::IndexOf($preflightImportLog, "memory list --scope session --subject compaction --predicate current --status active --json")) "preflight-import: authority was listed before synchronization"
     $env:FAKE_PREFLIGHT_ACTIVE_ID = ""
 
-    # Denied path: memory outside AGENTS_HOME is rejected before a snapshot write.
+    # Denied path: memory outside ANDROMEDA_HOME is rejected before a snapshot write.
     $denied = Initialize-Case -Name "denied"
     $outsideMemory = Join-Path $denied.Root "outside-memory"
     New-Item -ItemType Directory -Path $outsideMemory -Force | Out-Null
-    $env:FAKE_AGENTS_HOME = $denied.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $outsideMemory
-    $env:FAKE_AGENTS_LOG = $denied.Log
+    $env:FAKE_ANDROMEDA_HOME = $denied.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $outsideMemory
+    $env:FAKE_ANDROMEDA_LOG = $denied.Log
     $env:FAKE_ACTIVE_ID = ""
     $env:FAKE_ACTIVE_IDS = ""
     $deniedMessage = ""
@@ -239,14 +239,14 @@ try {
     } catch {
         $deniedMessage = $_.Exception.Message
     }
-    Assert-True ($deniedMessage -match "must remain under AGENTS_HOME") "denied: outside authority was not rejected"
+    Assert-True ($deniedMessage -match "must remain under ANDROMEDA_HOME") "denied: outside authority was not rejected"
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $outsideMemory "snapshots/compaction"))) "denied: wrote outside canonical authority"
 
     # Compatibility projections cannot contain or live inside canonical state.
     $authorityAncestor = Initialize-Case -Name "authority-ancestor"
-    $env:FAKE_AGENTS_HOME = $authorityAncestor.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $authorityAncestor.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $authorityAncestor.Log
+    $env:FAKE_ANDROMEDA_HOME = $authorityAncestor.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $authorityAncestor.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $authorityAncestor.Log
     $authorityAncestorMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "overlap" -Next "none" -AgentsCommand $authorityAncestor.Fake -UserHome $authorityAncestor.Root -CompatibilityRoot $authorityAncestor.Root | Out-Null
@@ -259,9 +259,9 @@ try {
 
     $authorityDescendant = Initialize-Case -Name "authority-descendant"
     $authorityDescendantProjection = Join-Path $authorityDescendant.MemoryRoot "projections"
-    $env:FAKE_AGENTS_HOME = $authorityDescendant.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $authorityDescendant.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $authorityDescendant.Log
+    $env:FAKE_ANDROMEDA_HOME = $authorityDescendant.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $authorityDescendant.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $authorityDescendant.Log
     $authorityDescendantMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "overlap" -Next "none" -AgentsCommand $authorityDescendant.Fake -UserHome $authorityDescendant.Root -CompatibilityRoot $authorityDescendantProjection | Out-Null
@@ -275,12 +275,12 @@ try {
     # Ancestor aliases are resolved before authority-disjointness decisions.
     $aliasedRoot = Join-Path $testRoot "aliased-root"
     $aliasedPhysicalHome = Join-Path $aliasedRoot "physical-home"
-    $aliasedAgentsHome = Join-Path $aliasedPhysicalHome ".agents"
-    $aliasedMemoryRoot = Join-Path $aliasedAgentsHome "memory"
+    $aliasedAndromedaHome = Join-Path $aliasedPhysicalHome ".andromeda"
+    $aliasedMemoryRoot = Join-Path $aliasedAndromedaHome "memory"
     $aliasedHome = Join-Path $aliasedRoot "home-alias"
-    $aliasedCompatibility = Join-Path $aliasedAgentsHome "projections"
+    $aliasedCompatibility = Join-Path $aliasedAndromedaHome "projections"
     New-Item -ItemType Directory -Path $aliasedMemoryRoot -Force | Out-Null
-    @{ schemaVersion = 2; agentId = "rommie" } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $aliasedAgentsHome "manifest.json") -Encoding UTF8
+    @{ schemaVersion = 2; agentId = "rommie" } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $aliasedAndromedaHome "manifest.json") -Encoding UTF8
     if ($env:OS -eq "Windows_NT") {
         New-Item -ItemType Junction -Path $aliasedHome -Target $aliasedPhysicalHome | Out-Null
     } else {
@@ -289,9 +289,9 @@ try {
     $aliasedLog = Join-Path $aliasedRoot "agents.log"
     New-Item -ItemType File -Path $aliasedLog -Force | Out-Null
     $aliasedFake = New-FakeAgents -Root $aliasedRoot
-    $env:FAKE_AGENTS_HOME = Join-Path $aliasedHome ".agents"
-    $env:FAKE_AGENTS_MEMORY = Join-Path $env:FAKE_AGENTS_HOME "memory"
-    $env:FAKE_AGENTS_LOG = $aliasedLog
+    $env:FAKE_ANDROMEDA_HOME = Join-Path $aliasedHome ".andromeda"
+    $env:FAKE_ANDROMEDA_MEMORY = Join-Path $env:FAKE_ANDROMEDA_HOME "memory"
+    $env:FAKE_ANDROMEDA_LOG = $aliasedLog
     $aliasedMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "physical overlap" -Next "none" -AgentsCommand $aliasedFake -UserHome $aliasedPhysicalHome -CompatibilityRoot $aliasedCompatibility | Out-Null
@@ -306,13 +306,13 @@ try {
     $nestedRoot = Join-Path $testRoot "nested-alias-root"
     $nestedRealContainer = Join-Path $nestedRoot "real-container"
     $nestedPhysicalHome = Join-Path $nestedRealContainer "physical-home"
-    $nestedAgentsHome = Join-Path $nestedPhysicalHome ".agents"
-    $nestedMemoryRoot = Join-Path $nestedAgentsHome "memory"
+    $nestedAndromedaHome = Join-Path $nestedPhysicalHome ".andromeda"
+    $nestedMemoryRoot = Join-Path $nestedAndromedaHome "memory"
     $nestedParentAlias = Join-Path $nestedRoot "parent-alias"
     $nestedHomeAlias = Join-Path $nestedRoot "home-alias"
-    $nestedCompatibility = Join-Path $nestedAgentsHome "projections"
+    $nestedCompatibility = Join-Path $nestedAndromedaHome "projections"
     New-Item -ItemType Directory -Path $nestedMemoryRoot -Force | Out-Null
-    @{ schemaVersion = 2; agentId = "rommie" } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $nestedAgentsHome "manifest.json") -Encoding UTF8
+    @{ schemaVersion = 2; agentId = "rommie" } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $nestedAndromedaHome "manifest.json") -Encoding UTF8
     if ($env:OS -eq "Windows_NT") {
         New-Item -ItemType Junction -Path $nestedParentAlias -Target $nestedRealContainer | Out-Null
         New-Item -ItemType Junction -Path $nestedHomeAlias -Target (Join-Path $nestedParentAlias "physical-home") | Out-Null
@@ -323,9 +323,9 @@ try {
     $nestedLog = Join-Path $nestedRoot "agents.log"
     New-Item -ItemType File -Path $nestedLog -Force | Out-Null
     $nestedFake = New-FakeAgents -Root $nestedRoot
-    $env:FAKE_AGENTS_HOME = Join-Path $nestedHomeAlias ".agents"
-    $env:FAKE_AGENTS_MEMORY = Join-Path $env:FAKE_AGENTS_HOME "memory"
-    $env:FAKE_AGENTS_LOG = $nestedLog
+    $env:FAKE_ANDROMEDA_HOME = Join-Path $nestedHomeAlias ".andromeda"
+    $env:FAKE_ANDROMEDA_MEMORY = Join-Path $env:FAKE_ANDROMEDA_HOME "memory"
+    $env:FAKE_ANDROMEDA_LOG = $nestedLog
     $nestedMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "nested physical overlap" -Next "none" -AgentsCommand $nestedFake -UserHome $nestedPhysicalHome -CompatibilityRoot $nestedCompatibility | Out-Null
@@ -346,9 +346,9 @@ try {
     } else {
         New-Item -ItemType SymbolicLink -Path $linkedMemory -Target $linkedOutside | Out-Null
     }
-    $env:FAKE_AGENTS_HOME = $linked.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $linkedMemory
-    $env:FAKE_AGENTS_LOG = $linked.Log
+    $env:FAKE_ANDROMEDA_HOME = $linked.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $linkedMemory
+    $env:FAKE_ANDROMEDA_LOG = $linked.Log
     $linkedMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "invalid" -Next "none" -AgentsCommand $linked.Fake -UserHome $linked.Root -CompatibilityRoot $linked.CompatibilityRoot | Out-Null
@@ -368,9 +368,9 @@ try {
     } else {
         New-Item -ItemType SymbolicLink -Path $linkedSnapshotsPath -Target $linkedSnapshotsOutside | Out-Null
     }
-    $env:FAKE_AGENTS_HOME = $linkedSnapshots.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $linkedSnapshots.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $linkedSnapshots.Log
+    $env:FAKE_ANDROMEDA_HOME = $linkedSnapshots.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $linkedSnapshots.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $linkedSnapshots.Log
     $linkedSnapshotsMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "invalid" -Next "none" -AgentsCommand $linkedSnapshots.Fake -UserHome $linkedSnapshots.Root -CompatibilityRoot $linkedSnapshots.CompatibilityRoot | Out-Null
@@ -391,9 +391,9 @@ try {
     } else {
         New-Item -ItemType SymbolicLink -Path $linkedCompatibility.CompatibilityRoot -Target $linkedCompatibilityOutside | Out-Null
     }
-    $env:FAKE_AGENTS_HOME = $linkedCompatibility.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $linkedCompatibility.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $linkedCompatibility.Log
+    $env:FAKE_ANDROMEDA_HOME = $linkedCompatibility.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $linkedCompatibility.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $linkedCompatibility.Log
     $linkedCompatibilityMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "invalid" -Next "none" -AgentsCommand $linkedCompatibility.Fake -UserHome $linkedCompatibility.Root -CompatibilityRoot $linkedCompatibility.CompatibilityRoot | Out-Null
@@ -415,9 +415,9 @@ try {
         Set-Content -LiteralPath $linkedDestinationOutside -Value "outside must remain" -NoNewline
         New-Item -ItemType SymbolicLink -Path $linkedDestinationPath -Target $linkedDestinationOutside | Out-Null
     }
-    $env:FAKE_AGENTS_HOME = $linkedDestination.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $linkedDestination.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $linkedDestination.Log
+    $env:FAKE_ANDROMEDA_HOME = $linkedDestination.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $linkedDestination.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $linkedDestination.Log
     $linkedDestinationMessage = ""
     try {
         & $scriptUnderTest -Objective "must fail" -State "invalid" -Next "none" -AgentsCommand $linkedDestination.Fake -UserHome $linkedDestination.Root -CompatibilityRoot $linkedDestination.CompatibilityRoot | Out-Null
@@ -432,9 +432,9 @@ try {
 
     # Ambiguous authority: duplicate active records fail before creating a snapshot.
     $duplicateActive = Initialize-Case -Name "duplicate-active"
-    $env:FAKE_AGENTS_HOME = $duplicateActive.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $duplicateActive.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $duplicateActive.Log
+    $env:FAKE_ANDROMEDA_HOME = $duplicateActive.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $duplicateActive.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $duplicateActive.Log
     $env:FAKE_ACTIVE_ID = ""
     $env:FAKE_ACTIVE_IDS = "record-one,record-two"
     $duplicateActiveMessage = ""
@@ -451,9 +451,9 @@ try {
     $duplicateProjectionPath = Join-Path $duplicateProjection.CompatibilityRoot "handoff.md"
     $duplicateBlock = "<!-- rommie:compact:start -->`nold`n<!-- rommie:compact:end -->"
     Set-Content -LiteralPath $duplicateProjectionPath -Value "$duplicateBlock`n$duplicateBlock" -Encoding UTF8
-    $env:FAKE_AGENTS_HOME = $duplicateProjection.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $duplicateProjection.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $duplicateProjection.Log
+    $env:FAKE_ANDROMEDA_HOME = $duplicateProjection.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $duplicateProjection.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $duplicateProjection.Log
     $env:FAKE_ACTIVE_IDS = ""
     $duplicateProjectionMessage = ""
     try {
@@ -467,9 +467,9 @@ try {
 
     # Incomplete repository evidence is rejected during preflight before mutation.
     $invalidEvidence = Initialize-Case -Name "invalid-evidence"
-    $env:FAKE_AGENTS_HOME = $invalidEvidence.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $invalidEvidence.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $invalidEvidence.Log
+    $env:FAKE_ANDROMEDA_HOME = $invalidEvidence.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $invalidEvidence.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $invalidEvidence.Log
     $env:FAKE_ACTIVE_IDS = ""
     $env:FAKE_SYNC_INVALID_BACKUP = "true"
     $invalidEvidenceMessage = ""
@@ -484,9 +484,9 @@ try {
 
     foreach ($invalidProjectionHash in @("null", "empty")) {
         $invalidProjection = Initialize-Case -Name "invalid-projection-$invalidProjectionHash"
-        $env:FAKE_AGENTS_HOME = $invalidProjection.AgentsHome
-        $env:FAKE_AGENTS_MEMORY = $invalidProjection.MemoryRoot
-        $env:FAKE_AGENTS_LOG = $invalidProjection.Log
+        $env:FAKE_ANDROMEDA_HOME = $invalidProjection.AgentsHome
+        $env:FAKE_ANDROMEDA_MEMORY = $invalidProjection.MemoryRoot
+        $env:FAKE_ANDROMEDA_LOG = $invalidProjection.Log
         $env:FAKE_SYNC_PROJECTION_HASH = $invalidProjectionHash
         $invalidProjectionMessage = ""
         try {
@@ -500,9 +500,9 @@ try {
     $env:FAKE_SYNC_PROJECTION_HASH = ""
 
     $invalidBundle = Initialize-Case -Name "invalid-bundle"
-    $env:FAKE_AGENTS_HOME = $invalidBundle.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $invalidBundle.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $invalidBundle.Log
+    $env:FAKE_ANDROMEDA_HOME = $invalidBundle.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $invalidBundle.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $invalidBundle.Log
     $env:FAKE_SYNC_INVALID_BUNDLE = "true"
     $invalidBundleMessage = ""
     try {
@@ -516,9 +516,9 @@ try {
 
     foreach ($invalidMemoryStatus in @("wrong-agent", "case-agent", "array-agent", "boolean-records", "fractional-records", "boolean-events", "fractional-events", "array-hash")) {
         $memoryStatusCase = Initialize-Case -Name "memory-status-$invalidMemoryStatus"
-        $env:FAKE_AGENTS_HOME = $memoryStatusCase.AgentsHome
-        $env:FAKE_AGENTS_MEMORY = $memoryStatusCase.MemoryRoot
-        $env:FAKE_AGENTS_LOG = $memoryStatusCase.Log
+        $env:FAKE_ANDROMEDA_HOME = $memoryStatusCase.AgentsHome
+        $env:FAKE_ANDROMEDA_MEMORY = $memoryStatusCase.MemoryRoot
+        $env:FAKE_ANDROMEDA_LOG = $memoryStatusCase.Log
         $env:FAKE_MEMORY_AGENT_ID = if ($invalidMemoryStatus -eq "wrong-agent") { "other-agent" } elseif ($invalidMemoryStatus -eq "case-agent") { "ROMMIE" } elseif ($invalidMemoryStatus -eq "array-agent") { "array" } else { "" }
         $env:FAKE_MEMORY_RECORDS = if ($invalidMemoryStatus -eq "boolean-records") { "boolean" } elseif ($invalidMemoryStatus -eq "fractional-records") { "fractional" } else { "" }
         $env:FAKE_MEMORY_EVENTS = if ($invalidMemoryStatus -eq "boolean-events") { "boolean" } elseif ($invalidMemoryStatus -eq "fractional-events") { "fractional" } else { "" }
@@ -539,9 +539,9 @@ try {
 
     # Concurrent remote convergence cannot turn a stale capsule into success.
     $convergenceRace = Initialize-Case -Name "convergence-race"
-    $env:FAKE_AGENTS_HOME = $convergenceRace.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $convergenceRace.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $convergenceRace.Log
+    $env:FAKE_ANDROMEDA_HOME = $convergenceRace.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $convergenceRace.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $convergenceRace.Log
     $env:FAKE_ACTIVE_ID = ""
     $env:FAKE_ACTIVE_IDS = ""
     $env:FAKE_POST_ACTIVE_IDS = "record-new,remote-record"
@@ -559,9 +559,9 @@ try {
 
     # A newer remote scalar must never be overwritten with the stale preflight value.
     $priorConvergenceRace = Initialize-Case -Name "prior-convergence-race"
-    $env:FAKE_AGENTS_HOME = $priorConvergenceRace.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $priorConvergenceRace.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $priorConvergenceRace.Log
+    $env:FAKE_ANDROMEDA_HOME = $priorConvergenceRace.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $priorConvergenceRace.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $priorConvergenceRace.Log
     $env:FAKE_ACTIVE_ID = "prior-record"
     $env:FAKE_ACTIVE_IDS = ""
     $env:FAKE_POST_ACTIVE_IDS = "remote-record"
@@ -580,9 +580,9 @@ try {
 
     # A successful process exit is insufficient when sync JSON reports no push.
     $syncFailure = Initialize-Case -Name "sync-failure"
-    $env:FAKE_AGENTS_HOME = $syncFailure.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $syncFailure.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $syncFailure.Log
+    $env:FAKE_ANDROMEDA_HOME = $syncFailure.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $syncFailure.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $syncFailure.Log
     $env:FAKE_ACTIVE_IDS = ""
     $env:FAKE_SYNC_FAIL_ON_CALL = "2"
     Set-Content -LiteralPath (Join-Path $syncFailure.CompatibilityRoot "handoff.md") -Value "original handoff" -NoNewline
@@ -601,9 +601,9 @@ try {
 
     # A late failure after supersession restores the prior scalar as a new active record.
     $supersedeFailure = Initialize-Case -Name "supersede-failure"
-    $env:FAKE_AGENTS_HOME = $supersedeFailure.AgentsHome
-    $env:FAKE_AGENTS_MEMORY = $supersedeFailure.MemoryRoot
-    $env:FAKE_AGENTS_LOG = $supersedeFailure.Log
+    $env:FAKE_ANDROMEDA_HOME = $supersedeFailure.AgentsHome
+    $env:FAKE_ANDROMEDA_MEMORY = $supersedeFailure.MemoryRoot
+    $env:FAKE_ANDROMEDA_LOG = $supersedeFailure.Log
     $env:FAKE_ACTIVE_ID = "prior-record"
     $env:FAKE_ACTIVE_IDS = ""
     $env:FAKE_SYNC_FAIL_ON_CALL = "2"
@@ -620,9 +620,9 @@ try {
 
     Write-Output "compact capsule authority regression suite passed"
 } finally {
-    Remove-Item Env:FAKE_AGENTS_HOME -ErrorAction SilentlyContinue
-    Remove-Item Env:FAKE_AGENTS_MEMORY -ErrorAction SilentlyContinue
-    Remove-Item Env:FAKE_AGENTS_LOG -ErrorAction SilentlyContinue
+    Remove-Item Env:FAKE_ANDROMEDA_HOME -ErrorAction SilentlyContinue
+    Remove-Item Env:FAKE_ANDROMEDA_MEMORY -ErrorAction SilentlyContinue
+    Remove-Item Env:FAKE_ANDROMEDA_LOG -ErrorAction SilentlyContinue
     Remove-Item Env:FAKE_ACTIVE_ID -ErrorAction SilentlyContinue
     Remove-Item Env:FAKE_ACTIVE_IDS -ErrorAction SilentlyContinue
     Remove-Item Env:FAKE_SYNC_FAIL_ON_CALL -ErrorAction SilentlyContinue

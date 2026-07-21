@@ -43,7 +43,7 @@ export function resetDockerRunner(): void {
 }
 
 export function dockerBin(env: Record<string, string | undefined>): string {
-  return env.AGENTS_DOCKER_BIN?.trim() || "docker";
+  return env.ANDROMEDA_DOCKER_BIN?.trim() || "docker";
 }
 
 export async function runDocker(
@@ -95,23 +95,23 @@ export function toPosixPath(input: string): string {
 
 export function containerEnv(dataRepos: DataRepoRegistration[]): Record<string, string> {
   const env: Record<string, string> = {
-    AGENTS_ROOT: "/opt/agents-os",
-    AGENTS_HOME: "/agents/state",
-    AGENTS_WORKSPACE: "/workspace/agents",
-    AGENTS_DATA_REPOS: "/agents/state/data-repos.json",
-    AGENTS_PACKAGES: "/agents/state/packages.json",
-    AGENTS_CREDITS: "/agents/state/credits.json",
-    AGENTS_SECRETS: "/agents/state/secrets",
-    AGENTS_CLIS: "/agents/state/clis",
-    AGENTS_HARNESSES: "/agents/state/harnesses",
-    AGENTS_IDENTITY: "/agents/state/identity",
-    AGENTS_MEMORY: "/agents/state/memory",
-    AGENTS_SESSIONS: "/agents/state/sessions",
-    AGENTS_ORCHESTRATOR: "/agents/state/orchestrator",
-    AGENTS_SKILLS: "/agents/state/skills",
-    AGENTS_PLUGINS: "/agents/state/plugins",
-    AGENTS_HOOKS: "/agents/state/hooks",
-    AGENTS_TEMPLATES: "/agents/state/templates",
+    ANDROMEDA_ROOT: "/opt/agents-os",
+    ANDROMEDA_HOME: "/agents/state",
+    ANDROMEDA_WORKSPACE: "/workspace/agents",
+    ANDROMEDA_DATA_REPOS: "/agents/state/data-repos.json",
+    ANDROMEDA_PACKAGES: "/agents/state/packages.json",
+    ANDROMEDA_CREDITS: "/agents/state/credits.json",
+    ANDROMEDA_SECRETS: "/agents/state/secrets",
+    ANDROMEDA_CLIS: "/agents/state/clis",
+    ANDROMEDA_HARNESSES: "/agents/state/harnesses",
+    ANDROMEDA_IDENTITY: "/agents/state/identity",
+    ANDROMEDA_MEMORY: "/agents/state/memory",
+    ANDROMEDA_SESSIONS: "/agents/state/sessions",
+    ANDROMEDA_ORCHESTRATOR: "/agents/state/orchestrator",
+    ANDROMEDA_SKILLS: "/agents/state/skills",
+    ANDROMEDA_PLUGINS: "/agents/state/plugins",
+    ANDROMEDA_HOOKS: "/agents/state/hooks",
+    ANDROMEDA_TEMPLATES: "/agents/state/templates",
   };
   for (const repo of dataRepos) {
     const key = repo.env ?? `${repo.id.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_ROOT`;
@@ -188,10 +188,10 @@ export function dockerCreateArgs(options: {
   restart?: string;
 }): string[] {
   const args = ["container", "create", "--name", options.name];
-  args.push("--label", "io.agents.os.managed=true");
-  args.push("--label", `io.agents.os.environment=${options.environment}`);
-  args.push("--label", `io.agents.os.image-channel=${options.channel || "dev"}`);
-  args.push("--label", `io.agents.os.root=${toPosixPath(options.hostRoot)}`);
+  args.push("--label", "io.andromeda.os.managed=true");
+  args.push("--label", `io.andromeda.os.environment=${options.environment}`);
+  args.push("--label", `io.andromeda.os.image-channel=${options.channel || "dev"}`);
+  args.push("--label", `io.andromeda.os.root=${toPosixPath(options.hostRoot)}`);
   for (const [key, value] of Object.entries(options.env)) args.push("-e", `${key}=${value}`);
   for (const mount of options.mounts) {
     args.push("-v", `${mount.host}:${mount.container}:${mount.mode === "ro" ? "ro" : "rw"}`);
@@ -386,7 +386,7 @@ export async function checkPathSharing(
       issues.push(`Configured host path does not exist: ${host}`);
       continue;
     }
-    const pathSentinel = `.agents-pathcheck-${crypto.randomUUID()}-${index}`;
+    const pathSentinel = `.andromeda-pathcheck-${crypto.randomUUID()}-${index}`;
     try {
       await Bun.write(path.join(host, pathSentinel), "ok");
       const sentinelContainerPath = `${container}/${pathSentinel}`;
@@ -902,22 +902,22 @@ export interface ProfileConfig {
 }
 
 const profileConfigs: Record<string, ProfileConfig> = {
-  harness: { ports: [], requires: { env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"] } },
+  harness: { ports: [], requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"] } },
   "agent-os-inference": {
     ports: [{ name: "http", container: 8080, host: 8080 }],
-    requires: { env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"] },
+    requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"] },
   },
   "agent-os-gateway": {
     ports: [{ name: "http", container: 8787, host: 8787 }],
     requires: {
-      env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT", "AGENTS_CREDITS"],
+      env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT", "ANDROMEDA_CREDITS"],
       dataRepos: ["agent-os-data"],
       secrets: ["openai", "github"],
     },
   },
   darkfactory: {
     ports: [],
-    requires: { env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"], secrets: ["github"] },
+    requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"], secrets: ["github"] },
   },
   "full-system": {
     ports: [
@@ -925,7 +925,7 @@ const profileConfigs: Record<string, ProfileConfig> = {
       { name: "gateway", container: 8787, host: 8787 },
     ],
     requires: {
-      env: ["AGENTS_HOME", "AGENTS_WORKSPACE", "AGENTS_SYSTEM_DATA_ROOT", "AGENTS_CREDITS"],
+      env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT", "ANDROMEDA_CREDITS"],
       dataRepos: ["agent-os-data"],
       secrets: ["openai", "github"],
     },

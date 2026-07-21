@@ -39,7 +39,7 @@ const cliPath = path.join(repoRoot, "src", "cli.ts");
 function cleanEnv(): Record<string, string | undefined> {
   const copy = { ...process.env };
   for (const key of Object.keys(copy)) {
-    if (key.startsWith("AGENTS_")) delete copy[key];
+    if (key.startsWith("ANDROMEDA_")) delete copy[key];
   }
   return copy;
 }
@@ -53,8 +53,8 @@ async function runAgents(
     cwd,
     env: {
       ...cleanEnv(),
-      AGENTS_HOME: path.join(cwd, ".agents"),
-      AGENTS_ROOT: cwd,
+      ANDROMEDA_HOME: path.join(cwd, ".andromeda"),
+      ANDROMEDA_ROOT: cwd,
       ...env,
     },
     stdout: "pipe",
@@ -1287,7 +1287,7 @@ describe("session runtime", () => {
     const stateRoot = path.join(root, "state");
     try {
       await Promise.all([mkdir(invocationRoot), mkdir(distributionRoot)]);
-      const env = { AGENTS_HOME: stateRoot, AGENTS_ROOT: distributionRoot };
+      const env = { ANDROMEDA_HOME: stateRoot, ANDROMEDA_ROOT: distributionRoot };
 
       const run = await runAgents(
         invocationRoot,
@@ -1363,7 +1363,7 @@ describe("agents run / sessions CLI", () => {
     const stateRoot = path.join(root, "state");
     try {
       await Promise.all([mkdir(invocationRoot), mkdir(distributionRoot)]);
-      const env = { AGENTS_HOME: stateRoot, AGENTS_ROOT: distributionRoot };
+      const env = { ANDROMEDA_HOME: stateRoot, ANDROMEDA_ROOT: distributionRoot };
 
       const run = await runAgents(invocationRoot, ["run", "--provider", "fake", "--model", "test", "hello"], env);
       expect(run.code).toBe(0);
@@ -1382,7 +1382,7 @@ describe("agents run / sessions CLI", () => {
   test("run uses provider/model/mode defaults from config", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-run-config-"));
     try {
-      const configPath = path.join(root, ".agents", "config.json");
+      const configPath = path.join(root, ".andromeda", "config.json");
       await mkdir(path.dirname(configPath), { recursive: true });
       await Bun.write(
         configPath,
@@ -1434,7 +1434,7 @@ describe("agents run / sessions CLI", () => {
     const stateRoot = path.join(root, "state");
     try {
       await Promise.all([mkdir(firstInvocation), mkdir(secondInvocation), mkdir(distributionRoot)]);
-      const env = { AGENTS_HOME: stateRoot, AGENTS_ROOT: distributionRoot };
+      const env = { ANDROMEDA_HOME: stateRoot, ANDROMEDA_ROOT: distributionRoot };
 
       const first = await runAgents(
         firstInvocation,
@@ -1472,18 +1472,18 @@ describe("agents run / sessions CLI", () => {
 
 describe("real adapter smoke test", () => {
   test("smokes the configured provider behind an env guard", async () => {
-    const provider = process.env.AGENTS_SESSION_SMOKE_PROVIDER;
+    const provider = process.env.ANDROMEDA_SESSION_SMOKE_PROVIDER;
     if (!provider) {
       expect(true).toBe(true);
       return;
     }
-    const model = process.env.AGENTS_SESSION_SMOKE_MODEL;
-    if (!model) throw new Error("AGENTS_SESSION_SMOKE_MODEL is required with AGENTS_SESSION_SMOKE_PROVIDER");
+    const model = process.env.ANDROMEDA_SESSION_SMOKE_MODEL;
+    if (!model) throw new Error("ANDROMEDA_SESSION_SMOKE_MODEL is required with ANDROMEDA_SESSION_SMOKE_PROVIDER");
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-session-smoke-"));
     try {
       const state = sharedState(root);
       await ensureSharedState(state);
-      const adapter = providerSessionAdapter(provider, process.env.AGENTS_SESSION_SMOKE_BINARY);
+      const adapter = providerSessionAdapter(provider, process.env.ANDROMEDA_SESSION_SMOKE_BINARY);
       const descriptor = await createSession(state, {
         provider: adapter.id,
         model,

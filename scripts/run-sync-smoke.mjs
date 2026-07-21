@@ -14,15 +14,15 @@ const evidenceHash = "a".repeat(64);
 
 function machine(name) {
   const userHome = path.join(sandbox, name, "user");
-  const stateHome = path.join(userHome, ".agents");
+  const stateHome = path.join(userHome, ".andromeda");
   mkdirSync(userHome, { recursive: true });
   return {
     name,
     env: {
       ...process.env,
-      AGENTS_HOME: stateHome,
-      AGENTS_USER_HOME: userHome,
-      AGENTS_ROOT: root,
+      ANDROMEDA_HOME: stateHome,
+      ANDROMEDA_USER_HOME: userHome,
+      ANDROMEDA_ROOT: root,
     },
   };
 }
@@ -42,7 +42,7 @@ function run(instance, args, { json = false } = {}) {
 
 function initialize(instance) {
   run(instance, ["state", "init"]);
-  run(instance, ["secrets", "set", "AGENTS_SYNC_KEY", "--from-file", keyFile]);
+  run(instance, ["secrets", "set", "ANDROMEDA_SYNC_KEY", "--from-file", keyFile]);
   run(instance, ["sync", "enable"]);
 }
 

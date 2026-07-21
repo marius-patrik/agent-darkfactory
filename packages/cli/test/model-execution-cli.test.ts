@@ -30,7 +30,7 @@ async function executionFixture(): Promise<{
   const container = await rootFixture();
   const root = path.join(container, "workspace with spaces");
   const userHome = path.join(container, "user home");
-  const state = sharedStateAt(root, path.join(userHome, ".agents"), userHome);
+  const state = sharedStateAt(root, path.join(userHome, ".andromeda"), userHome);
   const receiptDir = path.join(root, "receipt folder");
   await mkdir(receiptDir, { recursive: true });
   await ensureSharedState(state);
@@ -51,7 +51,7 @@ async function splitExecutionFixture(): Promise<{
   const distributionRoot = path.join(container, "agent os distribution");
   const workdir = path.join(container, "caller worktree");
   const userHome = path.join(container, "user home");
-  const state = sharedStateAt(distributionRoot, path.join(userHome, ".agents"), userHome);
+  const state = sharedStateAt(distributionRoot, path.join(userHome, ".andromeda"), userHome);
   const receiptDir = path.join(workdir, ".darkfactory");
   await mkdir(distributionRoot, { recursive: true });
   await mkdir(receiptDir, { recursive: true });
@@ -66,11 +66,11 @@ async function splitExecutionFixture(): Promise<{
 function executionEnv(state: SharedState): Record<string, string | undefined> {
   return {
     ...canonicalChildEnvironment(process.env),
-    AGENTS_HOME: state.stateDir,
-    AGENTS_USER_HOME: state.userHome,
-    AGENTS_ROOT: state.root,
-    AGENTS_WORKSPACE: state.workspaceDir,
-    AGENTS_SYSTEM_DATA_ROOT: state.stateDir,
+    ANDROMEDA_HOME: state.stateDir,
+    ANDROMEDA_USER_HOME: state.userHome,
+    ANDROMEDA_ROOT: state.root,
+    ANDROMEDA_WORKSPACE: state.workspaceDir,
+    ANDROMEDA_SYSTEM_DATA_ROOT: state.stateDir,
   };
 }
 
@@ -117,9 +117,9 @@ async function installWindowsLauncher(state: SharedState): Promise<string> {
       env: {
         ...canonicalChildEnvironment(process.env),
         ANDROMEDA_INSTALL_SCRIPT: installerPath,
-        AGENTS_HOME: state.stateDir,
-        AGENTS_USER_HOME: state.userHome,
-        AGENTS_ROOT: state.root,
+        ANDROMEDA_HOME: state.stateDir,
+        ANDROMEDA_USER_HOME: state.userHome,
+        ANDROMEDA_ROOT: state.root,
       },
       stdout: "pipe",
       stderr: "pipe",
@@ -382,7 +382,7 @@ describe("model execution CLI prompt boundary", () => {
     expect(policyOnly.stderr.trim()).toBe("agents: run requires --model-tier");
   });
 
-  test("agents run keeps receipt authority in the caller worktree when AGENTS_ROOT differs", async () => {
+  test("agents run keeps receipt authority in the caller worktree when ANDROMEDA_ROOT differs", async () => {
     const { distributionRoot, workdir, state, receiptDir } = await splitExecutionFixture();
     const receiptPath = path.join(receiptDir, "caller receipt.json");
     const result = await runProcess(
@@ -414,7 +414,7 @@ describe("model execution CLI prompt boundary", () => {
     expect(receiptPath.startsWith(`${distributionRoot}${path.sep}`)).toBe(false);
   });
 
-  test("agents run rejects a receipt under AGENTS_ROOT when the caller worktree differs", async () => {
+  test("agents run rejects a receipt under ANDROMEDA_ROOT when the caller worktree differs", async () => {
     const { distributionRoot, workdir, state } = await splitExecutionFixture();
     const receiptDir = path.join(distributionRoot, ".darkfactory");
     const receiptPath = path.join(receiptDir, "distribution receipt.json");
@@ -451,7 +451,7 @@ describe("model execution CLI prompt boundary", () => {
     const container = await rootFixture();
     const root = path.join(container, "caller worktree with spaces");
     const userHome = path.join(container, "user home");
-    const state = sharedStateAt(repositoryRoot, path.join(userHome, ".agents"), userHome);
+    const state = sharedStateAt(repositoryRoot, path.join(userHome, ".andromeda"), userHome);
     const receiptDir = path.join(root, "receipt folder");
     await mkdir(receiptDir, { recursive: true });
     await ensureSharedState(state);

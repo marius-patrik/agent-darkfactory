@@ -33,13 +33,13 @@ jobs:
             Write-Output "::error::Issue draft hygiene runs only from protected marius-patrik/DarkFactory@main."
             exit 1
           }
-          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
-            Write-Output "::error::AGENTS_HOME must name the absolute canonical Agent OS checkout."
+          if ([string]::IsNullOrWhiteSpace($env:ANDROMEDA_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:ANDROMEDA_HOME)) {
+            Write-Output "::error::ANDROMEDA_HOME must name the absolute canonical Agent OS checkout."
             exit 1
           }
-          $agentsHome = Get-Item -LiteralPath $env:AGENTS_HOME -Force -ErrorAction Stop
+          $agentsHome = Get-Item -LiteralPath $env:ANDROMEDA_HOME -Force -ErrorAction Stop
           if (-not $agentsHome.PSIsContainer -or $null -ne $agentsHome.LinkType) {
-            Write-Output "::error::AGENTS_HOME must be one real local checkout directory."
+            Write-Output "::error::ANDROMEDA_HOME must be one real local checkout directory."
             exit 1
           }
           $agentsLauncher = Join-Path -Path $agentsHome.FullName -ChildPath "bin\agents.ps1"

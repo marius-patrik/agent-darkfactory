@@ -1,7 +1,7 @@
 # Harness Capability Policy
 
 User-installed skills, plugins, hooks, and templates live only in their
-canonical paths under `AGENTS_HOME`. The runtime harness may consume a
+canonical paths under `ANDROMEDA_HOME`. The runtime harness may consume a
 capability selected by Agent OS, but it does not vendor, copy, or project that
 capability into provider-specific or harness-specific state.
 

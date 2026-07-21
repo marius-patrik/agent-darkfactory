@@ -515,10 +515,10 @@ async function refreshPullRepository({ repoRoot, hooksRoot, repository, pull, to
 function trustedBaseRules(repoRoot, token, hooksRoot) {
   const paths = [
     "AGENTS.md",
-    ".agents/AGENTS.md",
-    ".agents/.project/AGENTS.md",
-    ".agents/.project/PROJECT.md",
-    ".agents/.project/COMMANDS.md"
+    ".andromeda/AGENTS.md",
+    "capabilities/.project/AGENTS.md",
+    "capabilities/.project/PROJECT.md",
+    "capabilities/.project/COMMANDS.md"
   ];
   const sections = [];
   for (const filePath of paths) {

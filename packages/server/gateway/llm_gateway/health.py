@@ -49,9 +49,9 @@ class HealthChecker:
         return {
             "status": status,
             "version": __version__,
-            "git_sha": os.environ.get("AGENTS_GIT_SHA", ""),
-            "build_time": os.environ.get("AGENTS_BUILD_TIME", ""),
-            "node_id": os.environ.get("AGENTS_NODE_ID", ""),
+            "git_sha": os.environ.get("ANDROMEDA_GIT_SHA", ""),
+            "build_time": os.environ.get("ANDROMEDA_BUILD_TIME", ""),
+            "node_id": os.environ.get("ANDROMEDA_NODE_ID", ""),
             "uptime_seconds": round(uptime, 2),
             "models_registered": len(all_models),
             "models_healthy": healthy,

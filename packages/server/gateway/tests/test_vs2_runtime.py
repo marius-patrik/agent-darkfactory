@@ -28,7 +28,7 @@ from llm_gateway.trace import TraceLogger
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
-    monkeypatch.setenv("AGENTS_HOME", str(tmp_path / ".agents"))
+    monkeypatch.setenv("ANDROMEDA_HOME", str(tmp_path / ".andromeda"))
     monkeypatch.setenv("GATEWAY_MTLS_MODE", "off")
     with TestClient(app) as value:
         yield value
@@ -182,7 +182,7 @@ def test_invalid_switch_returns_error_without_dropping_websocket(client):
 
 
 def test_websocket_mtls_rejects_spoofed_identity_header(monkeypatch, tmp_path):
-    monkeypatch.setenv("AGENTS_HOME", str(tmp_path / ".agents"))
+    monkeypatch.setenv("ANDROMEDA_HOME", str(tmp_path / ".andromeda"))
     monkeypatch.setenv("GATEWAY_MTLS_MODE", "require")
     monkeypatch.setenv("GATEWAY_MTLS_EDGE_TOKEN", "trusted-edge-secret")
     with TestClient(app) as client:
@@ -333,7 +333,7 @@ def test_durable_budget_exhaustion_degrades_cloud_to_local(monkeypatch, tmp_path
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTS_CREDITS", str(budget_path))
+    monkeypatch.setenv("ANDROMEDA_CREDITS", str(budget_path))
     tracer = TraceLogger(trace_dir=tmp_path / "traces")
     router = Router(registry, tracer, quota=QuotaTracker())
     try:

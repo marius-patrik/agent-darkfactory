@@ -242,7 +242,7 @@ async function syncSafetyCheck(state: SharedState): Promise<StateDoctorCheck> {
   const paths = stateV2Paths(state);
   const configPath = path.join(paths.syncDir, "config.json");
   const importsPath = path.join(paths.syncDir, "imports");
-  const syncKeyPath = path.join(state.secretsDir, "AGENTS_SYNC_KEY.secret");
+  const syncKeyPath = path.join(state.secretsDir, "ANDROMEDA_SYNC_KEY.secret");
   const retiredConfigPath = path.join(state.stateDir, "state-sync.json");
   const retiredRepoPath = path.join(state.stateDir, "state-repo");
   const [configKind, retiredConfigKind, retiredRepoKind] = await Promise.all([
@@ -371,8 +371,8 @@ async function stateRepositoryCheck(state: SharedState): Promise<StateDoctorChec
     ok: inspection.issues.length === 0,
     message:
       inspection.issues.length === 0
-        ? `AGENTS_HOME is the clean ${inspection.repository} ${inspection.branch} checkout with ${inspection.backupBundles} encrypted backup bundle(s)`
-        : "AGENTS_HOME is not the canonical clean Andromeda-data checkout",
+        ? `ANDROMEDA_HOME is the clean ${inspection.repository} ${inspection.branch} checkout with ${inspection.backupBundles} encrypted backup bundle(s)`
+        : "ANDROMEDA_HOME is not the canonical clean Andromeda-data checkout",
     details: { ...inspection },
   };
 }
@@ -555,11 +555,11 @@ async function launcherCheck(state: SharedState): Promise<StateDoctorCheck> {
     const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
     const powerShellQuote = (value: string): string => `'${value.replaceAll("'", "''")}'`;
     for (const [name, value] of [
-      ["AGENTS_HOME", state.stateDir],
-      ["AGENTS_USER_HOME", state.userHome],
-      ["AGENTS_ROOT", state.root],
-      ["AGENTS_WORKSPACE", state.workspaceDir],
-      ["AGENTS_SYSTEM_DATA_ROOT", systemDataPath(state)],
+      ["ANDROMEDA_HOME", state.stateDir],
+      ["ANDROMEDA_USER_HOME", state.userHome],
+      ["ANDROMEDA_ROOT", state.root],
+      ["ANDROMEDA_WORKSPACE", state.workspaceDir],
+      ["ANDROMEDA_SYSTEM_DATA_ROOT", systemDataPath(state)],
     ] as const) {
       const binding = windows ? `$env:${name} = ${powerShellQuote(value)}` : `export ${name}=${shellQuote(value)}`;
       if (!content.includes(binding)) {
@@ -568,12 +568,12 @@ async function launcherCheck(state: SharedState): Promise<StateDoctorCheck> {
     }
     const cliPath = path.join(state.root, "packages", "cli", "src", "cli.ts");
     const entrypointBinding = windows
-      ? `$env:AGENTS_ENTRYPOINT = ${powerShellQuote(cliPath)}`
-      : `export AGENTS_ENTRYPOINT=${shellQuote(cliPath)}`;
+      ? `$env:ANDROMEDA_ENTRYPOINT = ${powerShellQuote(cliPath)}`
+      : `export ANDROMEDA_ENTRYPOINT=${shellQuote(cliPath)}`;
     if (!content.includes(entrypointBinding)) {
       issues.push(`agents launcher is missing canonical binding: ${cliPath}`);
     }
-    if (content.includes("export AGENTS_DATA=")) issues.push("agents launcher exports the removed AGENTS_DATA parent path");
+    if (content.includes("export ANDROMEDA_DATA=")) issues.push("agents launcher exports the removed ANDROMEDA_DATA parent path");
   } catch (error) {
     issues.push((error as Error).message);
   }
@@ -624,16 +624,16 @@ export async function doctorState(state: SharedState): Promise<StateDoctorReport
   if (requiredKinds[1] === "file") {
     const generatedEnv = await readFile(state.envFile, "utf8");
     const expected = [
-      `AGENTS_HOME=${state.stateDir}`,
-      `AGENTS_USER_HOME=${state.userHome}`,
-      `AGENTS_ROOT=${state.root}`,
-      `AGENTS_WORKSPACE=${state.workspaceDir}`,
-      `AGENTS_IDENTITY=${path.join(state.stateDir, "identity")}`,
-      `AGENTS_MEMORY=${path.join(state.stateDir, "memory")}`,
-      `AGENTS_SYSTEM_DATA_ROOT=${systemDataPath(state)}`,
+      `ANDROMEDA_HOME=${state.stateDir}`,
+      `ANDROMEDA_USER_HOME=${state.userHome}`,
+      `ANDROMEDA_ROOT=${state.root}`,
+      `ANDROMEDA_WORKSPACE=${state.workspaceDir}`,
+      `ANDROMEDA_IDENTITY=${path.join(state.stateDir, "identity")}`,
+      `ANDROMEDA_MEMORY=${path.join(state.stateDir, "memory")}`,
+      `ANDROMEDA_SYSTEM_DATA_ROOT=${systemDataPath(state)}`,
     ];
     generatedEnvIssues = expected.filter((line) => !generatedEnv.split("\n").includes(line));
-    if (/^AGENTS_DATA=/m.test(generatedEnv)) generatedEnvIssues.push("duplicate AGENTS_DATA parent path is present");
+    if (/^ANDROMEDA_DATA=/m.test(generatedEnv)) generatedEnvIssues.push("duplicate ANDROMEDA_DATA parent path is present");
     if (/^(?:ROMMIE_|AGENTOS_)/m.test(generatedEnv)) generatedEnvIssues.push("retired variable present");
   }
 

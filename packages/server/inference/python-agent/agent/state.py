@@ -11,12 +11,12 @@ class AgentStateError(RuntimeError):
 
 
 def require_agents_home() -> Path:
-    raw = os.environ.get("AGENTS_HOME", "").strip()
+    raw = os.environ.get("ANDROMEDA_HOME", "").strip()
     if not raw:
-        raise AgentStateError("AGENTS_HOME is required")
+        raise AgentStateError("ANDROMEDA_HOME is required")
     root = Path(raw)
     if not root.is_absolute():
-        raise AgentStateError("AGENTS_HOME must be an absolute path")
+        raise AgentStateError("ANDROMEDA_HOME must be an absolute path")
     return root
 
 
@@ -34,12 +34,12 @@ def redaction_secrets_dir() -> Path:
 
 
 def ensure_private_dir(path: Path) -> Path:
-    """Create a runtime directory and enforce private modes below AGENTS_HOME."""
+    """Create a runtime directory and enforce private modes below ANDROMEDA_HOME."""
     root = require_agents_home()
     try:
         relative = path.relative_to(root)
     except ValueError as exc:
-        raise AgentStateError(f"state path must be below AGENTS_HOME: {path}") from exc
+        raise AgentStateError(f"state path must be below ANDROMEDA_HOME: {path}") from exc
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(root, 0o700)

@@ -25,7 +25,7 @@ require_absolute() {
 }
 
 real_user_home() {
-  local candidate="${AGENTS_USER_HOME:-}"
+  local candidate="${ANDROMEDA_USER_HOME:-}"
   if [ -z "$candidate" ] && command -v getent >/dev/null 2>&1; then
     candidate="$(getent passwd "$(id -u)" 2>/dev/null | awk -F: 'NR == 1 { print $6 }')"
   fi
@@ -35,9 +35,9 @@ real_user_home() {
   if [ -z "$candidate" ]; then
     candidate="${HOME:-}"
   fi
-  [ -n "$candidate" ] || die "could not resolve the real OS user home; set AGENTS_USER_HOME"
-  require_absolute "AGENTS_USER_HOME" "$candidate"
-  [ -d "$candidate" ] || die "AGENTS_USER_HOME is not a directory: $candidate"
+  [ -n "$candidate" ] || die "could not resolve the real OS user home; set ANDROMEDA_USER_HOME"
+  require_absolute "ANDROMEDA_USER_HOME" "$candidate"
+  [ -d "$candidate" ] || die "ANDROMEDA_USER_HOME is not a directory: $candidate"
   (cd "$candidate" && pwd -P)
 }
 
@@ -47,83 +47,83 @@ check_dependencies() {
 }
 
 prepare_paths() {
-  AGENTS_USER_HOME="$(real_user_home)"
-  AGENTS_HOME="${AGENTS_HOME:-$AGENTS_USER_HOME/.agents}"
-  AGENTS_ROOT="${AGENTS_ROOT:-$AGENTS_USER_HOME/marius-patrik/Andromeda}"
+  ANDROMEDA_USER_HOME="$(real_user_home)"
+  ANDROMEDA_HOME="${ANDROMEDA_HOME:-$ANDROMEDA_USER_HOME/.andromeda}"
+  ANDROMEDA_ROOT="${ANDROMEDA_ROOT:-$ANDROMEDA_USER_HOME/marius-patrik/Andromeda}"
 
-  require_absolute "AGENTS_HOME" "$AGENTS_HOME"
-  require_absolute "AGENTS_ROOT" "$AGENTS_ROOT"
-  [ ! -L "$AGENTS_HOME" ] || die "AGENTS_HOME must be a physical directory, not a symlink: $AGENTS_HOME"
-  [ ! -L "$AGENTS_ROOT" ] || die "AGENTS_ROOT must be a physical checkout, not a symlink: $AGENTS_ROOT"
+  require_absolute "ANDROMEDA_HOME" "$ANDROMEDA_HOME"
+  require_absolute "ANDROMEDA_ROOT" "$ANDROMEDA_ROOT"
+  [ ! -L "$ANDROMEDA_HOME" ] || die "ANDROMEDA_HOME must be a physical directory, not a symlink: $ANDROMEDA_HOME"
+  [ ! -L "$ANDROMEDA_ROOT" ] || die "ANDROMEDA_ROOT must be a physical checkout, not a symlink: $ANDROMEDA_ROOT"
 
-  mkdir -p "$AGENTS_HOME"
-  chmod 700 "$AGENTS_HOME"
-  AGENTS_HOME="$(cd "$AGENTS_HOME" && pwd -P)"
+  mkdir -p "$ANDROMEDA_HOME"
+  chmod 700 "$ANDROMEDA_HOME"
+  ANDROMEDA_HOME="$(cd "$ANDROMEDA_HOME" && pwd -P)"
 
-  mkdir -p "$(dirname "$AGENTS_ROOT")"
-  AGENTS_ROOT="$(cd "$(dirname "$AGENTS_ROOT")" && pwd -P)/$(basename "$AGENTS_ROOT")"
+  mkdir -p "$(dirname "$ANDROMEDA_ROOT")"
+  ANDROMEDA_ROOT="$(cd "$(dirname "$ANDROMEDA_ROOT")" && pwd -P)/$(basename "$ANDROMEDA_ROOT")"
 
-  export AGENTS_HOME AGENTS_USER_HOME AGENTS_ROOT
+  export ANDROMEDA_HOME ANDROMEDA_USER_HOME ANDROMEDA_ROOT
 }
 
 install_or_update_checkout() {
-  if git -C "$AGENTS_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if git -C "$ANDROMEDA_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     local current_source current_branch worktree_root
-    worktree_root="$(git -C "$AGENTS_ROOT" rev-parse --show-toplevel)"
-    [ "$(source_identity "$worktree_root")" = "$(source_identity "$AGENTS_ROOT")" ] ||
-      die "AGENTS_ROOT is inside another Git worktree instead of being its root: $AGENTS_ROOT (top-level $worktree_root)"
-    current_source="$(git -C "$AGENTS_ROOT" remote get-url origin 2>/dev/null || true)"
+    worktree_root="$(git -C "$ANDROMEDA_ROOT" rev-parse --show-toplevel)"
+    [ "$(source_identity "$worktree_root")" = "$(source_identity "$ANDROMEDA_ROOT")" ] ||
+      die "ANDROMEDA_ROOT is inside another Git worktree instead of being its root: $ANDROMEDA_ROOT (top-level $worktree_root)"
+    current_source="$(git -C "$ANDROMEDA_ROOT" remote get-url origin 2>/dev/null || true)"
     [ "$(source_identity "$current_source")" = "$(source_identity "$SOURCE_URL")" ] ||
       die "canonical checkout origin is $current_source, expected $SOURCE_URL"
-    current_branch="$(git -C "$AGENTS_ROOT" branch --show-current)"
+    current_branch="$(git -C "$ANDROMEDA_ROOT" branch --show-current)"
     [ "$current_branch" = "$SOURCE_BRANCH" ] ||
       die "canonical checkout is on $current_branch, expected $SOURCE_BRANCH"
-    [ -z "$(git -C "$AGENTS_ROOT" status --porcelain)" ] ||
-      die "canonical checkout has uncommitted changes: $AGENTS_ROOT"
-    echo "Updating Agent OS in $AGENTS_ROOT ..."
-    git -C "$AGENTS_ROOT" pull --ff-only origin "$SOURCE_BRANCH"
-  elif [ -e "$AGENTS_ROOT" ]; then
-    die "AGENTS_ROOT exists but is not the canonical Git checkout: $AGENTS_ROOT"
+    [ -z "$(git -C "$ANDROMEDA_ROOT" status --porcelain)" ] ||
+      die "canonical checkout has uncommitted changes: $ANDROMEDA_ROOT"
+    echo "Updating Agent OS in $ANDROMEDA_ROOT ..."
+    git -C "$ANDROMEDA_ROOT" pull --ff-only origin "$SOURCE_BRANCH"
+  elif [ -e "$ANDROMEDA_ROOT" ]; then
+    die "ANDROMEDA_ROOT exists but is not the canonical Git checkout: $ANDROMEDA_ROOT"
   else
-    echo "Installing Agent OS into $AGENTS_ROOT ..."
-    git clone --branch "$SOURCE_BRANCH" --single-branch "$SOURCE_URL" "$AGENTS_ROOT"
+    echo "Installing Agent OS into $ANDROMEDA_ROOT ..."
+    git clone --branch "$SOURCE_BRANCH" --single-branch "$SOURCE_URL" "$ANDROMEDA_ROOT"
   fi
 
   echo "Initializing pinned Agent OS components ..."
-  git -C "$AGENTS_ROOT" submodule sync --recursive
-  git -C "$AGENTS_ROOT" submodule update --init --recursive
-  if git -C "$AGENTS_ROOT" submodule status --recursive | grep -Eq '^[+-U]'; then
-    git -C "$AGENTS_ROOT" submodule status --recursive >&2
+  git -C "$ANDROMEDA_ROOT" submodule sync --recursive
+  git -C "$ANDROMEDA_ROOT" submodule update --init --recursive
+  if git -C "$ANDROMEDA_ROOT" submodule status --recursive | grep -Eq '^[+-U]'; then
+    git -C "$ANDROMEDA_ROOT" submodule status --recursive >&2
     die "one or more Agent OS components do not match their pinned gitlinks"
   fi
 
   echo "Installing dependencies ..."
   (
-    cd "$AGENTS_ROOT"
+    cd "$ANDROMEDA_ROOT"
     bun install --frozen-lockfile
   )
 }
 
 install_or_update_state_checkout() {
-  if git -C "$AGENTS_HOME" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if git -C "$ANDROMEDA_HOME" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     local current_source current_branch worktree_root
-    worktree_root="$(git -C "$AGENTS_HOME" rev-parse --show-toplevel)"
-    [ "$(source_identity "$worktree_root")" = "$(source_identity "$AGENTS_HOME")" ] ||
-      die "AGENTS_HOME is inside another Git worktree instead of being its root: $AGENTS_HOME (top-level $worktree_root)"
-    current_source="$(git -C "$AGENTS_HOME" remote get-url origin 2>/dev/null || true)"
+    worktree_root="$(git -C "$ANDROMEDA_HOME" rev-parse --show-toplevel)"
+    [ "$(source_identity "$worktree_root")" = "$(source_identity "$ANDROMEDA_HOME")" ] ||
+      die "ANDROMEDA_HOME is inside another Git worktree instead of being its root: $ANDROMEDA_HOME (top-level $worktree_root)"
+    current_source="$(git -C "$ANDROMEDA_HOME" remote get-url origin 2>/dev/null || true)"
     [ "$(source_identity "$current_source")" = "$(source_identity "$DATA_REPO_URL")" ] ||
-      die "AGENTS_HOME origin is $current_source, expected $DATA_REPO_URL"
-    current_branch="$(git -C "$AGENTS_HOME" branch --show-current)"
+      die "ANDROMEDA_HOME origin is $current_source, expected $DATA_REPO_URL"
+    current_branch="$(git -C "$ANDROMEDA_HOME" branch --show-current)"
     [ "$current_branch" = "$DATA_BRANCH" ] ||
-      die "AGENTS_HOME is on $current_branch, expected $DATA_BRANCH"
-    [ -z "$(git -C "$AGENTS_HOME" status --porcelain --untracked-files=no)" ] ||
-      die "AGENTS_HOME has tracked changes: $AGENTS_HOME"
-    echo "Updating Andromeda-data state checkout in $AGENTS_HOME ..."
-    git -C "$AGENTS_HOME" pull --rebase "$DATA_SOURCE_URL" "$DATA_BRANCH"
-  elif [ -z "$(find "$AGENTS_HOME" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-    echo "Installing Andromeda-data state checkout into $AGENTS_HOME ..."
-    git clone --branch "$DATA_BRANCH" --single-branch "$DATA_SOURCE_URL" "$AGENTS_HOME"
-    git -C "$AGENTS_HOME" remote set-url origin "$DATA_REPO_URL"
+      die "ANDROMEDA_HOME is on $current_branch, expected $DATA_BRANCH"
+    [ -z "$(git -C "$ANDROMEDA_HOME" status --porcelain --untracked-files=no)" ] ||
+      die "ANDROMEDA_HOME has tracked changes: $ANDROMEDA_HOME"
+    echo "Updating Andromeda-data state checkout in $ANDROMEDA_HOME ..."
+    git -C "$ANDROMEDA_HOME" pull --rebase "$DATA_SOURCE_URL" "$DATA_BRANCH"
+  elif [ -z "$(find "$ANDROMEDA_HOME" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    echo "Installing Andromeda-data state checkout into $ANDROMEDA_HOME ..."
+    git clone --branch "$DATA_BRANCH" --single-branch "$DATA_SOURCE_URL" "$ANDROMEDA_HOME"
+    git -C "$ANDROMEDA_HOME" remote set-url origin "$DATA_REPO_URL"
   else
     migrate_legacy_state_checkout
   fi
@@ -131,17 +131,17 @@ install_or_update_state_checkout() {
 
 migrate_legacy_state_checkout() {
   local parent stage backup stamp
-  parent="$(dirname "$AGENTS_HOME")"
-  stage="${AGENTS_HOME}.andromeda-data-stage-$$"
+  parent="$(dirname "$ANDROMEDA_HOME")"
+  stage="${ANDROMEDA_HOME}.andromeda-data-stage-$$"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  backup="${AGENTS_HOME}.pre-andromeda-data-${stamp}"
+  backup="${ANDROMEDA_HOME}.pre-andromeda-data-${stamp}"
   [ ! -e "$stage" ] || die "state migration staging path already exists: $stage"
   [ ! -e "$backup" ] || die "state migration rollback path already exists: $backup"
-  [ ! -e "$AGENTS_HOME/.git" ] || die "legacy AGENTS_HOME contains a broken Git marker: $AGENTS_HOME/.git"
+  [ ! -e "$ANDROMEDA_HOME/.git" ] || die "legacy ANDROMEDA_HOME contains a broken Git marker: $ANDROMEDA_HOME/.git"
   [ "$(dirname "$stage")" = "$parent" ] || die "state migration staging path escaped the user home"
   [ "$(dirname "$backup")" = "$parent" ] || die "state migration rollback path escaped the user home"
-  if find "$AGENTS_HOME" -type l -print -quit | grep -q .; then
-    die "legacy AGENTS_HOME contains a symbolic link; refusing state migration"
+  if find "$ANDROMEDA_HOME" -type l -print -quit | grep -q .; then
+    die "legacy ANDROMEDA_HOME contains a symbolic link; refusing state migration"
   fi
 
   echo "Migrating existing Agent OS state into an Andromeda-data checkout ..."
@@ -150,7 +150,7 @@ migrate_legacy_state_checkout() {
     die "could not stage the Andromeda-data checkout"
   fi
   git -C "$stage" remote set-url origin "$DATA_REPO_URL"
-  if ! cp -a "$AGENTS_HOME/." "$stage/"; then
+  if ! cp -a "$ANDROMEDA_HOME/." "$stage/"; then
     rm -rf -- "$stage"
     die "could not overlay legacy Agent OS state into the staged checkout"
   fi
@@ -160,12 +160,12 @@ migrate_legacy_state_checkout() {
     die "legacy Agent OS state conflicts with tracked Andromeda-data content"
   }
 
-  mv -- "$AGENTS_HOME" "$backup"
-  if ! mv -- "$stage" "$AGENTS_HOME"; then
-    mv -- "$backup" "$AGENTS_HOME" || true
+  mv -- "$ANDROMEDA_HOME" "$backup"
+  if ! mv -- "$stage" "$ANDROMEDA_HOME"; then
+    mv -- "$backup" "$ANDROMEDA_HOME" || true
     die "could not activate the staged state checkout; rollback was attempted"
   fi
-  chmod 700 "$AGENTS_HOME"
+  chmod 700 "$ANDROMEDA_HOME"
   echo "Legacy state preserved at $backup"
 }
 
@@ -185,9 +185,9 @@ is_windows() {
 
 launcher_path() {
   if is_windows; then
-    printf '%s/bin/agents.ps1\n' "$AGENTS_HOME"
+    printf '%s/bin/agents.ps1\n' "$ANDROMEDA_HOME"
   else
-    printf '%s/bin/agents\n' "$AGENTS_HOME"
+    printf '%s/bin/agents\n' "$ANDROMEDA_HOME"
   fi
 }
 
@@ -225,7 +225,7 @@ source_identity() {
 }
 
 install_launcher() {
-  local bin_dir="$AGENTS_HOME/bin"
+  local bin_dir="$ANDROMEDA_HOME/bin"
   local launcher
   local temporary bun_bin entry
 
@@ -234,7 +234,7 @@ install_launcher() {
   mkdir -p "$bin_dir"
   chmod 700 "$bin_dir"
 
-  # AGENTS_HOME/bin is owned by Agent OS. The final product exposes one command
+  # ANDROMEDA_HOME/bin is owned by Agent OS. The final product exposes one command
   # here; provider executables remain opaque under clis/<provider>/bin.
   shopt -s nullglob dotglob
   for entry in "$bin_dir"/*; do
@@ -249,69 +249,69 @@ install_launcher() {
   if is_windows; then
     command -v bun.exe >/dev/null 2>&1 || die "a native bun.exe is required for the Windows launcher"
     bun_bin="$(command -v bun.exe)"
-    temporary="$(mktemp "$bin_dir/.agents-launcher.XXXXXX.ps1")"
+    temporary="$(mktemp "$bin_dir/.andromeda-launcher.XXXXXX.ps1")"
     {
       printf '$ErrorActionPreference = '\''Stop'\''\n'
       printf 'Get-ChildItem Env: | Where-Object { $_.Name -like '\''ROMMIE_*'\'' -or $_.Name -like '\''AGENTOS_*'\'' } | ForEach-Object { Remove-Item "Env:$($_.Name)" }\n'
-      write_ps_env HOME "$(native_path "$AGENTS_USER_HOME")"
-      write_ps_env AGENTS_HOME "$(native_path "$AGENTS_HOME")"
-      write_ps_env AGENTS_USER_HOME "$(native_path "$AGENTS_USER_HOME")"
-      write_ps_env AGENTS_ROOT "$(native_path "$AGENTS_ROOT")"
-      write_ps_env AGENTS_WORKSPACE "$(native_path "$AGENTS_HOME/runtime/workspaces")"
-      write_ps_env AGENTS_CLIS "$(native_path "$AGENTS_HOME/clis")"
-      write_ps_env AGENTS_HARNESSES "$(native_path "$AGENTS_HOME/harnesses")"
-      write_ps_env AGENTS_SKILLS "$(native_path "$AGENTS_HOME/skills")"
-      write_ps_env AGENTS_PLUGINS "$(native_path "$AGENTS_HOME/plugins")"
-      write_ps_env AGENTS_HOOKS "$(native_path "$AGENTS_HOME/hooks")"
-      write_ps_env AGENTS_TEMPLATES "$(native_path "$AGENTS_HOME/templates")"
-      write_ps_env AGENTS_SECRETS "$(native_path "$AGENTS_HOME/secrets")"
-      write_ps_env AGENTS_SESSIONS "$(native_path "$AGENTS_HOME/sessions")"
-      write_ps_env AGENTS_IDENTITY "$(native_path "$AGENTS_HOME/identity")"
-      write_ps_env AGENTS_MEMORY "$(native_path "$AGENTS_HOME/memory")"
-      write_ps_env AGENTS_ORCHESTRATOR "$(native_path "$AGENTS_HOME/orchestrator")"
-      write_ps_env AGENTS_CREDITS "$(native_path "$AGENTS_HOME/credits.json")"
-      write_ps_env AGENTS_DATA_REPOS "$(native_path "$AGENTS_HOME/data-repos.json")"
-      write_ps_env AGENTS_ENVIRONMENTS "$(native_path "$AGENTS_HOME/environments.json")"
-      write_ps_env AGENTS_CONFIG "$(native_path "$AGENTS_HOME/config.json")"
-      write_ps_env AGENTS_SYSTEM_DATA_ROOT "$(native_path "$AGENTS_HOME")"
-      write_ps_env AGENTS_BUN "$(native_path "$bun_bin")"
-      write_ps_env AGENTS_ENTRYPOINT "$(native_path "$AGENTS_ROOT/packages/cli/src/cli.ts")"
-      printf '& $env:AGENTS_BUN $env:AGENTS_ENTRYPOINT @args\n'
+      write_ps_env HOME "$(native_path "$ANDROMEDA_USER_HOME")"
+      write_ps_env ANDROMEDA_HOME "$(native_path "$ANDROMEDA_HOME")"
+      write_ps_env ANDROMEDA_USER_HOME "$(native_path "$ANDROMEDA_USER_HOME")"
+      write_ps_env ANDROMEDA_ROOT "$(native_path "$ANDROMEDA_ROOT")"
+      write_ps_env ANDROMEDA_WORKSPACE "$(native_path "$ANDROMEDA_HOME/runtime/workspaces")"
+      write_ps_env ANDROMEDA_CLIS "$(native_path "$ANDROMEDA_HOME/clis")"
+      write_ps_env ANDROMEDA_HARNESSES "$(native_path "$ANDROMEDA_HOME/harnesses")"
+      write_ps_env ANDROMEDA_SKILLS "$(native_path "$ANDROMEDA_HOME/skills")"
+      write_ps_env ANDROMEDA_PLUGINS "$(native_path "$ANDROMEDA_HOME/plugins")"
+      write_ps_env ANDROMEDA_HOOKS "$(native_path "$ANDROMEDA_HOME/hooks")"
+      write_ps_env ANDROMEDA_TEMPLATES "$(native_path "$ANDROMEDA_HOME/templates")"
+      write_ps_env ANDROMEDA_SECRETS "$(native_path "$ANDROMEDA_HOME/secrets")"
+      write_ps_env ANDROMEDA_SESSIONS "$(native_path "$ANDROMEDA_HOME/sessions")"
+      write_ps_env ANDROMEDA_IDENTITY "$(native_path "$ANDROMEDA_HOME/identity")"
+      write_ps_env ANDROMEDA_MEMORY "$(native_path "$ANDROMEDA_HOME/memory")"
+      write_ps_env ANDROMEDA_ORCHESTRATOR "$(native_path "$ANDROMEDA_HOME/orchestrator")"
+      write_ps_env ANDROMEDA_CREDITS "$(native_path "$ANDROMEDA_HOME/credits.json")"
+      write_ps_env ANDROMEDA_DATA_REPOS "$(native_path "$ANDROMEDA_HOME/data-repos.json")"
+      write_ps_env ANDROMEDA_ENVIRONMENTS "$(native_path "$ANDROMEDA_HOME/environments.json")"
+      write_ps_env ANDROMEDA_CONFIG "$(native_path "$ANDROMEDA_HOME/config.json")"
+      write_ps_env ANDROMEDA_SYSTEM_DATA_ROOT "$(native_path "$ANDROMEDA_HOME")"
+      write_ps_env ANDROMEDA_BUN "$(native_path "$bun_bin")"
+      write_ps_env ANDROMEDA_ENTRYPOINT "$(native_path "$ANDROMEDA_ROOT/packages/cli/src/cli.ts")"
+      printf '& $env:ANDROMEDA_BUN $env:ANDROMEDA_ENTRYPOINT @args\n'
       printf 'exit $LASTEXITCODE\n'
     } >"$temporary"
   else
     bun_bin="$(command -v bun)"
-    temporary="$(mktemp "$bin_dir/.agents-launcher.XXXXXX")"
+    temporary="$(mktemp "$bin_dir/.andromeda-launcher.XXXXXX")"
     {
       echo '#!/usr/bin/env bash'
       echo 'set -euo pipefail'
       echo 'for name in $(compgen -e); do'
       echo '  case "$name" in ROMMIE_*|AGENTOS_*) unset "$name" ;; esac'
       echo 'done'
-      write_export HOME "$AGENTS_USER_HOME"
-      write_export AGENTS_HOME "$AGENTS_HOME"
-      write_export AGENTS_USER_HOME "$AGENTS_USER_HOME"
-      write_export AGENTS_ROOT "$AGENTS_ROOT"
-      write_export AGENTS_WORKSPACE "$AGENTS_HOME/runtime/workspaces"
-      write_export AGENTS_CLIS "$AGENTS_HOME/clis"
-      write_export AGENTS_HARNESSES "$AGENTS_HOME/harnesses"
-      write_export AGENTS_SKILLS "$AGENTS_HOME/skills"
-      write_export AGENTS_PLUGINS "$AGENTS_HOME/plugins"
-      write_export AGENTS_HOOKS "$AGENTS_HOME/hooks"
-      write_export AGENTS_TEMPLATES "$AGENTS_HOME/templates"
-      write_export AGENTS_SECRETS "$AGENTS_HOME/secrets"
-      write_export AGENTS_SESSIONS "$AGENTS_HOME/sessions"
-      write_export AGENTS_IDENTITY "$AGENTS_HOME/identity"
-      write_export AGENTS_MEMORY "$AGENTS_HOME/memory"
-      write_export AGENTS_ORCHESTRATOR "$AGENTS_HOME/orchestrator"
-      write_export AGENTS_CREDITS "$AGENTS_HOME/credits.json"
-      write_export AGENTS_DATA_REPOS "$AGENTS_HOME/data-repos.json"
-      write_export AGENTS_ENVIRONMENTS "$AGENTS_HOME/environments.json"
-      write_export AGENTS_CONFIG "$AGENTS_HOME/config.json"
-      write_export AGENTS_SYSTEM_DATA_ROOT "$AGENTS_HOME"
-      write_export AGENTS_BUN "$bun_bin"
-      write_export AGENTS_ENTRYPOINT "$AGENTS_ROOT/packages/cli/src/cli.ts"
-      echo 'exec "$AGENTS_BUN" "$AGENTS_ENTRYPOINT" "$@"'
+      write_export HOME "$ANDROMEDA_USER_HOME"
+      write_export ANDROMEDA_HOME "$ANDROMEDA_HOME"
+      write_export ANDROMEDA_USER_HOME "$ANDROMEDA_USER_HOME"
+      write_export ANDROMEDA_ROOT "$ANDROMEDA_ROOT"
+      write_export ANDROMEDA_WORKSPACE "$ANDROMEDA_HOME/runtime/workspaces"
+      write_export ANDROMEDA_CLIS "$ANDROMEDA_HOME/clis"
+      write_export ANDROMEDA_HARNESSES "$ANDROMEDA_HOME/harnesses"
+      write_export ANDROMEDA_SKILLS "$ANDROMEDA_HOME/skills"
+      write_export ANDROMEDA_PLUGINS "$ANDROMEDA_HOME/plugins"
+      write_export ANDROMEDA_HOOKS "$ANDROMEDA_HOME/hooks"
+      write_export ANDROMEDA_TEMPLATES "$ANDROMEDA_HOME/templates"
+      write_export ANDROMEDA_SECRETS "$ANDROMEDA_HOME/secrets"
+      write_export ANDROMEDA_SESSIONS "$ANDROMEDA_HOME/sessions"
+      write_export ANDROMEDA_IDENTITY "$ANDROMEDA_HOME/identity"
+      write_export ANDROMEDA_MEMORY "$ANDROMEDA_HOME/memory"
+      write_export ANDROMEDA_ORCHESTRATOR "$ANDROMEDA_HOME/orchestrator"
+      write_export ANDROMEDA_CREDITS "$ANDROMEDA_HOME/credits.json"
+      write_export ANDROMEDA_DATA_REPOS "$ANDROMEDA_HOME/data-repos.json"
+      write_export ANDROMEDA_ENVIRONMENTS "$ANDROMEDA_HOME/environments.json"
+      write_export ANDROMEDA_CONFIG "$ANDROMEDA_HOME/config.json"
+      write_export ANDROMEDA_SYSTEM_DATA_ROOT "$ANDROMEDA_HOME"
+      write_export ANDROMEDA_BUN "$bun_bin"
+      write_export ANDROMEDA_ENTRYPOINT "$ANDROMEDA_ROOT/packages/cli/src/cli.ts"
+      echo 'exec "$ANDROMEDA_BUN" "$ANDROMEDA_ENTRYPOINT" "$@"'
     } >"$temporary"
   fi
   chmod 700 "$temporary"
@@ -319,10 +319,10 @@ install_launcher() {
 }
 
 install_default_capabilities() {
-  local skill_root="$AGENTS_ROOT/.agents/.global/skills"
-  local role_root="$AGENTS_ROOT/.agents/.global/roles"
-  local command_root="$AGENTS_ROOT/.agents/.global/commands"
-  local persona="$AGENTS_ROOT/.agents/.global/persona.md"
+  local skill_root="$ANDROMEDA_ROOT/capabilities/.global/skills"
+  local role_root="$ANDROMEDA_ROOT/capabilities/.global/roles"
+  local command_root="$ANDROMEDA_ROOT/capabilities/.global/commands"
+  local persona="$ANDROMEDA_ROOT/capabilities/.global/persona.md"
   local identity_bundle skill_path name
 
   [ -d "$skill_root" ] || die "bundled skill floor is missing: $skill_root"
@@ -335,7 +335,7 @@ install_default_capabilities() {
     run_launcher install skill "$name" "$skill_path" --replace
   done
 
-  identity_bundle="$AGENTS_HOME/runtime/tmp/bundled-identity-source"
+  identity_bundle="$ANDROMEDA_HOME/runtime/tmp/bundled-identity-source"
   rm -rf "$identity_bundle"
   mkdir -p "$identity_bundle/roles" "$identity_bundle/prompts"
   cp "$persona" "$identity_bundle/persona.md"
@@ -351,7 +351,7 @@ install_default_capabilities() {
 pin_installed_providers() {
   local provider candidate
   for provider in codex claude kimi agy; do
-    for candidate in "$AGENTS_HOME/clis/$provider/bin"/*; do
+    for candidate in "$ANDROMEDA_HOME/clis/$provider/bin"/*; do
       [ -x "$candidate" ] || continue
       case "$provider:$(basename "$candidate")" in
         codex:codex|codex:codex.exe|codex:codex.ps1|claude:claude|claude:claude.exe|claude:claude.ps1|kimi:kimi|kimi:kimi.exe|kimi:kimi.ps1|agy:agy|agy:agy.exe|agy:agy.ps1)
@@ -364,7 +364,7 @@ pin_installed_providers() {
 }
 
 main() {
-  [ "$#" -eq 0 ] || die "install.sh does not accept positional install roots; set AGENTS_HOME and AGENTS_ROOT explicitly"
+  [ "$#" -eq 0 ] || die "install.sh does not accept positional install roots; set ANDROMEDA_HOME and ANDROMEDA_ROOT explicitly"
   check_dependencies
   prepare_paths
   install_or_update_checkout
@@ -372,9 +372,9 @@ main() {
   install_launcher
 
   run_launcher state init
-  if [ ! -f "$AGENTS_HOME/secrets/AGENTS_SYNC_KEY.secret" ]; then
-    if [ -n "$(git -C "$AGENTS_HOME" ls-files -- 'backups/events')" ]; then
-      die "Andromeda-data contains encrypted backups; install the existing AGENTS_SYNC_KEY before continuing"
+  if [ ! -f "$ANDROMEDA_HOME/secrets/ANDROMEDA_SYNC_KEY.secret" ]; then
+    if [ -n "$(git -C "$ANDROMEDA_HOME" ls-files -- 'backups/events')" ]; then
+      die "Andromeda-data contains encrypted backups; install the existing ANDROMEDA_SYNC_KEY before continuing"
     fi
     run_launcher sync enable --generate-key
   else
@@ -386,7 +386,7 @@ main() {
   run_launcher state doctor
 
   echo "Agent OS is ready: $(launcher_path)"
-  echo "Add $AGENTS_HOME/bin to PATH to invoke agents by name."
+  echo "Add $ANDROMEDA_HOME/bin to PATH to invoke agents by name."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

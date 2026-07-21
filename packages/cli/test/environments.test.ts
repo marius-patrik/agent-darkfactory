@@ -13,9 +13,9 @@ async function runAgents(cwd: string, args: string[]): Promise<{ code: number; s
     cwd,
     env: {
       ...process.env,
-      AGENTS_HOME: path.join(cwd, ".agents"),
-      AGENTS_USER_HOME: cwd,
-      AGENTS_ROOT: cwd,
+      ANDROMEDA_HOME: path.join(cwd, ".andromeda"),
+      ANDROMEDA_USER_HOME: cwd,
+      ANDROMEDA_ROOT: cwd,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -36,7 +36,7 @@ describe("packages and environments groundwork", () => {
       expect(environments.distroPackages).toEqual([]);
       expect(environments.containerPackages).toEqual([]);
       expect(environments.environments).toEqual([]);
-      expect(await Bun.file(state.envFile).text()).toContain(`AGENTS_ENVIRONMENTS=${state.environmentsFile}`);
+      expect(await Bun.file(state.envFile).text()).toContain(`ANDROMEDA_ENVIRONMENTS=${state.environmentsFile}`);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

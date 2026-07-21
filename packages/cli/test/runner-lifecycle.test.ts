@@ -73,7 +73,7 @@ function makeDoctor(overrides: { ok?: boolean; launcherOk?: boolean; failId?: Do
   ];
   if (overrides.failId) checks.push({ id: overrides.failId, ok: false, message: `${overrides.failId} failed` });
   const everyOk = checks.every((check) => check.ok);
-  return { ok: overrides.ok ?? everyOk, stateRoot: "C:\\fake\\.agents", checks, tools: [] };
+  return { ok: overrides.ok ?? everyOk, stateRoot: "C:\\fake\\.andromeda", checks, tools: [] };
 }
 
 interface HostState {
@@ -129,7 +129,7 @@ function taskInfo(overrides: Partial<ScheduledTaskInfo> & Pick<ScheduledTaskInfo
 function runnerProcess(pid: number, overrides: Partial<RunnerProcess> = {}): RunnerProcess {
   return {
     pid,
-    executablePath: "C:\\fake\\.agents\\runner\\bin\\Runner.Listener.exe",
+    executablePath: "C:\\fake\\.andromeda\\runner\\bin\\Runner.Listener.exe",
     startedAt: new Date(Date.UTC(2026, 6, 14, 10, 0, 0, pid)).toISOString(),
     ...overrides,
   };
@@ -1241,7 +1241,12 @@ describe("runner lifecycle start postconditions", () => {
         scheduler,
         startObservationTimeoutMs: 20,
         startObservationIntervalMs: 2,
-        readinessObservationTimeoutMs: 500,
+        // Deliberately far above the start-observation window. The assertion
+        // below proves the operation gives up on the start postcondition and
+        // never falls through to the readiness path; separating the two by
+        // orders of magnitude is what makes that provable on a loaded runner
+        // instead of a coin flip against scheduling noise.
+        readinessObservationTimeoutMs: 10_000,
         readinessObservationIntervalMs: 20,
       };
 
@@ -1259,7 +1264,11 @@ describe("runner lifecycle start postconditions", () => {
       expect(result.issues, action).toEqual([
         "runner host start postcondition timed out before its process became observable",
       ]);
-      expect(elapsedMs, action).toBeLessThan(300);
+      // Well under readinessObservationTimeoutMs, so falling through to the
+      // readiness path fails this outright, while ordinary CI scheduling noise
+      // does not. The previous bound was 300ms against a 500ms readiness
+      // timeout, which left no daylight between the two and flaked repeatedly.
+      expect(elapsedMs, action).toBeLessThan(3_000);
       expect(kit.schedulerCalls, action).toEqual([`start:${RUNNER_SCHEDULED_TASK}`]);
       expect(kit.hostState.instances, action).toEqual([]);
     }
@@ -1820,7 +1829,7 @@ describe("Windows runner provisioning boundary", () => {
         return { code: 0, stdout: "", stderr: "" };
       },
     });
-    const env = { AGENTS_HOME: "C:\\canonical\\.agents" };
+    const env = { ANDROMEDA_HOME: "C:\\canonical\\.andromeda" };
 
     const handle = await host.run(installDir, env);
     await Promise.all([handle.terminate(), handle.terminate()]);
@@ -1927,7 +1936,7 @@ describe("Windows runner provisioning boundary", () => {
     await host.provision(installDir);
 
     expect(await host.isProvisioned(installDir)).toBe(true);
-    expect(await readFile(path.join(installDir, ".agents-runner-version"), "utf8")).toBe(
+    expect(await readFile(path.join(installDir, ".andromeda-runner-version"), "utf8")).toBe(
       `${TINY_RUNNER_SOFTWARE.version}\n`,
     );
     expect(await pathExists(path.join(installDir, TINY_RUNNER_SOFTWARE.asset))).toBe(false);
@@ -2009,23 +2018,23 @@ describe("Windows runner provisioning boundary", () => {
       ` \t${TINY_RUNNER_SOFTWARE.version}\r\n `,
     ];
     for (const marker of validMarkers) {
-      await writeFile(path.join(installDir, ".agents-runner-version"), marker);
+      await writeFile(path.join(installDir, ".andromeda-runner-version"), marker);
       expect(await host.isProvisioned(installDir)).toBe(true);
     }
 
-    await writeFile(path.join(installDir, ".agents-runner-version"), "wrong-version\n");
+    await writeFile(path.join(installDir, ".andromeda-runner-version"), "wrong-version\n");
     expect(await host.isProvisioned(installDir)).toBe(false);
-    await rm(path.join(installDir, ".agents-runner-version"));
+    await rm(path.join(installDir, ".andromeda-runner-version"));
     expect(await host.isProvisioned(installDir)).toBe(false);
 
-    await writeFile(path.join(installDir, ".agents-runner-version"), `${TINY_RUNNER_SOFTWARE.version}\n`);
+    await writeFile(path.join(installDir, ".andromeda-runner-version"), `${TINY_RUNNER_SOFTWARE.version}\n`);
     await rm(path.join(installDir, "bin", "Runner.Worker.exe"));
     expect(await host.isProvisioned(installDir)).toBe(false);
     await mkdir(path.join(installDir, "bin", "Runner.Worker.exe"));
     expect(await host.isProvisioned(installDir)).toBe(false);
     await rm(path.join(installDir, "bin", "Runner.Worker.exe"), { recursive: true });
     await writeFile(path.join(installDir, "bin", "Runner.Worker.exe"), "worker\n");
-    await rm(path.join(installDir, ".agents-runner-version"));
+    await rm(path.join(installDir, ".andromeda-runner-version"));
     expect(await host.isProvisioned(installDir)).toBe(false);
   });
 
@@ -2033,7 +2042,7 @@ describe("Windows runner provisioning boundary", () => {
     const { root } = await freshState();
     const installDir = path.join(root, "runner-software-observation");
     await writeExtractedRunner(installDir);
-    await writeFile(path.join(installDir, ".agents-runner-version"), `${TINY_RUNNER_SOFTWARE.version}\n`);
+    await writeFile(path.join(installDir, ".andromeda-runner-version"), `${TINY_RUNNER_SOFTWARE.version}\n`);
     const host = createWindowsRunnerHost({ software: TINY_RUNNER_SOFTWARE });
     expect(await host.isProvisioned(path.join(root, "positively-missing"))).toBe(false);
     expect(await host.isProvisioned(installDir)).toBe(true);
@@ -2102,10 +2111,10 @@ describe("Windows runner provisioning boundary", () => {
     await writeExtractedRunner(installDir);
     const host = createWindowsRunnerHost({ software: TINY_RUNNER_SOFTWARE });
     expect(await host.runnerVersion(installDir)).toBeNull();
-    await writeFile(path.join(installDir, ".agents-runner-version"), "  \r\n");
+    await writeFile(path.join(installDir, ".andromeda-runner-version"), "  \r\n");
     expect(await host.runnerVersion(installDir)).toBeNull();
     expect(await host.isProvisioned(installDir)).toBe(false);
-    await writeFile(path.join(installDir, ".agents-runner-version"), "older-version\n");
+    await writeFile(path.join(installDir, ".andromeda-runner-version"), "older-version\n");
     expect(await host.runnerVersion(installDir)).toBe("older-version");
     expect(await host.isProvisioned(installDir)).toBe(false);
 
@@ -2113,7 +2122,7 @@ describe("Windows runner provisioning boundary", () => {
     const deniedHost = createWindowsRunnerHost({
       software: TINY_RUNNER_SOFTWARE,
       readFile: async (filePath, encoding) => {
-        if (filePath.endsWith(".agents-runner-version")) throw errno("EACCES", sentinel);
+        if (filePath.endsWith(".andromeda-runner-version")) throw errno("EACCES", sentinel);
         return readFile(filePath, encoding);
       },
     });
@@ -4688,10 +4697,10 @@ describe("agents runner CLI", () => {
   const envBackup: Record<string, string | undefined> = {};
 
   function setAgentsEnv(root: string): void {
-    for (const key of ["AGENTS_HOME", "AGENTS_ROOT", "AGENTS_USER_HOME"]) envBackup[key] = process.env[key];
-    process.env.AGENTS_HOME = path.join(root, ".agents");
-    process.env.AGENTS_ROOT = root;
-    process.env.AGENTS_USER_HOME = root;
+    for (const key of ["ANDROMEDA_HOME", "ANDROMEDA_ROOT", "ANDROMEDA_USER_HOME"]) envBackup[key] = process.env[key];
+    process.env.ANDROMEDA_HOME = path.join(root, ".andromeda");
+    process.env.ANDROMEDA_ROOT = root;
+    process.env.ANDROMEDA_USER_HOME = root;
   }
 
   function restoreEnv(): void {
@@ -4742,7 +4751,7 @@ describe("agents runner CLI", () => {
   test("runner status never bootstraps an absent shared-state tree", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-runner-readonly-"));
     roots.push(root);
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const kit = makeKit({ platform: "darwin" });
     setRunnerDeps(kit.deps);
     setAgentsEnv(root);

@@ -26,7 +26,7 @@ const cliPath = path.join(repoRoot, "src", "cli.ts");
 function cleanEnv(): Record<string, string | undefined> {
   const copy = { ...process.env };
   for (const key of Object.keys(copy)) {
-    if (key.startsWith("AGENTS_")) delete copy[key];
+    if (key.startsWith("ANDROMEDA_")) delete copy[key];
   }
   return copy;
 }
@@ -40,8 +40,8 @@ async function runAgents(
     cwd,
     env: {
       ...cleanEnv(),
-      AGENTS_HOME: path.join(cwd, ".agents"),
-      AGENTS_ROOT: cwd,
+      ANDROMEDA_HOME: path.join(cwd, ".andromeda"),
+      ANDROMEDA_ROOT: cwd,
       ...env,
     },
     stdout: "pipe",
@@ -56,11 +56,11 @@ async function runAgents(
 }
 
 describe("orchestrator state helpers", () => {
-  test("orchestratorStateDir resolves under .agents", async () => {
+  test("orchestratorStateDir resolves under .andromeda", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-orch-dir-"));
     try {
       const state = sharedState(root);
-      expect(orchestratorStateDir(state)).toBe(path.join(root, ".agents", "orchestrator"));
+      expect(orchestratorStateDir(state)).toBe(path.join(root, ".andromeda", "orchestrator"));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -324,7 +324,7 @@ describe("agents run --mode orchestrator", () => {
     }
   });
 
-  test("state-dir wiring creates .agents/orchestrator/STATE.md", async () => {
+  test("state-dir wiring creates .andromeda/orchestrator/STATE.md", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-run-orch-state-"));
     try {
       const run = await runAgents(root, ["run", "--provider", "fake", "--model", "test", "--mode", "orchestrator", "hello"]);
@@ -357,7 +357,7 @@ describe("agents run --mode orchestrator", () => {
       const systemMessages = transcript?.messages.filter((m) => m.role === "system") ?? [];
       expect(systemMessages).toHaveLength(1);
       expect(systemMessages[0].content).toContain("orchestrator session");
-      expect(systemMessages[0].content).toContain(".agents/orchestrator/");
+      expect(systemMessages[0].content).toContain(".andromeda/orchestrator/");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -368,7 +368,7 @@ describe("agents run --mode orchestrator", () => {
     expect(prompt.length).toBeGreaterThan(100);
     expect(prompt).toContain("one personal-agent identity");
     expect(prompt).toContain("Delegate bounded independent work");
-    expect(prompt).toContain(".agents/orchestrator/");
+    expect(prompt).toContain(".andromeda/orchestrator/");
     expect(prompt).toContain("Never edit STATE.md or state.json directly");
   });
 });

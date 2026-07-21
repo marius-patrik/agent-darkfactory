@@ -33,7 +33,7 @@ async function git(root: string, args: string[]): Promise<string> {
 }
 
 async function repositoryState(root: string, options: { keepGitIdentity?: boolean } = {}) {
-  const stateDir = path.join(root, ".agents");
+  const stateDir = path.join(root, ".andromeda");
   await mkdir(stateDir, { recursive: true });
   await git(stateDir, ["init", "-q", "-b", "main"]);
   await git(stateDir, ["config", "user.name", "State repository test"]);
@@ -222,7 +222,7 @@ describe("Andromeda-data state repository", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-repository-contract-"));
     try {
       const state = await repositoryState(root);
-      await rm(path.join(state.secretsDir, "AGENTS_SYNC_KEY.secret"));
+      await rm(path.join(state.secretsDir, "ANDROMEDA_SYNC_KEY.secret"));
       expect((await inspectStateRepository(state)).issues).toContain(
         "state repository requires enabled encrypted event exchange with a local key",
       );

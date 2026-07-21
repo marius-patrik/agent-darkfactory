@@ -45,7 +45,7 @@ until the owner reopens it.
 - **Agent OS** — final product name.
 - **Andromeda** — repository. npm package surface stays `@marius-patrik/agents-manager` (recorded exception).
 - **agents** — CLI command.
-- **`~/.agents` / `AGENTS_HOME`** — only authoritative runtime state root; a
+- **`~/.andromeda` / `ANDROMEDA_HOME`** — only authoritative runtime state root; a
   checkout of the private-data authority.
 - **`src/`** — implementation domains, each rooted as one direct child.
 - **`plugins/`** — authored repository-owned plugin capabilities; managed product
@@ -98,7 +98,7 @@ local one.
   providers, and managed harnesses.
 - Maintain one versioned state and memory authority with explicit provenance,
   supersession, deterministic projections, and bounded startup context.
-- Root all provider-native state below `AGENTS_HOME/clis/<provider>`.
+- Root all provider-native state below `ANDROMEDA_HOME/clis/<provider>`.
 - Preserve ordered canonical session and orchestration events across provider
   switches while retaining native resume handles where supported.
 - Manage packages, data repositories, environments, skills, plugins, hooks,
@@ -142,7 +142,7 @@ local one.
 
 ## Core concepts
 
-- **Canonical state:** the sole writable authority below `AGENTS_HOME`.
+- **Canonical state:** the sole writable authority below `ANDROMEDA_HOME`.
 - **Provider home:** opaque provider-native state below `clis/<provider>`;
   evidence and runtime storage, never memory authority.
 - **Memory record:** immutable, provenance-backed fact with lifecycle status
@@ -388,7 +388,7 @@ strictly through them.
 ## Canonical state layout
 
 ```text
-~/.agents/
+~/.andromeda/
   manifest.json
   env
   config.json
@@ -422,30 +422,30 @@ strictly through them.
 ```
 
 The top-level registry files shown above remain canonical; they are not
-duplicated into another registry tree. `~/.agents/state` is forbidden. The
+duplicated into another registry tree. `~/.andromeda/state` is forbidden. The
 final installation also has no physical directory or link at `~/.codex`,
 `~/.claude`, `~/.kimi-code`, or `~/.gemini`.
 
 ## Environment contract
 
-- `AGENTS_HOME` is the absolute canonical state root and the only accepted
+- `ANDROMEDA_HOME` is the absolute canonical state root and the only accepted
   state locator.
-- `AGENTS_USER_HOME` is the stable real OS account home.
-- `AGENTS_ROOT` identifies the active Agent OS code/distribution checkout; it
+- `ANDROMEDA_USER_HOME` is the stable real OS account home.
+- `ANDROMEDA_ROOT` identifies the active Agent OS code/distribution checkout; it
   never changes state authority.
 - Provider-native variables such as `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and
   `KIMI_CODE_HOME` are generated projections pointing below
-  `AGENTS_HOME/clis/`; they are not independently configurable roots.
+  `ANDROMEDA_HOME/clis/`; they are not independently configurable roots.
 - No historical product-specific root variable is accepted as a state locator.
 
 ## Provider contract
 
 | Provider | Canonical native home | Process home |
 | --- | --- | --- |
-| Codex | `AGENTS_HOME/clis/codex` | real user home |
-| Claude | `AGENTS_HOME/clis/claude` | real user home |
-| Kimi | `AGENTS_HOME/clis/kimi` | real user home |
-| Agy | `AGENTS_HOME/clis/agy` | isolated only inside the provider process when required |
+| Codex | `ANDROMEDA_HOME/clis/codex` | real user home |
+| Claude | `ANDROMEDA_HOME/clis/claude` | real user home |
+| Kimi | `ANDROMEDA_HOME/clis/kimi` | real user home |
+| Agy | `ANDROMEDA_HOME/clis/agy` | isolated only inside the provider process when required |
 
 Credential reconciliation is explicit, provider-aware, non-destructive, and
 journalled. It never uses blind last-write-wins copying and never prints secret
@@ -514,7 +514,7 @@ declared set.
 ## Installation and validation
 
 The supported source install maintains one checkout of
-`marius-patrik/Andromeda`, writes one regular `AGENTS_HOME/bin/agents`
+`marius-patrik/Andromeda`, writes one regular `ANDROMEDA_HOME/bin/agents`
 launcher, initializes explicit canonical roots, pins installed providers, and
 runs `agents state doctor`. It uses no global package-manager link. Old product
 checkout locations and installers are not supported update paths.

@@ -103,7 +103,7 @@ export async function modelExecutionRequestFromCli(input: ModelExecutionCliInput
   if (sourceCount !== 1) {
     throw new Error("run requires exactly one prompt source: positional text, --prompt-file, or --prompt-stdin");
   }
-  // The invocation directory, not AGENTS_ROOT, owns provider and receipt
+  // The invocation directory, not ANDROMEDA_ROOT, owns provider and receipt
   // authority. Resolve it before opening a prompt source so sessions cannot be
   // rebound to the manager distribution through a lexical path alias.
   const workdir = await physicalExecutionWorkdir(input.workdir);

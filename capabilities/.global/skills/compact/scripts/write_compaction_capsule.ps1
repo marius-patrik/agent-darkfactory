@@ -106,7 +106,7 @@ function Assert-PhysicalDirectoryChain {
         $relative.StartsWith("..$([System.IO.Path]::DirectorySeparatorChar)") -or
         $relative.StartsWith("..$([System.IO.Path]::AltDirectorySeparatorChar)")
     ) {
-        throw "Canonical write directory must remain under AGENTS_HOME: $targetPath"
+        throw "Canonical write directory must remain under ANDROMEDA_HOME: $targetPath"
     }
 
     $pathsToInspect = @($rootPath)
@@ -201,12 +201,12 @@ function Resolve-AgentEnvironment {
         $values[$text.Substring(0, $separator)] = $text.Substring($separator + 1)
     }
 
-    if (-not $values.AGENTS_HOME) {
-        throw "agents state env did not provide AGENTS_HOME."
+    if (-not $values.ANDROMEDA_HOME) {
+        throw "agents state env did not provide ANDROMEDA_HOME."
     }
-    $agentsHome = [System.IO.Path]::GetFullPath($values.AGENTS_HOME)
-    $memoryRoot = if ($values.AGENTS_MEMORY) {
-        [System.IO.Path]::GetFullPath($values.AGENTS_MEMORY)
+    $agentsHome = [System.IO.Path]::GetFullPath($values.ANDROMEDA_HOME)
+    $memoryRoot = if ($values.ANDROMEDA_MEMORY) {
+        [System.IO.Path]::GetFullPath($values.ANDROMEDA_MEMORY)
     } else {
         [System.IO.Path]::GetFullPath((Join-Path $agentsHome "memory"))
     }
@@ -218,10 +218,10 @@ function Resolve-AgentEnvironment {
         $relative.StartsWith("..$([System.IO.Path]::DirectorySeparatorChar)") -or
         $relative.StartsWith("..$([System.IO.Path]::AltDirectorySeparatorChar)")
     ) {
-        throw "Canonical memory root must remain under AGENTS_HOME: $memoryRoot"
+        throw "Canonical memory root must remain under ANDROMEDA_HOME: $memoryRoot"
     }
     if (-not (Test-Path -LiteralPath $agentsHome -PathType Container)) {
-        throw "AGENTS_HOME does not exist: $agentsHome"
+        throw "ANDROMEDA_HOME does not exist: $agentsHome"
     }
     if (-not (Test-Path -LiteralPath $memoryRoot -PathType Container)) {
         throw "Canonical memory root does not exist: $memoryRoot"
@@ -231,7 +231,7 @@ function Resolve-AgentEnvironment {
     $physicalAgentsHome = Resolve-PhysicalPath -Path $agentsHome
     $physicalMemoryRoot = Resolve-PhysicalPath -Path $memoryRoot
     if (-not (Test-PathWithin -Parent $physicalAgentsHome -Candidate $physicalMemoryRoot)) {
-        throw "Canonical memory root must remain physically under AGENTS_HOME: $physicalMemoryRoot"
+        throw "Canonical memory root must remain physically under ANDROMEDA_HOME: $physicalMemoryRoot"
     }
 
     return [ordered]@{ AgentsHome = $physicalAgentsHome; MemoryRoot = $physicalMemoryRoot }
@@ -466,7 +466,7 @@ if (
     (Test-PathWithin -Parent $authority.AgentsHome -Candidate $resolvedCompatibilityRoot) -or
     (Test-PathWithin -Parent $resolvedCompatibilityRoot -Candidate $authority.AgentsHome)
 ) {
-    throw "Compatibility projection root must be physically disjoint from the canonical AGENTS_HOME tree."
+    throw "Compatibility projection root must be physically disjoint from the canonical ANDROMEDA_HOME tree."
 }
 $compatibilityAnchor = $resolvedUserHome
 Assert-PhysicalDirectoryChain -Root $compatibilityAnchor -Target $resolvedCompatibilityRoot

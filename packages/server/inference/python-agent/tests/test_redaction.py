@@ -34,7 +34,7 @@ ASSIGNMENT = f'api_key="{ASSIGNMENT_VALUE}"'
 
 
 def test_planted_secrets_redact_text_and_nested_object(tmp_path):
-    secrets_root = tmp_path / ".agents" / "secrets"
+    secrets_root = tmp_path / ".andromeda" / "secrets"
     credentials = secrets_root / "credentials"
     credentials.mkdir(parents=True)
     (credentials / "known").write_text(KNOWN_VALUE, encoding="utf-8")
@@ -100,7 +100,7 @@ def test_planted_secrets_redact_text_and_nested_object(tmp_path):
 
 
 def test_known_values_from_secrets_dir_and_min_length(tmp_path):
-    credentials = tmp_path / ".agents" / "secrets" / "credentials"
+    credentials = tmp_path / ".andromeda" / "secrets" / "credentials"
     credentials.mkdir(parents=True)
     (credentials / "long").write_text(KNOWN_VALUE, encoding="utf-8")
     (credentials / "short").write_text(SHORT_VALUE, encoding="utf-8")
@@ -201,7 +201,7 @@ def test_redact_obj_uses_key_context_for_unkeyed_values():
 
 
 def test_aws_and_azure_keys_redact_by_known_value_and_context(tmp_path):
-    credentials = tmp_path / ".agents" / "secrets" / "credentials"
+    credentials = tmp_path / ".andromeda" / "secrets" / "credentials"
     credentials.mkdir(parents=True)
     (credentials / "aws").write_text(AWS_SECRET_MIXED, encoding="utf-8")
     (credentials / "azure").write_text(AZURE_KEY, encoding="utf-8")

@@ -23,11 +23,11 @@ Agent OS remains one product inside or outside a container:
   `packages/fabrica` is a managed application.
 - `data/andromeda` and `data/darkfactory` pin the separate Andromeda and
   DarkFactory data repositories for development.
-- private-data is checked out at `AGENTS_HOME`; it is the same physical root
-  as `AGENTS_SYSTEM_DATA_ROOT`, not an alternate state authority.
+- private-data is checked out at `andromeda_home`; it is the same physical root
+  as `ANDROMEDA_SYSTEM_DATA_ROOT`, not an alternate state authority.
 
 The container is replaceable compute. It must mount the one authoritative
-`AGENTS_HOME`; it must never seed or maintain another writable identity,
+`andromeda_home`; it must never seed or maintain another writable identity,
 memory, provider, session, or capability authority.
 
 ## Image contract
@@ -56,7 +56,7 @@ multiple containers later must not change state authority.
 
 Required rules:
 
-- provider homes remain `AGENTS_HOME/clis/<provider>`;
+- provider homes remain `andromeda_home/clis/<provider>`;
 - raw provider databases, models, caches, logs, and locks are local-only;
 - Git-backed state sync commits authenticated encrypted event bundles only;
 - secret names/scopes may appear in plans, but values never do;
@@ -82,7 +82,7 @@ Docker availability, the exact image/digest, mounts, environment, container
 labels, and health before recording success. Until the missing image build and
 release artifacts exist, unsupported mutations fail explicitly.
 
-Managed containers use labels in the `io.agents.os.*` namespace and default to
+Managed containers use labels in the `io.andromeda.*` namespace and default to
 no automatic restart for local development. The TUI is a view over this same
 command/state surface; it cannot maintain a separate registry.
 

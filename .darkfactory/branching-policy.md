@@ -26,5 +26,5 @@ and is the canonical released product state.
   control. Every other missing, inaccessible, or unsafe posture fails closed.
 
 DarkFactory owns the executable policy contract. Shared managed-policy source
-is canonical private-data under `$AGENTS_HOME`; runtime ledgers remain in the
+is canonical private-data under `$ANDROMEDA_HOME`; runtime ledgers remain in the
 separate darkfactory-data repository.

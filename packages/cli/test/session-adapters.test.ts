@@ -331,13 +331,13 @@ describe("provider CLI session arguments", () => {
       stateDir: path.resolve("private-agents-home"),
     };
     const env = providerProcessEnvironment("claude", descriptor, "none", {
-      AGENTS_HOME: "private-state",
+      ANDROMEDA_HOME: "private-state",
       HOME: "private-home",
       USERPROFILE: "private-profile",
       PRIVATE_TOKEN: "private-token",
       PATH: "trusted-path",
     });
-    expect(env.AGENTS_HOME).toBeUndefined();
+    expect(env.ANDROMEDA_HOME).toBeUndefined();
     expect(env.HOME).toBeUndefined();
     expect(env.USERPROFILE).toBeUndefined();
     expect(env.PRIVATE_TOKEN).toBeUndefined();
@@ -413,7 +413,7 @@ describe("Codex resolved execution-policy attestation (issue #257)", () => {
       model: "gpt-5.6-sol",
       mode: "task",
       workdir: root,
-      stateDir: path.join(root, ".agents"),
+      stateDir: path.join(root, ".andromeda"),
     };
     const policyRequest: TurnRequest = {
       prompt: "fixture",
@@ -638,7 +638,7 @@ describe("Codex resolved execution-policy attestation (issue #257)", () => {
           model: "gpt-5.6-sol",
           mode: "task",
           workdir: root,
-          stateDir: path.join(root, ".agents"),
+          stateDir: path.join(root, ".andromeda"),
         };
         const policyRequest: TurnRequest = {
           prompt: "fixture",
@@ -662,7 +662,7 @@ describe("Codex resolved execution-policy attestation (issue #257)", () => {
         model: "gpt-5.6-sol",
         mode: "task",
         workdir: root,
-        stateDir: path.join(root, ".agents"),
+        stateDir: path.join(root, ".andromeda"),
       };
       const policyRequest: TurnRequest = {
         prompt: "fixture",
@@ -687,7 +687,7 @@ describe("Codex resolved execution-policy attestation (issue #257)", () => {
         model: "gpt-5.6-sol",
         mode: "task",
         workdir: root,
-        stateDir: path.join(root, ".agents"),
+        stateDir: path.join(root, ".andromeda"),
       };
       const policyRequest: TurnRequest = {
         prompt: "fixture",
@@ -743,7 +743,7 @@ describe("Codex resolved execution-policy attestation (issue #257)", () => {
           model: "gpt-5.6-sol",
           mode: "task",
           workdir: root,
-          stateDir: path.join(root, ".agents"),
+          stateDir: path.join(root, ".andromeda"),
         };
         const policyRequest: TurnRequest = {
           prompt: "fixture",
@@ -775,7 +775,7 @@ describe("Codex resolved execution-policy attestation (issue #257)", () => {
           model: "gpt-5.6-sol",
           mode: "task",
           workdir: root,
-          stateDir: path.join(root, ".agents"),
+          stateDir: path.join(root, ".andromeda"),
         };
         const policyRequest: TurnRequest = {
           prompt: "fixture",
@@ -828,7 +828,7 @@ describe("Codex resolved execution-policy attestation (issue #257)", () => {
           model: "gpt-5.6-sol",
           mode: "task",
           workdir: root,
-          stateDir: path.join(root, ".agents"),
+          stateDir: path.join(root, ".andromeda"),
         };
         const policyRequest: TurnRequest = {
           prompt: "fixture",
@@ -872,7 +872,7 @@ describe("canonical startup projection", () => {
   test("loads only canonical identity, memory, and capabilities while ignoring provider-native history", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-startup-view-"));
     try {
-      const stateDir = path.join(root, ".agents");
+      const stateDir = path.join(root, ".andromeda");
       const canonical = path.join(stateDir, "memory", "views", "startup.md");
       const state = sharedStateAt(root, stateDir, root);
       await ensureSharedState(state);
@@ -916,13 +916,13 @@ describe("canonical startup projection", () => {
 });
 
 describe("provider binary recursion safety", () => {
-  test("rejects shared .agents/bin manager entrypoints", () => {
-    const shim = path.join(os.tmpdir(), "home", ".agents", "bin", "codex");
+  test("rejects shared .andromeda/bin manager entrypoints", () => {
+    const shim = path.join(os.tmpdir(), "home", ".andromeda", "bin", "codex");
     expect(providerBinarySafetyReason(shim)).toContain("manager shim");
     expect(() => codexSessionAdapter(shim)).toThrow("refusing recursive provider binary");
   });
 
-  test("rejects retired manager-delegating shims outside .agents/bin", async () => {
+  test("rejects retired manager-delegating shims outside .andromeda/bin", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-provider-shim-"));
     const shim = path.join(root, "codex");
     try {
@@ -950,10 +950,10 @@ describe("provider adapter state ownership", () => {
   test("does not create provider-owned session directories outside the canonical event store", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-provider-session-state-"));
     try {
-      const previousHome = process.env.AGENTS_HOME;
-      process.env.AGENTS_HOME = path.join(root, "state");
+      const previousHome = process.env.ANDROMEDA_HOME;
+      process.env.ANDROMEDA_HOME = path.join(root, "state");
       try {
-        const binary = path.join(process.env.AGENTS_HOME, "clis", "codex", "bin", "codex");
+        const binary = path.join(process.env.ANDROMEDA_HOME, "clis", "codex", "bin", "codex");
         await Bun.write(binary, "#!/bin/sh\nexit 0\n");
         const adapter = codexSessionAdapter(binary);
         const descriptor: SessionDescriptor = {
@@ -967,8 +967,8 @@ describe("provider adapter state ownership", () => {
         await adapter.startSession(descriptor);
         expect(await Bun.file(path.join(descriptor.stateDir, descriptor.sessionId)).exists()).toBe(false);
       } finally {
-        if (previousHome === undefined) delete process.env.AGENTS_HOME;
-        else process.env.AGENTS_HOME = previousHome;
+        if (previousHome === undefined) delete process.env.ANDROMEDA_HOME;
+        else process.env.ANDROMEDA_HOME = previousHome;
       }
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -1136,9 +1136,9 @@ function decodePrompt(captured: Record<string, string>): string {
 
 /** Point the process at a disposable Agent OS home and restore it afterwards. */
 function withDisposableHome(stateDir: string, userHome: string): () => void {
-  const previous = { AGENTS_HOME: process.env.AGENTS_HOME, AGENTS_USER_HOME: process.env.AGENTS_USER_HOME };
-  process.env.AGENTS_HOME = stateDir;
-  process.env.AGENTS_USER_HOME = userHome;
+  const previous = { ANDROMEDA_HOME: process.env.ANDROMEDA_HOME, ANDROMEDA_USER_HOME: process.env.ANDROMEDA_USER_HOME };
+  process.env.ANDROMEDA_HOME = stateDir;
+  process.env.ANDROMEDA_USER_HOME = userHome;
   return () => {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
@@ -1197,7 +1197,7 @@ async function fakeClaudeJsonBinary(stateDir: string): Promise<string> {
 describe("provider-native execution-policy evidence", () => {
   test("successful Claude output attests the exact native permission profile", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-claude-policy-evidence-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const restore = withDisposableHome(stateDir, userHome);
     try {
@@ -1230,7 +1230,7 @@ describe("provider-native execution-policy evidence", () => {
 
   test("Claude workspace-write fails closed before a provider turn without physical containment", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-claude-workspace-denied-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const restore = withDisposableHome(stateDir, userHome);
     try {
@@ -1363,7 +1363,7 @@ function capture() {
   }
   writeFileSync(capturePath, JSON.stringify({
     argv: process.argv.slice(2),
-    agentsHome: process.env.AGENTS_HOME ?? null,
+    agentsHome: process.env.ANDROMEDA_HOME ?? null,
     kimiCodeHome: process.env.KIMI_CODE_HOME ?? null,
     home: process.env.HOME ?? null,
     userProfile: process.env.USERPROFILE ?? null,
@@ -1541,7 +1541,7 @@ function bootstrapKimiAdapter(receipt?: Record<string, unknown>): ProviderAdapte
 describe("managed Kimi native continuation (issue #254)", () => {
   test("success: a fresh Kimi turn uses ACP stdin and records only the native continuity receipt", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-new-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -1602,7 +1602,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("zero-tool Kimi turn suppresses canonical startup and advertises no client tools", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-no-tools-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -1643,7 +1643,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("workspace filesystem primary: manager-owned ACP write mutates an existing in-worktree file", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-write-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const target = path.join(root, "managed.txt");
@@ -1688,7 +1688,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("workspace filesystem denied: missing-target creation has no pre-attestation side effect", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-escape-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const target = path.join(root, "created.txt");
@@ -1722,7 +1722,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("workspace filesystem denied: a lexical out-of-worktree write fails closed", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-outside-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const outside = path.resolve(root, "..", `${path.basename(root)}-owner-data.txt`);
@@ -1759,7 +1759,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("workspace policy edge: an in-worktree hard link to an outside inode is cancelled", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-hardlink-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const outside = path.resolve(root, "..", `${path.basename(root)}-outside.txt`);
@@ -1799,7 +1799,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
   test("workspace filesystem denied: a parent swapped to an outside link before mutation fails closed", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-toctou-"));
     const outside = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-toctou-outside-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const workspace = path.join(root, "workspace");
@@ -1843,7 +1843,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("workspace policy denied: shell execution is never promoted to workspace-write", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-execute-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -1877,7 +1877,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("edge: transcript beyond the Windows argv budget resumes the same native session without replay", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-long-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -1927,7 +1927,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("edge: a system instruction introduced on resume is projected once without replaying history", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-resume-system-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -1974,7 +1974,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
       ["malformed", { ...nativeKimiReceipt(), extra: "forbidden" }, "unexpected shape"],
     ] as const) {
       const root = await mkdtemp(path.join(os.tmpdir(), `agents-kimi-acp-${name}-`));
-      const stateDir = path.join(root, ".agents");
+      const stateDir = path.join(root, ".andromeda");
       const userHome = path.join(root, "user-home");
       const capturePath = path.join(root, "kimi-acp.json");
       const restore = withDisposableHome(stateDir, userHome);
@@ -2003,7 +2003,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
   test("denied: an intervening unreceipted canonical turn cannot fall back to an older native receipt", async () => {
     for (const kind of ["successful", "failed"] as const) {
       const root = await mkdtemp(path.join(os.tmpdir(), `agents-kimi-acp-intervening-${kind}-`));
-      const stateDir = path.join(root, ".agents");
+      const stateDir = path.join(root, ".andromeda");
       const userHome = path.join(root, "user-home");
       const capturePath = path.join(root, "kimi-acp.json");
       const restore = withDisposableHome(stateDir, userHome);
@@ -2047,7 +2047,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("denied: an upstream resume failure never falls back to session creation or records success", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-resume-error-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2088,7 +2088,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("denied: resumed native model drift fails closed before mode configuration or prompt", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-model-drift-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2119,7 +2119,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("denied: malformed ACP session creation output is rejected without a receipt", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-malformed-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2146,7 +2146,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("denied: malformed provider protocol output fails closed without echoing raw bytes", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-malformed-json-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2186,7 +2186,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
       ],
     ] as const) {
       const root = await mkdtemp(path.join(os.tmpdir(), `agents-kimi-acp-timeout-${hangAt}-`));
-      const stateDir = path.join(root, ".agents");
+      const stateDir = path.join(root, ".andromeda");
       const userHome = path.join(root, "user-home");
       const capturePath = path.join(root, "kimi-acp.json");
       const restore = withDisposableHome(stateDir, userHome);
@@ -2236,7 +2236,7 @@ describe("managed Kimi native continuation (issue #254)", () => {
 
   test("denied: a cross-session update fails closed without SDK logging or a receipt", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-kimi-acp-wrong-session-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capturePath = path.join(root, "kimi-acp.json");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2343,7 +2343,7 @@ function mutateOnceDuringAgyBoundaryVerification(
 describe("managed Agy provider boundary (issue #252)", () => {
   test("edge: runTurn forces the Agy updater opt-out after ambient and option aliases without changing non-Agy env", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-env-force-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const controlCapture = path.join(root, "control-capture.txt");
@@ -2414,7 +2414,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("success: a managed agy/low turn reaches the provider with the exact prompt, concrete Low model, and an absolute canonical home", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-success-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2489,7 +2489,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: workspace-write fails before Agy spawn without provider-native physical authority", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-workspace-denied-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2517,8 +2517,8 @@ describe("managed Agy provider boundary (issue #252)", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-ancestor-alias-"));
     const physicalRoot = path.join(root, "physical");
     const aliasRoot = path.join(root, "alias");
-    const physicalStateDir = path.join(physicalRoot, ".agents");
-    const aliasStateDir = path.join(aliasRoot, ".agents");
+    const physicalStateDir = path.join(physicalRoot, ".andromeda");
+    const aliasStateDir = path.join(aliasRoot, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(aliasStateDir, userHome);
@@ -2567,7 +2567,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("edge: a spaced Windows-style canonical root stays quoted and isolated from the user-profile .gemini", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents agy edge "));
-    const stateDir = path.join(root, ".agents state");
+    const stateDir = path.join(root, ".andromeda state");
     const userHome = path.join(root, "user home");
     const restore = withDisposableHome(stateDir, userHome);
     try {
@@ -2612,7 +2612,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: missing canonical auth fails closed before launch and leaves no forbidden home", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-denied-auth-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2644,7 +2644,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: pinned-binary checksum drift (self-update) fails closed before launch", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-denied-drift-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2675,7 +2675,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: a config-root junction/symlink escape fails closed before launch", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-config-escape-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2714,7 +2714,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: a provider-home junction/symlink escape fails closed before launch", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-home-escape-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2754,7 +2754,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: a directory masquerading as the credential fails closed before launch", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-auth-dir-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2783,7 +2783,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: a credential symlink fails closed before launch", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-auth-symlink-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -2827,7 +2827,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
     "denied: an unreadable credential fails closed before launch",
     async () => {
       const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-auth-unreadable-"));
-      const stateDir = path.join(root, ".agents");
+      const stateDir = path.join(root, ".andromeda");
       const userHome = path.join(root, "user-home");
       const capture = path.join(root, "agy-capture.txt");
       const restore = withDisposableHome(stateDir, userHome);
@@ -2860,7 +2860,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: coordinated registry and binary poison during launch preparation cannot replace S0", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-prespawn-poison-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const originalCapture = path.join(root, "agy-original-capture.txt");
     const replacementCapture = path.join(root, "agy-replacement-capture.txt");
@@ -2942,7 +2942,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: async executable replacement during boundary verification is caught before spawn", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-prespawn-interval-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const originalCapture = path.join(root, "agy-original-capture.txt");
     const replacementCapture = path.join(root, "agy-replacement-capture.txt");
@@ -2989,7 +2989,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: an output-read failure cannot bypass postflight executable drift attestation", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-postflight-output-error-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -3056,7 +3056,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: auth removed during launch preparation fails before the streaming fallback can execute", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-prespawn-auth-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -3101,7 +3101,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: executable replaced during the managed run fails closed after exit and persists no success", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-midrun-drift-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -3134,7 +3134,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: executable replaced during the managed run fails closed through the streaming path with no success and no receipt", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-midrun-stream-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -3172,7 +3172,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: a coordinated registry+binary swap during the run cannot bless the replaced executable", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-registry-swap-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -3225,7 +3225,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("stream: a managed agy/low turn records the truthful receipt through the streaming path", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-stream-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -3278,7 +3278,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("edge: ordinary provider errors keep the truthful receipt in normal and stream paths", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-provider-error-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -3349,7 +3349,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: a bin junction/symlink escape fails closed before launch", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-bin-escape-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);
@@ -3392,7 +3392,7 @@ describe("managed Agy provider boundary (issue #252)", () => {
 
   test("denied: an executable symlink escape fails closed before launch", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-agy-exe-symlink-"));
-    const stateDir = path.join(root, ".agents");
+    const stateDir = path.join(root, ".andromeda");
     const userHome = path.join(root, "user-home");
     const capture = path.join(root, "agy-capture.txt");
     const restore = withDisposableHome(stateDir, userHome);

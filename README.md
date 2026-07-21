@@ -39,19 +39,19 @@ Requirements: Bun 1.1 or newer and Git. Provider CLIs (`codex`, `claude`,
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/marius-patrik/Andromeda/dev/install/install.sh | bash
-export PATH="$HOME/.agents/bin:$PATH"
+export PATH="$HOME/.andromeda/bin:$PATH"
 ```
 
 The installer maintains one checkout at
-`$AGENTS_USER_HOME/marius-patrik/Andromeda` (or an explicit absolute
-`AGENTS_ROOT`), one state root at `$AGENTS_USER_HOME/.agents` (or an explicit
-absolute `AGENTS_HOME`), and one platform-native launcher file: `agents` on
+`$ANDROMEDA_USER_HOME/marius-patrik/Andromeda` (or an explicit absolute
+`ANDROMEDA_ROOT`), one state root at `$ANDROMEDA_USER_HOME/.andromeda` (or an explicit
+absolute `ANDROMEDA_HOME`), and one platform-native launcher file: `agents` on
 POSIX or `agents.ps1` on Windows. It does not use Bun global linking. The
 Windows launcher forwards PowerShell's argument array directly, without a
 second CMD parse. The
-`AGENTS_HOME/bin` is owned by Agent OS, installation removes every other entry
+`ANDROMEDA_HOME/bin` is owned by Agent OS, installation removes every other entry
 from that directory; provider executables remain under
-`$AGENTS_HOME/clis/<provider>/bin` and are pinned when present.
+`$ANDROMEDA_HOME/clis/<provider>/bin` and are pinned when present.
 
 Re-running the same command performs a fast-forward-only update of the `dev`
 branch, validates and content-addresses the bundled 11-skill/six-worker-role
@@ -64,7 +64,7 @@ checkout with a different origin or branch fails closed.
 git clone --branch dev https://github.com/marius-patrik/Andromeda.git "$HOME/marius-patrik/Andromeda"
 cd "$HOME/marius-patrik/Andromeda"
 bun install --frozen-lockfile
-AGENTS_HOME="$HOME/.agents" AGENTS_USER_HOME="$HOME" AGENTS_ROOT="$PWD" \
+ANDROMEDA_HOME="$HOME/.andromeda" ANDROMEDA_USER_HOME="$HOME" ANDROMEDA_ROOT="$PWD" \
   bun run agents -- state init
 ```
 
@@ -92,15 +92,15 @@ they do not publish another product or CLI.
 
 ## One state authority
 
-`AGENTS_HOME` is the only state-root locator. A personal installation uses
-`/Users/user/.agents`; other installations use an equivalent absolute
-`~/.agents` path. `AGENTS_USER_HOME` identifies the real OS account home, and
-`AGENTS_ROOT` may identify the active code/distribution checkout, but neither
+`ANDROMEDA_HOME` is the only state-root locator. A personal installation uses
+`/Users/user/.andromeda`; other installations use an equivalent absolute
+`~/.andromeda` path. `ANDROMEDA_USER_HOME` identifies the real OS account home, and
+`ANDROMEDA_ROOT` may identify the active code/distribution checkout, but neither
 is another state root.
 
-Provider-native homes are derived below `AGENTS_HOME/clis/`. Legacy
+Provider-native homes are derived below `ANDROMEDA_HOME/clis/`. Legacy
 product-specific root variables are not accepted as state locators. The final
-installation has no `~/.agents/state`, no provider bridge, and no writable
+installation has no `~/.andromeda/state`, no provider bridge, and no writable
 duplicate of canonical state. On Windows, physical `.codex` and `.claude`
 desktop-runtime directories may coexist only as non-authoritative `app-owned`
 surfaces; standalone-only roots and every linked root still fail.
@@ -206,15 +206,15 @@ depend on them.
 - `scripts/` — repository automation and validators, including the DarkFactory
   managed scripts.
 
-State is not a submodule: the live private-data checkout is `$AGENTS_HOME`,
-which is also `AGENTS_SYSTEM_DATA_ROOT`. This repository declares no
+State is not a submodule: the live private-data checkout is `$ANDROMEDA_HOME`,
+which is also `ANDROMEDA_SYSTEM_DATA_ROOT`. This repository declares no
 submodules.
 
 ## Shared capability contract
 
 The repository authors its capability floor directly at `skills/`, `plugins/`,
 `hooks/`, `roles/`, and `commands/`. The installer validates and publishes that
-source into the canonical `AGENTS_HOME` state tree; provider-specific copies are
+source into the canonical `ANDROMEDA_HOME` state tree; provider-specific copies are
 not another authority. Managed product plugins and authored plugin capabilities
 have separate `src/` and `plugins/` roots, so moving the managed repositories
 does not change the authored capability-source contract.

@@ -14,8 +14,8 @@ product, install, release, or state authority.
 
 Managed provider processes are resolved and launched by
 `packages/cli/src`. Harness state is rooted only through the explicit
-Agent OS state descriptor below `AGENTS_HOME`; provider-native state remains
-under `AGENTS_HOME/clis/<provider>`.
+Agent OS state descriptor below `ANDROMEDA_HOME`; provider-native state remains
+under `ANDROMEDA_HOME/clis/<provider>`.
 
 Agent OS may also register external packages of kind `harness` and run them
 through `agents harness run`. That generic package facility does not make this

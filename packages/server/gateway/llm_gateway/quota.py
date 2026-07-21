@@ -85,7 +85,7 @@ class QuotaTracker:
 
     def _persistent_budget_exhausted(self, provider: str) -> bool:
         """Read durable Agent OS/provider budgets without becoming a writer."""
-        raw_path = os.environ.get("GATEWAY_BUDGETS_PATH") or os.environ.get("AGENTS_CREDITS")
+        raw_path = os.environ.get("GATEWAY_BUDGETS_PATH") or os.environ.get("ANDROMEDA_CREDITS")
         if not raw_path:
             return False
         path = Path(raw_path)

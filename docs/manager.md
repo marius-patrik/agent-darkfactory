@@ -10,7 +10,7 @@ capabilities, data repositories, environments, secrets, and credits.
 - Bun 1.1 or newer
 - Git
 - GitHub CLI only for explicit GitHub-secret synchronization
-- Optional provider CLIs installed below `AGENTS_HOME/clis/<provider>/bin`:
+- Optional provider CLIs installed below `andromeda_home/clis/<provider>/bin`:
   `codex`, `claude`, `kimi`, and `agy`
 
 From the repository root:
@@ -18,7 +18,7 @@ From the repository root:
 ```sh
 bun install
 bun run ci
-AGENTS_HOME="$HOME/.agents" AGENTS_USER_HOME="$HOME" AGENTS_ROOT="$PWD" \
+andromeda_home="$HOME/.andromeda" ANDROMEDA_USER_HOME="$HOME" ANDROMEDA_ROOT="$PWD" \
   bun run agents -- state init
 ```
 
@@ -27,9 +27,9 @@ are not supported update sources.
 
 ## State contract
 
-`AGENTS_HOME` is the only runtime state root. For the personal installation it
-is `/Users/user/.agents`; otherwise it is an absolute `~/.agents` path.
-`AGENTS_USER_HOME` identifies the real OS user home. `AGENTS_ROOT` may identify
+`andromeda_home` is the only runtime state root. For the personal installation it
+is `/Users/user/.andromeda`; otherwise it is an absolute `~/.andromeda` path.
+`ANDROMEDA_USER_HOME` identifies the real OS user home. `ANDROMEDA_ROOT` may identify
 the active code/distribution checkout, but it is not state.
 
 The canonical layout includes:
@@ -48,12 +48,12 @@ The canonical layout includes:
 - top-level canonical registries such as `installs.json`, `packages.json`,
   `data-repos.json`, `environments.json`, and `providers.json`.
 
-No `~/.agents/state` tree, provider bridge, or standalone-only provider root is
+No `~/.andromeda/state` tree, provider bridge, or standalone-only provider root is
 supported. Physical Windows `.codex` and `.claude` desktop-runtime directories
 may coexist only as non-authoritative `app-owned` surfaces when their canonical
 CLI homes also exist. Legacy product-specific root variables are not state
 locators. Provider-native environment variables are derived projections into
-`AGENTS_HOME/clis/`.
+`andromeda_home/clis/`.
 
 The complete authority and migration contract is
 [`docs/state-memory-v2.md`](state-memory-v2.md).
@@ -61,7 +61,7 @@ The complete authority and migration contract is
 ## Managed provider launch boundary
 
 A managed session spawns the pinned provider CLI from
-`AGENTS_HOME/clis/<provider>/bin` with provider-native environment variables
+`andromeda_home/clis/<provider>/bin` with provider-native environment variables
 projected into that home.
 
 Kimi turns use the CLI's official ACP stdio server. The process argv is always
@@ -148,7 +148,7 @@ with these constraints:
 1. Update from the trusted source checkout and use the source manager until the
    installed boundary is refreshed.
 2. Keep the direct Agy CLI, provider state, and `oauth_creds.json` only under
-   the canonical `AGENTS_HOME/clis/agy` home.
+   the canonical `andromeda_home/clis/agy` home.
 3. Run Agy's own authentication only with the absolute `GEMINI_DIR`, `HOME`,
    and `USERPROFILE` values exposed by `agents cli env agy`, never by copying
    another provider's credentials or using standalone user-home `.gemini`
@@ -302,7 +302,7 @@ transfer, takeover, continuation, quota draining, and dispatch ownership are
 not part of this pre-turn policy.
 
 The caller's invocation directory is physically resolved before prompt
-admission and remains the provider cwd and receipt boundary. `AGENTS_ROOT`
+admission and remains the provider cwd and receipt boundary. `ANDROMEDA_ROOT`
 identifies the Agent OS distribution only; pointing it at a separate checkout
 cannot rebind logical-tier execution away from the caller worktree.
 

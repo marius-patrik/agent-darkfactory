@@ -70,11 +70,11 @@ jobs:
 
       - name: Verify canonical Agent OS authority
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
-            Write-Output "::error::AGENTS_HOME must name the absolute canonical Agent OS checkout."
+          if ([string]::IsNullOrWhiteSpace($env:ANDROMEDA_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:ANDROMEDA_HOME)) {
+            Write-Output "::error::ANDROMEDA_HOME must name the absolute canonical Agent OS checkout."
             exit 1
           }
-          $agentsLauncher = Join-Path -Path $env:AGENTS_HOME -ChildPath "bin\agents.ps1"
+          $agentsLauncher = Join-Path -Path $env:ANDROMEDA_HOME -ChildPath "bin\agents.ps1"
           if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
             Write-Output "::error::Canonical Agent OS launcher is missing."
             exit 1

@@ -59,7 +59,7 @@ describe("data repos", () => {
             repo: "marius-patrik/agents-data",
             path: path.join(root, "data", "agent-os"),
             branch: "main",
-            env: "AGENTS_SYSTEM_DATA_ROOT",
+            env: "ANDROMEDA_SYSTEM_DATA_ROOT",
             configuredAt: "2026-07-01T00:00:00.000Z",
           },
         ], null, 2)}\n`,

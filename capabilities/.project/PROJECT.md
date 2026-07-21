@@ -2,7 +2,7 @@
 
 Agent OS is one personal-agent product. This `Andromeda` repository owns the
 implementation; `agents` is the only operator/runtime CLI, and the personal
-installation's only state root is `$AGENTS_HOME`, which is the `private-data`
+installation's only state root is `$andromeda_home`, which is the `private-data`
 checkout.
 
 The repository is a single monorepo with **no submodules**. Everything that was
@@ -19,7 +19,7 @@ once a separate repository is folded in with its full history:
 Durable state is not part of this repository. It lives in `private-data` and is
 reached through the Agent OS state lane.
 
-All repository authority is rooted here: `docs/.agents/` owns project guidance,
+All repository authority is rooted here: `docs/.andromeda/` owns project guidance,
 `.darkfactory/` owns managed-repository policy, and `docs/` owns component,
 protocol, architecture, and specification documentation. Target components carry
 exactly one contract README at their own root and no nested documentation trees.
@@ -58,7 +58,7 @@ Historical product names, provider-home paths, launchers, and variables are
 recovery evidence only. Do not add aliases, bridges, forwarding shims, or
 fallback loaders.
 
-`AGENTS_SYSTEM_DATA_ROOT` and `$AGENTS_HOME` must resolve to the same physical
+`ANDROMEDA_SYSTEM_DATA_ROOT` and `$andromeda_home` must resolve to the same physical
 private-data checkout. Plaintext runtime state remains local and ignored;
 authenticated encrypted bundles under `backups/events/` are the only Git-backed
 state backup and synchronization surface.

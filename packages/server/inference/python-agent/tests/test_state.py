@@ -10,17 +10,17 @@ from agent.state import AgentStateError, inference_runs_dir, inference_runtime_d
 
 
 def test_agents_home_is_required_and_absolute(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("AGENTS_HOME", raising=False)
+    monkeypatch.delenv("ANDROMEDA_HOME", raising=False)
     with pytest.raises(AgentStateError, match="required"):
         require_agents_home()
-    monkeypatch.setenv("AGENTS_HOME", "relative/state")
+    monkeypatch.setenv("ANDROMEDA_HOME", "relative/state")
     with pytest.raises(AgentStateError, match="absolute"):
         require_agents_home()
 
 
 def test_default_inference_state_stays_below_agents_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    agents_home = tmp_path / ".agents"
-    monkeypatch.setenv("AGENTS_HOME", str(agents_home))
+    andromeda_home = tmp_path / ".andromeda"
+    monkeypatch.setenv("ANDROMEDA_HOME", str(andromeda_home))
 
     SessionConfig(
         session_id="state-test",
@@ -29,10 +29,10 @@ def test_default_inference_state_stays_below_agents_home(monkeypatch: pytest.Mon
         task="task",
         acceptance_type="generic",
     )
-    assert inference_runs_dir() == agents_home / "runtime" / "inference" / "runs"
-    assert inference_runtime_dir() == agents_home / "runtime" / "inference"
+    assert inference_runs_dir() == andromeda_home / "runtime" / "inference" / "runs"
+    assert inference_runtime_dir() == andromeda_home / "runtime" / "inference"
 
-    secrets = agents_home / "secrets"
+    secrets = andromeda_home / "secrets"
     secrets.mkdir(parents=True)
     (secrets / "test.secret").write_text("secret-value", encoding="utf-8")
     redactor = Redactor.from_secrets_dir()

@@ -4,7 +4,7 @@ Status: implemented local-state and encrypted cross-machine event-exchange contr
 
 ## Objective
 
-`~/.agents` is the only authoritative Agent OS state root. Models, provider
+`~/.andromeda` is the only authoritative Agent OS state root. Models, provider
 CLIs, desktop surfaces, harnesses, roles, and machines are execution surfaces
 for one agent identity; they must not create independent user or project truth.
 
@@ -24,7 +24,7 @@ surface, and no credential copier, provider-adoption engine, mutable Git
 snapshot-sync engine, old launcher, or legacy runtime tree remains live.
 
 Each personal installation has one canonical provider root per CLI below
-`~/.agents/clis`. Physical Windows desktop roots may coexist only as declared,
+`~/.andromeda/clis`. Physical Windows desktop roots may coexist only as declared,
 non-authoritative `app-owned` surfaces; bridges and standalone-only roots fail.
 
 The personal install exposes exactly one platform-native `agents` launcher.
@@ -36,7 +36,7 @@ provider exposing a stable resume handle.
 ## Canonical paths
 
 ```text
-~/.agents/
+~/.andromeda/
   manifest.json
   env
   config.json
@@ -102,26 +102,26 @@ second writable registry tree. No retired symlink is part of the final layout.
 
 ## Environment contract
 
-- `AGENTS_HOME` is the absolute canonical state root. For the personal install,
-  it is `/Users/user/.agents`.
-- `AGENTS_USER_HOME` is the real OS user home and remains stable even when a
+- `andromeda_home` is the absolute canonical state root. For the personal install,
+  it is `/Users/user/.andromeda`.
+- `ANDROMEDA_USER_HOME` is the real OS user home and remains stable even when a
   provider requires an isolated `HOME`.
-- `AGENTS_ROOT` identifies the active Agent OS code/distribution checkout. It
+- `ANDROMEDA_ROOT` identifies the active Agent OS code/distribution checkout. It
   is not a second state root.
 - No retired product-specific root variable is accepted as a state locator.
-- Without `AGENTS_HOME`, the manager uses the real OS account home plus
-  `/.agents`; it never creates runtime state in the current repository's
-  project-guidance `.agents` directory. A rooted provider home must never be
+- Without `andromeda_home`, the manager uses the real OS account home plus
+  `/.andromeda`; it never creates runtime state in the current repository's
+  project-guidance `.andromeda` directory. A rooted provider home must never be
   interpreted as the user home.
 
 Provider processes receive these roots:
 
 | Provider | Native state root | `HOME` |
 | --- | --- | --- |
-| Codex | `CODEX_HOME=~/.agents/clis/codex` | real user home |
-| Claude | `CLAUDE_CONFIG_DIR=~/.agents/clis/claude` | real user home |
-| Kimi | `KIMI_CODE_HOME=~/.agents/clis/kimi` | real user home |
-| Agy | isolated under `~/.agents/clis/agy` | isolated only for the provider process |
+| Codex | `CODEX_HOME=~/.andromeda/clis/codex` | real user home |
+| Claude | `CLAUDE_CONFIG_DIR=~/.andromeda/clis/claude` | real user home |
+| Kimi | `KIMI_CODE_HOME=~/.andromeda/clis/kimi` | real user home |
+| Agy | isolated under `~/.andromeda/clis/agy` | isolated only for the provider process |
 
 An isolated provider `HOME` must not leak into general tool subprocesses.
 
@@ -243,7 +243,7 @@ fails closed instead of creating a replacement provider session.
 - **Local-only:** provider databases/WALs, models, caches, logs, temporary files,
   locks, and process state.
 - **Secret:** never exchanged by the event transport. The bundle key remains a
-  local `AGENTS_SYNC_KEY` secret and is provisioned out of band.
+  local `ANDROMEDA_SYNC_KEY` secret and is provisioned out of band.
 
 Raw provider transcripts are local-only. Canonical session events roam only
 through the allow-listed encrypted transport, which rejects secret-like
@@ -262,7 +262,7 @@ Migration is staged, journalled, idempotent, and reversible:
    provider content.
 3. **Provider homes:** while providers are stopped, stage semantic merges,
    validate provider databases/config, atomically swap, remove standalone roots,
-   and prove each retained provider surface writes only below `AGENTS_HOME`.
+   and prove each retained provider surface writes only below `andromeda_home`.
 4. **Memory:** ingest old memory as provenance candidates, hash-dedupe, classify
    conflicts, require supersession, and generate one startup view. Move old
    `global`, `shared`, and `agents` trees to the external recovery archive only
@@ -283,7 +283,7 @@ start/end timestamps, result, and rollback instructions under
 
 ## Acceptance criteria
 
-- `agents state doctor --json` reports one absolute `AGENTS_HOME`, no provider
+- `agents state doctor --json` reports one absolute `andromeda_home`, no provider
   authority outside it, no writable duplicate/bridge root, no active retired
   loader, and no secret or symlink in sync candidates. Declared Windows
   desktop roots are reported separately as non-authoritative `app-owned`
@@ -306,7 +306,7 @@ start/end timestamps, result, and rollback instructions under
 ## Implemented local system
 
 1. Real-user-home and Agent OS root resolution are centralized and test-isolated.
-2. `.agents/clis/<provider>` is the only provider-home target.
+2. `.andromeda/clis/<provider>` is the only provider-home target.
 3. Status terms are `forbidden`, `canonical`, `app-owned`, `split`, and
    `missing`; `app-owned` is a narrow Windows desktop coexistence state, never
    an authority state.

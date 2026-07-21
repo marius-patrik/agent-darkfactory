@@ -21,10 +21,10 @@ const requiredLayout = [
   "packages/sdk/harness",
   "packages/server/inference",
   "packages/cli",
-  ".agents/.global/skills",
-  ".agents/.global/hooks",
-  ".agents/.global/roles",
-  ".agents/.global/commands",
+  "capabilities/.global/skills",
+  "capabilities/.global/hooks",
+  "capabilities/.global/roles",
+  "capabilities/.global/commands",
 ];
 for (const relative of requiredLayout) {
   if (!fs.statSync(path.join(root, relative), { throwIfNoEntry: false })?.isDirectory()) {
@@ -42,7 +42,10 @@ for (const retired of ["packages/migrate/core/src", "packages/migrate/core/test"
 }
 
 const nestedRepositoryMetadata = [
-  /^packages\/(?!\.project\/)(?:.*\/)?(?:\.agents|\.darkfactory|docs)(?:\/|$)/i,
+  // Both state-root spellings are rejected inside packages/: .agents is the
+  // pre-rebrand name and .andromeda is the current one, and neither belongs in
+  // a component tree whatever the era.
+  /^packages\/(?!\.project\/)(?:.*\/)?(?:\.agents|\.andromeda|\.darkfactory|docs)(?:\/|$)/i,
   /^packages\/(?!\.project\/)(?:.*\/)?(?:AGENTS|PRD)\.md$/i,
   // A component may carry exactly one contract README at its own root; anything
   // deeper is a package pretending to be its own repository again. The clients
@@ -76,10 +79,14 @@ for (const match of gitmodules.matchAll(/^\s*path\s*=\s*(.+)\s*$/gm)) {
 }
 
 const forbiddenPaths = [
-  // The repository's own .agents/.global at the root is the authored capability
-  // root. The rule still rejects a .agents/.global copied in anywhere below the
-  // root, which is what leaking provider-home state looks like.
+  // capabilities/.global at the repository root is the authored capability root.
+  // A copy of it anywhere below the root is rejected, which is what a leaked
+  // provider or state home looks like. All three spellings are covered: the
+  // pre-rebrand state root .agents, the current state root .andromeda, and the
+  // capability floor's own name.
   [/.+\/\.agents\/\.global(\/|$)/, "copied global agent state"],
+  [/.+\/\.andromeda\/\.global(\/|$)/, "copied global agent state"],
+  [/.+\/capabilities\/\.global(\/|$)/, "copied global agent state"],
   [/(^|\/)legacy(\/|$)/i, "legacy implementation tree"],
   [/^packages\/core\/src\/(?:plugin|dream)(\/|$)/, "retired provider-era memory plugin"],
   [/(^|\/)rommie\/v1(\/|$)/, "retired wire namespace"],
@@ -107,8 +114,14 @@ const retiredContent = [
   [/compatibility markers/i, "compatibility-marker contract"],
 ];
 
+// Files allowed to spell a retired state variable, because rejecting it is
+// their job. AGENTS_ joined ROMMIE_ and AGENTOS_ when the environment contract
+// became ANDROMEDA_; capabilities.ts is here because it keeps the retired state
+// root names in its forbidden-tree-segment set, the way it already kept
+// .rommie.
 const retiredVariableRejectionFiles = new Set([
   "install/install.sh",
+  "packages/cli/src/capabilities.ts",
   "packages/cli/src/runtime-paths.ts",
   "packages/cli/src/state-doctor.ts",
   "packages/cli/test/state.test.ts",
@@ -135,7 +148,7 @@ for (const relative of tracked) {
   for (const [pattern, label] of retiredContent) {
     if (pattern.test(text)) issues.push(`${label} remains in ${relative}`);
   }
-  if (/\b(?:ROMMIE_|AGENTOS_)[A-Z0-9_]*\b/.test(text) && !retiredVariableRejectionFiles.has(relative)) {
+  if (/\b(?:ROMMIE_|AGENTOS_|AGENTS_)[A-Z0-9_]*\b/.test(text) && !retiredVariableRejectionFiles.has(relative)) {
     issues.push(`retired state variable occurs outside its explicit rejection boundary: ${relative}`);
   }
 }
@@ -177,7 +190,7 @@ for (const relative of tracked.filter(
 )) {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, relative), "utf8"));
   if (manifest.private !== true) issues.push(`nested JavaScript package must be private implementation metadata: ${relative}`);
-  if (manifest.bin?.agents) issues.push(`nested JavaScript package competes for the agents CLI entrypoint: ${relative}`);
+  if (manifest.bin?.andromeda) issues.push(`nested JavaScript package competes for the agents CLI entrypoint: ${relative}`);
   if (typeof manifest.description !== "string" || !manifest.description.trim()) {
     issues.push(`nested JavaScript package must describe its PRD layer: ${relative}`);
   }

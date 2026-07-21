@@ -223,7 +223,7 @@ async function existingDirectoryRealPath(directory, label) {
 
 function assertContained(parent, child, label) {
   const relative = path.relative(parent, child);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`${label} does not resolve beneath canonical AGENTS_HOME`);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`${label} does not resolve beneath canonical ANDROMEDA_HOME`);
 }
 
 async function ensurePrivateDirectory(root, segments) {
@@ -275,9 +275,9 @@ async function writeExactReceipt(receiptRoot, receipt, expectedKeys) {
 }
 
 async function canonicalAgentsHome(agentsHome) {
-  if (typeof agentsHome !== "string" || !path.isAbsolute(agentsHome)) throw new Error("Issue draft hygiene requires absolute canonical AGENTS_HOME");
-  const resolved = await existingDirectoryRealPath(path.resolve(agentsHome), "Canonical AGENTS_HOME");
-  if (!resolved) throw new Error("Canonical AGENTS_HOME is unavailable");
+  if (typeof agentsHome !== "string" || !path.isAbsolute(agentsHome)) throw new Error("Issue draft hygiene requires absolute canonical ANDROMEDA_HOME");
+  const resolved = await existingDirectoryRealPath(path.resolve(agentsHome), "Canonical ANDROMEDA_HOME");
+  if (!resolved) throw new Error("Canonical ANDROMEDA_HOME is unavailable");
   return resolved;
 }
 
@@ -411,7 +411,7 @@ export async function recordIssueDraftOwnerResume({ agentsHome, state, policy, n
 
 function sanitizedFailure(error, agentsHome) {
   const raw = error instanceof Error ? error.message : "Unknown issue draft hygiene failure";
-  return typeof agentsHome === "string" && agentsHome ? raw.replaceAll(path.resolve(agentsHome), "$AGENTS_HOME") : raw;
+  return typeof agentsHome === "string" && agentsHome ? raw.replaceAll(path.resolve(agentsHome), "$ANDROMEDA_HOME") : raw;
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
@@ -419,10 +419,10 @@ if (invokedPath && invokedPath === path.resolve(fileURLToPath(import.meta.url)))
   const controlRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
   try {
     await access(controlRoot, fsConstants.R_OK);
-    const report = await maintainIssueDraftInventory({ agentsHome: process.env.AGENTS_HOME || "", controlRoot });
+    const report = await maintainIssueDraftInventory({ agentsHome: process.env.ANDROMEDA_HOME || "", controlRoot });
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } catch (error) {
-    process.stdout.write(`${JSON.stringify({ schemaVersion: 1, status: "blocked", code: "draft_hygiene_blocked", message: sanitizedFailure(error, process.env.AGENTS_HOME || ""), modelTokens: 0, sanitized: true }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ schemaVersion: 1, status: "blocked", code: "draft_hygiene_blocked", message: sanitizedFailure(error, process.env.ANDROMEDA_HOME || ""), modelTokens: 0, sanitized: true }, null, 2)}\n`);
     process.exitCode = 1;
   }
 }

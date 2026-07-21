@@ -10,8 +10,8 @@ from llm_gateway.main import app
 
 
 def main() -> None:
-    if not os.environ.get("AGENTS_HOME", "").strip():
-        raise SystemExit("AGENTS_HOME must be set to an absolute Agent OS state root")
+    if not os.environ.get("ANDROMEDA_HOME", "").strip():
+        raise SystemExit("ANDROMEDA_HOME must be set to an absolute Agent OS state root")
     with TestClient(app) as client:
         response = client.get("/health")
         response.raise_for_status()

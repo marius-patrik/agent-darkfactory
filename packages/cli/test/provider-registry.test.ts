@@ -14,7 +14,7 @@ describe("provider executable registry", () => {
   test("pins an absolute executable by resolved path, version, and checksum", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-provider-registry-"));
     try {
-      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+      const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
       const executable = path.join(root, "bin", "codex");
       await Bun.write(executable, "#!/bin/sh\nexit 0\n");
       const registration = await inspectProviderExecutable("codex", executable, "codex-cli 1.2.3", "2026-07-10T00:00:00.000Z");

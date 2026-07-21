@@ -11,12 +11,12 @@ class AgentStateError(RuntimeError):
 
 
 def require_agents_home() -> Path:
-    raw = os.environ.get("AGENTS_HOME", "").strip()
+    raw = os.environ.get("ANDROMEDA_HOME", "").strip()
     if not raw:
-        raise AgentStateError("AGENTS_HOME is required")
+        raise AgentStateError("ANDROMEDA_HOME is required")
     root = Path(raw)
     if not root.is_absolute():
-        raise AgentStateError("AGENTS_HOME must be an absolute path")
+        raise AgentStateError("ANDROMEDA_HOME must be an absolute path")
     return root
 
 

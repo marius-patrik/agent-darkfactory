@@ -908,9 +908,9 @@ function runAgentCommand(args, cwd) {
 }
 
 function canonicalAgentsLauncher() {
-  const agentsHome = requiredEnv("AGENTS_HOME");
+  const agentsHome = requiredEnv("ANDROMEDA_HOME");
   if (!path.isAbsolute(agentsHome)) {
-    throw new Error("AGENTS_HOME must be an absolute path");
+    throw new Error("ANDROMEDA_HOME must be an absolute path");
   }
   const agentsLauncher = path.join(agentsHome, "bin", "agents.ps1");
   if (!existsSync(agentsLauncher)) {

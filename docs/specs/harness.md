@@ -14,7 +14,7 @@ creating another authority.
 ## Requirements
 
 - Session mutations append immutable, hash-linked events under the supplied
-  `AGENTS_HOME` state descriptor.
+  `ANDROMEDA_HOME` state descriptor.
 - Session writes are serialized with private leases and projections are
   rebuildable from events.
 - Provider and model changes are represented as session events.

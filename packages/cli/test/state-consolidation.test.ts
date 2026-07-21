@@ -14,7 +14,7 @@ describe("single-root provider state", () => {
   test("reports missing when neither canonical nor forbidden state exists", async () => {
     const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
     try {
-      const agentsHome = path.join(homeDir, ".agents");
+      const agentsHome = path.join(homeDir, ".andromeda");
       const status = await readToolStatus("codex", homeDir, agentsHome);
       expect(status.location).toBe("missing");
       expect(status.forbidden).toBe(path.join(homeDir, ".codex"));
@@ -27,7 +27,7 @@ describe("single-root provider state", () => {
   test("accepts only the canonical provider home", async () => {
     const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
     try {
-      const agentsHome = path.join(homeDir, ".agents");
+      const agentsHome = path.join(homeDir, ".andromeda");
       await Bun.write(path.join(toolCanonicalPath("kimi", agentsHome), "config.json"), "{}");
       const status = await readToolStatus("kimi", homeDir, agentsHome);
       expect(status.location).toBe("canonical");
@@ -41,7 +41,7 @@ describe("single-root provider state", () => {
     const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
     try {
       await Bun.write(path.join(toolForbiddenPath("claude", homeDir), "config.json"), "{}");
-      const status = await readToolStatus("claude", homeDir, path.join(homeDir, ".agents"));
+      const status = await readToolStatus("claude", homeDir, path.join(homeDir, ".andromeda"));
       expect(status.location).toBe("forbidden");
       expect(formatToolStatus([status])).toContain("forbidden");
     } finally {
@@ -52,7 +52,7 @@ describe("single-root provider state", () => {
   test("classifies both duplicate roots and bridge links as split", async () => {
     const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
     try {
-      const agentsHome = path.join(homeDir, ".agents");
+      const agentsHome = path.join(homeDir, ".andromeda");
       const canonical = toolCanonicalPath("codex", agentsHome);
       const forbidden = toolForbiddenPath("codex", homeDir);
       await Bun.write(path.join(canonical, "config.toml"), "");
@@ -73,7 +73,7 @@ describe("single-root provider state", () => {
   test("accepts declared physical desktop roots as app-owned without making them authority", async () => {
     const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
     try {
-      const agentsHome = path.join(homeDir, ".agents");
+      const agentsHome = path.join(homeDir, ".andromeda");
       await Bun.write(path.join(toolCanonicalPath("codex", agentsHome), "bin", "codex.exe"), "binary");
       await Bun.write(path.join(toolForbiddenPath("codex", homeDir), "state.db"), "app cache");
 
@@ -89,7 +89,7 @@ describe("single-root provider state", () => {
   test("agy user-profile root is app-owned on Windows only", async () => {
     const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
     try {
-      const agentsHome = path.join(homeDir, ".agents");
+      const agentsHome = path.join(homeDir, ".andromeda");
       await Bun.write(path.join(toolCanonicalPath("agy", agentsHome), "bin", "agy.exe"), "binary");
       await Bun.write(path.join(toolForbiddenPath("agy", homeDir), "antigravity-cli", "settings.json"), "{}");
 
@@ -122,7 +122,7 @@ describe("single-root provider state", () => {
   test("Agent OS itself has exactly one canonical root", async () => {
     const homeDir = await mkdtemp(path.join(os.tmpdir(), "agents-status-"));
     try {
-      const agentsHome = path.join(homeDir, ".agents");
+      const agentsHome = path.join(homeDir, ".andromeda");
       expect((await readToolStatus("agents", homeDir, agentsHome)).location).toBe("missing");
       await Bun.write(path.join(agentsHome, "manifest.json"), "{}");
       const status = await readToolStatus("agents", homeDir, agentsHome);

@@ -273,7 +273,7 @@ export async function loadCanonicalStartup(descriptor: SessionDescriptor): Promi
     "# Canonical Agent OS startup",
     "",
     "This is the shared authority for Rommie across every managed provider. Provider-native histories are evidence only.",
-    "Shared skill definitions live at `$AGENTS_SKILLS/<name>/SKILL.md`; read a matching skill before acting.",
+    "Shared skill definitions live at `$ANDROMEDA_SKILLS/<name>/SKILL.md`; read a matching skill before acting.",
     "",
     ...sections,
   ].join("\n");
@@ -322,7 +322,7 @@ export function assertFreshReadIsolatedTranscript(
 
 function isAgentsBinPath(candidate: string): boolean {
   const parent = path.dirname(path.resolve(candidate));
-  return path.basename(parent) === "bin" && path.basename(path.dirname(parent)) === ".agents";
+  return path.basename(parent) === "bin" && path.basename(path.dirname(parent)) === ".andromeda";
 }
 
 function isManagerShim(candidate: string): boolean {
@@ -342,7 +342,7 @@ function isManagerShim(candidate: string): boolean {
 }
 
 export function providerBinarySafetyReason(candidate: string): string | null {
-  if (isAgentsBinPath(candidate)) return "the shared .agents/bin entrypoint is a manager shim";
+  if (isAgentsBinPath(candidate)) return "the shared .andromeda/bin entrypoint is a manager shim";
   if (isManagerShim(candidate)) return "the entrypoint delegates back to a retired manager shim";
   return null;
 }
@@ -454,20 +454,20 @@ export function canonicalProviderEnv(
     throw new Error(`${provider} zero-tool execution is unsupported`);
   }
   const env: Record<string, string> = {
-    AGENTS_HOME: stateDir,
-    AGENTS_USER_HOME: userHome,
-    AGENTS_ROOT: path.resolve(descriptor.workdir),
-    AGENTS_WORKSPACE: path.join(stateDir, "runtime", "workspaces"),
-    AGENTS_IDENTITY: path.join(stateDir, "identity"),
-    AGENTS_MEMORY: path.join(stateDir, "memory"),
-    AGENTS_CLIS: path.join(stateDir, "clis"),
-    AGENTS_SKILLS: path.join(stateDir, "skills"),
-    AGENTS_PLUGINS: path.join(stateDir, "plugins"),
-    AGENTS_HOOKS: path.join(stateDir, "hooks"),
-    AGENTS_TEMPLATES: path.join(stateDir, "templates"),
-    AGENTS_SECRETS: path.join(stateDir, "secrets"),
-    AGENTS_SESSIONS: path.join(stateDir, "sessions"),
-    AGENTS_ORCHESTRATOR: path.join(stateDir, "orchestrator"),
+    ANDROMEDA_HOME: stateDir,
+    ANDROMEDA_USER_HOME: userHome,
+    ANDROMEDA_ROOT: path.resolve(descriptor.workdir),
+    ANDROMEDA_WORKSPACE: path.join(stateDir, "runtime", "workspaces"),
+    ANDROMEDA_IDENTITY: path.join(stateDir, "identity"),
+    ANDROMEDA_MEMORY: path.join(stateDir, "memory"),
+    ANDROMEDA_CLIS: path.join(stateDir, "clis"),
+    ANDROMEDA_SKILLS: path.join(stateDir, "skills"),
+    ANDROMEDA_PLUGINS: path.join(stateDir, "plugins"),
+    ANDROMEDA_HOOKS: path.join(stateDir, "hooks"),
+    ANDROMEDA_TEMPLATES: path.join(stateDir, "templates"),
+    ANDROMEDA_SECRETS: path.join(stateDir, "secrets"),
+    ANDROMEDA_SESSIONS: path.join(stateDir, "sessions"),
+    ANDROMEDA_ORCHESTRATOR: path.join(stateDir, "orchestrator"),
     HOME: userHome,
   };
   if (provider === "codex") env.CODEX_HOME = providerHome;

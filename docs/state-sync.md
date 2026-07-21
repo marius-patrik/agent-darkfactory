@@ -4,8 +4,8 @@ Status: encrypted cross-machine event exchange is implemented. It is disabled
 by default and must be enabled independently on each machine with the same
 local key.
 
-Agent OS has one authoritative state root per machine, `AGENTS_HOME` (normally
-`~/.agents`). Exchange moves only immutable, machine-partitioned memory,
+Agent OS has one authoritative state root per machine, `andromeda_home` (normally
+`~/.andromeda`). Exchange moves only immutable, machine-partitioned memory,
 session, and orchestrator events. Records, views, session transcripts, state
 documents, and baton Markdown remain derived projections and are rebuilt after
 the complete imported history validates.
@@ -16,10 +16,10 @@ Generate a 32-byte key on the first machine and enable exchange:
 
 ```sh
 agents sync enable --generate-key
-agents secrets path AGENTS_SYNC_KEY
+agents secrets path ANDROMEDA_SYNC_KEY
 ```
 
-Transfer `AGENTS_SYNC_KEY.secret` through an authenticated, private channel to
+Transfer `ANDROMEDA_SYNC_KEY.secret` through an authenticated, private channel to
 the same canonical secret path on the other machine, then enable exchange
 there without `--generate-key`. The key is never embedded in a bundle.
 
@@ -83,14 +83,14 @@ sync artifacts.
 
 ## Path and authority contract
 
-- `AGENTS_HOME` is the only state root on a machine.
-- Provider homes are `AGENTS_HOME/clis/<provider>`.
-- Exchange configuration and journals live below `AGENTS_HOME/sync/`.
+- `andromeda_home` is the only state root on a machine.
+- Provider homes are `andromeda_home/clis/<provider>`.
+- Exchange configuration and journals live below `andromeda_home/sync/`.
 - Roaming authority consists of immutable events, never projections.
 - Raw provider databases/WALs, provider transcripts, credentials, models,
   caches, logs, temporary files, locks, process state, and arbitrary files are
   local-only.
-- Migration evidence remains below `AGENTS_HOME/provenance/migrations/` and in
+- Migration evidence remains below `andromeda_home/provenance/migrations/` and in
   the separately protected Recovery archive.
 
 The following are failures: a second writable state root; a provider bridge;
@@ -101,7 +101,7 @@ has not been recovered.
 
 On Windows, physical top-level `.codex` and `.claude` directories used by the
 desktop applications may coexist as `app-owned` surfaces only when distinct
-canonical CLI homes exist below `AGENTS_HOME/clis`. They are never exchange
+canonical CLI homes exist below `andromeda_home/clis`. They are never exchange
 sources or Agent OS authority.
 
 See [Canonical State and Memory v2](state-memory-v2.md) for the complete

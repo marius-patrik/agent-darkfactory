@@ -14,7 +14,7 @@ store. Gateway relay history is bounded runtime state, not a second authority.
 - Static model definitions: package-owned `registry/models.yaml`.
 - Live local-engine endpoints and readiness: inferctl-owned status file at
   `GATEWAY_INFERCTL_STATUS_PATH` or `registry/inferctl-engines.yaml`.
-- Traces: `$AGENTS_HOME/runtime/gateway/traces/`.
+- Traces: `$ANDROMEDA_HOME/runtime/gateway/traces/`.
 The inferctl file is a runtime overlay, never a writable registry backend.
 Cloud provider
 credentials and execution remain exclusively in the manager-owned provider
@@ -87,9 +87,9 @@ cap must enforce it at the ASGI server or edge proxy.
 
 ## Durable budgets and cluster axes
 
-`GATEWAY_BUDGETS_PATH` (or `AGENTS_CREDITS`) is a read-only durable budget
+`GATEWAY_BUDGETS_PATH` (or `ANDROMEDA_CREDITS`) is a read-only durable budget
 authority. `GATEWAY_BUDGETS_PATH` takes precedence when both are set;
-`AGENTS_CREDITS` is the canonical Agent OS fallback. When a cloud provider is exhausted—or the configured budget file
+`ANDROMEDA_CREDITS` is the canonical Agent OS fallback. When a cloud provider is exhausted—or the configured budget file
 cannot be validated—the request/task routers skip it and use an enabled local
 model with the same role. Cloud is also local-by-default unless the caller sets
 `allow_cloud=true`. The gateway never writes the shared credit store.
@@ -115,4 +115,4 @@ not mutated by this runtime surface.
 ## Runtime metadata
 
 Health reports the installed package version plus deployment metadata from
-`AGENTS_GIT_SHA`, `AGENTS_BUILD_TIME`, and `AGENTS_NODE_ID`.
+`ANDROMEDA_GIT_SHA`, `ANDROMEDA_BUILD_TIME`, and `ANDROMEDA_NODE_ID`.

@@ -44,7 +44,7 @@ function allowedTrackedFile(file: string): boolean {
   const canonicalCase = file.toLowerCase();
   if (sensitiveTrackedPath(canonicalCase)) return false;
   if (!canonicalCase.includes("/")) return ALLOWED_TRACKED_ROOT_FILES.has(canonicalCase);
-  if (canonicalCase.startsWith(".agents/")) return canonicalCase.startsWith(".agents/.project/");
+  if (canonicalCase.startsWith(".andromeda/")) return canonicalCase.startsWith("capabilities/.project/");
   if (canonicalCase.startsWith("backups/")) {
     return /^backups\/events\/[a-z0-9][a-z0-9._-]{0,127}\/[a-f0-9]{64}\.bundle\.json$/.test(canonicalCase);
   }
@@ -139,7 +139,7 @@ async function physicalPathUnderState(
   const resolved = path.resolve(target);
   const relative = path.relative(root, resolved);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error(`state repository path escapes AGENTS_HOME: ${resolved}`);
+    throw new Error(`state repository path escapes ANDROMEDA_HOME: ${resolved}`);
   }
   let current = root;
   for (const segment of relative ? relative.split(path.sep) : []) {
@@ -174,7 +174,7 @@ export async function inspectStateRepository(state: SharedState): Promise<StateR
   const issues: string[] = [];
   const top = await git(state, ["rev-parse", "--show-toplevel"], true);
   const checkout = top.code === 0 && await samePhysicalDirectory(top.stdout, state.stateDir);
-  if (!checkout) issues.push("AGENTS_HOME is not the root of a Git working tree");
+  if (!checkout) issues.push("ANDROMEDA_HOME is not the root of a Git working tree");
 
   if (checkout) {
     const head = await git(state, ["rev-parse", "--verify", "HEAD^{commit}"], true);

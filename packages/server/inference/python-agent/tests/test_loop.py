@@ -32,7 +32,7 @@ def test_permission_modes_match_canonical_policy() -> None:
 
 
 def test_gateway_client_defaults_to_canonical_gateway_port(monkeypatch) -> None:
-    monkeypatch.delenv("AGENTS_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("ANDROMEDA_GATEWAY_URL", raising=False)
     assert GatewayClient().base_url == "http://127.0.0.1:8787"
 
 
@@ -158,7 +158,7 @@ async def test_redaction_at_tool_message_and_event_boundary(monkeypatch, tmp_pat
             max_turns=3,
         )
     )
-    root = tmp_path / ".agents" / "runtime" / "inference" / "runs" / "redact"
+    root = tmp_path / ".andromeda" / "runtime" / "inference" / "runs" / "redact"
     event_text = (root / "events.ndjson").read_text()
     assert secret not in event_text
     assert "SuperSecret123ABC" not in event_text
@@ -321,12 +321,12 @@ def test_acceptance_gate_and_max_turn_transition(tmp_path):
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_live_gateway_fib(tmp_path):
-    base = os.environ.get("AGENTS_GATEWAY_URL") or "http://127.0.0.1:8787"
+    base = os.environ.get("ANDROMEDA_GATEWAY_URL") or "http://127.0.0.1:8787"
     try:
         async with httpx.AsyncClient(timeout=2) as client:
             await client.get(f"{base}/v1/models")
     except Exception:
-        pytest.skip("AGENTS_GATEWAY_URL/local gateway is not reachable")
+        pytest.skip("ANDROMEDA_GATEWAY_URL/local gateway is not reachable")
     output = tmp_path / "fib_s33.json"
     outcome = await run_session(
         SessionConfig(

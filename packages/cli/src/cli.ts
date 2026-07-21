@@ -189,7 +189,7 @@ Usage:
   agents os deploy <profile> [--image agents-os] [--env agents-os] [--channel dev] [--dry-run]
   agents runner install|enable|disable|status|repair [--json]
 
-All runtime data is shared through .agents so every managed CLI sees the same
+All runtime data is shared through .andromeda so every managed CLI sees the same
 skills, plugins, CLI metadata, and credit store.`);
 }
 
@@ -347,7 +347,7 @@ async function syncCommand(values: string[], flags: Record<string, string | bool
   await ensureSharedState(state);
   if (action === "enable") {
     await enableEventSync(state, Boolean(flags["generate-key"]));
-    console.log(`event exchange enabled; key remains local at ${secretPath(state, "AGENTS_SYNC_KEY")}`);
+    console.log(`event exchange enabled; key remains local at ${secretPath(state, "ANDROMEDA_SYNC_KEY")}`);
     return;
   }
   if (action === "disable") {
@@ -791,7 +791,7 @@ async function runCommand(args: string[], flags: Record<string, string | boolean
     const request = await modelExecutionRequestFromCli({
       values: args,
       flags,
-      // AGENTS_ROOT identifies the distribution. Logical-tier authority stays
+      // ANDROMEDA_ROOT identifies the distribution. Logical-tier authority stays
       // bound to the directory from which the user invoked this process.
       workdir: invocationRoot,
       stdin: process.stdin,
@@ -985,44 +985,44 @@ async function runHarness(
 
 function sharedHarnessEnv(state: SharedState, harness: { id: string }): Record<string, string> {
   return {
-    AGENTS_BIN: process.execPath,
-    AGENTS_BIN_SCRIPT: Bun.argv[1] ? path.resolve(Bun.argv[1]) : "",
-    AGENTS_HOME: state.stateDir,
-    AGENTS_ROOT: state.root,
-    AGENTS_WORKSPACE: state.workspaceDir,
-    AGENTS_CLIS: state.clisDir,
-    AGENTS_HARNESSES: state.harnessesDir,
-    AGENTS_SKILLS: state.skillsDir,
-    AGENTS_PLUGINS: state.pluginsDir,
-    AGENTS_HOOKS: state.hooksDir,
-    AGENTS_TEMPLATES: state.templatesDir,
-    AGENTS_SECRETS: state.secretsDir,
-    AGENTS_ORCHESTRATOR: state.orchestratorDir,
-    AGENTS_CREDITS: state.creditsFile,
-    AGENTS_DATA_REPOS: state.dataReposFile,
-    AGENTS_ENVIRONMENTS: state.environmentsFile,
-    AGENTS_HARNESS_HOME: path.join(state.harnessesDir, harness.id, "runtime"),
+    ANDROMEDA_BIN: process.execPath,
+    ANDROMEDA_BIN_SCRIPT: Bun.argv[1] ? path.resolve(Bun.argv[1]) : "",
+    ANDROMEDA_HOME: state.stateDir,
+    ANDROMEDA_ROOT: state.root,
+    ANDROMEDA_WORKSPACE: state.workspaceDir,
+    ANDROMEDA_CLIS: state.clisDir,
+    ANDROMEDA_HARNESSES: state.harnessesDir,
+    ANDROMEDA_SKILLS: state.skillsDir,
+    ANDROMEDA_PLUGINS: state.pluginsDir,
+    ANDROMEDA_HOOKS: state.hooksDir,
+    ANDROMEDA_TEMPLATES: state.templatesDir,
+    ANDROMEDA_SECRETS: state.secretsDir,
+    ANDROMEDA_ORCHESTRATOR: state.orchestratorDir,
+    ANDROMEDA_CREDITS: state.creditsFile,
+    ANDROMEDA_DATA_REPOS: state.dataReposFile,
+    ANDROMEDA_ENVIRONMENTS: state.environmentsFile,
+    ANDROMEDA_HARNESS_HOME: path.join(state.harnessesDir, harness.id, "runtime"),
   };
 }
 
 function sharedPackageEnv(state: SharedState): Record<string, string> {
   return {
-    AGENTS_BIN: process.execPath,
-    AGENTS_BIN_SCRIPT: Bun.argv[1] ? path.resolve(Bun.argv[1]) : "",
-    AGENTS_HOME: state.stateDir,
-    AGENTS_ROOT: state.root,
-    AGENTS_WORKSPACE: state.workspaceDir,
-    AGENTS_CLIS: state.clisDir,
-    AGENTS_HARNESSES: state.harnessesDir,
-    AGENTS_SKILLS: state.skillsDir,
-    AGENTS_PLUGINS: state.pluginsDir,
-    AGENTS_HOOKS: state.hooksDir,
-    AGENTS_TEMPLATES: state.templatesDir,
-    AGENTS_SECRETS: state.secretsDir,
-    AGENTS_ORCHESTRATOR: state.orchestratorDir,
-    AGENTS_CREDITS: state.creditsFile,
-    AGENTS_DATA_REPOS: state.dataReposFile,
-    AGENTS_ENVIRONMENTS: state.environmentsFile,
+    ANDROMEDA_BIN: process.execPath,
+    ANDROMEDA_BIN_SCRIPT: Bun.argv[1] ? path.resolve(Bun.argv[1]) : "",
+    ANDROMEDA_HOME: state.stateDir,
+    ANDROMEDA_ROOT: state.root,
+    ANDROMEDA_WORKSPACE: state.workspaceDir,
+    ANDROMEDA_CLIS: state.clisDir,
+    ANDROMEDA_HARNESSES: state.harnessesDir,
+    ANDROMEDA_SKILLS: state.skillsDir,
+    ANDROMEDA_PLUGINS: state.pluginsDir,
+    ANDROMEDA_HOOKS: state.hooksDir,
+    ANDROMEDA_TEMPLATES: state.templatesDir,
+    ANDROMEDA_SECRETS: state.secretsDir,
+    ANDROMEDA_ORCHESTRATOR: state.orchestratorDir,
+    ANDROMEDA_CREDITS: state.creditsFile,
+    ANDROMEDA_DATA_REPOS: state.dataReposFile,
+    ANDROMEDA_ENVIRONMENTS: state.environmentsFile,
   };
 }
 

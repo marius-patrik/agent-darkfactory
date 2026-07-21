@@ -20,7 +20,7 @@ class GatewayClient:
     """
 
     def __init__(self, base_url: str | None = None, timeout: float = 120.0) -> None:
-        self.base_url = (base_url or os.environ.get("AGENTS_GATEWAY_URL") or "http://127.0.0.1:8787").rstrip("/")
+        self.base_url = (base_url or os.environ.get("ANDROMEDA_GATEWAY_URL") or "http://127.0.0.1:8787").rstrip("/")
         self.timeout = timeout
 
     async def chat_completion(

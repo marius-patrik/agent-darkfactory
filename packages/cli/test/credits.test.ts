@@ -10,7 +10,7 @@ const cliPath = path.join(repoRoot, "src", "cli.ts");
 function cleanEnv(): Record<string, string | undefined> {
   const copy = { ...process.env };
   for (const key of Object.keys(copy)) {
-    if (key.startsWith("AGENTS_")) delete copy[key];
+    if (key.startsWith("ANDROMEDA_")) delete copy[key];
   }
   return copy;
 }
@@ -18,7 +18,7 @@ function cleanEnv(): Record<string, string | undefined> {
 async function runAgents(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn([process.execPath, cliPath, ...args], {
     cwd,
-    env: { ...cleanEnv(), AGENTS_HOME: path.join(cwd, ".agents"), AGENTS_ROOT: cwd },
+    env: { ...cleanEnv(), ANDROMEDA_HOME: path.join(cwd, ".andromeda"), ANDROMEDA_ROOT: cwd },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -27,7 +27,7 @@ async function runAgents(cwd: string, args: string[]): Promise<{ code: number; s
 }
 
 async function readCredits(root: string): Promise<CreditStore> {
-  return JSON.parse(await Bun.file(path.join(root, ".agents", "credits.json")).text()) as CreditStore;
+  return JSON.parse(await Bun.file(path.join(root, ".andromeda", "credits.json")).text()) as CreditStore;
 }
 
 describe("credits CLI", () => {

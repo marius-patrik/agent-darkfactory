@@ -26,7 +26,7 @@ import {
 
 async function fixture(): Promise<{ root: string; state: SharedState }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "andromeda-memory-plugin-"));
-  const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+  const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
   await ensureSharedState(state);
   return { root, state };
 }
@@ -324,9 +324,9 @@ describe("operator entrypoint", () => {
         cwd: root,
         env: {
           ...process.env,
-          AGENTS_ROOT: root,
-          AGENTS_HOME: state.stateDir,
-          AGENTS_USER_HOME: state.userHome,
+          ANDROMEDA_ROOT: root,
+          ANDROMEDA_HOME: state.stateDir,
+          ANDROMEDA_USER_HOME: state.userHome,
         },
         stdout: "pipe",
         stderr: "pipe",
@@ -420,8 +420,8 @@ describe("Dream v1.3 cursor migration", () => {
       expect(await restoreDreamV13CursorProjection(state)).toEqual(migrated);
 
       const syncKey = "7b".repeat(32);
-      await writeSecret(state, "AGENTS_SYNC_KEY", syncKey);
-      await writeSecret(targetFixture.state, "AGENTS_SYNC_KEY", syncKey);
+      await writeSecret(state, "ANDROMEDA_SYNC_KEY", syncKey);
+      await writeSecret(targetFixture.state, "ANDROMEDA_SYNC_KEY", syncKey);
       await enableEventSync(state);
       await enableEventSync(targetFixture.state);
       const bundle = path.join(root, "memory-events.bundle.json");

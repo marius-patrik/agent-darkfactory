@@ -12,7 +12,7 @@ projected container paths.
 
 - The image is replaceable; mounted canonical state and registered data are
   durable.
-- One physical `AGENTS_HOME` is mounted read-write. No provider, harness, or
+- One physical `ANDROMEDA_HOME` is mounted read-write. No provider, harness, or
   service receives a second state root.
 - Code, operational data, and workspaces are distinct scopes.
 - Provider databases, models, caches, logs, locks, and raw transcripts are
@@ -25,24 +25,24 @@ projected container paths.
 
 | Variable | Container path | Purpose |
 | --- | --- | --- |
-| `AGENTS_ROOT` | `/opt/agents-os` | Read-only distribution/package root |
-| `AGENTS_HOME` | `/agents/state` | The one canonical state root |
-| `AGENTS_USER_HOME` | `/home/agents` | Runtime account home, not state |
-| `AGENTS_SYSTEM_DATA_ROOT` | `/agents/state` | The same private-data checkout as `AGENTS_HOME` |
-| `AGENTS_WORKSPACE` | `/workspace/agents` | Private Agent OS runtime workspaces |
-| `AGENTS_CLIS` | `/agents/state/clis` | Opaque provider homes |
-| `AGENTS_IDENTITY` | `/agents/state/identity` | Single Rommie identity and worker roles |
-| `AGENTS_MEMORY` | `/agents/state/memory` | Canonical memory authority |
-| `AGENTS_SESSIONS` | `/agents/state/sessions` | Canonical session events/projections |
-| `AGENTS_ORCHESTRATOR` | `/agents/state/orchestrator` | Orchestrator events/lease/projections |
-| `AGENTS_SKILLS` | `/agents/state/skills` | Canonical shared skills |
-| `AGENTS_PLUGINS` | `/agents/state/plugins` | Canonical shared plugins |
-| `AGENTS_HOOKS` | `/agents/state/hooks` | Canonical shared hooks |
-| `AGENTS_TEMPLATES` | `/agents/state/templates` | Canonical templates |
-| `AGENTS_HARNESSES` | `/agents/state/harnesses` | Harness-local runtime roots |
-| `AGENTS_SECRETS` | `/agents/state/secrets` | Local secret registry/materializations |
-| `AGENTS_DATA_REPOS` | `/agents/state/data-repos.json` | Data registry |
-| `AGENTS_CREDITS` | `/agents/state/credits.json` | Credit ledger |
+| `ANDROMEDA_ROOT` | `/opt/agents-os` | Read-only distribution/package root |
+| `ANDROMEDA_HOME` | `/agents/state` | The one canonical state root |
+| `ANDROMEDA_USER_HOME` | `/home/agents` | Runtime account home, not state |
+| `ANDROMEDA_SYSTEM_DATA_ROOT` | `/agents/state` | The same private-data checkout as `ANDROMEDA_HOME` |
+| `ANDROMEDA_WORKSPACE` | `/workspace/agents` | Private Agent OS runtime workspaces |
+| `ANDROMEDA_CLIS` | `/agents/state/clis` | Opaque provider homes |
+| `ANDROMEDA_IDENTITY` | `/agents/state/identity` | Single Rommie identity and worker roles |
+| `ANDROMEDA_MEMORY` | `/agents/state/memory` | Canonical memory authority |
+| `ANDROMEDA_SESSIONS` | `/agents/state/sessions` | Canonical session events/projections |
+| `ANDROMEDA_ORCHESTRATOR` | `/agents/state/orchestrator` | Orchestrator events/lease/projections |
+| `ANDROMEDA_SKILLS` | `/agents/state/skills` | Canonical shared skills |
+| `ANDROMEDA_PLUGINS` | `/agents/state/plugins` | Canonical shared plugins |
+| `ANDROMEDA_HOOKS` | `/agents/state/hooks` | Canonical shared hooks |
+| `ANDROMEDA_TEMPLATES` | `/agents/state/templates` | Canonical templates |
+| `ANDROMEDA_HARNESSES` | `/agents/state/harnesses` | Harness-local runtime roots |
+| `ANDROMEDA_SECRETS` | `/agents/state/secrets` | Local secret registry/materializations |
+| `ANDROMEDA_DATA_REPOS` | `/agents/state/data-repos.json` | Data registry |
+| `ANDROMEDA_CREDITS` | `/agents/state/credits.json` | Credit ledger |
 
 Provider-native variables are derived inside the container exactly as on the
 host: Codex, Claude, and Kimi keep the real runtime account `HOME`; Agy receives
@@ -56,15 +56,15 @@ state roots. A minimum plan maps:
 
 | Host source | Container target | Mode |
 | --- | --- | --- |
-| `$AGENTS_HOME` | `/agents/state` | read-write, private |
-| `$AGENTS_ROOT` or packaged distribution | `/opt/agents-os` | read-only |
+| `$ANDROMEDA_HOME` | `/agents/state` | read-write, private |
+| `$ANDROMEDA_ROOT` or packaged distribution | `/opt/agents-os` | read-only |
 | each additional registered data repo | declared `/agents/data/<id>` | package-declared |
 | the active registered workspace | declared `/workspace/<id>` | package-declared |
 
 The personal source checkout is separate from state and is not inferred from
-`HOME` or cwd. The sole Agent OS data checkout is `$AGENTS_HOME`, recorded
-exactly once as `agent-os-data`; `AGENTS_SYSTEM_DATA_ROOT` must equal that same
-path. Runtime workspaces live under `$AGENTS_HOME/runtime/workspaces`. Product
+`HOME` or cwd. The sole Agent OS data checkout is `$ANDROMEDA_HOME`, recorded
+exactly once as `agent-os-data`; `ANDROMEDA_SYSTEM_DATA_ROOT` must equal that same
+path. Runtime workspaces live under `$ANDROMEDA_HOME/runtime/workspaces`. Product
 validation rejects a missing, renamed, relocated, or aliased system-data
 record.
 

@@ -22,7 +22,7 @@ test("managed Validate provisions Go and uv before dependency installation", asy
 });
 
 test("monorepo validation uses the uv CLI without a cross-repository go.work", async () => {
-  const commands = await readFile(".agents/.project/COMMANDS.md", "utf8");
+  const commands = await readFile("capabilities/.project/COMMANDS.md", "utf8");
   assert.doesNotMatch(commands, /python(?:3)?\s+-m\s+uv/);
   assert.match(commands, /\buv sync --frozen\b/);
   assert.equal(existsSync("go.work"), false);
@@ -44,7 +44,7 @@ test("Autoreview validates canonical Agent OS before the bounded review protocol
   const workflow = await readFile(reviewWorkflowPath, "utf8");
   const verify = step(workflow, "Verify canonical Agent OS");
   const review = step(workflow, "Run bounded medium-to-clean and high confirmation protocol");
-  assert.match(verify, /AGENTS_HOME/);
+  assert.match(verify, /ANDROMEDA_HOME/);
   assert.match(verify, /agents\.ps1/);
   assert.match(verify, /state doctor --json/);
   assert.match(review, /DF_EXPECTED_BASE_SHA/);

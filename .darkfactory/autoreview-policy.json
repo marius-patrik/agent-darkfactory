@@ -15,7 +15,7 @@
     "changedFileBytes": 1000000
   },
   "protectedAutofixPaths": [
-    ".agents/",
+    "capabilities/",
     ".darkfactory/",
     ".github/",
     "AGENTS.md",

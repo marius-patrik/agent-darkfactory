@@ -7,7 +7,7 @@ import type { ProviderId } from "./provider-registry";
 
 export const SYSTEM_DATA_REPO_ID = "agent-os-data";
 export const SYSTEM_DATA_REPOSITORY = "marius-patrik/Andromeda-data";
-export const SYSTEM_DATA_ENV = "AGENTS_SYSTEM_DATA_ROOT";
+export const SYSTEM_DATA_ENV = "ANDROMEDA_SYSTEM_DATA_ROOT";
 const LEGACY_SYSTEM_DATA_REPOSITORY = "marius-patrik/agents-data";
 const LEGACY_SYSTEM_DATA_RELATIVE_PATH = path.join("data", "agent-os");
 
@@ -150,28 +150,28 @@ export function sharedStateAt(root: string, stateDir: string, userHome = resolve
 }
 
 export function sharedState(root: string): SharedState {
-  return sharedStateAt(root, path.join(root, ".agents"));
+  return sharedStateAt(root, path.join(root, ".andromeda"));
 }
 
 export function sharedStateFromEnv(cwd: string, env: RuntimePathEnv = process.env): SharedState {
   const stateDir = resolveRuntimeAgentsHome(cwd, env);
-  const root = env.AGENTS_ROOT?.trim() ? path.resolve(env.AGENTS_ROOT.trim()) : path.resolve(cwd);
+  const root = env.ANDROMEDA_ROOT?.trim() ? path.resolve(env.ANDROMEDA_ROOT.trim()) : path.resolve(cwd);
   const userHome = resolveUserHome(env);
   return {
     ...sharedStateAt(root, stateDir, userHome),
-    clisDir: env.AGENTS_CLIS?.trim() || path.join(stateDir, "clis"),
-    harnessesDir: env.AGENTS_HARNESSES?.trim() || path.join(stateDir, "harnesses"),
-    skillsDir: env.AGENTS_SKILLS?.trim() || path.join(stateDir, "skills"),
-    pluginsDir: env.AGENTS_PLUGINS?.trim() || path.join(stateDir, "plugins"),
-    hooksDir: env.AGENTS_HOOKS?.trim() || path.join(stateDir, "hooks"),
-    templatesDir: env.AGENTS_TEMPLATES?.trim() || path.join(stateDir, "templates"),
-    secretsDir: env.AGENTS_SECRETS?.trim() || path.join(stateDir, "secrets"),
-    sessionsDir: env.AGENTS_SESSIONS?.trim() || path.join(stateDir, "sessions"),
-    orchestratorDir: env.AGENTS_ORCHESTRATOR?.trim() || path.join(stateDir, "orchestrator"),
-    creditsFile: env.AGENTS_CREDITS?.trim() || path.join(stateDir, "credits.json"),
-    dataReposFile: env.AGENTS_DATA_REPOS?.trim() || path.join(stateDir, "data-repos.json"),
-    environmentsFile: env.AGENTS_ENVIRONMENTS?.trim() || path.join(stateDir, "environments.json"),
-    configFile: env.AGENTS_CONFIG?.trim() || path.join(stateDir, "config.json"),
+    clisDir: env.ANDROMEDA_CLIS?.trim() || path.join(stateDir, "clis"),
+    harnessesDir: env.ANDROMEDA_HARNESSES?.trim() || path.join(stateDir, "harnesses"),
+    skillsDir: env.ANDROMEDA_SKILLS?.trim() || path.join(stateDir, "skills"),
+    pluginsDir: env.ANDROMEDA_PLUGINS?.trim() || path.join(stateDir, "plugins"),
+    hooksDir: env.ANDROMEDA_HOOKS?.trim() || path.join(stateDir, "hooks"),
+    templatesDir: env.ANDROMEDA_TEMPLATES?.trim() || path.join(stateDir, "templates"),
+    secretsDir: env.ANDROMEDA_SECRETS?.trim() || path.join(stateDir, "secrets"),
+    sessionsDir: env.ANDROMEDA_SESSIONS?.trim() || path.join(stateDir, "sessions"),
+    orchestratorDir: env.ANDROMEDA_ORCHESTRATOR?.trim() || path.join(stateDir, "orchestrator"),
+    creditsFile: env.ANDROMEDA_CREDITS?.trim() || path.join(stateDir, "credits.json"),
+    dataReposFile: env.ANDROMEDA_DATA_REPOS?.trim() || path.join(stateDir, "data-repos.json"),
+    environmentsFile: env.ANDROMEDA_ENVIRONMENTS?.trim() || path.join(stateDir, "environments.json"),
+    configFile: env.ANDROMEDA_CONFIG?.trim() || path.join(stateDir, "config.json"),
   };
 }
 
@@ -247,25 +247,25 @@ export async function ensureSharedState(state: SharedState): Promise<void> {
   await writeTextIfChanged(
     state.envFile,
     [
-      `AGENTS_HOME=${state.stateDir}`,
-      `AGENTS_USER_HOME=${state.userHome}`,
-      `AGENTS_ROOT=${state.root}`,
-      `AGENTS_WORKSPACE=${state.workspaceDir}`,
-      `AGENTS_CLIS=${state.clisDir}`,
-      `AGENTS_HARNESSES=${state.harnessesDir}`,
-      `AGENTS_SKILLS=${state.skillsDir}`,
-      `AGENTS_PLUGINS=${state.pluginsDir}`,
-      `AGENTS_HOOKS=${state.hooksDir}`,
-      `AGENTS_TEMPLATES=${state.templatesDir}`,
-      `AGENTS_SECRETS=${state.secretsDir}`,
-      `AGENTS_SESSIONS=${state.sessionsDir}`,
-      `AGENTS_IDENTITY=${path.join(state.stateDir, "identity")}`,
-      `AGENTS_MEMORY=${path.join(state.stateDir, "memory")}`,
-      `AGENTS_ORCHESTRATOR=${state.orchestratorDir}`,
-      `AGENTS_CREDITS=${state.creditsFile}`,
-      `AGENTS_DATA_REPOS=${state.dataReposFile}`,
-      `AGENTS_ENVIRONMENTS=${state.environmentsFile}`,
-      `AGENTS_CONFIG=${state.configFile}`,
+      `ANDROMEDA_HOME=${state.stateDir}`,
+      `ANDROMEDA_USER_HOME=${state.userHome}`,
+      `ANDROMEDA_ROOT=${state.root}`,
+      `ANDROMEDA_WORKSPACE=${state.workspaceDir}`,
+      `ANDROMEDA_CLIS=${state.clisDir}`,
+      `ANDROMEDA_HARNESSES=${state.harnessesDir}`,
+      `ANDROMEDA_SKILLS=${state.skillsDir}`,
+      `ANDROMEDA_PLUGINS=${state.pluginsDir}`,
+      `ANDROMEDA_HOOKS=${state.hooksDir}`,
+      `ANDROMEDA_TEMPLATES=${state.templatesDir}`,
+      `ANDROMEDA_SECRETS=${state.secretsDir}`,
+      `ANDROMEDA_SESSIONS=${state.sessionsDir}`,
+      `ANDROMEDA_IDENTITY=${path.join(state.stateDir, "identity")}`,
+      `ANDROMEDA_MEMORY=${path.join(state.stateDir, "memory")}`,
+      `ANDROMEDA_ORCHESTRATOR=${state.orchestratorDir}`,
+      `ANDROMEDA_CREDITS=${state.creditsFile}`,
+      `ANDROMEDA_DATA_REPOS=${state.dataReposFile}`,
+      `ANDROMEDA_ENVIRONMENTS=${state.environmentsFile}`,
+      `ANDROMEDA_CONFIG=${state.configFile}`,
       `${SYSTEM_DATA_ENV}=${systemDataPath(state)}`,
       "",
     ].join("\n"),

@@ -69,9 +69,9 @@ class TestHealthCheck:
 
     async def test_uses_package_version_and_reads_build_environment(self, health_fixture, monkeypatch):
         checker, _ = health_fixture
-        monkeypatch.setenv("AGENTS_GIT_SHA", "abc123")
-        monkeypatch.setenv("AGENTS_BUILD_TIME", "2026-07-10T12:00:00Z")
-        monkeypatch.setenv("AGENTS_NODE_ID", "node-test")
+        monkeypatch.setenv("ANDROMEDA_GIT_SHA", "abc123")
+        monkeypatch.setenv("ANDROMEDA_BUILD_TIME", "2026-07-10T12:00:00Z")
+        monkeypatch.setenv("ANDROMEDA_NODE_ID", "node-test")
         report = await checker.check()
         assert report["version"] == version("agent-os-gateway")
         assert report["git_sha"] == "abc123"

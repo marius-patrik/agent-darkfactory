@@ -78,17 +78,17 @@ jobs:
 
       - name: Verify canonical Agent OS
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME)) {
-            Write-Output "::error::AGENTS_HOME is required for the canonical Agent OS launcher."
+          if ([string]::IsNullOrWhiteSpace($env:ANDROMEDA_HOME)) {
+            Write-Output "::error::ANDROMEDA_HOME is required for the canonical Agent OS launcher."
             exit 1
           }
 
-          if (-not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
-            Write-Output "::error::AGENTS_HOME must be an absolute path."
+          if (-not [System.IO.Path]::IsPathFullyQualified($env:ANDROMEDA_HOME)) {
+            Write-Output "::error::ANDROMEDA_HOME must be an absolute path."
             exit 1
           }
 
-          $agentsLauncher = Join-Path -Path $env:AGENTS_HOME -ChildPath "bin\agents.ps1"
+          $agentsLauncher = Join-Path -Path $env:ANDROMEDA_HOME -ChildPath "bin\agents.ps1"
           if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
             Write-Output "::error::Canonical Agent OS launcher is missing at $agentsLauncher."
             exit 1

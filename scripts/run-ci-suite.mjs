@@ -83,8 +83,14 @@ export const CI_SUITE_NAMES = Object.freeze([
   "review",
 ]);
 
+// A backstop against a hung test, not a performance assertion. The Windows
+// hosted runner degrades badly under load - manager legs have taken 22 to 27
+// minutes against roughly 8 healthy - and at 90s the cross-process lock test
+// and the redaction sweep were being killed mid-flight rather than hanging.
+// A genuine hang still fails here, just later; a slow runner no longer reds
+// the build.
 export function managerTestTimeoutMs(platform = process.platform) {
-  return platform === "win32" ? 90_000 : 30_000;
+  return platform === "win32" ? 240_000 : 60_000;
 }
 
 const suites = {
@@ -112,13 +118,13 @@ const suites = {
     const cwd = path.join(root, "packages", "server", "gateway");
     const sandbox = mkdtempSync(path.join(tmpdir(), "andromeda-gateway-ci-"));
     const userHome = path.join(sandbox, "user");
-    const stateHome = path.join(userHome, ".agents");
+    const stateHome = path.join(userHome, ".andromeda");
     mkdirSync(stateHome, { recursive: true });
     const env = {
       ...process.env,
-      AGENTS_HOME: stateHome,
-      AGENTS_USER_HOME: userHome,
-      AGENTS_ROOT: root,
+      ANDROMEDA_HOME: stateHome,
+      ANDROMEDA_USER_HOME: userHome,
+      ANDROMEDA_ROOT: root,
     };
     try {
       run("gateway dependency sync", uv, ["sync", "--frozen"], { cwd, env });
@@ -158,7 +164,7 @@ const suites = {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      ".agents/.global/skills/compact/scripts/test_write_compaction_capsule.ps1",
+      "capabilities/.global/skills/compact/scripts/test_write_compaction_capsule.ps1",
     ]);
   },
   "memory-plugin"() {

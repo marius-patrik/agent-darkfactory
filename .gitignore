@@ -1,10 +1,10 @@
 node_modules/
 
-.agents/*
-!.agents/.project/
-!.agents/.project/**
-!.agents/plugins/
-!.agents/plugins/marketplace.json
+capabilities/*
+!capabilities/.project/
+!capabilities/.project/**
+!capabilities/plugins/
+!capabilities/plugins/marketplace.json
 __pycache__/
 .pytest_cache/
 .venv/

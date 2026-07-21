@@ -26,7 +26,7 @@ const VERIFIED: MemoryEvidence = {
 
 async function fixture(): Promise<{ root: string; state: SharedState }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "agents-memory-"));
-  const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+  const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
   await ensureSharedState(state);
   return { root, state };
 }

@@ -9,7 +9,7 @@ const cliPath = path.join(repoRoot, "src", "cli.ts");
 function cleanEnv(): Record<string, string | undefined> {
   const copy = { ...process.env };
   for (const key of Object.keys(copy)) {
-    if (key.startsWith("AGENTS_")) delete copy[key];
+    if (key.startsWith("ANDROMEDA_")) delete copy[key];
   }
   return copy;
 }
@@ -23,9 +23,9 @@ async function runAgents(
     cwd,
     env: {
       ...cleanEnv(),
-      AGENTS_HOME: path.join(cwd, ".agents"),
-      AGENTS_USER_HOME: cwd,
-      AGENTS_ROOT: cwd,
+      ANDROMEDA_HOME: path.join(cwd, ".andromeda"),
+      ANDROMEDA_USER_HOME: cwd,
+      ANDROMEDA_ROOT: cwd,
       ...env,
     },
     stdout: "pipe",
@@ -58,17 +58,17 @@ describe("harness CLI", () => {
           "const out = Bun.argv[2];",
           "const passthrough = Bun.argv.slice(3);",
           "await Bun.write(out, JSON.stringify({",
-          "  AGENTS_BIN: process.env.AGENTS_BIN,",
-          "  AGENTS_BIN_SCRIPT: process.env.AGENTS_BIN_SCRIPT,",
-          "  AGENTS_HOME: process.env.AGENTS_HOME,",
-          "  AGENTS_ROOT: process.env.AGENTS_ROOT,",
-          "  AGENTS_DATA: process.env.AGENTS_DATA,",
-          "  AGENTS_WORKSPACE: process.env.AGENTS_WORKSPACE,",
-          "  AGENTS_CLIS: process.env.AGENTS_CLIS,",
-          "  AGENTS_CREDITS: process.env.AGENTS_CREDITS,",
-          "  AGENTS_DATA_REPOS: process.env.AGENTS_DATA_REPOS,",
-          "  AGENTS_SYSTEM_DATA_ROOT: process.env.AGENTS_SYSTEM_DATA_ROOT,",
-          "  AGENTS_HARNESS_HOME: process.env.AGENTS_HARNESS_HOME,",
+          "  ANDROMEDA_BIN: process.env.ANDROMEDA_BIN,",
+          "  ANDROMEDA_BIN_SCRIPT: process.env.ANDROMEDA_BIN_SCRIPT,",
+          "  ANDROMEDA_HOME: process.env.ANDROMEDA_HOME,",
+          "  ANDROMEDA_ROOT: process.env.ANDROMEDA_ROOT,",
+          "  ANDROMEDA_DATA: process.env.ANDROMEDA_DATA,",
+          "  ANDROMEDA_WORKSPACE: process.env.ANDROMEDA_WORKSPACE,",
+          "  ANDROMEDA_CLIS: process.env.ANDROMEDA_CLIS,",
+          "  ANDROMEDA_CREDITS: process.env.ANDROMEDA_CREDITS,",
+          "  ANDROMEDA_DATA_REPOS: process.env.ANDROMEDA_DATA_REPOS,",
+          "  ANDROMEDA_SYSTEM_DATA_ROOT: process.env.ANDROMEDA_SYSTEM_DATA_ROOT,",
+          "  ANDROMEDA_HARNESS_HOME: process.env.ANDROMEDA_HARNESS_HOME,",
           "  passthrough,",
           "}));",
         ].join("\n"),
@@ -82,17 +82,17 @@ describe("harness CLI", () => {
       expect(run.code).toBe(0);
 
       const env = JSON.parse(await Bun.file(output).text()) as Record<string, unknown>;
-      expect(env.AGENTS_BIN).toBe(process.execPath);
-      expect(env.AGENTS_BIN_SCRIPT).toBe(cliPath);
-      expect(env.AGENTS_HOME).toBe(path.join(root, ".agents"));
-      expect(env.AGENTS_ROOT).toBe(root);
-      expect(env.AGENTS_DATA).toBeUndefined();
-      expect(env.AGENTS_WORKSPACE).toBe(path.join(root, ".agents", "runtime", "workspaces"));
-      expect(env.AGENTS_CLIS).toBe(path.join(root, ".agents", "clis"));
-      expect(env.AGENTS_CREDITS).toBe(path.join(root, ".agents", "credits.json"));
-      expect(env.AGENTS_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
-      expect(env.AGENTS_SYSTEM_DATA_ROOT).toBe(path.join(root, ".agents"));
-      expect(env.AGENTS_HARNESS_HOME).toBe(path.join(root, ".agents", "harnesses", "probe", "runtime"));
+      expect(env.ANDROMEDA_BIN).toBe(process.execPath);
+      expect(env.ANDROMEDA_BIN_SCRIPT).toBe(cliPath);
+      expect(env.ANDROMEDA_HOME).toBe(path.join(root, ".andromeda"));
+      expect(env.ANDROMEDA_ROOT).toBe(root);
+      expect(env.ANDROMEDA_DATA).toBeUndefined();
+      expect(env.ANDROMEDA_WORKSPACE).toBe(path.join(root, ".andromeda", "runtime", "workspaces"));
+      expect(env.ANDROMEDA_CLIS).toBe(path.join(root, ".andromeda", "clis"));
+      expect(env.ANDROMEDA_CREDITS).toBe(path.join(root, ".andromeda", "credits.json"));
+      expect(env.ANDROMEDA_DATA_REPOS).toBe(path.join(root, ".andromeda", "data-repos.json"));
+      expect(env.ANDROMEDA_SYSTEM_DATA_ROOT).toBe(path.join(root, ".andromeda"));
+      expect(env.ANDROMEDA_HARNESS_HOME).toBe(path.join(root, ".andromeda", "harnesses", "probe", "runtime"));
       expect(JSON.stringify(env.passthrough)).toBe(JSON.stringify(["--probe"]));
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -119,13 +119,13 @@ describe("harness CLI", () => {
         [
           "const out = Bun.argv[2];",
           "await Bun.write(out, JSON.stringify({",
-          "  AGENTS_HOME: process.env.AGENTS_HOME,",
-          "  AGENTS_ROOT: process.env.AGENTS_ROOT,",
-          "  AGENTS_DATA: process.env.AGENTS_DATA,",
-          "  AGENTS_WORKSPACE: process.env.AGENTS_WORKSPACE,",
-          "  AGENTS_SECRETS: process.env.AGENTS_SECRETS,",
-          "  AGENTS_DATA_REPOS: process.env.AGENTS_DATA_REPOS,",
-          "  AGENTS_SYSTEM_DATA_ROOT: process.env.AGENTS_SYSTEM_DATA_ROOT,",
+          "  ANDROMEDA_HOME: process.env.ANDROMEDA_HOME,",
+          "  ANDROMEDA_ROOT: process.env.ANDROMEDA_ROOT,",
+          "  ANDROMEDA_DATA: process.env.ANDROMEDA_DATA,",
+          "  ANDROMEDA_WORKSPACE: process.env.ANDROMEDA_WORKSPACE,",
+          "  ANDROMEDA_SECRETS: process.env.ANDROMEDA_SECRETS,",
+          "  ANDROMEDA_DATA_REPOS: process.env.ANDROMEDA_DATA_REPOS,",
+          "  ANDROMEDA_SYSTEM_DATA_ROOT: process.env.ANDROMEDA_SYSTEM_DATA_ROOT,",
           "  PROJECT_DATA_ROOT: process.env.PROJECT_DATA_ROOT,",
           "  args: Bun.argv.slice(3),",
           "}));",
@@ -152,13 +152,13 @@ describe("harness CLI", () => {
       expect(run.code).toBe(0);
 
       const env = JSON.parse(await Bun.file(output).text()) as Record<string, unknown>;
-      expect(env.AGENTS_HOME).toBe(path.join(root, ".agents"));
-      expect(env.AGENTS_ROOT).toBe(root);
-      expect(env.AGENTS_DATA).toBeUndefined();
-      expect(env.AGENTS_WORKSPACE).toBe(path.join(root, ".agents", "runtime", "workspaces"));
-      expect(env.AGENTS_SECRETS).toBe(path.join(root, ".agents", "secrets"));
-      expect(env.AGENTS_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
-      expect(env.AGENTS_SYSTEM_DATA_ROOT).toBe(path.join(root, ".agents"));
+      expect(env.ANDROMEDA_HOME).toBe(path.join(root, ".andromeda"));
+      expect(env.ANDROMEDA_ROOT).toBe(root);
+      expect(env.ANDROMEDA_DATA).toBeUndefined();
+      expect(env.ANDROMEDA_WORKSPACE).toBe(path.join(root, ".andromeda", "runtime", "workspaces"));
+      expect(env.ANDROMEDA_SECRETS).toBe(path.join(root, ".andromeda", "secrets"));
+      expect(env.ANDROMEDA_DATA_REPOS).toBe(path.join(root, ".andromeda", "data-repos.json"));
+      expect(env.ANDROMEDA_SYSTEM_DATA_ROOT).toBe(path.join(root, ".andromeda"));
       expect(env.PROJECT_DATA_ROOT).toBe(path.join(root, "data", "project"));
       expect(JSON.stringify(env.args)).toBe(JSON.stringify(["--probe"]));
     } finally {
@@ -172,7 +172,7 @@ describe("harness CLI", () => {
       const subdir = path.join(root, "nested", "cwd");
       await mkdir(subdir, { recursive: true });
       const output = path.join(root, "codex-env.json");
-      const stateHome = path.join(root, ".agents");
+      const stateHome = path.join(root, ".andromeda");
       const codex = path.join(
         stateHome,
         "clis",
@@ -193,19 +193,19 @@ describe("harness CLI", () => {
         await Bun.$`chmod +x ${codex}`;
       }
 
-      const pin = await runAgents(subdir, ["cli", "pin", "codex"], { AGENTS_HOME: stateHome });
+      const pin = await runAgents(subdir, ["cli", "pin", "codex"], { ANDROMEDA_HOME: stateHome });
       expect(pin.code).toBe(0);
       const registry = JSON.parse(await Bun.file(path.join(stateHome, "providers.json")).text()) as {
         providers: { codex: { executable: string } };
       };
       expect(registry.providers.codex.executable).toBe(codex);
 
-      const doctor = await runAgents(subdir, ["cli", "doctor", "codex"], { AGENTS_HOME: stateHome });
+      const doctor = await runAgents(subdir, ["cli", "doctor", "codex"], { ANDROMEDA_HOME: stateHome });
       expect(doctor.code).toBe(0);
       expect(doctor.stdout).toContain(`binary=${codex}`);
 
       const rawExec = await runAgents(subdir, ["cli", "exec", "codex", "--", "--probe"], {
-        AGENTS_HOME: stateHome,
+        ANDROMEDA_HOME: stateHome,
       });
       expect(rawExec.code).toBe(1);
       expect(rawExec.stderr).toContain("unknown cli action: exec");

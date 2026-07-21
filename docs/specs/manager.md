@@ -49,10 +49,10 @@ ran.
 
 ## State boundary
 
-All writable authority is below explicit `AGENTS_HOME`. Provider executables
+All writable authority is below explicit `ANDROMEDA_HOME`. Provider executables
 and native state live below `clis/<provider>`, capabilities below their
 canonical top-level directories, and harness-private runtime below
-`harnesses/<id>/runtime`. `AGENTS_ROOT` is code; `AGENTS_USER_HOME` is the real
+`harnesses/<id>/runtime`. `ANDROMEDA_ROOT` is code; `ANDROMEDA_USER_HOME` is the real
 account home; neither is another state root.
 
 ## Validation

@@ -102,13 +102,13 @@ jobs:
 
     steps:
       - name: Validate canonical Agent OS package authority
-        id: agents
+        id: andromeda
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
-            Write-Output "::error::AGENTS_HOME must name the absolute canonical Agent OS checkout."
+          if ([string]::IsNullOrWhiteSpace($env:ANDROMEDA_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:ANDROMEDA_HOME)) {
+            Write-Output "::error::ANDROMEDA_HOME must name the absolute canonical Agent OS checkout."
             exit 1
           }
-          $agentsLauncher = Join-Path -Path $env:AGENTS_HOME -ChildPath "bin\agents.ps1"
+          $agentsLauncher = Join-Path -Path $env:ANDROMEDA_HOME -ChildPath "bin\agents.ps1"
           if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
             Write-Output "::error::Canonical Agent OS launcher is missing."
             exit 1
@@ -161,7 +161,7 @@ jobs:
           DF_CONTROL_REVISION: ${{ needs.discover.outputs.control_revision }}
           DF_CLEAN_WATCH_PASSES: "8"
         run: |
-          $launcher = '${{ steps.agents.outputs.launcher }}'
+          $launcher = '${{ steps.andromeda.outputs.launcher }}'
           $target = (Resolve-Path -LiteralPath hygiene-target).Path
           $planOutput = (& pwsh -NoLogo -NoProfile -File $launcher packages run darkfactory -- clean plan $env:DF_TARGET_REPO --local $target --json 2>&1) -join "`n"
           if ($LASTEXITCODE -ne 0) { Write-Output $planOutput; exit $LASTEXITCODE }

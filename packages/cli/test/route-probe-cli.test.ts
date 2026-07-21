@@ -12,7 +12,7 @@ const cliPath = path.join(repoRoot, "src", "cli.ts");
 function cleanEnv(): Record<string, string | undefined> {
   const copy = { ...process.env };
   for (const key of Object.keys(copy)) {
-    if (key.startsWith("AGENTS_")) delete copy[key];
+    if (key.startsWith("ANDROMEDA_")) delete copy[key];
   }
   return copy;
 }
@@ -25,9 +25,9 @@ async function runAgents(
     cwd: root,
     env: {
       ...cleanEnv(),
-      AGENTS_HOME: path.join(root, ".agents"),
-      AGENTS_USER_HOME: path.join(root, "user"),
-      AGENTS_ROOT: root,
+      ANDROMEDA_HOME: path.join(root, ".andromeda"),
+      ANDROMEDA_USER_HOME: path.join(root, "user"),
+      ANDROMEDA_ROOT: root,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -43,7 +43,7 @@ async function runAgents(
 async function withFixture(fn: (state: SharedState, root: string) => Promise<void>): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "agents-route-cli-test-"));
   try {
-    const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+    const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
     await ensureSharedState(state);
     await fn(state, root);
   } finally {
@@ -264,7 +264,7 @@ describe("route probe CLI regression triplet", () => {
       expect(result.stderr.trim()).toBe(
         "agents: route probe accepts only --model-tier, --effort, and --json",
       );
-      expect(await Bun.file(path.join(root, ".agents")).exists()).toBe(false);
+      expect(await Bun.file(path.join(root, ".andromeda")).exists()).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

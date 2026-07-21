@@ -18,7 +18,7 @@ describe("Agent OS state v2 bootstrap", () => {
   test("publishes bounded plugin runtime projections through the manager boundary", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-plugin-projection-"));
     try {
-      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+      const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
       await ensureSharedState(state);
       const filePath = await publishPluginRuntimeProjection(state, "memory", "dream-v1.3-cursor", {
         schemaVersion: 1,
@@ -277,7 +277,7 @@ describe("Agent OS state v2 bootstrap", () => {
   test("creates one stable Rommie manifest and canonical bootstrap paths", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-v2-"));
     try {
-      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+      const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
       await ensureSharedState(state);
       const first = await readStateManifest(state);
       expect(first?.schemaVersion).toBe(2);
@@ -296,9 +296,9 @@ describe("Agent OS state v2 bootstrap", () => {
       expect(await readFile(state.envFile, "utf8")).toBe(envBefore);
       expect((await readStateManifest(state))?.installId).toBe(first?.installId);
 
-      expect(envBefore).toContain(`AGENTS_HOME=${state.stateDir}`);
-      expect(envBefore).toContain(`AGENTS_USER_HOME=${state.userHome}`);
-      expect(envBefore).toContain(`AGENTS_MEMORY=${paths.memoryDir}`);
+      expect(envBefore).toContain(`ANDROMEDA_HOME=${state.stateDir}`);
+      expect(envBefore).toContain(`ANDROMEDA_USER_HOME=${state.userHome}`);
+      expect(envBefore).toContain(`ANDROMEDA_MEMORY=${paths.memoryDir}`);
 
       if (process.platform !== "win32") {
         expect((await stat(state.stateDir)).mode & 0o077).toBe(0);

@@ -30,7 +30,7 @@ import {
 } from "./orchestrator";
 import { withStateFileLock } from "./state-lock";
 
-const SYNC_SECRET = "AGENTS_SYNC_KEY";
+const SYNC_SECRET = "ANDROMEDA_SYNC_KEY";
 const AAD_PREFIX = "andromeda-agent-os-event-exchange-v1:";
 const SAFE_ID = "[A-Za-z0-9][A-Za-z0-9._-]{0,127}";
 const EVENT_FILE = "[0-9]{16}-[A-Za-z0-9_-]+\\.json";
@@ -295,8 +295,8 @@ const PUBLIC_OPERATIONAL_IDENTIFIERS = new Set([
   "installed/registered/doctor/launcher",
   "printActionResult/printStatusReport",
   "enableRunner/disableRunner/runRunner",
-  "AGENTS_HOME/AGENTS_USER_ROOT/AGENTS_ROOT...",
-  "AGENTS_HOME/AGENTS_USER_HOME/AGENTS_ROOT...",
+  "ANDROMEDA_HOME/ANDROMEDA_USER_ROOT/ANDROMEDA_ROOT...",
+  "ANDROMEDA_HOME/ANDROMEDA_USER_HOME/ANDROMEDA_ROOT...",
   "name/enabled/state/actionExecutable/actionArguments",
   "installed/registered/persistence/process/online/labels/launcher/doctor/record",
   "durationMs/outputBytes/truncated",
@@ -611,7 +611,7 @@ function secretLikeText(value: string): boolean {
       while (leafIndex >= 0 && !(pathSegments[leafIndex] ?? "").trim()) leafIndex -= 1;
       const normalizedPath = absolutePath.replaceAll("\\", "/");
       const compactionSnapshot = normalizedPath.match(
-        /\/\.agents\/memory\/snapshots\/compaction\/([^/]+)\.json$/,
+        /\/\.andromeda\/memory\/snapshots\/compaction\/([^/]+)\.json$/,
       );
       const canonicalCompactionSnapshotLeaf = COMPACTION_SNAPSHOT_STEM.test(compactionSnapshot?.[1] ?? "");
       if (pathSegments.some((segment, index) =>

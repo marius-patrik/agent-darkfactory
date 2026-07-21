@@ -10,10 +10,10 @@ refactor and the template consolidation are complete, and the full CI gate
 passes including the DarkFactory managed setup check.
 
 ```powershell
-$env:AGENTS_HOME = "$HOME\.andromeda"
-$env:AGENTS_USER_HOME = "$HOME"
-$env:AGENTS_ROOT = "$HOME\marius-patrik\Andromeda"
-Set-Location $env:AGENTS_ROOT
+$env:ANDROMEDA_HOME = "$HOME\.andromeda"
+$env:ANDROMEDA_USER_HOME = "$HOME"
+$env:ANDROMEDA_ROOT = "$HOME\marius-patrik\Andromeda"
+Set-Location $env:ANDROMEDA_ROOT
 bun packages/cli/src/cli.ts state doctor --json
 ```
 

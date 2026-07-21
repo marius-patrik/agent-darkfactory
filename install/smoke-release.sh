@@ -11,14 +11,14 @@ SANDBOX="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX"' EXIT
 
 SOURCE_DIR="$SANDBOX/source"
-AGENTS_USER_HOME="$SANDBOX/home"
-AGENTS_HOME="$AGENTS_USER_HOME/.agents"
-AGENTS_ROOT="$AGENTS_USER_HOME/marius-patrik/Andromeda"
+ANDROMEDA_USER_HOME="$SANDBOX/home"
+ANDROMEDA_HOME="$ANDROMEDA_USER_HOME/.andromeda"
+ANDROMEDA_ROOT="$ANDROMEDA_USER_HOME/marius-patrik/Andromeda"
 FAKE_BIN="$SANDBOX/bin"
 REAL_BUN="$(command -v bun)"
 REAL_GIT="$(command -v git)"
 
-mkdir -p "$AGENTS_USER_HOME" "$FAKE_BIN"
+mkdir -p "$ANDROMEDA_USER_HOME" "$FAKE_BIN"
 
 # Snapshot the current checkout, including tracked edits and untracked source
 # files, into a local dev branch without changing the caller's repository.
@@ -48,7 +48,7 @@ done < <(git -C "$ROOT_DIR" ls-files --others --exclude-standard -z)
 git -C "$SOURCE_DIR" add -A
 STUB_ROOT="$SANDBOX/component-stubs"
 mkdir -p "$STUB_ROOT"
-# The state repository is cloned into AGENTS_HOME below whether or not it is a
+# The state repository is cloned into ANDROMEDA_HOME below whether or not it is a
 # submodule of this repository, so its fixture is built unconditionally. As of
 # the migrate consolidation no submodules remain, and the loop that follows is
 # a no-op until one is declared again.
@@ -87,10 +87,10 @@ git -C "$SOURCE_DIR" add .gitmodules
 git -C "$SOURCE_DIR" commit -q --allow-empty -m "smoke source snapshot"
 
 # Seed the primary state checkout before planting existing provider/runtime
-# contents. This models an already-converged AGENTS_HOME while the edge fixture
+# contents. This models an already-converged ANDROMEDA_HOME while the edge fixture
 # below still exercises a fresh Andromeda-data clone.
-git clone --quiet --branch main "$STUB_ROOT/data" "$AGENTS_HOME"
-git -C "$AGENTS_HOME" remote set-url origin https://github.com/marius-patrik/Andromeda-data.git
+git clone --quiet --branch main "$STUB_ROOT/data" "$ANDROMEDA_HOME"
+git -C "$ANDROMEDA_HOME" remote set-url origin https://github.com/marius-patrik/Andromeda-data.git
 
 # The manager runtime does not need installed third-party packages for this
 # boundary. Skip only the install subcommand; every CLI execution uses real Bun.
@@ -108,20 +108,20 @@ chmod 700 "$FAKE_BIN/bun"
 
 # Plant obsolete launchers to prove that installation converges bin/ to the one
 # supported command rather than preserving wrapper drift.
-mkdir -p "$AGENTS_HOME/bin"
-touch "$AGENTS_HOME/bin/claude" "$AGENTS_HOME/bin/codex" "$AGENTS_HOME/bin/kimi"
+mkdir -p "$ANDROMEDA_HOME/bin"
+touch "$ANDROMEDA_HOME/bin/claude" "$ANDROMEDA_HOME/bin/codex" "$ANDROMEDA_HOME/bin/kimi"
 
 for provider_binary in codex/codex claude/claude kimi/kimi agy/agy; do
   provider="${provider_binary%%/*}"
   binary="${provider_binary#*/}"
-  mkdir -p "$AGENTS_HOME/clis/$provider/bin"
-  chmod 700 "$AGENTS_HOME/clis/$provider" "$AGENTS_HOME/clis/$provider/bin"
+  mkdir -p "$ANDROMEDA_HOME/clis/$provider/bin"
+  chmod 700 "$ANDROMEDA_HOME/clis/$provider" "$ANDROMEDA_HOME/clis/$provider/bin"
   case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
-      cp "$REAL_GIT" "$AGENTS_HOME/clis/$provider/bin/$binary.exe"
+      cp "$REAL_GIT" "$ANDROMEDA_HOME/clis/$provider/bin/$binary.exe"
       ;;
     *)
-      cat >"$AGENTS_HOME/clis/$provider/bin/$binary" <<EOF
+      cat >"$ANDROMEDA_HOME/clis/$provider/bin/$binary" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 if [ "\${1:-}" = "--version" ]; then
@@ -130,7 +130,7 @@ if [ "\${1:-}" = "--version" ]; then
 fi
 exit 64
 EOF
-      chmod 700 "$AGENTS_HOME/clis/$provider/bin/$binary"
+      chmod 700 "$ANDROMEDA_HOME/clis/$provider/bin/$binary"
       ;;
   esac
 done
@@ -138,13 +138,13 @@ done
 run_installer() {
   env \
     PATH="$FAKE_BIN:$PATH" \
-    HOME="$AGENTS_USER_HOME" \
+    HOME="$ANDROMEDA_USER_HOME" \
     ANDROMEDA_SOURCE="$SOURCE_DIR" \
     ANDROMEDA_DATA_SOURCE="$STUB_ROOT/data" \
     ANDROMEDA_BRANCH=dev \
-    AGENTS_HOME="$AGENTS_HOME" \
-    AGENTS_USER_HOME="$AGENTS_USER_HOME" \
-    AGENTS_ROOT="$AGENTS_ROOT" \
+    ANDROMEDA_HOME="$ANDROMEDA_HOME" \
+    ANDROMEDA_USER_HOME="$ANDROMEDA_USER_HOME" \
+    ANDROMEDA_ROOT="$ANDROMEDA_ROOT" \
     GIT_ALLOW_PROTOCOL=file \
     bash "$SOURCE_DIR/install/install.sh"
 }
@@ -155,7 +155,7 @@ run_installer
 # A submodule or linked worktree stores .git as a file. It is still a valid
 # canonical checkout when its origin and branch agree with the installer.
 EDGE_USER_HOME="$SANDBOX/edge-home"
-EDGE_AGENTS_HOME="$EDGE_USER_HOME/.agents"
+EDGE_ANDROMEDA_HOME="$EDGE_USER_HOME/.andromeda"
 EDGE_ROOT="$EDGE_USER_HOME/marius-patrik/Andromeda"
 mkdir -p "$(dirname "$EDGE_ROOT")" "$SANDBOX/edge-git"
 git clone --quiet --branch dev --separate-git-dir="$SANDBOX/edge-git/repository" "$SOURCE_DIR" "$EDGE_ROOT"
@@ -166,38 +166,38 @@ env \
   ANDROMEDA_SOURCE="$SOURCE_DIR" \
   ANDROMEDA_DATA_SOURCE="$STUB_ROOT/data" \
   ANDROMEDA_BRANCH=dev \
-  AGENTS_HOME="$EDGE_AGENTS_HOME" \
-  AGENTS_USER_HOME="$EDGE_USER_HOME" \
-  AGENTS_ROOT="$EDGE_ROOT" \
+  ANDROMEDA_HOME="$EDGE_ANDROMEDA_HOME" \
+  ANDROMEDA_USER_HOME="$EDGE_USER_HOME" \
+  ANDROMEDA_ROOT="$EDGE_ROOT" \
   GIT_ALLOW_PROTOCOL=file \
   bash "$SOURCE_DIR/install/install.sh"
 
 # A populated pre-checkout state root is migrated by staging, overlaying, and
 # atomically swapping while retaining a sibling rollback tree.
 LEGACY_USER_HOME="$SANDBOX/legacy-home"
-LEGACY_AGENTS_HOME="$LEGACY_USER_HOME/.agents"
+LEGACY_ANDROMEDA_HOME="$LEGACY_USER_HOME/.andromeda"
 LEGACY_ROOT="$LEGACY_USER_HOME/marius-patrik/Andromeda"
-mkdir -p "$LEGACY_AGENTS_HOME/memory" "$(dirname "$LEGACY_ROOT")"
-printf '%s\n' 'preserve-me' >"$LEGACY_AGENTS_HOME/memory/legacy-marker"
+mkdir -p "$LEGACY_ANDROMEDA_HOME/memory" "$(dirname "$LEGACY_ROOT")"
+printf '%s\n' 'preserve-me' >"$LEGACY_ANDROMEDA_HOME/memory/legacy-marker"
 env \
   PATH="$FAKE_BIN:$PATH" \
   HOME="$LEGACY_USER_HOME" \
   ANDROMEDA_SOURCE="$SOURCE_DIR" \
   ANDROMEDA_DATA_SOURCE="$STUB_ROOT/data" \
   ANDROMEDA_BRANCH=dev \
-  AGENTS_HOME="$LEGACY_AGENTS_HOME" \
-  AGENTS_USER_HOME="$LEGACY_USER_HOME" \
-  AGENTS_ROOT="$LEGACY_ROOT" \
+  ANDROMEDA_HOME="$LEGACY_ANDROMEDA_HOME" \
+  ANDROMEDA_USER_HOME="$LEGACY_USER_HOME" \
+  ANDROMEDA_ROOT="$LEGACY_ROOT" \
   GIT_ALLOW_PROTOCOL=file \
   bash "$SOURCE_DIR/install/install.sh"
-test -d "$LEGACY_AGENTS_HOME/.git"
-grep -F 'preserve-me' "$LEGACY_AGENTS_HOME/memory/legacy-marker"
-legacy_backups=("$LEGACY_USER_HOME"/.agents.pre-andromeda-data-*)
+test -d "$LEGACY_ANDROMEDA_HOME/.git"
+grep -F 'preserve-me' "$LEGACY_ANDROMEDA_HOME/memory/legacy-marker"
+legacy_backups=("$LEGACY_USER_HOME"/.andromeda.pre-andromeda-data-*)
 [ "${#legacy_backups[@]}" -eq 1 ]
 grep -F 'preserve-me' "${legacy_backups[0]}/memory/legacy-marker"
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ;;
-  *) [ "$(stat -c '%a' "$LEGACY_AGENTS_HOME/memory/legacy-marker")" = "600" ] || {
+  *) [ "$(stat -c '%a' "$LEGACY_ANDROMEDA_HOME/memory/legacy-marker")" = "600" ] || {
     echo "error: migrated legacy state is not private" >&2
     exit 1
   } ;;
@@ -215,9 +215,9 @@ if env \
   ANDROMEDA_SOURCE="$SOURCE_DIR" \
   ANDROMEDA_DATA_SOURCE="$STUB_ROOT/data" \
   ANDROMEDA_BRANCH=dev \
-  AGENTS_HOME="$DENIED_USER_HOME/.agents" \
-  AGENTS_USER_HOME="$DENIED_USER_HOME" \
-  AGENTS_ROOT="$DENIED_ROOT" \
+  ANDROMEDA_HOME="$DENIED_USER_HOME/.andromeda" \
+  ANDROMEDA_USER_HOME="$DENIED_USER_HOME" \
+  ANDROMEDA_ROOT="$DENIED_ROOT" \
   GIT_ALLOW_PROTOCOL=file \
   bash "$SOURCE_DIR/install/install.sh" >"$SANDBOX/denied.log" 2>&1; then
   echo "error: installer accepted a checkout with the wrong origin" >&2
@@ -237,22 +237,22 @@ if env \
   ANDROMEDA_SOURCE="$SOURCE_DIR" \
   ANDROMEDA_DATA_SOURCE="$STUB_ROOT/data" \
   ANDROMEDA_BRANCH=dev \
-  AGENTS_HOME="$NESTED_USER_HOME/.agents" \
-  AGENTS_USER_HOME="$NESTED_USER_HOME" \
-  AGENTS_ROOT="$NESTED_ROOT" \
+  ANDROMEDA_HOME="$NESTED_USER_HOME/.andromeda" \
+  ANDROMEDA_USER_HOME="$NESTED_USER_HOME" \
+  ANDROMEDA_ROOT="$NESTED_ROOT" \
   GIT_ALLOW_PROTOCOL=file \
   bash "$SOURCE_DIR/install/install.sh" >"$SANDBOX/nested.log" 2>&1; then
   echo "error: installer accepted a nested directory as the canonical worktree" >&2
   exit 1
 fi
-grep -F "AGENTS_ROOT is inside another Git worktree instead of being its root" "$SANDBOX/nested.log"
+grep -F "ANDROMEDA_ROOT is inside another Git worktree instead of being its root" "$SANDBOX/nested.log"
 
 env \
   PATH="$FAKE_BIN:$PATH" \
-  AGENTS_SMOKE_SANDBOX="$SANDBOX" \
-  AGENTS_HOME="$AGENTS_HOME" \
-  AGENTS_USER_HOME="$AGENTS_USER_HOME" \
-  AGENTS_ROOT="$AGENTS_ROOT" \
+  ANDROMEDA_SMOKE_SANDBOX="$SANDBOX" \
+  ANDROMEDA_HOME="$ANDROMEDA_HOME" \
+  ANDROMEDA_USER_HOME="$ANDROMEDA_USER_HOME" \
+  ANDROMEDA_ROOT="$ANDROMEDA_ROOT" \
   bash "$SOURCE_DIR/install/smoke.sh"
 
 echo "Release install smoke test passed."

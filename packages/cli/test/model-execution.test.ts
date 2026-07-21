@@ -41,7 +41,7 @@ async function fixture(): Promise<{ root: string; state: SharedState; receiptDir
   roots.push(sandbox);
   const root = path.join(sandbox, "worktree");
   await mkdir(root);
-  const state = sharedStateAt(root, path.join(sandbox, ".agents"), path.join(sandbox, "user"));
+  const state = sharedStateAt(root, path.join(sandbox, ".andromeda"), path.join(sandbox, "user"));
   await ensureSharedState(state);
   await writeSessionConfig(state, {
     schemaVersion: 1,

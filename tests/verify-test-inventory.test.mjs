@@ -89,9 +89,11 @@ test("success: new core and harness Bun tests join their suites automatically", 
 });
 
 test("success: serialized manager tests retain a bounded Windows filesystem timeout", () => {
-  assert.equal(managerTestTimeoutMs("linux"), 30_000);
-  assert.equal(managerTestTimeoutMs("darwin"), 30_000);
-  assert.equal(managerTestTimeoutMs("win32"), 90_000);
+  assert.equal(managerTestTimeoutMs("linux"), 60_000);
+  assert.equal(managerTestTimeoutMs("darwin"), 60_000);
+  // Windows stays the widest leg: the hosted runner degrades under load and a
+  // killed cross-process test is a false red, not a hang. Still bounded.
+  assert.equal(managerTestTimeoutMs("win32"), 240_000);
 });
 
 test("edge input: a missing manager-coupled harness test fails the inventory", () => {

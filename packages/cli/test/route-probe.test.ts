@@ -53,7 +53,7 @@ async function runRouteProbe(
 async function withFixture(fn: (state: SharedState, root: string) => Promise<void>): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "agents-route-probe-test-"));
   try {
-    const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
+    const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
     await ensureSharedState(state);
     await fn(state, root);
   } finally {
@@ -507,7 +507,7 @@ describe("resolution failures fail closed", () => {
       await symlink(physicalAuthority, linkedAuthority, "junction");
       const linkedState = sharedStateAt(
         root,
-        path.join(linkedAuthority, ".agents"),
+        path.join(linkedAuthority, ".andromeda"),
         path.join(root, "linked-user"),
       );
       await ensureSharedState(linkedState);
@@ -534,7 +534,7 @@ describe("resolution failures fail closed", () => {
       const aliasAuthority = path.join(aliasParent, "authority");
       const aliasedState = sharedStateAt(
         aliasAuthority,
-        path.join(aliasAuthority, ".agents"),
+        path.join(aliasAuthority, ".andromeda"),
         path.join(aliasAuthority, "user"),
       );
       await ensureSharedState(aliasedState);
