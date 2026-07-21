@@ -12,7 +12,7 @@ describe("data repos", () => {
       const state = sharedState(root);
       await ensureSharedState(state);
       const initial = await readDataRepos(state);
-      expect(initial[0].id).toBe("agent-os-data");
+      expect(initial[0].id).toBe("andromeda-data");
       expect(initial[0].repo).toBe("marius-patrik/private-data");
       expect(dataRepoManagedRoot(initial[0])).toBe(state.stateDir);
 
@@ -40,7 +40,7 @@ describe("data repos", () => {
           path: "data/system-data-alias",
           branch: "main",
         }),
-      ).rejects.toThrow("aliases the canonical agent-os-data authority");
+      ).rejects.toThrow("aliases the canonical andromeda-data authority");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -55,7 +55,7 @@ describe("data repos", () => {
         state.dataReposFile,
         `${JSON.stringify([
           {
-            id: "agent-os-data",
+            id: "andromeda-data",
             repo: "marius-patrik/agents-data",
             path: path.join(root, "data", "agent-os"),
             branch: "main",

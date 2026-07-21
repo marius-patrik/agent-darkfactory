@@ -121,7 +121,7 @@ export function containerEnv(dataRepos: DataRepoRegistration[]): Record<string, 
 }
 
 export function containerDataRepoPath(repo: DataRepoRegistration): string {
-  if (repo.id === "agent-os-data") return "/agents/state";
+  if (repo.id === "andromeda-data") return "/agents/state";
   return `/agents/data/${repo.id}`;
 }
 
@@ -902,22 +902,22 @@ export interface ProfileConfig {
 }
 
 const profileConfigs: Record<string, ProfileConfig> = {
-  harness: { ports: [], requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"] } },
+  harness: { ports: [], requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["andromeda-data"] } },
   "agent-os-inference": {
     ports: [{ name: "http", container: 8080, host: 8080 }],
-    requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"] },
+    requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["andromeda-data"] },
   },
   "agent-os-gateway": {
     ports: [{ name: "http", container: 8787, host: 8787 }],
     requires: {
       env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT", "ANDROMEDA_CREDITS"],
-      dataRepos: ["agent-os-data"],
+      dataRepos: ["andromeda-data"],
       secrets: ["openai", "github"],
     },
   },
   darkfactory: {
     ports: [],
-    requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["agent-os-data"], secrets: ["github"] },
+    requires: { env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT"], dataRepos: ["andromeda-data"], secrets: ["github"] },
   },
   "full-system": {
     ports: [
@@ -926,7 +926,7 @@ const profileConfigs: Record<string, ProfileConfig> = {
     ],
     requires: {
       env: ["ANDROMEDA_HOME", "ANDROMEDA_WORKSPACE", "ANDROMEDA_SYSTEM_DATA_ROOT", "ANDROMEDA_CREDITS"],
-      dataRepos: ["agent-os-data"],
+      dataRepos: ["andromeda-data"],
       secrets: ["openai", "github"],
     },
   },

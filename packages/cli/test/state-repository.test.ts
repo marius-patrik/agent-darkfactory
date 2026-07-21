@@ -50,7 +50,7 @@ async function repositoryState(root: string, options: { keepGitIdentity?: boolea
     ].join("\n"),
   );
   await writeFile(path.join(stateDir, "README.md"), "# State\n");
-  await writeFile(path.join(stateDir, "agent.package.json"), '{"schemaVersion":1,"id":"agent-os-data","kind":"data"}\n');
+  await writeFile(path.join(stateDir, "agent.package.json"), '{"schemaVersion":1,"id":"andromeda-data","kind":"data"}\n');
   await mkdir(path.join(stateDir, "scripts"), { recursive: true });
   await writeFile(path.join(stateDir, "scripts", "validate.mjs"), "// fixture\n");
   await git(stateDir, ["add", ".gitignore", "README.md", "agent.package.json", "scripts/validate.mjs"]);

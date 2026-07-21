@@ -198,8 +198,8 @@ export async function inspectStateRepository(state: SharedState): Promise<StateR
         id?: unknown;
         kind?: unknown;
       };
-      if (manifest.schemaVersion !== 1 || manifest.id !== "agent-os-data" || manifest.kind !== "data") {
-        issues.push("state repository agent.package.json does not identify agent-os-data");
+      if (manifest.schemaVersion !== 1 || manifest.id !== "andromeda-data" || manifest.kind !== "data") {
+        issues.push("state repository agent.package.json does not identify andromeda-data");
       }
     } catch (error) {
       issues.push(`state repository contract manifest is unreadable: ${(error as Error).message}`);
