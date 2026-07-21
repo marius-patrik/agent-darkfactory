@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify managed setup
-        run: node scripts/dark-factory-release-check.mjs --mode managed
+        run: node scripts/dark-factory-managed-check.mjs
 
       - name: Explain centralized sync
         run: |

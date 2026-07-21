@@ -127,7 +127,10 @@ const policyFiles = new Set(["scripts/verify-single-product.mjs", ".github/ci/te
 
 for (const relative of tracked) {
   if (policyFiles.has(relative)) continue;
-  // Carried trees hold folded repositories verbatim as frozen evidence, and`n  // those histories necessarily spell the names they were retired for.`n  // Retired-name enforcement stays fully active on every surface that is still`n  // built, imported, or shipped; nothing imports a carried tree.
+  // Carried trees hold folded repositories verbatim as frozen evidence, and
+  // those histories necessarily spell the names they were retired for.
+  // Retired-name enforcement stays fully active on every surface that is still
+  // built, imported, or shipped; nothing imports a carried tree.
   if (carriedTree(relative)) continue;
   const absolute = path.join(root, relative);
   const content = fs.readFileSync(absolute);
