@@ -47,7 +47,7 @@ until the owner reopens it.
   `andromeda-cli`, `andromeda-sdk`, `andromeda-web`, `andromeda-memory`, and
   `andromeda-bot`. The recorded `agents-manager` package-name exception is retired.
 - **andromeda** — CLI command.
-- **`~/.andromeda` / `ANDROMEDA_HOME`** — only authoritative runtime state root; a
+- **`~/.agents` / `ANDROMEDA_HOME`** — only authoritative runtime state root; a
   checkout of the private-data authority.
 - **`src/`** — implementation domains, each rooted as one direct child.
 - **`plugins/`** — authored repository-owned plugin capabilities; managed product
@@ -388,7 +388,7 @@ strictly through them.
 ## Canonical state layout
 
 ```text
-~/.andromeda/
+~/.agents/
   manifest.json
   env
   config.json
@@ -422,7 +422,7 @@ strictly through them.
 ```
 
 The top-level registry files shown above remain canonical; they are not
-duplicated into another registry tree. `~/.andromeda/state` is forbidden. The
+duplicated into another registry tree. `~/.agents/state` is forbidden. The
 final installation also has no physical directory or link at `~/.codex`,
 `~/.claude`, `~/.kimi-code`, or `~/.gemini`.
 

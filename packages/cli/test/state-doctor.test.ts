@@ -19,7 +19,7 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")
 
 function tempState(root: string) {
   const userHome = path.join(root, "user");
-  return sharedStateAt(root, path.join(userHome, ".andromeda"), userHome);
+  return sharedStateAt(root, path.join(userHome, ".agents"), userHome);
 }
 
 async function git(root: string, args: string[]): Promise<void> {
@@ -53,17 +53,17 @@ async function ensureDoctorProduct(state: ReturnType<typeof tempState>): Promise
   await installCapability(state, {
     kind: "skill",
     name: "test",
-    source: path.join(sourceRoot, "tools", "capabilities", "global", "skills", "test"),
+    source: path.join(sourceRoot, ".agents", "capabilities", "global", "skills", "test"),
   });
   const identitySource = path.join(state.root, "identity-source");
   await mkdir(path.join(identitySource, "roles"), { recursive: true });
   await mkdir(path.join(identitySource, "prompts"), { recursive: true });
-  await copyFile(path.join(sourceRoot, "tools", "capabilities", "global", "persona.md"), path.join(identitySource, "persona.md"));
-  for (const name of await readdir(path.join(sourceRoot, "tools", "capabilities", "global", "roles"))) {
-    if (name.endsWith(".yaml")) await copyFile(path.join(sourceRoot, "tools", "capabilities", "global", "roles", name), path.join(identitySource, "roles", name));
+  await copyFile(path.join(sourceRoot, ".agents", "capabilities", "global", "persona.md"), path.join(identitySource, "persona.md"));
+  for (const name of await readdir(path.join(sourceRoot, ".agents", "capabilities", "global", "roles"))) {
+    if (name.endsWith(".yaml")) await copyFile(path.join(sourceRoot, ".agents", "capabilities", "global", "roles", name), path.join(identitySource, "roles", name));
   }
-  for (const name of await readdir(path.join(sourceRoot, "tools", "capabilities", "global", "commands"))) {
-    if (name.endsWith(".md")) await copyFile(path.join(sourceRoot, "tools", "capabilities", "global", "commands", name), path.join(identitySource, "prompts", name));
+  for (const name of await readdir(path.join(sourceRoot, ".agents", "capabilities", "global", "commands"))) {
+    if (name.endsWith(".md")) await copyFile(path.join(sourceRoot, ".agents", "capabilities", "global", "commands", name), path.join(identitySource, "prompts", name));
   }
   await activateIdentityBundle(state, identitySource, { replace: true });
   await rm(identitySource, { recursive: true, force: true });

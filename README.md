@@ -39,12 +39,12 @@ Requirements: Bun 1.1 or newer and Git. Provider CLIs (`codex`, `claude`,
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/marius-patrik/Andromeda/dev/install/install.sh | bash
-export PATH="$HOME/.andromeda/bin:$PATH"
+export PATH="$HOME/.agents/bin:$PATH"
 ```
 
 The installer maintains one checkout at
 `$ANDROMEDA_USER_HOME/marius-patrik/Andromeda` (or an explicit absolute
-`ANDROMEDA_ROOT`), one state root at `$ANDROMEDA_USER_HOME/.andromeda` (or an explicit
+`ANDROMEDA_ROOT`), one state root at `$ANDROMEDA_USER_HOME/.agents` (or an explicit
 absolute `ANDROMEDA_HOME`), and one platform-native launcher file: `agents` on
 POSIX or `agents.ps1` on Windows. It does not use Bun global linking. The
 Windows launcher forwards PowerShell's argument array directly, without a
@@ -64,7 +64,7 @@ checkout with a different origin or branch fails closed.
 git clone --branch dev https://github.com/marius-patrik/Andromeda.git "$HOME/marius-patrik/Andromeda"
 cd "$HOME/marius-patrik/Andromeda"
 bun install --frozen-lockfile
-ANDROMEDA_HOME="$HOME/.andromeda" ANDROMEDA_USER_HOME="$HOME" ANDROMEDA_ROOT="$PWD" \
+ANDROMEDA_HOME="$HOME/.agents" ANDROMEDA_USER_HOME="$HOME" ANDROMEDA_ROOT="$PWD" \
   bun run agents -- state init
 ```
 
@@ -93,14 +93,14 @@ they do not publish another product or CLI.
 ## One state authority
 
 `ANDROMEDA_HOME` is the only state-root locator. A personal installation uses
-`/Users/user/.andromeda`; other installations use an equivalent absolute
-`~/.andromeda` path. `ANDROMEDA_USER_HOME` identifies the real OS account home, and
+`/Users/user/.agents`; other installations use an equivalent absolute
+`~/.agents` path. `ANDROMEDA_USER_HOME` identifies the real OS account home, and
 `ANDROMEDA_ROOT` may identify the active code/distribution checkout, but neither
 is another state root.
 
 Provider-native homes are derived below `ANDROMEDA_HOME/clis/`. Legacy
 product-specific root variables are not accepted as state locators. The final
-installation has no `~/.andromeda/state`, no provider bridge, and no writable
+installation has no `~/.agents/state`, no provider bridge, and no writable
 duplicate of canonical state. On Windows, physical `.codex` and `.claude`
 desktop-runtime directories may coexist only as non-authoritative `app-owned`
 surfaces; standalone-only roots and every linked root still fail.

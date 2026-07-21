@@ -88,7 +88,7 @@ throw "Unexpected fake agents command: $($CommandArgs -join ' ')"
 function Initialize-Case {
     param([string]$Name)
     $root = Join-Path $testRoot $Name
-    $andromedaHome = Join-Path $root ".andromeda"
+    $andromedaHome = Join-Path $root ".agents"
     $memoryRoot = Join-Path $andromedaHome "memory"
     $compatibilityRoot = Join-Path $root ".codex/memories"
     New-Item -ItemType Directory -Path $memoryRoot -Force | Out-Null
@@ -275,7 +275,7 @@ try {
     # Ancestor aliases are resolved before authority-disjointness decisions.
     $aliasedRoot = Join-Path $testRoot "aliased-root"
     $aliasedPhysicalHome = Join-Path $aliasedRoot "physical-home"
-    $aliasedAndromedaHome = Join-Path $aliasedPhysicalHome ".andromeda"
+    $aliasedAndromedaHome = Join-Path $aliasedPhysicalHome ".agents"
     $aliasedMemoryRoot = Join-Path $aliasedAndromedaHome "memory"
     $aliasedHome = Join-Path $aliasedRoot "home-alias"
     $aliasedCompatibility = Join-Path $aliasedAndromedaHome "projections"
@@ -289,7 +289,7 @@ try {
     $aliasedLog = Join-Path $aliasedRoot "agents.log"
     New-Item -ItemType File -Path $aliasedLog -Force | Out-Null
     $aliasedFake = New-FakeAgents -Root $aliasedRoot
-    $env:FAKE_ANDROMEDA_HOME = Join-Path $aliasedHome ".andromeda"
+    $env:FAKE_ANDROMEDA_HOME = Join-Path $aliasedHome ".agents"
     $env:FAKE_ANDROMEDA_MEMORY = Join-Path $env:FAKE_ANDROMEDA_HOME "memory"
     $env:FAKE_ANDROMEDA_LOG = $aliasedLog
     $aliasedMessage = ""
@@ -306,7 +306,7 @@ try {
     $nestedRoot = Join-Path $testRoot "nested-alias-root"
     $nestedRealContainer = Join-Path $nestedRoot "real-container"
     $nestedPhysicalHome = Join-Path $nestedRealContainer "physical-home"
-    $nestedAndromedaHome = Join-Path $nestedPhysicalHome ".andromeda"
+    $nestedAndromedaHome = Join-Path $nestedPhysicalHome ".agents"
     $nestedMemoryRoot = Join-Path $nestedAndromedaHome "memory"
     $nestedParentAlias = Join-Path $nestedRoot "parent-alias"
     $nestedHomeAlias = Join-Path $nestedRoot "home-alias"
@@ -323,7 +323,7 @@ try {
     $nestedLog = Join-Path $nestedRoot "agents.log"
     New-Item -ItemType File -Path $nestedLog -Force | Out-Null
     $nestedFake = New-FakeAgents -Root $nestedRoot
-    $env:FAKE_ANDROMEDA_HOME = Join-Path $nestedHomeAlias ".andromeda"
+    $env:FAKE_ANDROMEDA_HOME = Join-Path $nestedHomeAlias ".agents"
     $env:FAKE_ANDROMEDA_MEMORY = Join-Path $env:FAKE_ANDROMEDA_HOME "memory"
     $env:FAKE_ANDROMEDA_LOG = $nestedLog
     $nestedMessage = ""

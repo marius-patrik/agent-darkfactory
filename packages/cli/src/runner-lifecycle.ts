@@ -1024,7 +1024,7 @@ export function createWindowsRunnerHost(options: WindowsRunnerHostOptions = {}):
 
   async function readVersionMarker(dir: string): Promise<string | null> {
     try {
-      return (await readFileImpl(path.join(dir, ".andromeda-runner-version"), "utf8")).trim() || null;
+      return (await readFileImpl(path.join(dir, ".agents-runner-version"), "utf8")).trim() || null;
     } catch (error) {
       if (isMissing(error)) return null;
       throw new Error("runner version inspection failed");
@@ -1079,7 +1079,7 @@ export function createWindowsRunnerHost(options: WindowsRunnerHostOptions = {}):
             throw new Error("runner extraction missing required file");
           }
         }
-        await Bun.write(path.join(stagingDir, ".andromeda-runner-version"), `${software.version}\n`);
+        await Bun.write(path.join(stagingDir, ".agents-runner-version"), `${software.version}\n`);
         try {
           await rm(dir, { recursive: true, force: true });
           await rename(stagingDir, dir);

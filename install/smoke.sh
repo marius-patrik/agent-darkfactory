@@ -48,7 +48,7 @@ ANDROMEDA_ROOT="$(cd "$ANDROMEDA_ROOT" && pwd -P)"
 within_sandbox "$ANDROMEDA_HOME" || die "ANDROMEDA_HOME escapes the disposable smoke sandbox"
 within_sandbox "$ANDROMEDA_USER_HOME" || die "ANDROMEDA_USER_HOME escapes the disposable smoke sandbox"
 within_sandbox "$ANDROMEDA_ROOT" || die "ANDROMEDA_ROOT escapes the disposable smoke sandbox"
-[ "$ANDROMEDA_HOME" != "/Users/user/.andromeda" ] || die "refusing to smoke-test against live personal state"
+[ "$ANDROMEDA_HOME" != "/Users/user/.agents" ] || die "refusing to smoke-test against live personal state"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) launcher="$ANDROMEDA_HOME/bin/andromeda.ps1" ;;
@@ -113,7 +113,7 @@ mkdir -p "$hostile_home"
 [ ! -e "$wrong_state" ] || die "launcher honored a conflicting ANDROMEDA_HOME"
 [ ! -e "$wrong_user" ] || die "launcher honored a conflicting ANDROMEDA_USER_HOME"
 [ ! -e "$wrong_root" ] || die "launcher honored a conflicting ANDROMEDA_ROOT"
-[ ! -e "$hostile_home/.andromeda" ] || die "launcher wrote state below an inherited HOME"
+[ ! -e "$hostile_home/.agents" ] || die "launcher wrote state below an inherited HOME"
 
 env_file="$ANDROMEDA_HOME/env"
 grep -Fqx "ANDROMEDA_HOME=$(runtime_path "$ANDROMEDA_HOME")" "$env_file"

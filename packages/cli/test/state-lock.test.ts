@@ -728,7 +728,7 @@ describe("canonical mutable-state locks", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-state-init-processes-"));
     try {
       await Promise.all(Array.from({ length: 16 }, () => ensureSharedState(sharedState(root))));
-      const manifest = JSON.parse(await readFile(path.join(root, ".andromeda", "manifest.json"), "utf8")) as {
+      const manifest = JSON.parse(await readFile(path.join(root, ".agents", "manifest.json"), "utf8")) as {
         schemaVersion: number;
         installId: string;
         machineId: string;
@@ -736,7 +736,7 @@ describe("canonical mutable-state locks", () => {
       expect(manifest.schemaVersion).toBe(2);
       expect(manifest.installId).toBeTruthy();
       expect(manifest.machineId).toBeTruthy();
-      expect((await readdir(path.join(root, ".andromeda"))).some((name) => name.includes(".tmp"))).toBe(false);
+      expect((await readdir(path.join(root, ".agents"))).some((name) => name.includes(".tmp"))).toBe(false);
     } finally {
       await removeTestRoot(root);
     }

@@ -13,8 +13,8 @@ release contracts.
 
 Implemented now:
 
-- `.andromeda/environments.json` state file with typed records for future distro packages, container packages, environments, and OS containers.
-- `ANDROMEDA_ENVIRONMENTS` exported through `.andromeda/env` and package/harness execution environments.
+- `.agents/environments.json` state file with typed records for future distro packages, container packages, environments, and OS containers.
+- `ANDROMEDA_ENVIRONMENTS` exported through `.agents/env` and package/harness execution environments.
 - CLI command skeletons for `agents packages distro ...`, `agents packages container ...`, and `agents env ...`.
 - `agents os` lifecycle commands with dry-run plans for Docker-based container management.
 - Clear `not yet implemented` errors for operations that would mutate OS packages or active environments beyond the scaffolded lifecycle surface.
@@ -28,7 +28,7 @@ Not implemented now:
 
 ## State File
 
-Path: `.andromeda/environments.json`
+Path: `.agents/environments.json`
 
 ```json
 {
@@ -113,6 +113,6 @@ non-dry-run paths.
 ## Integration Rules
 
 - Keep all package and environment operations under the `agents` CLI to satisfy the single-management-surface mandate from #7.
-- Reuse `.andromeda/secrets` scopes rather than creating a separate secret store for environments.
+- Reuse `.agents/secrets` scopes rather than creating a separate secret store for environments.
 - Use Docker as the first container runtime target unless a future issue changes that contract.
 - Never pretend a package was installed or an image was pulled without invoking the real provider and recording evidence.

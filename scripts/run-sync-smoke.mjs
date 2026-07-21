@@ -14,7 +14,7 @@ const evidenceHash = "a".repeat(64);
 
 function machine(name) {
   const userHome = path.join(sandbox, name, "user");
-  const stateHome = path.join(userHome, ".andromeda");
+  const stateHome = path.join(userHome, ".agents");
   mkdirSync(userHome, { recursive: true });
   return {
     name,

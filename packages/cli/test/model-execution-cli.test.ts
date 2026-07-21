@@ -30,7 +30,7 @@ async function executionFixture(): Promise<{
   const container = await rootFixture();
   const root = path.join(container, "workspace with spaces");
   const userHome = path.join(container, "user home");
-  const state = sharedStateAt(root, path.join(userHome, ".andromeda"), userHome);
+  const state = sharedStateAt(root, path.join(userHome, ".agents"), userHome);
   const receiptDir = path.join(root, "receipt folder");
   await mkdir(receiptDir, { recursive: true });
   await ensureSharedState(state);
@@ -51,8 +51,8 @@ async function splitExecutionFixture(): Promise<{
   const distributionRoot = path.join(container, "agent os distribution");
   const workdir = path.join(container, "caller worktree");
   const userHome = path.join(container, "user home");
-  const state = sharedStateAt(distributionRoot, path.join(userHome, ".andromeda"), userHome);
-  const receiptDir = path.join(workdir, ".darkfactory");
+  const state = sharedStateAt(distributionRoot, path.join(userHome, ".agents"), userHome);
+  const receiptDir = path.join(workdir, ".agents");
   await mkdir(distributionRoot, { recursive: true });
   await mkdir(receiptDir, { recursive: true });
   await ensureSharedState(state);
@@ -416,7 +416,7 @@ describe("model execution CLI prompt boundary", () => {
 
   test("andromeda run rejects a receipt under ANDROMEDA_ROOT when the caller worktree differs", async () => {
     const { distributionRoot, workdir, state } = await splitExecutionFixture();
-    const receiptDir = path.join(distributionRoot, ".darkfactory");
+    const receiptDir = path.join(distributionRoot, ".agents");
     const receiptPath = path.join(receiptDir, "distribution receipt.json");
     await mkdir(receiptDir, { recursive: true });
     const result = await runProcess(
@@ -451,7 +451,7 @@ describe("model execution CLI prompt boundary", () => {
     const container = await rootFixture();
     const root = path.join(container, "caller worktree with spaces");
     const userHome = path.join(container, "user home");
-    const state = sharedStateAt(repositoryRoot, path.join(userHome, ".andromeda"), userHome);
+    const state = sharedStateAt(repositoryRoot, path.join(userHome, ".agents"), userHome);
     const receiptDir = path.join(root, "receipt folder");
     await mkdir(receiptDir, { recursive: true });
     await ensureSharedState(state);

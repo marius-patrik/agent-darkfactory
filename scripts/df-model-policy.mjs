@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-export const MODEL_POLICY_PATH = ".darkfactory/model-policy.json";
+export const MODEL_POLICY_PATH = ".agents/model-policy.json";
 export const MODEL_TIERS = Object.freeze(["low", "medium", "high", "max"]);
 export const EFFORT_TIERS = Object.freeze(["low", "medium", "high"]);
 export const MODEL_PURPOSES = Object.freeze([

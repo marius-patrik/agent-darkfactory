@@ -44,7 +44,7 @@ function resolved(value: string): string {
 
 function userHomeFromAgentsHome(agentsHome: string): string | null {
   const normalized = path.normalize(agentsHome);
-  return path.basename(normalized) === ".andromeda" ? path.dirname(normalized) : null;
+  return path.basename(normalized) === ".agents" ? path.dirname(normalized) : null;
 }
 
 function accountHome(): string {
@@ -57,7 +57,7 @@ function accountHome(): string {
 
 /**
  * Recover the real OS user home even when a provider wrapper has isolated
- * HOME under ~/.andromeda/clis/<provider>.
+ * HOME under ~/.agents/clis/<provider>.
  */
 export function resolveUserHome(
   env: RuntimePathEnv = process.env,
@@ -72,7 +72,7 @@ export function resolveUserHome(
 
   const normalized = path.normalize(platformHome);
   const parts = normalized.split(path.sep);
-  const agentsIndex = parts.lastIndexOf(".andromeda");
+  const agentsIndex = parts.lastIndexOf(".agents");
   if (agentsIndex >= 0 && parts[agentsIndex + 1] === "clis" && parts[agentsIndex + 2]) {
     const prefix = parts.slice(0, agentsIndex).join(path.sep);
     return prefix ? path.resolve(prefix) : path.parse(normalized).root;
@@ -87,7 +87,7 @@ export function resolvePersonalAgentsHome(
   platformHome = accountHome(),
 ): string {
   if (env.ANDROMEDA_HOME?.trim()) return resolved(env.ANDROMEDA_HOME);
-  return path.join(resolveUserHome(env, platformHome), ".andromeda");
+  return path.join(resolveUserHome(env, platformHome), ".agents");
 }
 
 /**
@@ -101,5 +101,5 @@ export function resolveRuntimeAgentsHome(
   platformHome = accountHome(),
 ): string {
   if (env.ANDROMEDA_HOME?.trim()) return resolved(env.ANDROMEDA_HOME);
-  return path.join(resolveUserHome(env, platformHome), ".andromeda");
+  return path.join(resolveUserHome(env, platformHome), ".agents");
 }

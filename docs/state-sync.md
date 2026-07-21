@@ -4,8 +4,8 @@ Status: encrypted cross-machine event exchange is implemented. It is disabled
 by default and must be enabled independently on each machine with the same
 local key.
 
-Agent OS has one authoritative state root per machine, `andromeda_home` (normally
-`~/.andromeda`). Exchange moves only immutable, machine-partitioned memory,
+Agent OS has one authoritative state root per machine, `ANDROMEDA_HOME` (normally
+`~/.agents`). Exchange moves only immutable, machine-partitioned memory,
 session, and orchestrator events. Records, views, session transcripts, state
 documents, and baton Markdown remain derived projections and are rebuilt after
 the complete imported history validates.
@@ -83,14 +83,14 @@ sync artifacts.
 
 ## Path and authority contract
 
-- `andromeda_home` is the only state root on a machine.
-- Provider homes are `andromeda_home/clis/<provider>`.
-- Exchange configuration and journals live below `andromeda_home/sync/`.
+- `ANDROMEDA_HOME` is the only state root on a machine.
+- Provider homes are `ANDROMEDA_HOME/clis/<provider>`.
+- Exchange configuration and journals live below `ANDROMEDA_HOME/sync/`.
 - Roaming authority consists of immutable events, never projections.
 - Raw provider databases/WALs, provider transcripts, credentials, models,
   caches, logs, temporary files, locks, process state, and arbitrary files are
   local-only.
-- Migration evidence remains below `andromeda_home/provenance/migrations/` and in
+- Migration evidence remains below `ANDROMEDA_HOME/provenance/migrations/` and in
   the separately protected Recovery archive.
 
 The following are failures: a second writable state root; a provider bridge;
@@ -101,7 +101,7 @@ has not been recovered.
 
 On Windows, physical top-level `.codex` and `.claude` directories used by the
 desktop applications may coexist as `app-owned` surfaces only when distinct
-canonical CLI homes exist below `andromeda_home/clis`. They are never exchange
+canonical CLI homes exist below `ANDROMEDA_HOME/clis`. They are never exchange
 sources or Agent OS authority.
 
 See [Canonical State and Memory v2](state-memory-v2.md) for the complete

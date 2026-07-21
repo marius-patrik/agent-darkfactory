@@ -188,10 +188,10 @@ export function dockerCreateArgs(options: {
   restart?: string;
 }): string[] {
   const args = ["container", "create", "--name", options.name];
-  args.push("--label", "io.andromeda.os.managed=true");
-  args.push("--label", `io.andromeda.os.environment=${options.environment}`);
-  args.push("--label", `io.andromeda.os.image-channel=${options.channel || "dev"}`);
-  args.push("--label", `io.andromeda.os.root=${toPosixPath(options.hostRoot)}`);
+  args.push("--label", "io.andromeda.managed=true");
+  args.push("--label", `io.andromeda.environment=${options.environment}`);
+  args.push("--label", `io.andromeda.image-channel=${options.channel || "dev"}`);
+  args.push("--label", `io.andromeda.root=${toPosixPath(options.hostRoot)}`);
   for (const [key, value] of Object.entries(options.env)) args.push("-e", `${key}=${value}`);
   for (const mount of options.mounts) {
     args.push("-v", `${mount.host}:${mount.container}:${mount.mode === "ro" ? "ro" : "rw"}`);
@@ -386,7 +386,7 @@ export async function checkPathSharing(
       issues.push(`Configured host path does not exist: ${host}`);
       continue;
     }
-    const pathSentinel = `.andromeda-pathcheck-${crypto.randomUUID()}-${index}`;
+    const pathSentinel = `.agents-pathcheck-${crypto.randomUUID()}-${index}`;
     try {
       await Bun.write(path.join(host, pathSentinel), "ok");
       const sentinelContainerPath = `${container}/${pathSentinel}`;

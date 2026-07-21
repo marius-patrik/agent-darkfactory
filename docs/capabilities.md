@@ -1,6 +1,6 @@
 # Canonical capability floor
 
-The `tools/capabilities/global/` `skills/`, `plugins/`, `hooks/`, `roles/`, and
+The `.agents/capabilities/global/` `skills/`, `plugins/`, `hooks/`, `roles/`, and
 `commands/` directories, together with `persona.md` beside them, are the
 authored source for the shared Agent OS
 capability floor. Managed product plugin repositories live under `packages/`;

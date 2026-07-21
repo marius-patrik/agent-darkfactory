@@ -25,7 +25,7 @@ def source_models():
 
 @pytest.fixture
 def client(monkeypatch, tmp_path, source_models):
-    monkeypatch.setenv("ANDROMEDA_HOME", str(tmp_path / ".andromeda"))
+    monkeypatch.setenv("ANDROMEDA_HOME", str(tmp_path / ".agents"))
     status_path = tmp_path / "inferctl-engines.yaml"
     status_path.write_text(
         "schema_version: inferctl-local-engines-v1\nengines:\n"

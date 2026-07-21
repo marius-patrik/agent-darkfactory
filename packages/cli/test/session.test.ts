@@ -53,7 +53,7 @@ async function runAgents(
     cwd,
     env: {
       ...cleanEnv(),
-      ANDROMEDA_HOME: path.join(cwd, ".andromeda"),
+      ANDROMEDA_HOME: path.join(cwd, ".agents"),
       ANDROMEDA_ROOT: cwd,
       ...env,
     },
@@ -1382,7 +1382,7 @@ describe("andromeda run / sessions CLI", () => {
   test("run uses provider/model/mode defaults from config", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-run-config-"));
     try {
-      const configPath = path.join(root, ".andromeda", "config.json");
+      const configPath = path.join(root, ".agents", "config.json");
       await mkdir(path.dirname(configPath), { recursive: true });
       await Bun.write(
         configPath,

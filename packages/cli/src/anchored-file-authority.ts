@@ -175,7 +175,7 @@ function validateRequest(request: AnchoredFileAuthorityRequest): Buffer {
 }
 
 function publicationTemporaryComponent(): string {
-  return `.andromeda-${randomBytes(16).toString("hex")}.tmp`;
+  return `.agents-${randomBytes(16).toString("hex")}.tmp`;
 }
 
 function posixIdentity(info: ReturnType<typeof fstatSync>): AnchoredFileIdentity {

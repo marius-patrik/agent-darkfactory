@@ -25,7 +25,7 @@ async function runAgents(
     cwd: root,
     env: {
       ...cleanEnv(),
-      ANDROMEDA_HOME: path.join(root, ".andromeda"),
+      ANDROMEDA_HOME: path.join(root, ".agents"),
       ANDROMEDA_USER_HOME: path.join(root, "user"),
       ANDROMEDA_ROOT: root,
     },
@@ -43,7 +43,7 @@ async function runAgents(
 async function withFixture(fn: (state: SharedState, root: string) => Promise<void>): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "agents-route-cli-test-"));
   try {
-    const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
+    const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
     await ensureSharedState(state);
     await fn(state, root);
   } finally {
@@ -264,7 +264,7 @@ describe("route probe CLI regression triplet", () => {
       expect(result.stderr.trim()).toBe(
         "andromeda: route probe accepts only --model-tier, --effort, and --json",
       );
-      expect(await Bun.file(path.join(root, ".andromeda")).exists()).toBe(false);
+      expect(await Bun.file(path.join(root, ".agents")).exists()).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

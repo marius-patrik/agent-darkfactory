@@ -33,7 +33,7 @@ async function git(root: string, args: string[]): Promise<string> {
 }
 
 async function repositoryState(root: string, options: { keepGitIdentity?: boolean } = {}) {
-  const stateDir = path.join(root, ".andromeda");
+  const stateDir = path.join(root, ".agents");
   await mkdir(stateDir, { recursive: true });
   await git(stateDir, ["init", "-q", "-b", "main"]);
   await git(stateDir, ["config", "user.name", "State repository test"]);

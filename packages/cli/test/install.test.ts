@@ -43,7 +43,7 @@ async function runAgents(
     cwd,
     env: {
       ...cleanEnv(),
-      ANDROMEDA_HOME: path.join(cwd, ".andromeda"),
+      ANDROMEDA_HOME: path.join(cwd, ".agents"),
       ANDROMEDA_ROOT: cwd,
     },
     stdout: "pipe",
@@ -159,11 +159,11 @@ describe("install CLI", () => {
       expect(install.stdout).toContain("installed skill probe sha256=");
       expect(
         await Bun.file(
-          path.join(root, ".andromeda", "skills", "probe", "SKILL.md"),
+          path.join(root, ".agents", "skills", "probe", "SKILL.md"),
         ).text(),
       ).toContain("# Probe skill");
       const registryBefore = await Bun.file(
-        path.join(root, ".andromeda", "installs.json"),
+        path.join(root, ".agents", "installs.json"),
       ).text();
 
       const duplicate = await runAgents(root, [
@@ -175,7 +175,7 @@ describe("install CLI", () => {
       expect(duplicate.code).toBe(0);
       expect(duplicate.stdout).toContain("verified skill probe sha256=");
       expect(
-        await Bun.file(path.join(root, ".andromeda", "installs.json")).text(),
+        await Bun.file(path.join(root, ".agents", "installs.json")).text(),
       ).toBe(registryBefore);
 
       const installs = await readInstalls(sharedState(root));
@@ -185,14 +185,14 @@ describe("install CLI", () => {
       expect(installs[0].sha256).toMatch(/^[a-f0-9]{64}$/);
       expect(
         await Bun.file(
-          path.join(root, ".andromeda", "identity", "capabilities.md"),
+          path.join(root, ".agents", "identity", "capabilities.md"),
         ).text(),
       ).toContain("A deterministic probe.");
       expect(
         await Bun.file(
           path.join(
             root,
-            ".andromeda",
+            ".agents",
             "store",
             "sha256",
             installs[0].sha256,
@@ -202,12 +202,12 @@ describe("install CLI", () => {
       ).toBe(true);
       if (process.platform !== "win32") {
         expect(
-          (await stat(path.join(root, ".andromeda", "installs.json"))).mode &
+          (await stat(path.join(root, ".agents", "installs.json"))).mode &
             0o777,
         ).toBe(0o600);
       }
       expect(
-        (await readdir(path.join(root, ".andromeda"))).some((name) =>
+        (await readdir(path.join(root, ".agents"))).some((name) =>
           name.includes(".tmp"),
         ),
       ).toBe(false);
@@ -325,12 +325,12 @@ describe("install CLI", () => {
       expect(await readInstalls(sharedState(root))).toEqual([]);
       expect(
         await Bun.file(
-          path.join(root, ".andromeda", "skills", "malformed"),
+          path.join(root, ".agents", "skills", "malformed"),
         ).exists(),
       ).toBe(false);
       expect(
         await Bun.file(
-          path.join(root, ".andromeda", "plugins", "secret"),
+          path.join(root, ".agents", "plugins", "secret"),
         ).exists(),
       ).toBe(false);
     } finally {
@@ -369,7 +369,7 @@ describe("install CLI", () => {
       expect(registrations[0].id).toBe("probe-harness");
       expect(registrations[0].kind).toBe("harness");
       expect(registrations[0].path).toBe(
-        path.join(root, ".andromeda", "harnesses", "probe-harness"),
+        path.join(root, ".agents", "harnesses", "probe-harness"),
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -419,7 +419,7 @@ describe("install CLI", () => {
       ]);
       expect(activated.code).toBe(0);
       expect(activated.stdout).toContain("activated identity rommie sha256=");
-      const identity = path.join(root, ".andromeda", "identity");
+      const identity = path.join(root, ".agents", "identity");
       expect(
         await Bun.file(path.join(identity, "persona.md")).text(),
       ).toContain("One canonical personal agent");
@@ -442,7 +442,7 @@ describe("install CLI", () => {
       expect(relocated.code).toBe(0);
       expect(relocated.stdout).toContain("verified identity rommie sha256=");
       const migrations = await readdir(
-        path.join(root, ".andromeda", "provenance", "migrations"),
+        path.join(root, ".agents", "provenance", "migrations"),
       );
       expect(
         migrations.filter((name) => name.startsWith("identity-rommie-")),
@@ -451,7 +451,7 @@ describe("install CLI", () => {
         await Bun.file(
           path.join(
             root,
-            ".andromeda",
+            ".agents",
             "provenance",
             "migrations",
             migrations[0],

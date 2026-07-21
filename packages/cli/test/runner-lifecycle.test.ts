@@ -73,7 +73,7 @@ function makeDoctor(overrides: { ok?: boolean; launcherOk?: boolean; failId?: Do
   ];
   if (overrides.failId) checks.push({ id: overrides.failId, ok: false, message: `${overrides.failId} failed` });
   const everyOk = checks.every((check) => check.ok);
-  return { ok: overrides.ok ?? everyOk, stateRoot: "C:\\fake\\.andromeda", checks, tools: [] };
+  return { ok: overrides.ok ?? everyOk, stateRoot: "C:\\fake\\.agents", checks, tools: [] };
 }
 
 interface HostState {
@@ -129,7 +129,7 @@ function taskInfo(overrides: Partial<ScheduledTaskInfo> & Pick<ScheduledTaskInfo
 function runnerProcess(pid: number, overrides: Partial<RunnerProcess> = {}): RunnerProcess {
   return {
     pid,
-    executablePath: "C:\\fake\\.andromeda\\runner\\bin\\Runner.Listener.exe",
+    executablePath: "C:\\fake\\.agents\\runner\\bin\\Runner.Listener.exe",
     startedAt: new Date(Date.UTC(2026, 6, 14, 10, 0, 0, pid)).toISOString(),
     ...overrides,
   };
@@ -1829,7 +1829,7 @@ describe("Windows runner provisioning boundary", () => {
         return { code: 0, stdout: "", stderr: "" };
       },
     });
-    const env = { ANDROMEDA_HOME: "C:\\canonical\\.andromeda" };
+    const env = { ANDROMEDA_HOME: "C:\\canonical\\.agents" };
 
     const handle = await host.run(installDir, env);
     await Promise.all([handle.terminate(), handle.terminate()]);
@@ -1936,7 +1936,7 @@ describe("Windows runner provisioning boundary", () => {
     await host.provision(installDir);
 
     expect(await host.isProvisioned(installDir)).toBe(true);
-    expect(await readFile(path.join(installDir, ".andromeda-runner-version"), "utf8")).toBe(
+    expect(await readFile(path.join(installDir, ".agents-runner-version"), "utf8")).toBe(
       `${TINY_RUNNER_SOFTWARE.version}\n`,
     );
     expect(await pathExists(path.join(installDir, TINY_RUNNER_SOFTWARE.asset))).toBe(false);
@@ -2018,23 +2018,23 @@ describe("Windows runner provisioning boundary", () => {
       ` \t${TINY_RUNNER_SOFTWARE.version}\r\n `,
     ];
     for (const marker of validMarkers) {
-      await writeFile(path.join(installDir, ".andromeda-runner-version"), marker);
+      await writeFile(path.join(installDir, ".agents-runner-version"), marker);
       expect(await host.isProvisioned(installDir)).toBe(true);
     }
 
-    await writeFile(path.join(installDir, ".andromeda-runner-version"), "wrong-version\n");
+    await writeFile(path.join(installDir, ".agents-runner-version"), "wrong-version\n");
     expect(await host.isProvisioned(installDir)).toBe(false);
-    await rm(path.join(installDir, ".andromeda-runner-version"));
+    await rm(path.join(installDir, ".agents-runner-version"));
     expect(await host.isProvisioned(installDir)).toBe(false);
 
-    await writeFile(path.join(installDir, ".andromeda-runner-version"), `${TINY_RUNNER_SOFTWARE.version}\n`);
+    await writeFile(path.join(installDir, ".agents-runner-version"), `${TINY_RUNNER_SOFTWARE.version}\n`);
     await rm(path.join(installDir, "bin", "Runner.Worker.exe"));
     expect(await host.isProvisioned(installDir)).toBe(false);
     await mkdir(path.join(installDir, "bin", "Runner.Worker.exe"));
     expect(await host.isProvisioned(installDir)).toBe(false);
     await rm(path.join(installDir, "bin", "Runner.Worker.exe"), { recursive: true });
     await writeFile(path.join(installDir, "bin", "Runner.Worker.exe"), "worker\n");
-    await rm(path.join(installDir, ".andromeda-runner-version"));
+    await rm(path.join(installDir, ".agents-runner-version"));
     expect(await host.isProvisioned(installDir)).toBe(false);
   });
 
@@ -2042,7 +2042,7 @@ describe("Windows runner provisioning boundary", () => {
     const { root } = await freshState();
     const installDir = path.join(root, "runner-software-observation");
     await writeExtractedRunner(installDir);
-    await writeFile(path.join(installDir, ".andromeda-runner-version"), `${TINY_RUNNER_SOFTWARE.version}\n`);
+    await writeFile(path.join(installDir, ".agents-runner-version"), `${TINY_RUNNER_SOFTWARE.version}\n`);
     const host = createWindowsRunnerHost({ software: TINY_RUNNER_SOFTWARE });
     expect(await host.isProvisioned(path.join(root, "positively-missing"))).toBe(false);
     expect(await host.isProvisioned(installDir)).toBe(true);
@@ -2111,10 +2111,10 @@ describe("Windows runner provisioning boundary", () => {
     await writeExtractedRunner(installDir);
     const host = createWindowsRunnerHost({ software: TINY_RUNNER_SOFTWARE });
     expect(await host.runnerVersion(installDir)).toBeNull();
-    await writeFile(path.join(installDir, ".andromeda-runner-version"), "  \r\n");
+    await writeFile(path.join(installDir, ".agents-runner-version"), "  \r\n");
     expect(await host.runnerVersion(installDir)).toBeNull();
     expect(await host.isProvisioned(installDir)).toBe(false);
-    await writeFile(path.join(installDir, ".andromeda-runner-version"), "older-version\n");
+    await writeFile(path.join(installDir, ".agents-runner-version"), "older-version\n");
     expect(await host.runnerVersion(installDir)).toBe("older-version");
     expect(await host.isProvisioned(installDir)).toBe(false);
 
@@ -2122,7 +2122,7 @@ describe("Windows runner provisioning boundary", () => {
     const deniedHost = createWindowsRunnerHost({
       software: TINY_RUNNER_SOFTWARE,
       readFile: async (filePath, encoding) => {
-        if (filePath.endsWith(".andromeda-runner-version")) throw errno("EACCES", sentinel);
+        if (filePath.endsWith(".agents-runner-version")) throw errno("EACCES", sentinel);
         return readFile(filePath, encoding);
       },
     });
@@ -4698,7 +4698,7 @@ describe("andromeda runner CLI", () => {
 
   function setAgentsEnv(root: string): void {
     for (const key of ["ANDROMEDA_HOME", "ANDROMEDA_ROOT", "ANDROMEDA_USER_HOME"]) envBackup[key] = process.env[key];
-    process.env.ANDROMEDA_HOME = path.join(root, ".andromeda");
+    process.env.ANDROMEDA_HOME = path.join(root, ".agents");
     process.env.ANDROMEDA_ROOT = root;
     process.env.ANDROMEDA_USER_HOME = root;
   }
@@ -4751,7 +4751,7 @@ describe("andromeda runner CLI", () => {
   test("runner status never bootstraps an absent shared-state tree", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-runner-readonly-"));
     roots.push(root);
-    const stateDir = path.join(root, ".andromeda");
+    const stateDir = path.join(root, ".agents");
     const kit = makeKit({ platform: "darwin" });
     setRunnerDeps(kit.deps);
     setAgentsEnv(root);

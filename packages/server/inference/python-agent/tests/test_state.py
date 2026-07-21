@@ -19,8 +19,8 @@ def test_agents_home_is_required_and_absolute(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_default_inference_state_stays_below_agents_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    andromeda_home = tmp_path / ".andromeda"
-    monkeypatch.setenv("ANDROMEDA_HOME", str(andromeda_home))
+    ANDROMEDA_HOME = tmp_path / ".agents"
+    monkeypatch.setenv("ANDROMEDA_HOME", str(ANDROMEDA_HOME))
 
     SessionConfig(
         session_id="state-test",
@@ -29,10 +29,10 @@ def test_default_inference_state_stays_below_agents_home(monkeypatch: pytest.Mon
         task="task",
         acceptance_type="generic",
     )
-    assert inference_runs_dir() == andromeda_home / "runtime" / "inference" / "runs"
-    assert inference_runtime_dir() == andromeda_home / "runtime" / "inference"
+    assert inference_runs_dir() == ANDROMEDA_HOME / "runtime" / "inference" / "runs"
+    assert inference_runtime_dir() == ANDROMEDA_HOME / "runtime" / "inference"
 
-    secrets = andromeda_home / "secrets"
+    secrets = ANDROMEDA_HOME / "secrets"
     secrets.mkdir(parents=True)
     (secrets / "test.secret").write_text("secret-value", encoding="utf-8")
     redactor = Redactor.from_secrets_dir()

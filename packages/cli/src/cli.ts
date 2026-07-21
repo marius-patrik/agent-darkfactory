@@ -189,7 +189,7 @@ Usage:
   andromeda os deploy <profile> [--image andromeda-os] [--env andromeda-os] [--channel dev] [--dry-run]
   andromeda runner install|enable|disable|status|repair [--json]
 
-All runtime data is shared through .andromeda so every managed CLI sees the same
+All runtime data is shared through .agents so every managed CLI sees the same
 skills, plugins, CLI metadata, and credit store.`);
 }
 

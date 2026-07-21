@@ -18,7 +18,7 @@ function cleanEnv(): Record<string, string | undefined> {
 async function runAgents(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn([process.execPath, cliPath, ...args], {
     cwd,
-    env: { ...cleanEnv(), ANDROMEDA_HOME: path.join(cwd, ".andromeda"), ANDROMEDA_ROOT: cwd },
+    env: { ...cleanEnv(), ANDROMEDA_HOME: path.join(cwd, ".agents"), ANDROMEDA_ROOT: cwd },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -27,7 +27,7 @@ async function runAgents(cwd: string, args: string[]): Promise<{ code: number; s
 }
 
 async function readCredits(root: string): Promise<CreditStore> {
-  return JSON.parse(await Bun.file(path.join(root, ".andromeda", "credits.json")).text()) as CreditStore;
+  return JSON.parse(await Bun.file(path.join(root, ".agents", "credits.json")).text()) as CreditStore;
 }
 
 describe("credits CLI", () => {

@@ -77,10 +77,10 @@ describe("CLI adapters", () => {
     expect(adapterEnv(state, "codex").ANDROMEDA_MEMORY).toBe(path.join(state.stateDir, "memory"));
     expect(adapterEnv(state, "codex").ANDROMEDA_ROOT).toBe(path.join("repo"));
     expect(adapterEnv(state, "codex").ANDROMEDA_DATA).toBeUndefined();
-    expect(adapterEnv(state, "codex").ANDROMEDA_WORKSPACE).toBe(path.join("repo", ".andromeda", "runtime", "workspaces"));
+    expect(adapterEnv(state, "codex").ANDROMEDA_WORKSPACE).toBe(path.join("repo", ".agents", "runtime", "workspaces"));
     expect(adapterEnv(state, "codex").ANDROMEDA_SECRETS).toBe(path.join(state.stateDir, "secrets"));
     expect(adapterEnv(state, "codex").ANDROMEDA_DATA_REPOS).toBe(path.join(state.stateDir, "data-repos.json"));
-    expect(adapterEnv(state, "codex").ANDROMEDA_SYSTEM_DATA_ROOT).toBe(path.join("repo", ".andromeda"));
+    expect(adapterEnv(state, "codex").ANDROMEDA_SYSTEM_DATA_ROOT).toBe(path.join("repo", ".agents"));
     expect(adapterEnv(state, "claude").CLAUDE_CONFIG_DIR).toBe(path.join(state.clisDir, "claude"));
     expect(adapterEnv(state, "kimi").KIMI_CODE_HOME).toBe(path.join(state.clisDir, "kimi"));
     expect(adapterEnv(state, "kimi").HOME).toBe(path.join(state.clisDir, "kimi"));
@@ -90,7 +90,7 @@ describe("CLI adapters", () => {
 
   test("agy env binds GEMINI_DIR, HOME, and USERPROFILE to the absolute canonical provider home", () => {
     const root = path.resolve("repo");
-    const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
+    const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
     const providerHome = path.join(state.clisDir, "agy");
     const env = adapterEnv(state, "agy");
 
@@ -131,7 +131,7 @@ describe("CLI adapters", () => {
   test("doctor remains read-only and refuses an unpinned canonical binary", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-adapter-"));
     try {
-      const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
+      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
       await doctorAdapter(state, "codex");
       expect(await Bun.file(adapterHome(state, "codex")).exists()).toBe(false);
 
@@ -150,7 +150,7 @@ describe("CLI adapters", () => {
     if (process.platform === "win32") return;
     const root = await mkdtemp(path.join(os.tmpdir(), "agents-adapter-pin-"));
     try {
-      const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
+      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
       const binary = path.join(adapterHome(state, "kimi"), "bin", "kimi");
       await Bun.write(binary, "#!/bin/sh\nprintf '0.23.4\\n'\n");
       await chmod(binary, 0o700);
@@ -182,7 +182,7 @@ describe("CLI adapters", () => {
       for (const [name] of previousUpdateEnv) delete process.env[name];
       process.env.AgY_Cli_Disable_Auto_Update = "false";
 
-      const state = sharedStateAt(root, path.join(root, ".andromeda"), path.join(root, "user"));
+      const state = sharedStateAt(root, path.join(root, ".agents"), path.join(root, "user"));
       const capture = path.join(root, "pin-env.txt");
       const binary = path.join(adapterHome(state, "agy"), "bin", process.platform === "win32" ? "agy.ps1" : "agy");
       if (process.platform === "win32") {

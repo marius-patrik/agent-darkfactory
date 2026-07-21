@@ -41,7 +41,7 @@ async function fixture(): Promise<{ root: string; state: SharedState; receiptDir
   roots.push(sandbox);
   const root = path.join(sandbox, "worktree");
   await mkdir(root);
-  const state = sharedStateAt(root, path.join(sandbox, ".andromeda"), path.join(sandbox, "user"));
+  const state = sharedStateAt(root, path.join(sandbox, ".agents"), path.join(sandbox, "user"));
   await ensureSharedState(state);
   await writeSessionConfig(state, {
     schemaVersion: 1,
@@ -52,7 +52,7 @@ async function fixture(): Promise<{ root: string; state: SharedState; receiptDir
       claude: ["claude-fable-5"],
     },
   });
-  const receiptDir = path.join(root, ".darkfactory");
+  const receiptDir = path.join(root, ".agents");
   await mkdir(receiptDir, { recursive: true });
   return { root, state, receiptDir };
 }
@@ -891,10 +891,10 @@ describe("canonical model execution route and receipt", () => {
     const workdirAlias = path.join(aliasContainer, "workdir");
     await symlink(root, workdirAlias, process.platform === "win32" ? "junction" : "dir");
 
-    const aliased = request(root, path.join(workdirAlias, ".darkfactory"), "medium");
+    const aliased = request(root, path.join(workdirAlias, ".agents"), "medium");
     const accepted = await executeModelRequest(state, aliased, successfulDependencies());
     expect(accepted.ok).toBe(true);
-    expect(await Bun.file(path.join(root, ".darkfactory", path.basename(aliased.receiptPath))).exists()).toBe(true);
+    expect(await Bun.file(path.join(root, ".agents", path.basename(aliased.receiptPath))).exists()).toBe(true);
   });
 
   test("receipt containment edge: a physical receipt stays inside an OS-aliased workdir", async () => {
@@ -904,7 +904,7 @@ describe("canonical model execution route and receipt", () => {
     const workdirAlias = path.join(aliasContainer, "workdir");
     await symlink(root, workdirAlias, process.platform === "win32" ? "junction" : "dir");
 
-    const physical = request(workdirAlias, path.join(root, ".darkfactory"), "medium");
+    const physical = request(workdirAlias, path.join(root, ".agents"), "medium");
     const accepted = await executeModelRequest(state, physical, successfulDependencies());
     expect(accepted.ok).toBe(true);
     expect(await Bun.file(physical.receiptPath).exists()).toBe(true);

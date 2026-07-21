@@ -341,7 +341,7 @@ async function managedConfigDeclaresAutoreview(repository, ref) {
     const config = JSON.parse(content);
     return managedConfigPaths(config).some((filePath) => filePath === ".github/workflows/darkfactory-autoreview.yml");
   } catch (error) {
-    console.warn(`DarkFactory sweep warning ${repoName(repository)}: invalid .darkfactory/managed-repository.json: ${error.message || String(error)}`);
+    console.warn(`DarkFactory sweep warning ${repoName(repository)}: invalid .agents/managed-repository.json: ${error.message || String(error)}`);
     return false;
   }
 }

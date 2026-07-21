@@ -8,7 +8,7 @@ import {
 } from "./df-model-policy.mjs";
 import { validatePromptProvenance } from "../../src/model-turn.ts";
 
-export const AUTOREVIEW_POLICY_PATH = ".darkfactory/autoreview-policy.json";
+export const AUTOREVIEW_POLICY_PATH = ".agents/autoreview-policy.json";
 export const AUTOREVIEW_SCHEMA_PATH = ".github/darkfactory-autoreview.schema.json";
 export const AUTOREVIEW_CHECK_NAME = "DarkFactory Autoreview";
 

@@ -161,7 +161,7 @@ jobs:
           DF_CONTROL_REVISION: ${{ needs.discover.outputs.control_revision }}
           DF_CLEAN_WATCH_PASSES: "8"
         run: |
-          $launcher = '${{ steps.andromeda.outputs.launcher }}'
+          $launcher = '${{ steps.agents.outputs.launcher }}'
           $target = (Resolve-Path -LiteralPath hygiene-target).Path
           $planOutput = (& pwsh -NoLogo -NoProfile -File $launcher packages run darkfactory -- clean plan $env:DF_TARGET_REPO --local $target --json 2>&1) -join "`n"
           if ($LASTEXITCODE -ne 0) { Write-Output $planOutput; exit $LASTEXITCODE }

@@ -13,7 +13,7 @@ async function runAgents(cwd: string, args: string[]): Promise<{ code: number; s
     cwd,
     env: {
       ...process.env,
-      ANDROMEDA_HOME: path.join(cwd, ".andromeda"),
+      ANDROMEDA_HOME: path.join(cwd, ".agents"),
       ANDROMEDA_USER_HOME: cwd,
       ANDROMEDA_ROOT: cwd,
     },

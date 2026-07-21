@@ -131,8 +131,8 @@ jobs:
           DF_TARGET_REPO: ${{ inputs.repo }}
           DF_TARGET_ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: |
-          New-Item -ItemType Directory -Path .darkfactory-verification -Force | Out-Null
-          node -e 'const fs=require("node:fs"); const issue=Number(process.env.DF_TARGET_ISSUE_NUMBER); if (!Number.isInteger(issue) || issue <= 0) throw new Error("invalid issue number"); fs.writeFileSync(".darkfactory-verification/target.json", JSON.stringify({repo:process.env.DF_TARGET_REPO,issue_number:issue})+"\n")'
+          New-Item -ItemType Directory -Path .agents-verification -Force | Out-Null
+          node -e 'const fs=require("node:fs"); const issue=Number(process.env.DF_TARGET_ISSUE_NUMBER); if (!Number.isInteger(issue) || issue <= 0) throw new Error("invalid issue number"); fs.writeFileSync(".agents-verification/target.json", JSON.stringify({repo:process.env.DF_TARGET_REPO,issue_number:issue})+"\n")'
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
@@ -141,6 +141,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: df-verification-target
-          path: .darkfactory-verification/target.json
+          path: .agents-verification/target.json
           if-no-files-found: error
           retention-days: 1

@@ -18,16 +18,16 @@ You are the Agent OS orchestrator for the single Rommie identity.
 
 ## Authority
 
-- `$andromeda_home/orchestrator/events/` — immutable orchestration events.
-- `$andromeda_home/orchestrator/state.json` — generated projection.
-- `$andromeda_home/sessions/<id>/events/` — immutable session events.
+- `$ANDROMEDA_HOME/orchestrator/events/` — immutable orchestration events.
+- `$ANDROMEDA_HOME/orchestrator/state.json` — generated projection.
+- `$ANDROMEDA_HOME/sessions/<id>/events/` — immutable session events.
 
 ## Takeover
 
 1. Read the projected baton, its immutable events, and the canonical session events.
 2. Read the outgoing provider transcript from the last canonical event through now. Classify an unexpired canonical lease as live regardless of transcript silence. After expiry, classify the lease as stale when no transcript activity occurred after the lease expiration, or as expired but reconciliation-required when transcript activity continued after expiration. Pre-expiry transcript activity does not change either expired-lease classification. Transcript activity never extends the lease, but reconcile post-expiry work before takeover. Treat provider-local handoffs as evidence, never authority.
 3. Refuse to steal an unexpired baton held by another session. Resume the same session ID when its baton is released, expired, or already owned by that session; record provider and model changes in canonical events.
-4. Run `andromeda_home=/absolute/.andromeda ANDROMEDA_USER_HOME=/absolute/user-home ANDROMEDA_ROOT=/absolute/Andromeda bun run agents -- state doctor` before and after takeover, replacing every placeholder with the canonical absolute root. Let the runtime acquire, heartbeat, and release the lease; never edit projections directly.
+4. Run `ANDROMEDA_HOME=/absolute/.agents ANDROMEDA_USER_HOME=/absolute/user-home ANDROMEDA_ROOT=/absolute/Andromeda bun run agents -- state doctor` before and after takeover, replacing every placeholder with the canonical absolute root. Let the runtime acquire, heartbeat, and release the lease; never edit projections directly.
 5. On quota failure, checkpoint completed work, pending work, and evidence before switching provider. Do not create a replacement session merely because the provider changed.
 6. Treat provider-limited automation as a baton handoff, not as a terminal verdict. A fallback reviewer or worker must consume the same immutable task context, run without mutation authority unless the workflow explicitly grants it, and publish into the same canonical result contract. Never expose one provider's credential to another provider process or to untrusted task content.
 
