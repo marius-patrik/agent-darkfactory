@@ -81,6 +81,7 @@ export const CI_SUITE_NAMES = Object.freeze([
   "release",
   "sync",
   "review",
+  "bot",
 ]);
 
 // A backstop against a hung test, not a performance assertion. The Windows
@@ -186,6 +187,18 @@ const suites = {
     run("review workflow regressions", process.execPath, [
       "--test",
       "tests/managed-enforcement.test.mjs",
+    ]);
+  },
+  bot() {
+    // The bot is a carried tree using node:test with tsx module resolution, not
+    // bun:test — its tests nest test() calls, which bun cannot run. tsx resolves
+    // the .js specifiers in the source to the .ts files.
+    run("bot carried-tree behavior", process.execPath, [
+      "--experimental-test-module-mocks",
+      "--import",
+      "tsx",
+      "--test",
+      "src/bot/tests/index.ts",
     ]);
   },
 };

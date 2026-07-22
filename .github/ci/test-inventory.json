@@ -82,6 +82,19 @@
         "src/memory/test/memory-plugin.test.ts",
         "src/memory/index.ts"
       ]
+    },
+    {
+      "id": "bot",
+      "path": "src/bot",
+      "suite": "bot",
+      "platforms": [
+        "ubuntu-latest"
+      ],
+      "requiredPaths": [
+        "src/bot/tests/index.ts",
+        "src/bot/managed-files.ts",
+        "src/bot/tests/managed-sync.test.ts"
+      ]
     }
   ],
   "realBehaviorLegs": [
@@ -159,7 +172,6 @@
     "packages-manager-legacy",
     "src/cli",
     "src/web",
-    "src/bot",
     "src/mcp",
     "src/memory",
     "src/sdk",

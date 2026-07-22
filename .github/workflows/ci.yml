@@ -62,6 +62,9 @@ jobs:
           - suite: review
             runner: ubuntu-latest
             label: review regressions
+          - suite: bot
+            runner: ubuntu-latest
+            label: bot carried-tree
     runs-on: ${{ matrix.runner }}
 
     steps:
