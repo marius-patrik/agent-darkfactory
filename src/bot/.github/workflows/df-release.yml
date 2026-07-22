@@ -1,0 +1,99 @@
+name: DarkFactory Release Convergence
+
+on:
+  schedule:
+    - cron: "11 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Optional exact owner/repository target; blank runs the active fleet.
+        required: false
+        type: string
+        default: ""
+      mode:
+        description: Release operation.
+        required: true
+        type: choice
+        default: run
+        options:
+          - status
+          - plan
+          - reconcile
+          - run
+          - verify
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darkfactory-release-mutation
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release convergence
+    if: ${{ github.repository == 'marius-patrik/DarkFactory' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate trusted control ref and input
+        env:
+          DF_RELEASE_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || '' }}
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REPOSITORY}" != "marius-patrik/DarkFactory" || "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release convergence runs only from protected marius-patrik/DarkFactory@main."
+            exit 1
+          fi
+          if [[ -n "${DF_RELEASE_REPO}" && ! "${DF_RELEASE_REPO}" =~ ^marius-patrik/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::Release target must be an exact marius-patrik owner/repository identifier."
+            exit 1
+          fi
+
+      - name: Checkout immutable trusted release controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Mint read-only release observation token
+        id: read-token
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'status' || inputs.mode == 'plan') }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-actions: read
+          permission-administration: read
+          permission-checks: read
+          permission-contents: read
+          permission-issues: read
+          permission-pull-requests: read
+          permission-statuses: read
+
+      - name: Mint bounded release mutation token
+        id: write-token
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'status' && inputs.mode != 'plan') }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-actions: write
+          permission-administration: read
+          permission-checks: read
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-statuses: read
+
+      - name: Run resumable release convergence
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.write-token.outputs.token || steps.read-token.outputs.token }}
+          DF_CONTROL_REPO: ${{ github.repository }}
+          DF_RELEASE_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || '' }}
+          DF_RELEASE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'run' }}
+        run: node .github/scripts/df-release.mjs

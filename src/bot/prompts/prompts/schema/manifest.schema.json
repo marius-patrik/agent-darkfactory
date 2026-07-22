@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marius-patrik/DarkFactory/prompts/schema/manifest.schema.json",
+  "title": "DarkFactory prompt library manifest",
+  "description": "Contract for prompts/manifest.json. Enforced at runtime by src/prompts.ts (validateManifest); this document is the human-readable reference.",
+  "type": "object",
+  "required": ["schemaVersion", "library", "contractVersion", "artifacts", "profiles", "fixtures"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 2,
+      "description": "Manifest schema version. Must be 2."
+    },
+    "library": {
+      "const": "darkfactory-prompts",
+      "description": "Library identifier."
+    },
+    "contractVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$",
+      "description": "Semver version of the composition contract."
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/profile" }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/fixture" }
+    }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "runKind",
+        "purpose",
+        "role",
+        "skills",
+        "modelTier",
+        "overlays",
+        "allowedRepositoryOverlays",
+        "requiresRepositoryOverlay",
+        "output"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^profile/[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
+        },
+        "runKind": {
+          "enum": ["plan", "orchestrate", "implement", "draft-issue", "review-issue", "fix-issue", "review-pr", "fix-pr", "update-pointer", "release", "verify", "audit", "mechanic", "escalate"]
+        },
+        "purpose": {
+          "enum": ["planning", "orchestration", "implementation", "interactive-issue-drafting", "iterative-review", "final-review", "review-fix", "release", "verification", "audit", "trivial-mechanical", "explicit-escalation"]
+        },
+        "role": { "type": "string", "pattern": "^role/[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "skills": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^skill/[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "uniqueItems": true
+        },
+        "modelTier": { "enum": ["low", "medium", "high", "max"] },
+        "overlays": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^overlay/[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "uniqueItems": true
+        },
+        "allowedRepositoryOverlays": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^overlay/[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "uniqueItems": true
+        },
+        "requiresRepositoryOverlay": { "type": "boolean" },
+        "output": { "type": "string", "pattern": "^output/[a-z0-9]+(?:-[a-z0-9]+)*$" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["id", "kind", "path", "version", "checksum", "variables", "requiredVariables"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(role|skill|tier|overlay|output)/[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "description": "Stable identifier; prefix must match kind."
+        },
+        "kind": {
+          "enum": ["role", "skill", "tier", "overlay", "output"]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?:roles|skills|tiers|overlays|outputs)/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.md$",
+          "description": "Path to the artifact body, relative to prompts/."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "sha256 of the artifact's newline-normalized content."
+        },
+        "variables": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Trusted template variables used by the artifact body."
+        },
+        "requiredVariables": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Variables that must be present to compose the artifact."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "role" } } },
+          "then": { "properties": { "id": { "pattern": "^role/" }, "path": { "pattern": "^roles/" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "skill" } } },
+          "then": { "properties": { "id": { "pattern": "^skill/" }, "path": { "pattern": "^skills/" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tier" } } },
+          "then": { "properties": { "id": { "pattern": "^tier/" }, "path": { "pattern": "^tiers/" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "overlay" } } },
+          "then": { "properties": { "id": { "pattern": "^overlay/" }, "path": { "pattern": "^overlays/" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "output" } } },
+          "then": { "properties": { "id": { "pattern": "^output/" }, "path": { "pattern": "^outputs/" } } }
+        }
+      ]
+    },
+    "fixture": {
+      "type": "object",
+      "required": ["id", "path", "snapshot", "version", "checksum", "snapshotChecksum", "covers"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "path": {
+          "type": "string",
+          "pattern": "^fixtures/compose/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.json$",
+          "description": "Typed composition inputs, relative to prompts/."
+        },
+        "snapshot": {
+          "type": "string",
+          "pattern": "^fixtures/snapshots/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.md$",
+          "description": "Deterministic composed output for the fixture."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "sha256 of the newline-normalized typed fixture JSON."
+        },
+        "snapshotChecksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "sha256 of the newline-normalized composed snapshot."
+        },
+        "covers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Exact artifact ids the fixture composes (role, skills, tier, overlays, and output). Runtime also binds every artifact id to its kind-specific root and matching basename."
+        }
+      }
+    }
+  }
+}

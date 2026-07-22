@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "mode": "tagged",
+  "releaseBranchPrefix": "release/",
+  "reconcileBranchPrefix": "reconcile/",
+  "requiredChecks": [
+    "Validate",
+    "DarkFactory Autoreview"
+  ],
+  "mainChecks": [
+    "Validate"
+  ],
+  "tagPattern": "^refs/tags/v\\d+\\.\\d+\\.\\d+$",
+  "artifactWorkflows": [],
+  "publicationChecks": [],
+  "producer": {
+    "workflow": "df-release-producer.yml",
+    "ref": "main",
+    "maxAttempts": 3,
+    "inputs": {}
+  }
+}

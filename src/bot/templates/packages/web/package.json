@@ -1,0 +1,13 @@
+{
+  "name": "@agent-os/template-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./src/client.ts --outdir ./dist --target browser",
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts",
+    "test": "bun test src",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

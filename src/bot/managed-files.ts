@@ -216,7 +216,7 @@ function resolveManagedContentRoot(): string {
 }
 
 function resolveProjectRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  return dirname(fileURLToPath(import.meta.url));
 }
 
 function resolveCanonicalDataRepoRoot(): string {

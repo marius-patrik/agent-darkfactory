@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "targetBranch": "dev",
+  "branchPrefix": "submodule-update/",
+  "requiredChecks": ["Validate", "DarkFactory Autoreview"],
+  "releaseReceiptMaxAgeHours": 336,
+  "mainOnlyData": [
+    {
+      "repository": "marius-patrik/Andromeda-data",
+      "admission": "encrypted-bundle-validate"
+    },
+    {
+      "repository": "marius-patrik/darkfactory-data",
+      "admission": "app-ledger-validate"
+    }
+  ],
+  "canonicalRoots": [
+    {
+      "repository": "marius-patrik/Andromeda",
+      "gitlinks": [
+        {
+          "name": "Singularity",
+          "path": "apps/Singularity",
+          "repository": "marius-patrik/Singularity",
+          "branch": "main"
+        },
+        {
+          "name": "Fabrica",
+          "path": "apps/Fabrica",
+          "repository": "marius-patrik/Fabrica",
+          "branch": "dev"
+        },
+        {
+          "name": "DarkFactory",
+          "path": "plugins/DarkFactory",
+          "repository": "marius-patrik/DarkFactory",
+          "branch": "main"
+        },
+        {
+          "name": "LifeQuest",
+          "path": "plugins/LifeQuest",
+          "repository": "marius-patrik/LifeQuest",
+          "branch": "main"
+        },
+        {
+          "name": "SkyAgent",
+          "path": "plugins/SkyAgent",
+          "repository": "marius-patrik/SkyAgent",
+          "branch": "main"
+        },
+        {
+          "name": "data",
+          "path": "data/andromeda",
+          "repository": "marius-patrik/Andromeda-data",
+          "branch": "main"
+        },
+        {
+          "name": "darkfactory-data",
+          "path": "data/darkfactory",
+          "repository": "marius-patrik/darkfactory-data",
+          "branch": "main"
+        }
+      ]
+    }
+  ]
+}

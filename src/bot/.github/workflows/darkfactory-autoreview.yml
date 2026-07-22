@@ -1,0 +1,130 @@
+name: DarkFactory Autoreview
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+    inputs:
+      target_kind:
+        description: Explicit target kind for bot/CLI issue or PR review.
+        required: true
+        type: choice
+        options:
+          - issue
+          - pull_request
+      target_number:
+        description: Explicit issue or pull request number.
+        required: true
+        type: string
+      target_version:
+        description: Exact issue SHA-256 or pull-request BASE_SHA:HEAD_SHA version admitted by the caller.
+        required: true
+        type: string
+      owner_override_comment:
+        description: Optional exact owner-authored /df autoreview override comment id for an issue.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darkfactory-autoreview-${{ github.repository }}-${{ github.event.pull_request.number || inputs.target_number }}
+  cancel-in-progress: true
+
+jobs:
+  darkfactory-autoreview:
+    name: DarkFactory Autoreview
+    runs-on: [self-hosted, df-local]
+    timeout-minutes: 120
+    if: >-
+      ${{
+        (github.event_name == 'pull_request_target' && !github.event.pull_request.draft) ||
+        github.event_name == 'workflow_dispatch'
+      }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Validate trusted invocation
+        run: |
+          if ($env:GITHUB_REPOSITORY_OWNER -ne "marius-patrik") {
+            Write-Output "::error::DarkFactory Autoreview is restricted to the managed owner."
+            exit 1
+          }
+
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch" -and $env:GITHUB_REF -ne "refs/heads/main") {
+            Write-Output "::error::Explicit issue/PR Autoreview must dispatch from protected main."
+            exit 1
+          }
+
+      - name: Mint bounded DarkFactory installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            DarkFactory
+            darkfactory-data
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Checkout protected DarkFactory control runtime
+        uses: actions/checkout@v4
+        with:
+          repository: marius-patrik/DarkFactory
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: darkfactory-autoreview-control
+
+      - name: Record exact control revision
+        id: control
+        run: |
+          $revision = (git -C darkfactory-autoreview-control rev-parse HEAD).Trim()
+          if ($revision -notmatch '^[0-9a-f]{40}$') {
+            Write-Output "::error::DarkFactory control revision is not an exact commit."
+            exit 1
+          }
+          "revision=$revision" >> $env:GITHUB_OUTPUT
+
+      - name: Verify canonical Agent OS
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
+            Write-Output "::error::A valid absolute AGENTS_HOME is required."
+            exit 1
+          }
+          $agentsLauncher = Join-Path -Path $env:AGENTS_HOME -ChildPath "bin\agents.ps1"
+          if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
+            Write-Output "::error::Canonical Agent OS launcher is missing."
+            exit 1
+          }
+          pwsh -NoLogo -NoProfile -File $agentsLauncher state doctor --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run bounded medium-to-clean and high confirmation protocol
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
+          DF_TARGET_REPO: ${{ github.repository }}
+          DF_TARGET_KIND: ${{ github.event_name == 'pull_request_target' && 'pull_request' || inputs.target_kind }}
+          DF_TARGET_NUMBER: ${{ github.event.pull_request.number || inputs.target_number }}
+          DF_EXPECTED_BASE: ${{ github.event.pull_request.base.ref || '' }}
+          DF_EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          DF_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          DF_EXPECTED_ISSUE_VERSION: ${{ inputs.target_version || '' }}
+          DF_EXPECTED_PR_VERSION: ${{ inputs.target_version || '' }}
+          DF_OWNER_OVERRIDE_COMMENT: ${{ inputs.owner_override_comment || '' }}
+          DF_CONTROL_REVISION: ${{ steps.control.outputs.revision }}
+        run: node --experimental-strip-types darkfactory-autoreview-control/.github/scripts/run-darkfactory-autoreview.mjs

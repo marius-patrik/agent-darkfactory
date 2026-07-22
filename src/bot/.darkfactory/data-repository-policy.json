@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "managedBy": "darkfactory",
+  "repositories": [
+    {
+      "repository": "marius-patrik/Andromeda-data",
+      "visibility": "private",
+      "defaultBranch": "main",
+      "branches": ["main"],
+      "branchProtection": {
+        "required": true,
+        "acceptedResidue": {
+          "classification": "accepted_residue",
+          "kind": "github-plan-branch-protection-unavailable",
+          "httpStatus": 403
+        }
+      }
+    },
+    {
+      "repository": "marius-patrik/darkfactory-data",
+      "visibility": "private",
+      "defaultBranch": "main",
+      "branches": ["main"],
+      "branchProtection": {
+        "required": true,
+        "acceptedResidue": {
+          "classification": "accepted_residue",
+          "kind": "github-plan-branch-protection-unavailable",
+          "httpStatus": 403
+        }
+      }
+    }
+  ],
+  "compensatingControl": {
+    "id": "andromeda-pr-190-encrypted-bundle-admission",
+    "repository": "marius-patrik/Andromeda",
+    "pullRequest": 190,
+    "url": "https://github.com/marius-patrik/Andromeda/pull/190",
+    "guarantees": ["encrypted-bundle-admission", "plaintext-rejection"]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 2,
+  "run": {
+    "id": "run-20260713-release-001",
+    "kind": "release",
+    "purpose": "release",
+    "triggeredBy": "schedule"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "DarkFactory",
+    "defaultBranch": "dev"
+  },
+  "workItem": null,
+  "draftIntent": null,
+  "policy": {
+    "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
+    "labels": [
+      "P0",
+      "P1",
+      "P2",
+      "df:ready",
+      "df:running",
+      "df:blocked"
+    ],
+    "enforcement": "All merges require green CI and the configured review gate; never force-push or bypass gates."
+  },
+  "validation": {
+    "commands": [
+      "npm run check"
+    ]
+  },
+  "effort": "low",
+  "verified": {
+    "facts": [
+      "The default branch is green and up to date."
+    ]
+  },
+  "output": {
+    "id": "output/releaser"
+  },
+  "selection": {
+    "profile": "profile/releaser",
+    "role": "role/releaser",
+    "skills": [
+      "skill/branch-release-policy",
+      "skill/no-bypass",
+      "skill/parked-archive-boundaries",
+      "skill/validation-autoreview",
+      "skill/closure-verification",
+      "skill/owner-escalation",
+      "skill/canonical-agent-execution",
+      "skill/evidence-status-reporting"
+    ],
+    "modelTier": "high",
+    "overlays": [
+      "overlay/agent-os-boundary",
+      "overlay/github-control-plane",
+      "overlay/release"
+    ],
+    "repositoryOverlays": [
+      "overlay/mixed-monorepo"
+    ]
+  }
+}

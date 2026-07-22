@@ -1,0 +1,1559 @@
+{
+  "schemaVersion": 2,
+  "library": "darkfactory-prompts",
+  "contractVersion": "0.3.0",
+  "artifacts": [
+    {
+      "id": "output/auditor",
+      "kind": "output",
+      "path": "outputs/auditor.md",
+      "version": "0.2.0",
+      "checksum": "sha256:d88bac859e3bab50bf66f2bb4a7fa49f3dac2bf48d8f9c937d7585081f5fbccb",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/implementer",
+      "kind": "output",
+      "path": "outputs/implementer.md",
+      "version": "0.3.0",
+      "checksum": "sha256:d523000aa054c00c3db3e2e5791999dd5cc4973182964eeffe2fab74bf868cfb",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/issue-drafter",
+      "kind": "output",
+      "path": "outputs/issue-drafter.md",
+      "version": "0.2.0",
+      "checksum": "sha256:6a0b22918e0413a629893dd9fd1b64a64bef03bb6c53540d7a2b15af35ef40ff",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/issue-fixer",
+      "kind": "output",
+      "path": "outputs/issue-fixer.md",
+      "version": "0.3.0",
+      "checksum": "sha256:0e9bbf4b500da3ccfe86e829f758b219aac30195365cf53953764c9ebbfc449b",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/issue-reviewer",
+      "kind": "output",
+      "path": "outputs/issue-reviewer.md",
+      "version": "0.3.0",
+      "checksum": "sha256:be3c66735a74b2d96cc75a1dcd246513f1921e8a02508baa53d1b5b326fc2ffe",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/l0-orchestrator",
+      "kind": "output",
+      "path": "outputs/l0-orchestrator.md",
+      "version": "0.2.0",
+      "checksum": "sha256:55d01eb337fad208ea9977511bc50291ad1fefe70938cf2d3ed1a17d10639e97",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/low-mechanic",
+      "kind": "output",
+      "path": "outputs/low-mechanic.md",
+      "version": "0.3.0",
+      "checksum": "sha256:ed19498652b805b212ebaadd56487df9d54d391e1f1cd3a720074ae039cf93b4",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/max-escalation",
+      "kind": "output",
+      "path": "outputs/max-escalation.md",
+      "version": "0.2.0",
+      "checksum": "sha256:7f469a9061102c10a29ba46f945f312f1de7a2be388b35902025120724f95548",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/planner",
+      "kind": "output",
+      "path": "outputs/planner.md",
+      "version": "0.2.0",
+      "checksum": "sha256:2b1faefc5c3d3a5c12d49849c8936a6319e564013184ded2f66f7848ddd998cc",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/pointer-updater",
+      "kind": "output",
+      "path": "outputs/pointer-updater.md",
+      "version": "0.2.0",
+      "checksum": "sha256:0dd0ec3911e17b146081298a32b3defd281c37c3e75ab5d08479b69e58c45b60",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/pr-fixer",
+      "kind": "output",
+      "path": "outputs/pr-fixer.md",
+      "version": "0.3.0",
+      "checksum": "sha256:af6162ebe3b4ecd50c0fd57c7d05e0862f8395efa535c5413aa56abcc38055a2",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/pr-reviewer",
+      "kind": "output",
+      "path": "outputs/pr-reviewer.md",
+      "version": "0.3.0",
+      "checksum": "sha256:58e6d7f78f6e14f57d045462a3eaf267c79f24fe67330b01b26a9380a5ea0d7c",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/releaser",
+      "kind": "output",
+      "path": "outputs/releaser.md",
+      "version": "0.2.0",
+      "checksum": "sha256:c3ac5ba9ff653579bab956c960c344a59ea63f47e5c5e7310371d5aed8aaf436",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "output/verifier",
+      "kind": "output",
+      "path": "outputs/verifier.md",
+      "version": "0.2.0",
+      "checksum": "sha256:3c667b30ee78016d8c9f1d376e683a0df83b520aa42d43dca039dbbe90c63c28",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/agent-os-boundary",
+      "kind": "overlay",
+      "path": "overlays/agent-os-boundary.md",
+      "version": "0.2.0",
+      "checksum": "sha256:42d2d71313fa575eeb1a4e1907042c1a9214da44ef986335747e5b0deb0e2d4f",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/github-control-plane",
+      "kind": "overlay",
+      "path": "overlays/github-control-plane.md",
+      "version": "0.2.0",
+      "checksum": "sha256:db068b8a3ff90740401b582e58e3276934918c7f81409e0545d6263bd0221bab",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/bun-node",
+      "kind": "overlay",
+      "path": "overlays/repo-types/bun-node.md",
+      "version": "0.2.0",
+      "checksum": "sha256:2df252cf89d378784a045af7c0becebcd0854bc304b575e0fb3eb1639b40c8c5",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/go",
+      "kind": "overlay",
+      "path": "overlays/repo-types/go.md",
+      "version": "0.2.0",
+      "checksum": "sha256:630d9509a52f5e6bcadd675ebab7c15f98a44b7157bbcfb94ccfef34891f7315",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/main-only-private-data",
+      "kind": "overlay",
+      "path": "overlays/repo-types/main-only-private-data.md",
+      "version": "0.2.0",
+      "checksum": "sha256:06a6bc2c5fff0b0b1768ef90f201ed569f4681ffcbd0916954eb1f6d917e578c",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/mixed-monorepo",
+      "kind": "overlay",
+      "path": "overlays/repo-types/mixed-monorepo.md",
+      "version": "0.2.0",
+      "checksum": "sha256:cf635149ed4e21ab73f5f9322694ddec8b28dab5b6cbb5ef8e85a6cbe9e9309e",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/python-uv",
+      "kind": "overlay",
+      "path": "overlays/repo-types/python-uv.md",
+      "version": "0.2.0",
+      "checksum": "sha256:6871737e832cbc51ccc0cfc060a3a48e9c25e4f091084a96f094756736be7d37",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/submodule-root",
+      "kind": "overlay",
+      "path": "overlays/repo-types/submodule-root.md",
+      "version": "0.2.0",
+      "checksum": "sha256:89af275767d64859977a3cb432308436dacf980c0479df18741b2e95a090411a",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/autoupdate",
+      "kind": "overlay",
+      "path": "overlays/workflows/autoupdate.md",
+      "version": "0.2.0",
+      "checksum": "sha256:d8b83bfae7d46cd4bd4338642ba88031b22d4cab564be5d5f41bfae868a30291",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/doctor",
+      "kind": "overlay",
+      "path": "overlays/workflows/doctor.md",
+      "version": "0.2.0",
+      "checksum": "sha256:9ade67aaf6f5d2c3e48d5923c08a3bd2f09ebd5167f19167aa2c788b185c0f23",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/issue-review-fix",
+      "kind": "overlay",
+      "path": "overlays/workflows/issue-review-fix.md",
+      "version": "0.2.0",
+      "checksum": "sha256:281cb2015ab008673504693040e07c3225fe0ee33d44744fc7116b529b21ba61",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/pr-review-fix",
+      "kind": "overlay",
+      "path": "overlays/workflows/pr-review-fix.md",
+      "version": "0.2.0",
+      "checksum": "sha256:faa616c5493b65b14a805b6564e0a8c758337bfa4d65f0d5d5e3b7fad4dc2048",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/release",
+      "kind": "overlay",
+      "path": "overlays/workflows/release.md",
+      "version": "0.2.0",
+      "checksum": "sha256:6e9264c7ff04cb51ebd8bff22d29cc743ba33cf5445f9116124203af5ea9d01b",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "overlay/work",
+      "kind": "overlay",
+      "path": "overlays/workflows/work.md",
+      "version": "0.2.0",
+      "checksum": "sha256:0566f21ba5b20e9a84ce0f0b3ca43cc274f046cc2174e2d6c4b43c892a94b88e",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "role/auditor",
+      "kind": "role",
+      "path": "roles/auditor.md",
+      "version": "0.2.0",
+      "checksum": "sha256:9feeee603679a1d43ef1ab0fdfec7632d8c9aecb693e9b135c8ad3469f1b6827",
+      "variables": [
+        "repository.fullName",
+        "run.kind"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "run.kind"
+      ]
+    },
+    {
+      "id": "role/implementer",
+      "kind": "role",
+      "path": "roles/implementer.md",
+      "version": "0.2.0",
+      "checksum": "sha256:23bb1ddff80450a49205266bbb46550f815e11f9ac590e53342ce7a720df306a",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/issue-drafter",
+      "kind": "role",
+      "path": "roles/issue-drafter.md",
+      "version": "0.2.0",
+      "checksum": "sha256:cfa3f5fb8d8d1fd25a139303ae9890720fe0a3c80b7b7194e05e6d36ce27c7fc",
+      "variables": [
+        "repository.fullName",
+        "run.kind"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "run.kind"
+      ]
+    },
+    {
+      "id": "role/issue-fixer",
+      "kind": "role",
+      "path": "roles/issue-fixer.md",
+      "version": "0.2.0",
+      "checksum": "sha256:d7982ad6f1fa355bfed2688958aa6b5375982a2a3d563c2488a0905033b874f8",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/issue-reviewer",
+      "kind": "role",
+      "path": "roles/issue-reviewer.md",
+      "version": "0.2.0",
+      "checksum": "sha256:9ff00d13222457202ca9e25f1a8dc9b9762fcb98276f02f79f709c2c37a32e9f",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/l0-orchestrator",
+      "kind": "role",
+      "path": "roles/l0-orchestrator.md",
+      "version": "0.2.0",
+      "checksum": "sha256:c6866d1780d2edb0d173eab4786da2423be4c96fd06080afeae26721034a354d",
+      "variables": [
+        "repository.fullName",
+        "run.kind"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "run.kind"
+      ]
+    },
+    {
+      "id": "role/low-mechanic",
+      "kind": "role",
+      "path": "roles/low-mechanic.md",
+      "version": "0.2.0",
+      "checksum": "sha256:86df5497443b884111c1425ce3256cc6da63810dc93832750bcb829c63315b17",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/max-escalation",
+      "kind": "role",
+      "path": "roles/max-escalation.md",
+      "version": "0.2.0",
+      "checksum": "sha256:c11d69d1729614666f33e6f220a7305de556b49535d2b733685f8a548d0af2bc",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/planner",
+      "kind": "role",
+      "path": "roles/planner.md",
+      "version": "0.2.0",
+      "checksum": "sha256:04e29369e7f01c8e70e0214e34dd5677993d5f872180b8aa453ec5367d46911d",
+      "variables": [
+        "repository.fullName",
+        "run.kind",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "run.kind",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/pointer-updater",
+      "kind": "role",
+      "path": "roles/pointer-updater.md",
+      "version": "0.2.0",
+      "checksum": "sha256:f74f65a3d4df1f0c5d1b28493aeaaf041fe90de430624e636bafc1d3e251fb86",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/pr-fixer",
+      "kind": "role",
+      "path": "roles/pr-fixer.md",
+      "version": "0.2.0",
+      "checksum": "sha256:a1b45c631f8b42fc7ccdf57bdbd8d111dedf5d9b3a29fa3aade86861eeffc588",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/pr-reviewer",
+      "kind": "role",
+      "path": "roles/pr-reviewer.md",
+      "version": "0.2.0",
+      "checksum": "sha256:deabf68249e568551df11b2eb26c8f1f75d7a4047f7844025008c4830cf9f7e8",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "role/releaser",
+      "kind": "role",
+      "path": "roles/releaser.md",
+      "version": "0.2.0",
+      "checksum": "sha256:8eaeb1780ba2f32303597fbe12d5b1dbe1eca47146f2e72e4208a77bb1676177",
+      "variables": [
+        "repository.fullName"
+      ],
+      "requiredVariables": [
+        "repository.fullName"
+      ]
+    },
+    {
+      "id": "role/verifier",
+      "kind": "role",
+      "path": "roles/verifier.md",
+      "version": "0.2.0",
+      "checksum": "sha256:5efba933f02a45578e5acd391e476386a1faa11391413b42ff665988ee198411",
+      "variables": [
+        "repository.fullName",
+        "workItem.number"
+      ],
+      "requiredVariables": [
+        "repository.fullName",
+        "workItem.number"
+      ]
+    },
+    {
+      "id": "skill/acceptance-driven-delivery",
+      "kind": "skill",
+      "path": "skills/acceptance-driven-delivery.md",
+      "version": "0.2.0",
+      "checksum": "sha256:2c0d1226f9d46c2aa40567f14cb1516a0de0a6b926e9e0bcabae5c0669961609",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/branch-release-policy",
+      "kind": "skill",
+      "path": "skills/branch-release-policy.md",
+      "version": "0.2.0",
+      "checksum": "sha256:b70e9fd57a74ec2f556906206dd6aefd0fd842372a47d3bc1455e933a7a017b7",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/canonical-agent-execution",
+      "kind": "skill",
+      "path": "skills/canonical-agent-execution.md",
+      "version": "0.2.0",
+      "checksum": "sha256:da02300b70ecd1ccf62100884e3439a5f138861a791b05b90483fd71fc48c7c2",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/closure-verification",
+      "kind": "skill",
+      "path": "skills/closure-verification.md",
+      "version": "0.2.0",
+      "checksum": "sha256:7623fb3c2e9b9e33ac977e87e1f945a9189d0e258f4348763271458211f5f977",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/evidence-status-reporting",
+      "kind": "skill",
+      "path": "skills/evidence-status-reporting.md",
+      "version": "0.2.0",
+      "checksum": "sha256:e4a68d286069dd8afb2e894e207224fcbac6d57d0bc4a72042c5f10b623ad546",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/issue-as-contract",
+      "kind": "skill",
+      "path": "skills/issue-as-contract.md",
+      "version": "0.2.0",
+      "checksum": "sha256:0e3139c15a3fc74ea8523681ce3b9673e685fb41638b4cf50db3772fc6119f83",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/minimal-diff",
+      "kind": "skill",
+      "path": "skills/minimal-diff.md",
+      "version": "0.2.0",
+      "checksum": "sha256:45563d8839add7ddd3bf76fd90044f1bfbeed037bf53f27031a605632337514a",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/no-bypass",
+      "kind": "skill",
+      "path": "skills/no-bypass.md",
+      "version": "0.2.0",
+      "checksum": "sha256:842b84305d957e7e197d76d8a0f447879deb12c947c959eb5074ca7a4349839f",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/owner-escalation",
+      "kind": "skill",
+      "path": "skills/owner-escalation.md",
+      "version": "0.2.0",
+      "checksum": "sha256:a91c63e932e2684758164573aa477c7461e2ee71f3aaa8cd4a6c04bc09d66a19",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/parked-archive-boundaries",
+      "kind": "skill",
+      "path": "skills/parked-archive-boundaries.md",
+      "version": "0.2.0",
+      "checksum": "sha256:32f27fb95230a9041941997b1029b8609d31c0cb52f3623e6859386dffb536fd",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/state-secrets-isolation",
+      "kind": "skill",
+      "path": "skills/state-secrets-isolation.md",
+      "version": "0.2.0",
+      "checksum": "sha256:723bab290e58da70c2f7be1629fa3f22bb7d40bcb5a6101ea1cb29e76a59cf61",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/token-economy",
+      "kind": "skill",
+      "path": "skills/token-economy.md",
+      "version": "0.2.0",
+      "checksum": "sha256:7dba88c77ec1114be736764f3495c617f31e72f2fc249c226a9549303e4f6869",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/untrusted-input-handling",
+      "kind": "skill",
+      "path": "skills/untrusted-input-handling.md",
+      "version": "0.2.0",
+      "checksum": "sha256:f29ad84e6bbcc73be9f0e58913469f7253338b72aff8b6da7f26c5fb29f6ed30",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/validation-autoreview",
+      "kind": "skill",
+      "path": "skills/validation-autoreview.md",
+      "version": "0.2.0",
+      "checksum": "sha256:9d2432f5be910a0c520d9ed8297b09b58937c1faabad684d04c7dcc5b5839a93",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/verification-first",
+      "kind": "skill",
+      "path": "skills/verification-first.md",
+      "version": "0.2.0",
+      "checksum": "sha256:66dc1541e29579cd6889022a74b0d29144db35d25cde235331827fafb5d0d75a",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "skill/worker-claim-verification",
+      "kind": "skill",
+      "path": "skills/worker-claim-verification.md",
+      "version": "0.2.0",
+      "checksum": "sha256:4c34fe9e1fbd4d4bd7a090f1d1758c06ba8a0e5b2965e52de5f72bb62a142d66",
+      "variables": [],
+      "requiredVariables": []
+    },
+    {
+      "id": "tier/high",
+      "kind": "tier",
+      "path": "tiers/high.md",
+      "version": "0.2.0",
+      "checksum": "sha256:c3f885bdc7bf6b88c24c9c92f9c5ce0b2e03f60d573be2f6517faf5c17ecda9f",
+      "variables": [
+        "effort.level",
+        "modelTier.name"
+      ],
+      "requiredVariables": [
+        "effort.level",
+        "modelTier.name"
+      ]
+    },
+    {
+      "id": "tier/low",
+      "kind": "tier",
+      "path": "tiers/low.md",
+      "version": "0.2.0",
+      "checksum": "sha256:ee156f63fb498077fcbf6c5d7cff8ff15154173e35901c0a759c4303f8b47076",
+      "variables": [
+        "effort.level",
+        "modelTier.name"
+      ],
+      "requiredVariables": [
+        "effort.level",
+        "modelTier.name"
+      ]
+    },
+    {
+      "id": "tier/max",
+      "kind": "tier",
+      "path": "tiers/max.md",
+      "version": "0.2.0",
+      "checksum": "sha256:3d8121fc668cf72eb47080e2830a4c9e9feb357c713270b5cdf3bb638ee5f17e",
+      "variables": [
+        "effort.level",
+        "modelTier.name"
+      ],
+      "requiredVariables": [
+        "effort.level",
+        "modelTier.name"
+      ]
+    },
+    {
+      "id": "tier/medium",
+      "kind": "tier",
+      "path": "tiers/medium.md",
+      "version": "0.2.0",
+      "checksum": "sha256:3e5dac4718bb36fd895f4c36afdce600992dc85fff59da9e5ddcead00846e042",
+      "variables": [
+        "effort.level",
+        "modelTier.name"
+      ],
+      "requiredVariables": [
+        "effort.level",
+        "modelTier.name"
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "id": "profile/planner",
+      "version": "0.2.0",
+      "runKind": "plan",
+      "purpose": "planning",
+      "role": "role/planner",
+      "skills": [
+        "skill/issue-as-contract",
+        "skill/acceptance-driven-delivery",
+        "skill/owner-escalation",
+        "skill/evidence-status-reporting",
+        "skill/token-economy",
+        "skill/canonical-agent-execution"
+      ],
+      "modelTier": "high",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/work"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/planner"
+    },
+    {
+      "id": "profile/implementer",
+      "version": "0.2.0",
+      "runKind": "implement",
+      "purpose": "implementation",
+      "role": "role/implementer",
+      "skills": [
+        "skill/issue-as-contract",
+        "skill/acceptance-driven-delivery",
+        "skill/minimal-diff",
+        "skill/branch-release-policy",
+        "skill/no-bypass",
+        "skill/validation-autoreview",
+        "skill/verification-first",
+        "skill/state-secrets-isolation",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "medium",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/work"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/implementer"
+    },
+    {
+      "id": "profile/issue-drafter",
+      "version": "0.2.0",
+      "runKind": "draft-issue",
+      "purpose": "interactive-issue-drafting",
+      "role": "role/issue-drafter",
+      "skills": [
+        "skill/issue-as-contract",
+        "skill/acceptance-driven-delivery",
+        "skill/owner-escalation",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "high",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/issue-review-fix"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/issue-drafter"
+    },
+    {
+      "id": "profile/issue-reviewer",
+      "version": "0.2.0",
+      "runKind": "review-issue",
+      "purpose": "iterative-review",
+      "role": "role/issue-reviewer",
+      "skills": [
+        "skill/issue-as-contract",
+        "skill/untrusted-input-handling",
+        "skill/owner-escalation",
+        "skill/validation-autoreview",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "medium",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/issue-review-fix"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/issue-reviewer"
+    },
+    {
+      "id": "profile/issue-final-review",
+      "version": "0.2.0",
+      "runKind": "review-issue",
+      "purpose": "final-review",
+      "role": "role/issue-reviewer",
+      "skills": [
+        "skill/issue-as-contract",
+        "skill/untrusted-input-handling",
+        "skill/owner-escalation",
+        "skill/validation-autoreview",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "high",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/issue-review-fix"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/issue-reviewer"
+    },
+    {
+      "id": "profile/issue-fixer",
+      "version": "0.2.0",
+      "runKind": "fix-issue",
+      "purpose": "review-fix",
+      "role": "role/issue-fixer",
+      "skills": [
+        "skill/issue-as-contract",
+        "skill/untrusted-input-handling",
+        "skill/minimal-diff",
+        "skill/owner-escalation",
+        "skill/no-bypass",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "medium",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/issue-review-fix"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/issue-fixer"
+    },
+    {
+      "id": "profile/pr-reviewer",
+      "version": "0.2.0",
+      "runKind": "review-pr",
+      "purpose": "iterative-review",
+      "role": "role/pr-reviewer",
+      "skills": [
+        "skill/acceptance-driven-delivery",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "skill/no-bypass",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "medium",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/pr-review-fix"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/pr-reviewer"
+    },
+    {
+      "id": "profile/pr-final-review",
+      "version": "0.2.0",
+      "runKind": "review-pr",
+      "purpose": "final-review",
+      "role": "role/pr-reviewer",
+      "skills": [
+        "skill/acceptance-driven-delivery",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "skill/no-bypass",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "high",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/pr-review-fix"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/pr-reviewer"
+    },
+    {
+      "id": "profile/pr-fixer",
+      "version": "0.2.0",
+      "runKind": "fix-pr",
+      "purpose": "review-fix",
+      "role": "role/pr-fixer",
+      "skills": [
+        "skill/acceptance-driven-delivery",
+        "skill/untrusted-input-handling",
+        "skill/minimal-diff",
+        "skill/branch-release-policy",
+        "skill/no-bypass",
+        "skill/validation-autoreview",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "medium",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/pr-review-fix"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/pr-fixer"
+    },
+    {
+      "id": "profile/pointer-updater",
+      "version": "0.2.0",
+      "runKind": "update-pointer",
+      "purpose": "implementation",
+      "role": "role/pointer-updater",
+      "skills": [
+        "skill/branch-release-policy",
+        "skill/no-bypass",
+        "skill/parked-archive-boundaries",
+        "skill/validation-autoreview",
+        "skill/closure-verification",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "medium",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/autoupdate"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/pointer-updater"
+    },
+    {
+      "id": "profile/releaser",
+      "version": "0.2.0",
+      "runKind": "release",
+      "purpose": "release",
+      "role": "role/releaser",
+      "skills": [
+        "skill/branch-release-policy",
+        "skill/no-bypass",
+        "skill/parked-archive-boundaries",
+        "skill/validation-autoreview",
+        "skill/closure-verification",
+        "skill/owner-escalation",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting"
+      ],
+      "modelTier": "high",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/release"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/releaser"
+    },
+    {
+      "id": "profile/verifier",
+      "version": "0.2.0",
+      "runKind": "verify",
+      "purpose": "verification",
+      "role": "role/verifier",
+      "skills": [
+        "skill/worker-claim-verification",
+        "skill/closure-verification",
+        "skill/untrusted-input-handling",
+        "skill/evidence-status-reporting",
+        "skill/token-economy",
+        "skill/canonical-agent-execution"
+      ],
+      "modelTier": "medium",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/work"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/verifier"
+    },
+    {
+      "id": "profile/auditor",
+      "version": "0.2.0",
+      "runKind": "audit",
+      "purpose": "audit",
+      "role": "role/auditor",
+      "skills": [
+        "skill/state-secrets-isolation",
+        "skill/parked-archive-boundaries",
+        "skill/evidence-status-reporting",
+        "skill/owner-escalation",
+        "skill/token-economy",
+        "skill/canonical-agent-execution"
+      ],
+      "modelTier": "high",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/doctor"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/auditor"
+    },
+    {
+      "id": "profile/l0-orchestrator",
+      "version": "0.2.0",
+      "runKind": "orchestrate",
+      "purpose": "orchestration",
+      "role": "role/l0-orchestrator",
+      "skills": [
+        "skill/issue-as-contract",
+        "skill/parked-archive-boundaries",
+        "skill/owner-escalation",
+        "skill/token-economy",
+        "skill/evidence-status-reporting",
+        "skill/canonical-agent-execution"
+      ],
+      "modelTier": "high",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/work"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/l0-orchestrator"
+    },
+    {
+      "id": "profile/low-mechanic",
+      "version": "0.2.0",
+      "runKind": "mechanic",
+      "purpose": "trivial-mechanical",
+      "role": "role/low-mechanic",
+      "skills": [
+        "skill/minimal-diff",
+        "skill/verification-first",
+        "skill/no-bypass",
+        "skill/evidence-status-reporting",
+        "skill/token-economy",
+        "skill/canonical-agent-execution"
+      ],
+      "modelTier": "low",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/work"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/low-mechanic"
+    },
+    {
+      "id": "profile/max-escalation",
+      "version": "0.2.0",
+      "runKind": "escalate",
+      "purpose": "explicit-escalation",
+      "role": "role/max-escalation",
+      "skills": [
+        "skill/owner-escalation",
+        "skill/no-bypass",
+        "skill/state-secrets-isolation",
+        "skill/evidence-status-reporting",
+        "skill/canonical-agent-execution"
+      ],
+      "modelTier": "max",
+      "overlays": [
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/work"
+      ],
+      "allowedRepositoryOverlays": [
+        "overlay/bun-node",
+        "overlay/go",
+        "overlay/main-only-private-data",
+        "overlay/mixed-monorepo",
+        "overlay/python-uv",
+        "overlay/submodule-root"
+      ],
+      "requiresRepositoryOverlay": true,
+      "output": "output/max-escalation"
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "auditor",
+      "path": "fixtures/compose/auditor.fixture.json",
+      "snapshot": "fixtures/snapshots/auditor.snapshot.md",
+      "version": "0.2.0",
+      "checksum": "sha256:ea8e52ba71f547bda7da7a7fa0c1e23c5cb4958769cc210f411a51cc5a04bb2f",
+      "snapshotChecksum": "sha256:c002125154d37a987417bc0686d2b8a995af977e51155783b8c4af8adac9e047",
+      "covers": [
+        "output/auditor",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/main-only-private-data",
+        "overlay/doctor",
+        "role/auditor",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/owner-escalation",
+        "skill/parked-archive-boundaries",
+        "skill/state-secrets-isolation",
+        "skill/token-economy",
+        "tier/high"
+      ]
+    },
+    {
+      "id": "implementer",
+      "path": "fixtures/compose/implementer.fixture.json",
+      "snapshot": "fixtures/snapshots/implementer.snapshot.md",
+      "version": "0.3.0",
+      "checksum": "sha256:da6a9de9d6b53f95058fc48f93cc7842b5750a7c462fc7436d03de1a579d5529",
+      "snapshotChecksum": "sha256:258972ba931b78a271af49f0d357088c922b02d3d532828e2a7f8d280f0fe3c4",
+      "covers": [
+        "output/implementer",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/mixed-monorepo",
+        "overlay/work",
+        "role/implementer",
+        "skill/acceptance-driven-delivery",
+        "skill/branch-release-policy",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/issue-as-contract",
+        "skill/minimal-diff",
+        "skill/no-bypass",
+        "skill/state-secrets-isolation",
+        "skill/validation-autoreview",
+        "skill/verification-first",
+        "tier/medium"
+      ]
+    },
+    {
+      "id": "issue-drafter",
+      "path": "fixtures/compose/issue-drafter.fixture.json",
+      "snapshot": "fixtures/snapshots/issue-drafter.snapshot.md",
+      "version": "0.2.0",
+      "checksum": "sha256:5b830bd2586f13e4812f37bd26b1a83e5a5e35cd61c8e5181a246580b496dbf4",
+      "snapshotChecksum": "sha256:b3f2f803a03797efc2bc9df37c011cb107a5aa0321ea58c35d651d832d81f63b",
+      "covers": [
+        "output/issue-drafter",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/bun-node",
+        "overlay/issue-review-fix",
+        "role/issue-drafter",
+        "skill/acceptance-driven-delivery",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/issue-as-contract",
+        "skill/owner-escalation",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "tier/high"
+      ]
+    },
+    {
+      "id": "issue-final-review",
+      "path": "fixtures/compose/issue-final-review.fixture.json",
+      "snapshot": "fixtures/snapshots/issue-final-review.snapshot.md",
+      "version": "0.3.0",
+      "checksum": "sha256:7e47b4780435a79f9fa5dc3e4023ed714ef8f0af49082e5e7fda2c3a0c100cb5",
+      "snapshotChecksum": "sha256:a2315676c2ff258a8ed13c6797f7c476682ea0fa63d5f0731fb38e45ea79727a",
+      "covers": [
+        "output/issue-reviewer",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/go",
+        "overlay/issue-review-fix",
+        "role/issue-reviewer",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/issue-as-contract",
+        "skill/owner-escalation",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "tier/high"
+      ]
+    },
+    {
+      "id": "issue-fixer",
+      "path": "fixtures/compose/issue-fixer.fixture.json",
+      "snapshot": "fixtures/snapshots/issue-fixer.snapshot.md",
+      "version": "0.3.0",
+      "checksum": "sha256:57a3147ee9840eb89826d272f27f065697ec46e7b7f286856fe61dd45673cb0d",
+      "snapshotChecksum": "sha256:5623b4a96047f10c0dc0f093863f010977c994d6db99c2a502097852b77686ba",
+      "covers": [
+        "output/issue-fixer",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/bun-node",
+        "overlay/issue-review-fix",
+        "role/issue-fixer",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/issue-as-contract",
+        "skill/minimal-diff",
+        "skill/no-bypass",
+        "skill/owner-escalation",
+        "skill/untrusted-input-handling",
+        "tier/medium"
+      ]
+    },
+    {
+      "id": "issue-reviewer",
+      "path": "fixtures/compose/issue-reviewer.fixture.json",
+      "snapshot": "fixtures/snapshots/issue-reviewer.snapshot.md",
+      "version": "0.3.0",
+      "checksum": "sha256:f91fdca969f4a3dc0fe1eb1890fa9df0098f3a686b32450ca444d1fb6f60f426",
+      "snapshotChecksum": "sha256:28095380a430226698a09f0f0f9637e51c1f02279a9f17bd246a64bd7555bef0",
+      "covers": [
+        "output/issue-reviewer",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/python-uv",
+        "overlay/issue-review-fix",
+        "role/issue-reviewer",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/issue-as-contract",
+        "skill/owner-escalation",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "tier/medium"
+      ]
+    },
+    {
+      "id": "l0-orchestrator",
+      "path": "fixtures/compose/l0-orchestrator.fixture.json",
+      "snapshot": "fixtures/snapshots/l0-orchestrator.snapshot.md",
+      "version": "0.2.0",
+      "checksum": "sha256:f15ca31d74cef7fcb5cf5b5315460ac8f19ccfda09413bbe8ac3df4038f7a8bb",
+      "snapshotChecksum": "sha256:7d2501ae353a6a4c99969d3d389d0024d4f5993365c7c03810cab93f0687a069",
+      "covers": [
+        "output/l0-orchestrator",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/mixed-monorepo",
+        "overlay/work",
+        "role/l0-orchestrator",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/issue-as-contract",
+        "skill/owner-escalation",
+        "skill/parked-archive-boundaries",
+        "skill/token-economy",
+        "tier/high"
+      ]
+    },
+    {
+      "id": "low-mechanic",
+      "path": "fixtures/compose/low-mechanic.fixture.json",
+      "snapshot": "fixtures/snapshots/low-mechanic.snapshot.md",
+      "version": "0.3.0",
+      "checksum": "sha256:1d4185ac3f1b1d2b13d38511af30734b97ddc4c03f0098b2ba7baf2fdbdfa52e",
+      "snapshotChecksum": "sha256:a77dd2374a65159fae8818c43aae786e1c0124ca508215cb5e02e0dbcb148cd5",
+      "covers": [
+        "output/low-mechanic",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/bun-node",
+        "overlay/work",
+        "role/low-mechanic",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/minimal-diff",
+        "skill/no-bypass",
+        "skill/token-economy",
+        "skill/verification-first",
+        "tier/low"
+      ]
+    },
+    {
+      "id": "max-escalation",
+      "path": "fixtures/compose/max-escalation.fixture.json",
+      "snapshot": "fixtures/snapshots/max-escalation.snapshot.md",
+      "version": "0.2.0",
+      "checksum": "sha256:12b97cba7355e0336e7347cb5959d030caec7c0da7efc2bb27c45371936281ed",
+      "snapshotChecksum": "sha256:efa215f1b5b58fff36107383b2fa3bf7b211ef935696aa40a24c5c36b0e8b080",
+      "covers": [
+        "output/max-escalation",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/submodule-root",
+        "overlay/work",
+        "role/max-escalation",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/no-bypass",
+        "skill/owner-escalation",
+        "skill/state-secrets-isolation",
+        "tier/max"
+      ]
+    },
+    {
+      "id": "planner",
+      "path": "fixtures/compose/planner.fixture.json",
+      "snapshot": "fixtures/snapshots/planner.snapshot.md",
+      "version": "0.2.0",
+      "checksum": "sha256:50aa8a81b8b4bd34f98691be479d50d95431a7197aab78e3799949fd8066da31",
+      "snapshotChecksum": "sha256:68de1820fc37470a8892f2edbdaf2d08a81def236a18ffb38d15efed8637eaaa",
+      "covers": [
+        "output/planner",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/submodule-root",
+        "overlay/work",
+        "role/planner",
+        "skill/acceptance-driven-delivery",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/issue-as-contract",
+        "skill/owner-escalation",
+        "skill/token-economy",
+        "tier/high"
+      ]
+    },
+    {
+      "id": "pointer-updater",
+      "path": "fixtures/compose/pointer-updater.fixture.json",
+      "snapshot": "fixtures/snapshots/pointer-updater.snapshot.md",
+      "version": "0.2.0",
+      "checksum": "sha256:9ce4bae093fdd2e68dc22fc0982b4b7d71e3a309f91a65074deefaae6d68ee24",
+      "snapshotChecksum": "sha256:51e0faff390ab92c696949d34afc1ca99ff836e63778cf1360403f951ec7d9ba",
+      "covers": [
+        "output/pointer-updater",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/submodule-root",
+        "overlay/autoupdate",
+        "role/pointer-updater",
+        "skill/branch-release-policy",
+        "skill/canonical-agent-execution",
+        "skill/closure-verification",
+        "skill/evidence-status-reporting",
+        "skill/no-bypass",
+        "skill/parked-archive-boundaries",
+        "skill/validation-autoreview",
+        "tier/medium"
+      ]
+    },
+    {
+      "id": "pr-final-review",
+      "path": "fixtures/compose/pr-final-review.fixture.json",
+      "snapshot": "fixtures/snapshots/pr-final-review.snapshot.md",
+      "version": "0.3.0",
+      "checksum": "sha256:7ce65fdda6f90ef375ee6644adfe3ff3259bd6a8b418f1754b2315462713585f",
+      "snapshotChecksum": "sha256:ac90692951ae0d458079a5f689d7299a86b4bff46c9dc8ab5c07bf40ab165d67",
+      "covers": [
+        "output/pr-reviewer",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/mixed-monorepo",
+        "overlay/pr-review-fix",
+        "role/pr-reviewer",
+        "skill/acceptance-driven-delivery",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/no-bypass",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "tier/high"
+      ]
+    },
+    {
+      "id": "pr-fixer",
+      "path": "fixtures/compose/pr-fixer.fixture.json",
+      "snapshot": "fixtures/snapshots/pr-fixer.snapshot.md",
+      "version": "0.3.0",
+      "checksum": "sha256:add53083ecf202affdd8b80690bbdf884d9218c4a596d769694bad5579c90052",
+      "snapshotChecksum": "sha256:6bc9dc3d901e376d5fe9f8be33276a10112fd9c9fc9c2009f1d3c03063516721",
+      "covers": [
+        "output/pr-fixer",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/python-uv",
+        "overlay/pr-review-fix",
+        "role/pr-fixer",
+        "skill/acceptance-driven-delivery",
+        "skill/branch-release-policy",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/minimal-diff",
+        "skill/no-bypass",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "tier/medium"
+      ]
+    },
+    {
+      "id": "pr-reviewer",
+      "path": "fixtures/compose/pr-reviewer.fixture.json",
+      "snapshot": "fixtures/snapshots/pr-reviewer.snapshot.md",
+      "version": "0.3.0",
+      "checksum": "sha256:d1a49b377d599c53fb62bc605f15c8ddca2d494504afcdf8694929b3aeade23e",
+      "snapshotChecksum": "sha256:6cf51c5ce0cd42b0681cb21dd3cf73d48d1c19d3e7585f98101e2f795935b649",
+      "covers": [
+        "output/pr-reviewer",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/bun-node",
+        "overlay/pr-review-fix",
+        "role/pr-reviewer",
+        "skill/acceptance-driven-delivery",
+        "skill/canonical-agent-execution",
+        "skill/evidence-status-reporting",
+        "skill/no-bypass",
+        "skill/untrusted-input-handling",
+        "skill/validation-autoreview",
+        "tier/medium"
+      ]
+    },
+    {
+      "id": "releaser",
+      "path": "fixtures/compose/releaser.fixture.json",
+      "snapshot": "fixtures/snapshots/releaser.snapshot.md",
+      "version": "0.2.0",
+      "checksum": "sha256:c02c71aa907e74fc8d4e559d624f838d4836f429738dd2f0d0581d540ab540e2",
+      "snapshotChecksum": "sha256:5a5eded5680ce64e60998449884d84385e102620c2cbece13ac26124d69776e4",
+      "covers": [
+        "output/releaser",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/mixed-monorepo",
+        "overlay/release",
+        "role/releaser",
+        "skill/branch-release-policy",
+        "skill/canonical-agent-execution",
+        "skill/closure-verification",
+        "skill/evidence-status-reporting",
+        "skill/no-bypass",
+        "skill/owner-escalation",
+        "skill/parked-archive-boundaries",
+        "skill/validation-autoreview",
+        "tier/high"
+      ]
+    },
+    {
+      "id": "verifier",
+      "path": "fixtures/compose/verifier.fixture.json",
+      "snapshot": "fixtures/snapshots/verifier.snapshot.md",
+      "version": "0.2.0",
+      "checksum": "sha256:46e691463e589470adddbbfd63e5a776ef994e9d407b385992408ccc3078387c",
+      "snapshotChecksum": "sha256:e206b49199f9ae868d2454890c7843907ebdd559523195b9c3b5ecd7e3add405",
+      "covers": [
+        "output/verifier",
+        "overlay/agent-os-boundary",
+        "overlay/github-control-plane",
+        "overlay/go",
+        "overlay/work",
+        "role/verifier",
+        "skill/canonical-agent-execution",
+        "skill/closure-verification",
+        "skill/evidence-status-reporting",
+        "skill/token-economy",
+        "skill/untrusted-input-handling",
+        "skill/worker-claim-verification",
+        "tier/medium"
+      ]
+    }
+  ]
+}

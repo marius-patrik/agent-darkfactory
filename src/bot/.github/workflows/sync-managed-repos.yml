@@ -1,0 +1,89 @@
+name: Sync Managed Repositories
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    if: >-
+      ${{
+        github.repository == 'marius-patrik/DarkFactory' &&
+        (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      }}
+
+    steps:
+      - name: Validate trusted control ref
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REPOSITORY}" != "marius-patrik/DarkFactory" ]]; then
+            echo "::error::Managed repository sync can only run from marius-patrik/DarkFactory."
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+            echo "::error::Managed repository sync can only run from refs/heads/main."
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE:-}" == "branch" && "${GITHUB_REF_NAME:-}" != "main" ]]; then
+            echo "::error::Managed repository sync branch mismatch."
+            exit 1
+          fi
+
+      - name: Check out trusted DarkFactory control
+        uses: actions/checkout@v4
+        with:
+          repository: marius-patrik/DarkFactory
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Create scoped Andromeda-data read token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          repositories: Andromeda-data
+          permission-contents: read
+
+      - name: Check out canonical Andromeda-data state
+        uses: actions/checkout@v4
+        with:
+          repository: marius-patrik/Andromeda-data
+          token: ${{ steps.app-token.outputs.token }}
+          path: .andromeda-data
+
+      - name: Register canonical Agent OS data checkout
+        env:
+          AGENTS_DATA_REPOS: ${{ runner.temp }}/agent-os-data-repos.json
+          AGENTS_HOME: ${{ github.workspace }}/.andromeda-data
+        run: >-
+          node -e "require('node:fs').writeFileSync(process.env.AGENTS_DATA_REPOS,
+          JSON.stringify([{id:'agent-os-data',repo:'marius-patrik/Andromeda-data',
+          path:process.env.AGENTS_HOME,branch:'main',
+          env:'AGENTS_SYSTEM_DATA_ROOT',configuredAt:new Date().toISOString()}],
+          null, 2) + '\n')"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync installed repositories
+        env:
+          AGENTS_DATA_REPOS: ${{ runner.temp }}/agent-os-data-repos.json
+          AGENTS_HOME: ${{ github.workspace }}/.andromeda-data
+          GITHUB_APP_ID: ${{ secrets.DARK_FACTORY_APP_ID }}
+          GITHUB_PRIVATE_KEY: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+        run: npm run sync:managed

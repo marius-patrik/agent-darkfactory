@@ -1,0 +1,129 @@
+name: DarkFactory Autoreview Recovery
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+    - cron: "12,27,42,57 * * * *"
+  workflow_dispatch:
+    inputs:
+      target_kind:
+        description: Recover all, pull-request, or issue Autoreview targets.
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - pull_request
+          - issue
+      repo:
+        description: Optional exact active code repository; blank scans the lifecycle-filtered fleet.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darkfactory-autoreview-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Recover exact stale Autoreview targets
+    if: >-
+      ${{
+        github.repository == 'marius-patrik/DarkFactory' &&
+        (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      }}
+    runs-on: [self-hosted, df-local]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Validate protected control invocation
+        run: |
+          if ($env:GITHUB_REPOSITORY -ne "marius-patrik/DarkFactory" -or $env:GITHUB_REF -ne "refs/heads/main") {
+            Write-Output "::error::Autoreview recovery runs only from protected marius-patrik/DarkFactory@main."
+            exit 1
+          }
+
+      - name: Checkout exact trusted recovery controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: darkfactory-recovery-control
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Record exact controller revision
+        id: control
+        run: |
+          $revision = (git -C darkfactory-recovery-control rev-parse HEAD).Trim()
+          if ($revision -ne $env:GITHUB_SHA -or $revision -notmatch '^[0-9a-f]{40}$') {
+            Write-Output "::error::Autoreview recovery controller is not the exact trusted event SHA."
+            exit 1
+          }
+          "revision=$revision" >> $env:GITHUB_OUTPUT
+
+      - name: Verify canonical Agent OS authority
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
+            Write-Output "::error::AGENTS_HOME must name the absolute canonical Agent OS checkout."
+            exit 1
+          }
+          $agentsLauncher = Join-Path -Path $env:AGENTS_HOME -ChildPath "bin\agents.ps1"
+          if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
+            Write-Output "::error::Canonical Agent OS launcher is missing."
+            exit 1
+          }
+          pwsh -NoLogo -NoProfile -File $agentsLauncher state doctor --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Mint bounded recovery dispatcher token
+        id: target-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-actions: write
+          permission-checks: read
+          permission-contents: read
+          permission-issues: write
+          permission-pull-requests: read
+
+      - name: Mint isolated durable-ledger token
+        id: ledger-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          repositories: darkfactory-data
+          permission-contents: write
+
+      - name: Enumerate and dispatch exact-version recovery
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.target-token.outputs.token }}
+          DF_LEDGER_TOKEN: ${{ steps.ledger-token.outputs.token }}
+          DF_CONTROL_REVISION: ${{ steps.control.outputs.revision }}
+          DF_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || '' }}
+          DF_TARGET_KIND: ${{ github.event_name == 'workflow_dispatch' && inputs.target_kind || (github.event.schedule == '7,22,37,52 * * * *' && 'pull_request' || 'issue') }}
+          DF_TRIGGER: ${{ github.event_name == 'schedule' && github.event.schedule || 'workflow_dispatch' }}
+          DF_MAX_RECOVERY_DISPATCHES: "4"
+        run: |
+          node --experimental-strip-types darkfactory-recovery-control/.github/scripts/df-autoreview-recovery.mjs |
+            Tee-Object -FilePath autoreview-recovery-receipt.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload sanitized recovery receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoreview-recovery-${{ github.run_id }}
+          path: autoreview-recovery-receipt.json
+          if-no-files-found: ignore
+          retention-days: 30

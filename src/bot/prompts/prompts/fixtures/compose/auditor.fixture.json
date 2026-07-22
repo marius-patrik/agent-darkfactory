@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "run": {
+    "id": "run-20260713-audit-001",
+    "kind": "audit",
+    "purpose": "audit",
+    "triggeredBy": "schedule"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "DarkFactory",
+    "defaultBranch": "dev"
+  },
+  "workItem": null,
+  "draftIntent": null,
+  "policy": {
+    "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
+    "labels": [
+      "P0",
+      "P1",
+      "P2",
+      "df:ready",
+      "df:running",
+      "df:blocked"
+    ],
+    "enforcement": "All merges require green CI and the configured review gate; never force-push or bypass gates."
+  },
+  "validation": {
+    "commands": [
+      "npm run check"
+    ]
+  },
+  "effort": "medium",
+  "verified": {
+    "facts": [
+      "The managed-file baseline is synchronized."
+    ]
+  },
+  "output": {
+    "id": "output/auditor"
+  },
+  "selection": {
+    "profile": "profile/auditor",
+    "role": "role/auditor",
+    "skills": [
+      "skill/state-secrets-isolation",
+      "skill/parked-archive-boundaries",
+      "skill/evidence-status-reporting",
+      "skill/owner-escalation",
+      "skill/token-economy",
+      "skill/canonical-agent-execution"
+    ],
+    "modelTier": "high",
+    "overlays": [
+      "overlay/agent-os-boundary",
+      "overlay/github-control-plane",
+      "overlay/doctor"
+    ],
+    "repositoryOverlays": [
+      "overlay/main-only-private-data"
+    ]
+  }
+}

@@ -1,0 +1,86 @@
+name: DarkFactory Verify Worker Claim
+
+on:
+  workflow_run:
+    workflows:
+      - DarkFactory Work
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: df-verify-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify worker claim against GitHub reality
+    runs-on: ubuntu-latest
+    if: >-
+      ${{
+        github.repository == 'marius-patrik/DarkFactory' &&
+        github.event.workflow_run.event == 'workflow_dispatch' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.conclusion == 'success'
+      }}
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Validate trusted control ref
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REPOSITORY}" != "marius-patrik/DarkFactory" ]]; then
+            echo "::error::DarkFactory worker verification can only run from marius-patrik/DarkFactory."
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+            echo "::error::DarkFactory worker verification can only run from refs/heads/main."
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE:-}" == "branch" && "${GITHUB_REF_NAME:-}" != "main" ]]; then
+            echo "::error::DarkFactory worker verification branch mismatch."
+            exit 1
+          fi
+
+      - name: Checkout DarkFactory control scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download verification target
+        uses: actions/download-artifact@v4
+        with:
+          name: df-verification-target
+          path: .darkfactory-verification
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Mint mp-agents installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-actions: read
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Verify worker claim
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
+          DF_CONTROL_REPO: marius-patrik/DarkFactory
+          DF_VERIFICATION_TARGET_FILE: .darkfactory-verification/target.json
+          DF_TRIGGER: ${{ github.event_name }}
+          DF_DATA_REPO: marius-patrik/darkfactory-data
+        run: node .github/scripts/df-verify.mjs

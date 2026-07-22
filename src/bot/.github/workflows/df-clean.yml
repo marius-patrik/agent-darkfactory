@@ -1,0 +1,213 @@
+name: DarkFactory Repository Hygiene
+
+on:
+  schedule:
+    - cron: "53 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Optional exact active code repository; blank converges the lifecycle-filtered fleet.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darkfactory-repository-hygiene
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: Discover active code repositories
+    if: >-
+      ${{
+        github.repository == 'marius-patrik/DarkFactory' &&
+        (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      }}
+    runs-on: ubuntu-24.04
+    outputs:
+      targets: ${{ steps.targets.outputs.targets }}
+      control_revision: ${{ steps.control.outputs.revision }}
+
+    steps:
+      - name: Validate protected control invocation
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REPOSITORY}" != "marius-patrik/DarkFactory" || "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Repository hygiene runs only from protected marius-patrik/DarkFactory@main."
+            exit 1
+          fi
+
+      - name: Checkout exact trusted lifecycle controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Record exact controller revision
+        id: control
+        shell: bash
+        run: |
+          revision="$(git rev-parse HEAD)"
+          if [[ ! "${revision}" =~ ^[0-9a-f]{40}$ || "${revision}" != "${GITHUB_SHA}" ]]; then
+            echo "::error::Repository hygiene controller is not the exact trusted event SHA."
+            exit 1
+          fi
+          echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
+
+      - name: Mint lifecycle-read token
+        id: read-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-contents: read
+
+      - name: Resolve lifecycle-filtered code targets
+        id: targets
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.read-token.outputs.token }}
+          DF_LEDGER_TOKEN: ${{ steps.read-token.outputs.token }}
+          DF_CONTROL_REVISION: ${{ steps.control.outputs.revision }}
+          DF_AUTOREVIEW_RECOVERY_MODE: list
+          DF_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || '' }}
+        shell: bash
+        run: |
+          node --experimental-strip-types .github/scripts/df-autoreview-recovery.mjs > lifecycle-targets.json
+          jq . lifecycle-targets.json
+          targets="$(jq -c '.repositories' lifecycle-targets.json)"
+          if [[ "$(jq 'length' <<<"${targets}")" -lt 1 ]]; then
+            echo "::error::No active code repository is authorized for hygiene."
+            exit 1
+          fi
+          echo "targets=${targets}" >> "${GITHUB_OUTPUT}"
+
+  clean:
+    name: Plan, apply, and verify ${{ matrix.target.repository }}
+    needs: discover
+    runs-on: [self-hosted, df-local]
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        target: ${{ fromJSON(needs.discover.outputs.targets) }}
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Validate canonical Agent OS package authority
+        id: agents
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
+            Write-Output "::error::AGENTS_HOME must name the absolute canonical Agent OS checkout."
+            exit 1
+          }
+          $agentsLauncher = Join-Path -Path $env:AGENTS_HOME -ChildPath "bin\agents.ps1"
+          if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
+            Write-Output "::error::Canonical Agent OS launcher is missing."
+            exit 1
+          }
+          pwsh -NoLogo -NoProfile -File $agentsLauncher state doctor --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "launcher=$agentsLauncher" >> $env:GITHUB_OUTPUT
+
+      - name: Mint exact-checkout token
+        id: checkout-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          repositories: ${{ matrix.target.name }}
+          permission-contents: read
+
+      - name: Materialize exact local target without executing it
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.target.repository }}
+          ref: main
+          path: hygiene-target
+          token: ${{ steps.checkout-token.outputs.token }}
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+          clean: true
+
+      - name: Record exact local target identity
+        id: target
+        env:
+          DF_TARGET_REPO: ${{ matrix.target.repository }}
+        run: |
+          $head = (git -C hygiene-target rev-parse HEAD).Trim()
+          if ($head -notmatch '^[0-9a-f]{40}$') {
+            Write-Output "::error::Hygiene target checkout has no exact commit identity."
+            exit 1
+          }
+          if ((git -C hygiene-target status --porcelain).Length -ne 0) {
+            Write-Output "::error::Hygiene target checkout is not clean before planning."
+            exit 1
+          }
+          "head=$head" >> $env:GITHUB_OUTPUT
+
+      - name: Run exact df clean plan and admitted apply
+        env:
+          DF_TARGET_REPO: ${{ matrix.target.repository }}
+          DF_CONTROL_REVISION: ${{ needs.discover.outputs.control_revision }}
+          DF_CLEAN_WATCH_PASSES: "8"
+        run: |
+          $launcher = '${{ steps.agents.outputs.launcher }}'
+          $target = (Resolve-Path -LiteralPath hygiene-target).Path
+          $planOutput = (& pwsh -NoLogo -NoProfile -File $launcher packages run darkfactory -- clean plan $env:DF_TARGET_REPO --local $target --json 2>&1) -join "`n"
+          if ($LASTEXITCODE -ne 0) { Write-Output $planOutput; exit $LASTEXITCODE }
+          Set-Content -LiteralPath clean-plan.json -Value $planOutput -Encoding utf8
+          $plan = $planOutput | ConvertFrom-Json
+          if ($plan.schemaVersion -ne 1 -or $plan.command -ne 'clean-plan' -or $plan.status -ne 'ok') {
+            Write-Output "::error::Canonical df clean plan returned a malformed receipt."
+            exit 1
+          }
+          $planId = [string]$plan.data.plan.planId
+          if ($planId -notmatch '^clean-[0-9a-f]{24}$') {
+            Write-Output "::error::Canonical df clean plan did not return an exact admitted plan ID."
+            exit 1
+          }
+          $actions = @($plan.data.plan.entries | Where-Object { $_.action -ne 'preserve' })
+          if ($actions.Count -gt 0) {
+            $applyOutput = (& pwsh -NoLogo -NoProfile -File $launcher packages run darkfactory -- clean apply $planId --local $target --watch --json 2>&1) -join "`n"
+            if ($LASTEXITCODE -ne 0) { Write-Output $applyOutput; exit $LASTEXITCODE }
+            Set-Content -LiteralPath clean-apply.json -Value $applyOutput -Encoding utf8
+            $apply = $applyOutput | ConvertFrom-Json
+            if ($apply.schemaVersion -ne 1 -or $apply.command -ne 'clean-apply' -or $apply.status -ne 'ok') {
+              Write-Output "::error::Canonical df clean apply returned a malformed receipt."
+              exit 1
+            }
+          }
+          $verifyOutput = (& pwsh -NoLogo -NoProfile -File $launcher packages run darkfactory -- clean verify $env:DF_TARGET_REPO --local $target --json 2>&1) -join "`n"
+          if ($LASTEXITCODE -ne 0) { Write-Output $verifyOutput; exit $LASTEXITCODE }
+          Set-Content -LiteralPath clean-verify.json -Value $verifyOutput -Encoding utf8
+          $verify = $verifyOutput | ConvertFrom-Json
+          if ($verify.schemaVersion -ne 1 -or $verify.command -ne 'clean-verify' -or $verify.status -ne 'ok') {
+            Write-Output "::error::Canonical df clean verify returned a malformed receipt."
+            exit 1
+          }
+          if ($verify.data.clean -ne $true) {
+            Write-Output "::error::Repository hygiene remains non-clean after the admitted convergence pass; the next scheduled run may retry from fresh evidence."
+            exit 1
+          }
+
+      - name: Upload sanitized hygiene receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-hygiene-${{ matrix.target.name }}-${{ steps.target.outputs.head }}
+          path: |
+            clean-plan.json
+            clean-apply.json
+            clean-verify.json
+          if-no-files-found: error
+          retention-days: 30

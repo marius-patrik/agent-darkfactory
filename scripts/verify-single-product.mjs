@@ -47,7 +47,7 @@ const nestedRepositoryMetadata = [
 // src/bot carries the folded DarkFactory repository verbatim, with its own
 // identity and versioning. Repository-wide contracts on what is built and
 // shipped do not apply inside it; every live surface stays fully scanned.
-const carriedPackageTree = /^packages\/bot(?:\/|$)/;
+const carriedPackageTree = /^src\/bot(?:\/|$)/;
 // agents/ holds agent projects, and templates/ holds folded template repositories,
 // versioning, and project docs. Like bot, they are carried rather than
 // built as part of this product, so the single-product interior rules do not

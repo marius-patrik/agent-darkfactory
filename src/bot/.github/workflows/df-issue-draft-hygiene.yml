@@ -1,0 +1,107 @@
+name: DarkFactory Issue Draft Hygiene
+
+on:
+  schedule:
+    - cron: "19 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darkfactory-issue-draft-hygiene
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    name: Remind and expire local reviewed drafts
+    if: >-
+      ${{
+        github.repository == 'marius-patrik/DarkFactory' &&
+        (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      }}
+    runs-on: [self-hosted, df-local]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Validate protected control invocation
+        run: |
+          if ($env:GITHUB_REPOSITORY -ne "marius-patrik/DarkFactory" -or $env:GITHUB_REF -ne "refs/heads/main") {
+            Write-Output "::error::Issue draft hygiene runs only from protected marius-patrik/DarkFactory@main."
+            exit 1
+          }
+          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
+            Write-Output "::error::AGENTS_HOME must name the absolute canonical Agent OS checkout."
+            exit 1
+          }
+          $agentsHome = Get-Item -LiteralPath $env:AGENTS_HOME -Force -ErrorAction Stop
+          if (-not $agentsHome.PSIsContainer -or $null -ne $agentsHome.LinkType) {
+            Write-Output "::error::AGENTS_HOME must be one real local checkout directory."
+            exit 1
+          }
+          $agentsLauncher = Join-Path -Path $agentsHome.FullName -ChildPath "bin\agents.ps1"
+          if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
+            Write-Output "::error::Canonical Agent OS launcher is missing."
+            exit 1
+          }
+          & pwsh -NoLogo -NoProfile -File $agentsLauncher state doctor --json *> $null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output "::error::Canonical Agent OS state authority is unhealthy."
+            exit 1
+          }
+
+      - name: Checkout exact trusted hygiene controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: darkfactory-draft-hygiene-control
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Record exact controller identity
+        run: |
+          $revision = (git -C darkfactory-draft-hygiene-control rev-parse HEAD).Trim()
+          if ($revision -ne $env:GITHUB_SHA -or $revision -notmatch '^[0-9a-f]{40}$') {
+            Write-Output "::error::Issue draft hygiene controller is not the exact trusted event SHA."
+            exit 1
+          }
+
+      - name: Inventory canonical local drafts and record lifecycle receipts
+        run: |
+          $output = (& node darkfactory-draft-hygiene-control/.github/scripts/df-issue-draft-hygiene.mjs 2>&1) -join "`n"
+          $exitCode = $LASTEXITCODE
+          Set-Content -LiteralPath issue-draft-hygiene-report.json -Value $output -Encoding utf8
+          Write-Output $output
+          if ($exitCode -ne 0) { exit $exitCode }
+          $report = $output | ConvertFrom-Json
+          if ($report.schemaVersion -ne 1 -or $report.status -ne 'complete' -or $report.modelTokens -ne 0 -or $report.sanitized -ne $true) {
+            Write-Output "::error::Issue draft hygiene returned a malformed or unsanitized receipt."
+            exit 1
+          }
+
+      - name: Publish sanitized owner reminders
+        if: always() && hashFiles('issue-draft-hygiene-report.json') != ''
+        run: |
+          $report = Get-Content -Raw -LiteralPath issue-draft-hygiene-report.json | ConvertFrom-Json
+          "## DarkFactory local issue draft hygiene" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($report.status -ne 'complete') {
+            "Hygiene blocked closed. Inspect the sanitized workflow artifact; no draft content was deleted or published." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            exit 0
+          }
+          "Policy ``$($report.policyVersion)`` observed $($report.inventory.total) local draft(s): $($report.reminders) reminder(s), $($report.expired) expired review(s), model tokens $($report.modelTokens)." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          foreach ($draft in @($report.drafts | Where-Object { $_.action -ne 'none' })) {
+            "- ``$($draft.repository)`` draft ``$($draft.draftId)``: **$($draft.action)**. $($draft.ownerAction)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload sanitized lifecycle report
+        if: always() && hashFiles('issue-draft-hygiene-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-draft-hygiene-${{ github.run_id }}
+          path: issue-draft-hygiene-report.json
+          if-no-files-found: error
+          retention-days: 30

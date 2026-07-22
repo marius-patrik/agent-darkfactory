@@ -1,0 +1,67 @@
+name: DarkFactory Release Producer
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver component to bump when computing the next tag.
+        required: false
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+concurrency:
+  group: df-release-producer-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  produce:
+    name: Produce tagged release
+    if: ${{ github.repository_owner == 'marius-patrik' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMP: ${{ inputs.bump || 'patch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${BUMP}" in patch|minor|major) ;; *) echo "::error::invalid bump '${BUMP}'"; exit 1;; esac
+          HEAD_SHA="$(git rev-parse HEAD)"
+
+          # Idempotent: if main HEAD already carries an exact release tag, succeed without publishing.
+          existing="$(git tag --points-at "${HEAD_SHA}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+          if [ -n "${existing}" ]; then
+            echo "main HEAD ${HEAD_SHA} is already released as ${existing}"
+            exit 0
+          fi
+
+          latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          if [ -z "${latest}" ]; then
+            next="v0.1.0"
+          else
+            IFS=. read -r major minor patch <<< "${latest#v}"
+            case "${BUMP}" in
+              major) next="v$((major + 1)).0.0" ;;
+              minor) next="v${major}.$((minor + 1)).0" ;;
+              patch) next="v${major}.${minor}.$((patch + 1))" ;;
+            esac
+          fi
+
+          echo "releasing ${GITHUB_REPOSITORY} ${next} at ${HEAD_SHA} (previous: ${latest:-none})"
+          gh release create "${next}" \
+            --target "${HEAD_SHA}" \
+            --title "${GITHUB_REPOSITORY#*/} ${next}" \
+            --generate-notes

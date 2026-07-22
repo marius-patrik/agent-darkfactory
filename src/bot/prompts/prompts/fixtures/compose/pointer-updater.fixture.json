@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 2,
+  "run": {
+    "id": "run-20260715-update-pointer-043",
+    "kind": "update-pointer",
+    "purpose": "implementation",
+    "triggeredBy": "workflow"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "Andromeda",
+    "defaultBranch": "dev"
+  },
+  "workItem": {
+    "kind": "issue",
+    "number": 43,
+    "author": "marius-patrik",
+    "url": "https://github.com/marius-patrik/Andromeda/issues/43",
+    "title": "Converge released submodule pointers",
+    "body": "Reconcile a verified released child pointer through the normal parent pull request and release lane.",
+    "comments": [
+      "Never select a development head or initialize child code with privileged credentials."
+    ]
+  },
+  "draftIntent": null,
+  "policy": {
+    "branching": "One worker = one issue = one branch = one PR; release through a temporary protected release branch.",
+    "labels": [
+      "P0",
+      "P1",
+      "P2",
+      "df:ready",
+      "df:running",
+      "df:blocked"
+    ],
+    "enforcement": "Every pointer requires released-child ancestry, green gates, normal review, and downstream verification."
+  },
+  "validation": {
+    "commands": [
+      "git submodule status --recursive",
+      "npm run check"
+    ]
+  },
+  "effort": "medium",
+  "verified": {
+    "facts": [
+      "The child released head is accessible, green, and a descendant of the current parent gitlink."
+    ]
+  },
+  "output": {
+    "id": "output/pointer-updater"
+  },
+  "selection": {
+    "profile": "profile/pointer-updater",
+    "role": "role/pointer-updater",
+    "skills": [
+      "skill/branch-release-policy",
+      "skill/no-bypass",
+      "skill/parked-archive-boundaries",
+      "skill/validation-autoreview",
+      "skill/closure-verification",
+      "skill/canonical-agent-execution",
+      "skill/evidence-status-reporting"
+    ],
+    "modelTier": "medium",
+    "overlays": [
+      "overlay/agent-os-boundary",
+      "overlay/github-control-plane",
+      "overlay/autoupdate"
+    ],
+    "repositoryOverlays": [
+      "overlay/submodule-root"
+    ]
+  }
+}

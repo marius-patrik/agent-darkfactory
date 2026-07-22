@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "run": {
+    "id": "run-20260713-plan-001",
+    "kind": "plan",
+    "purpose": "planning",
+    "triggeredBy": "label"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "DarkFactory",
+    "defaultBranch": "dev"
+  },
+  "workItem": {
+    "kind": "issue",
+    "number": 101,
+    "author": "marius-patrik",
+    "url": "https://github.com/marius-patrik/DarkFactory/issues/101",
+    "title": "Plan the prompt library content rollout",
+    "body": "Break the prompt content rollout into sequenced, reviewable steps.",
+    "comments": [
+      "Keep each step small enough for one worker."
+    ]
+  },
+  "draftIntent": null,
+  "policy": {
+    "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
+    "labels": [
+      "P0",
+      "P1",
+      "P2",
+      "df:ready",
+      "df:running",
+      "df:blocked"
+    ],
+    "enforcement": "All merges require green CI and the configured review gate; never force-push or bypass gates."
+  },
+  "validation": {
+    "commands": [
+      "npm run check"
+    ]
+  },
+  "effort": "medium",
+  "verified": {
+    "facts": [
+      "The manifest scaffold is checked in and validates."
+    ]
+  },
+  "output": {
+    "id": "output/planner"
+  },
+  "selection": {
+    "profile": "profile/planner",
+    "role": "role/planner",
+    "skills": [
+      "skill/issue-as-contract",
+      "skill/acceptance-driven-delivery",
+      "skill/owner-escalation",
+      "skill/evidence-status-reporting",
+      "skill/token-economy",
+      "skill/canonical-agent-execution"
+    ],
+    "modelTier": "high",
+    "overlays": [
+      "overlay/agent-os-boundary",
+      "overlay/github-control-plane",
+      "overlay/work"
+    ],
+    "repositoryOverlays": [
+      "overlay/submodule-root"
+    ]
+  }
+}

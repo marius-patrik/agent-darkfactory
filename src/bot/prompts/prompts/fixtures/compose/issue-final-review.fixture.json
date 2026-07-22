@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "run": {
+    "id": "run-20260713-final-review-issue-055",
+    "kind": "review-issue",
+    "purpose": "final-review",
+    "triggeredBy": "workflow"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "DarkFactory",
+    "defaultBranch": "dev"
+  },
+  "workItem": {
+    "kind": "issue",
+    "number": 55,
+    "author": "marius-patrik",
+    "url": "https://github.com/marius-patrik/DarkFactory/issues/55",
+    "title": "Draft: add prompt content for the implementer role",
+    "body": "The medium issue-review and autofix loop reports no remaining findings.",
+    "comments": [
+      "Perform the independent high-tier final confirmation before publication."
+    ]
+  },
+  "draftIntent": null,
+  "policy": {
+    "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
+    "labels": [
+      "P0",
+      "P1",
+      "P2",
+      "df:ready",
+      "df:running",
+      "df:blocked"
+    ],
+    "enforcement": "All merges require green CI and the configured review gate; never force-push or bypass gates."
+  },
+  "validation": {
+    "commands": [
+      "npm run check"
+    ]
+  },
+  "effort": "high",
+  "verified": {
+    "facts": [
+      "The medium-tier issue review and autofix loop is clean."
+    ]
+  },
+  "output": {
+    "id": "output/issue-reviewer"
+  },
+  "selection": {
+    "profile": "profile/issue-final-review",
+    "role": "role/issue-reviewer",
+    "skills": [
+      "skill/issue-as-contract",
+      "skill/untrusted-input-handling",
+      "skill/owner-escalation",
+      "skill/validation-autoreview",
+      "skill/canonical-agent-execution",
+      "skill/evidence-status-reporting"
+    ],
+    "modelTier": "high",
+    "overlays": [
+      "overlay/agent-os-boundary",
+      "overlay/github-control-plane",
+      "overlay/issue-review-fix"
+    ],
+    "repositoryOverlays": [
+      "overlay/go"
+    ]
+  }
+}

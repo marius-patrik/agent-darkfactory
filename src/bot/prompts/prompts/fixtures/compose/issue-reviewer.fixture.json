@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 2,
+  "run": {
+    "id": "run-20260713-review-issue-055",
+    "kind": "review-issue",
+    "purpose": "iterative-review",
+    "triggeredBy": "comment"
+  },
+  "repository": {
+    "owner": "marius-patrik",
+    "repo": "DarkFactory",
+    "defaultBranch": "dev"
+  },
+  "workItem": {
+    "kind": "issue",
+    "number": 55,
+    "author": "marius-patrik",
+    "url": "https://github.com/marius-patrik/DarkFactory/issues/55",
+    "title": "Draft: add prompt content for the implementer role",
+    "body": "Populate the implementer role with concrete guidance and examples.",
+    "comments": [
+      "Confirm the acceptance criteria are objective."
+    ]
+  },
+  "draftIntent": null,
+  "policy": {
+    "branching": "One worker = one issue = one branch = one PR; branch df/<issue>-<slug> from dev.",
+    "labels": [
+      "P0",
+      "P1",
+      "P2",
+      "df:ready",
+      "df:running",
+      "df:blocked"
+    ],
+    "enforcement": "All merges require green CI and the configured review gate; never force-push or bypass gates."
+  },
+  "validation": {
+    "commands": [
+      "npm run check"
+    ]
+  },
+  "effort": "medium",
+  "verified": {
+    "facts": []
+  },
+  "output": {
+    "id": "output/issue-reviewer"
+  },
+  "selection": {
+    "profile": "profile/issue-reviewer",
+    "role": "role/issue-reviewer",
+    "skills": [
+      "skill/issue-as-contract",
+      "skill/untrusted-input-handling",
+      "skill/owner-escalation",
+      "skill/validation-autoreview",
+      "skill/canonical-agent-execution",
+      "skill/evidence-status-reporting"
+    ],
+    "modelTier": "medium",
+    "overlays": [
+      "overlay/agent-os-boundary",
+      "overlay/github-control-plane",
+      "overlay/issue-review-fix"
+    ],
+    "repositoryOverlays": [
+      "overlay/python-uv"
+    ]
+  }
+}

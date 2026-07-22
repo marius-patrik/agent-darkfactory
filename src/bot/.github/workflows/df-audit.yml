@@ -1,0 +1,150 @@
+name: DarkFactory Repository Doctor
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Target repository in owner/name form. Defaults to all active managed repositories.
+        required: false
+        type: string
+      write_issues:
+        description: Reconcile stable per-finding issues and write the doctor ledger. No repair is performed.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darkfactory-repository-doctor
+  cancel-in-progress: false
+
+jobs:
+  repository-doctor:
+    name: Diagnose managed repository truth
+    runs-on: [self-hosted, df-local]
+    if: >-
+      ${{
+        github.repository == 'marius-patrik/DarkFactory' &&
+        (
+          github.event_name == 'schedule' ||
+          github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch'
+        )
+      }}
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Validate trusted control ref
+        run: |
+          if ($env:GITHUB_REPOSITORY_OWNER -ne "marius-patrik") {
+            Write-Output "::error::Repository doctor can only run in the marius-patrik owner."
+            exit 1
+          }
+          if ($env:GITHUB_REF -ne "refs/heads/main") {
+            Write-Output "::error::Repository doctor can only run from refs/heads/main."
+            exit 1
+          }
+
+      - name: Validate manual target
+        if: github.event_name == 'workflow_dispatch' && inputs.repo
+        env:
+          DF_MANUAL_DOCTOR_REPO: ${{ inputs.repo }}
+        run: |
+          if ($env:DF_MANUAL_DOCTOR_REPO -notmatch '^marius-patrik/[^/]+$') {
+            Write-Output "::error::Repository doctor target must be a marius-patrik repository."
+            exit 1
+          }
+
+      - name: Checkout trusted doctor source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify canonical Agent OS state
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AGENTS_HOME) -or -not [System.IO.Path]::IsPathFullyQualified($env:AGENTS_HOME)) {
+            Write-Output "::error::AGENTS_HOME must name the absolute canonical Agent OS checkout."
+            exit 1
+          }
+          $agentsLauncher = Join-Path -Path $env:AGENTS_HOME -ChildPath "bin\agents.ps1"
+          if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
+            Write-Output "::error::Canonical Agent OS launcher is missing at $agentsLauncher."
+            exit 1
+          }
+          pwsh -NoLogo -NoProfile -File $agentsLauncher state doctor --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Mint least-privilege target doctor token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-administration: read
+          permission-actions: read
+          permission-checks: read
+          permission-contents: read
+          permission-issues: ${{ (github.event_name == 'schedule' || github.event_name == 'push' || inputs.write_issues) && 'write' || 'read' }}
+          permission-pull-requests: read
+          permission-secrets: read
+          permission-statuses: read
+
+      - name: Mint repository-scoped ledger token
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || inputs.write_issues }}
+        id: ledger-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          repositories: darkfactory-data
+          permission-contents: write
+
+      - name: Run deterministic repository doctor
+        id: doctor
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.app-token.outputs.token }}
+          DF_LEDGER_TOKEN: ${{ steps.ledger-token.outputs.token }}
+          DF_CONTROL_REPO: marius-patrik/DarkFactory
+          DF_CONTROL_REVISION: ${{ github.sha }}
+          DF_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || github.repository }}
+          DF_DOCTOR_ALL: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.repo)) && 'true' || 'false' }}
+          DF_DOCTOR_MODE: ${{ (github.event_name == 'schedule' || github.event_name == 'push' || inputs.write_issues) && 'report' || 'diagnose' }}
+          DF_LOCAL_PATH: ${{ github.event_name == 'workflow_dispatch' && inputs.repo == github.repository && github.workspace || '' }}
+          DF_TRIGGER: ${{ github.event_name }}
+        run: |
+          node .github/scripts/df-audit.mjs --json | Tee-Object -FilePath repository-doctor-report.json
+          $doctorExitCode = $LASTEXITCODE
+          $reportExists = Test-Path -LiteralPath repository-doctor-report.json -PathType Leaf
+          "report_exists=$($reportExists.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($doctorExitCode -ne 0) { exit $doctorExitCode }
+
+      - name: Publish doctor summary
+        if: always() && steps.doctor.outputs.report_exists == 'true'
+        run: |
+          $reports = Get-Content -LiteralPath repository-doctor-report.json -Raw | ConvertFrom-Json
+          "## DarkFactory Repository Doctor" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          foreach ($report in $reports) {
+            $status = if ($report.skipped) { "SKIPPED" } elseif ($report.findings.Count -gt 0) { "FINDINGS" } else { "HEALTHY" }
+            "- ``$($report.target_repository)``: **$status** ($($report.mode), findings=$($report.findings.Count), model_calls=0)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload deterministic evidence
+        if: always() && steps.doctor.outputs.report_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-doctor-report
+          path: repository-doctor-report.json
+          if-no-files-found: error
+          retention-days: 30

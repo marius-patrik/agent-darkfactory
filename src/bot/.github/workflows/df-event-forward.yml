@@ -1,0 +1,70 @@
+name: DarkFactory Event Forward
+
+on:
+  issues:
+    types:
+      - labeled
+  issue_comment:
+    types:
+      - created
+
+permissions: {}
+
+jobs:
+  forward:
+    name: Forward control event to orchestrator
+    runs-on: ubuntu-24.04
+    if: >-
+      ${{
+        github.repository == 'marius-patrik/DarkFactory' &&
+        (
+          (
+            github.event_name == 'issues' &&
+            github.event.action == 'labeled' &&
+            !github.event.issue.pull_request &&
+            github.event.label.name == 'df:ready'
+          ) ||
+          (
+            github.event_name == 'issue_comment' &&
+            github.event.action == 'created' &&
+            !github.event.issue.pull_request &&
+            (
+              github.event.comment.body == '/df run' ||
+              startsWith(github.event.comment.body, '/df run ')
+            ) &&
+            (
+              github.event.comment.author_association == 'OWNER' ||
+              github.event.comment.author_association == 'MEMBER' ||
+              github.event.comment.author_association == 'COLLABORATOR'
+            )
+          )
+        )
+      }}
+
+    steps:
+      - name: Mint control dispatch token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          repositories: DarkFactory
+          permission-actions: write
+
+      - name: Dispatch control orchestrator
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: "marius-patrik",
+              repo: "DarkFactory",
+              workflow_id: "df-orchestrate.yml",
+              ref: "main",
+              inputs: {
+                repo: `${context.repo.owner}/${context.repo.repo}`,
+                issue_number: String(context.payload.issue.number),
+                source_event: context.eventName
+              }
+            });

@@ -1,0 +1,281 @@
+name: DarkFactory Submodule Autoupdate
+
+on:
+  schedule:
+    - cron: "29 */2 * * *"
+  repository_dispatch:
+    types:
+      - darkfactory-release-verified
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Optional exact released child owner/repository; blank scans current release receipts.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: darkfactory-submodule-autoupdate
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan released pointer
+    if: ${{ github.repository == 'marius-patrik/DarkFactory' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      action: ${{ steps.plan.outputs.action }}
+      child: ${{ steps.plan.outputs.child }}
+
+    steps:
+      - name: Validate trusted control ref and event payload
+        env:
+          DF_EVENT_CHILD: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repository || '' }}
+          DF_INPUT_CHILD: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || '' }}
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REPOSITORY}" != "marius-patrik/DarkFactory" || "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Submodule orchestration runs only from protected marius-patrik/DarkFactory@main."
+            exit 1
+          fi
+          for candidate in "${DF_EVENT_CHILD}" "${DF_INPUT_CHILD}"; do
+            if [[ -n "${candidate}" && ! "${candidate}" =~ ^marius-patrik/[A-Za-z0-9_.-]+$ ]]; then
+              echo "::error::Released child must be an exact marius-patrik owner/repository identity."
+              exit 1
+            fi
+          done
+
+      - name: Checkout immutable trusted controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Mint read-only fleet evidence token
+        id: read-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-actions: read
+          permission-administration: read
+          permission-checks: read
+          permission-contents: read
+          permission-issues: read
+          permission-pull-requests: read
+          permission-statuses: read
+
+      - name: Build exact read-only pointer plan
+        id: plan
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.read-token.outputs.token }}
+          DF_LEDGER_TOKEN: ${{ steps.read-token.outputs.token }}
+          DF_CONTROL_REPO: ${{ github.repository }}
+          DF_SUBMODULE_MODE: plan
+          DF_SUBMODULE_REPO: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repository || (github.event_name == 'workflow_dispatch' && inputs.repo || '') }}
+        shell: bash
+        run: |
+          node .github/scripts/df-submodule-autoupdate.mjs > "${RUNNER_TEMP}/submodule-plan.json"
+          jq . "${RUNNER_TEMP}/submodule-plan.json"
+          echo "action=$(jq -r '.plan.action' "${RUNNER_TEMP}/submodule-plan.json")" >> "${GITHUB_OUTPUT}"
+          echo "child=$(jq -r '.plan.evidence.child // empty' "${RUNNER_TEMP}/submodule-plan.json")" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload plan evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: submodule-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/submodule-plan.json
+          if-no-files-found: error
+          retention-days: 30
+
+  update:
+    name: Create or resume reviewed pointer PR
+    needs: plan
+    if: ${{ needs.plan.outputs.action != 'current' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      status: ${{ steps.update.outputs.status }}
+      parent: ${{ steps.update.outputs.parent }}
+      branch: ${{ steps.update.outputs.branch }}
+      head_sha: ${{ steps.update.outputs.head_sha }}
+      gitlink_path: ${{ steps.update.outputs.gitlink_path }}
+      child_sha: ${{ steps.update.outputs.child_sha }}
+
+    steps:
+      - name: Checkout immutable trusted controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Mint bounded parent mutation token
+        id: target-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-actions: write
+          permission-administration: read
+          permission-checks: read
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-statuses: read
+
+      - name: Mint isolated ledger token
+        id: ledger-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          repositories: darkfactory-data
+          permission-contents: write
+
+      - name: Re-observe and create or resume exact pointer lane
+        id: update
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.target-token.outputs.token }}
+          DF_LEDGER_TOKEN: ${{ steps.ledger-token.outputs.token }}
+          DF_CONTROL_REPO: ${{ github.repository }}
+          DF_SUBMODULE_MODE: update
+          DF_SUBMODULE_REPO: ${{ needs.plan.outputs.child }}
+        shell: bash
+        run: |
+          node .github/scripts/df-submodule-autoupdate.mjs > "${RUNNER_TEMP}/submodule-update.json"
+          jq . "${RUNNER_TEMP}/submodule-update.json"
+          echo "status=$(jq -r '.action.status' "${RUNNER_TEMP}/submodule-update.json")" >> "${GITHUB_OUTPUT}"
+          echo "parent=$(jq -r '.action.parent // .plan.evidence.parent // empty' "${RUNNER_TEMP}/submodule-update.json")" >> "${GITHUB_OUTPUT}"
+          echo "branch=$(jq -r '.action.branch // empty' "${RUNNER_TEMP}/submodule-update.json")" >> "${GITHUB_OUTPUT}"
+          echo "head_sha=$(jq -r '.action.head_sha // empty' "${RUNNER_TEMP}/submodule-update.json")" >> "${GITHUB_OUTPUT}"
+          echo "gitlink_path=$(jq -r '.action.path // .plan.evidence.path // empty' "${RUNNER_TEMP}/submodule-update.json")" >> "${GITHUB_OUTPUT}"
+          echo "child_sha=$(jq -r '.plan.evidence.child_sha // empty' "${RUNNER_TEMP}/submodule-update.json")" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload mutation receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: submodule-update-${{ github.run_id }}
+          path: ${{ runner.temp }}/submodule-update.json
+          if-no-files-found: error
+          retention-days: 30
+
+  validate-pointer:
+    name: Least-privilege recursive pointer validation
+    needs: update
+    if: ${{ needs.update.outputs.head_sha != '' && needs.update.outputs.status == 'waiting-for-validation' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      head_sha: ${{ needs.update.outputs.head_sha }}
+      run_url: ${{ steps.receipt.outputs.run_url }}
+
+    steps:
+      - name: Checkout immutable trusted validator
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+
+      - name: Mint contents-read-only checkout token
+        id: checkout-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-contents: read
+
+      - name: Materialize exact parent and recursive gitlinks without credentials persistence
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.update.outputs.parent }}
+          ref: ${{ needs.update.outputs.head_sha }}
+          path: parent
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ steps.checkout-token.outputs.token }}
+          persist-credentials: false
+          clean: true
+
+      - name: Verify exact clean recursive pointer without executing child code
+        env:
+          DF_PARENT_CHECKOUT: ${{ github.workspace }}/parent
+          DF_PARENT_REPO: ${{ needs.update.outputs.parent }}
+          DF_PARENT_HEAD_SHA: ${{ needs.update.outputs.head_sha }}
+          DF_GITLINK_PATH: ${{ needs.update.outputs.gitlink_path }}
+          DF_CHILD_SHA: ${{ needs.update.outputs.child_sha }}
+        run: node control/.github/scripts/df-submodule-checkout.mjs > "${RUNNER_TEMP}/submodule-validation.json"
+
+      - name: Record immutable validation run identity
+        id: receipt
+        shell: bash
+        run: |
+          jq . "${RUNNER_TEMP}/submodule-validation.json"
+          echo "run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload least-privilege validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: submodule-validation-${{ needs.update.outputs.head_sha }}
+          path: ${{ runner.temp }}/submodule-validation.json
+          if-no-files-found: error
+          retention-days: 30
+
+  finalize:
+    name: Bind validation and arm protected automerge
+    needs:
+      - plan
+      - update
+      - validate-pointer
+    if: ${{ needs.validate-pointer.result == 'success' }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout immutable trusted controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Mint bounded finalization token
+        id: target-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          permission-actions: write
+          permission-administration: read
+          permission-checks: read
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-statuses: read
+
+      - name: Mint isolated ledger token
+        id: ledger-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DARK_FACTORY_APP_ID }}
+          private-key: ${{ secrets.DARK_FACTORY_PRIVATE_KEY }}
+          owner: marius-patrik
+          repositories: darkfactory-data
+          permission-contents: write
+
+      - name: Re-fetch exact PR, gates, refs, and validation before automerge
+        env:
+          DARK_FACTORY_TOKEN: ${{ steps.target-token.outputs.token }}
+          DF_LEDGER_TOKEN: ${{ steps.ledger-token.outputs.token }}
+          DF_CONTROL_REPO: ${{ github.repository }}
+          # Finalization is an admitted update transition. The public `verify`
+          # command remains target-read-only and only returns evidence.
+          DF_SUBMODULE_MODE: update
+          DF_SUBMODULE_REPO: ${{ needs.plan.outputs.child }}
+          DF_SUBMODULE_VALIDATION_SHA: ${{ needs.validate-pointer.outputs.head_sha }}
+          DF_SUBMODULE_VALIDATION_URL: ${{ needs.validate-pointer.outputs.run_url }}
+        run: node .github/scripts/df-submodule-autoupdate.mjs
