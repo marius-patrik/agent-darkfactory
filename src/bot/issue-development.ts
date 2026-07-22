@@ -392,15 +392,15 @@ async function loadRuntimeModules(): Promise<{
   runner: AutoreviewRunnerModule;
 }> {
   const [model, autoreview, runner] = await Promise.all([
-    import(new URL("../.github/scripts/df-model-policy.mjs", import.meta.url).href),
-    import(new URL("../.github/scripts/df-autoreview.mjs", import.meta.url).href),
-    import(new URL("../.github/scripts/run-darkfactory-autoreview.mjs", import.meta.url).href)
+    import(new URL("../../scripts/df-model-policy.mjs", import.meta.url).href),
+    import(new URL("../../scripts/df-autoreview.mjs", import.meta.url).href),
+    import(new URL("../../scripts/run-darkfactory-autoreview.mjs", import.meta.url).href)
   ]);
   return { model: model as unknown as ModelPolicyModule, autoreview: autoreview as unknown as AutoreviewModule, runner: runner as unknown as AutoreviewRunnerModule };
 }
 
 async function loadIssueDraftHygiene(): Promise<{ module: IssueDraftHygieneModule; policy: unknown }> {
-  const module = await import(new URL("../.github/scripts/df-issue-draft-hygiene.mjs", import.meta.url).href) as unknown as IssueDraftHygieneModule;
+  const module = await import(new URL("../../scripts/df-issue-draft-hygiene.mjs", import.meta.url).href) as unknown as IssueDraftHygieneModule;
   return { module, policy: await module.readIssueDraftPolicy(CONTROL_ROOT) };
 }
 

@@ -305,7 +305,7 @@ async function collectDoctorReports(app: App, options: DoctorCliOptions): Promis
   const ledgerGithub = options.writeIssues
     ? createDoctorRequester(await getScopedInstallationOctokit(app, CONTROL_OWNER, { contents: "write" }, ["darkfactory-data"]))
     : undefined;
-  const moduleUrl = new URL("../.github/scripts/df-audit.mjs", import.meta.url);
+  const moduleUrl = new URL("../../scripts/df-audit.mjs", import.meta.url);
   const doctor = await import(moduleUrl.href) as {
     runRepositoryDoctor: (github: unknown, options: Record<string, unknown>) => Promise<DoctorReport[]>;
     formatDoctorReports: (reports: DoctorReport[]) => string;
@@ -762,7 +762,7 @@ async function runRelease(args: string[], commandId?: string): Promise<void> {
   const dataGithub = mutating
     ? createDoctorRequester(await getScopedInstallationOctokit(app, CONTROL_OWNER, { contents: "write" }, ["darkfactory-data"]))
     : targetGithub;
-  const release = await import(new URL("../.github/scripts/df-release.mjs", import.meta.url).href) as {
+  const release = await import(new URL("../../scripts/df-release.mjs", import.meta.url).href) as {
     configureReleaseRuntime(options: Record<string, unknown>): void;
     runReleaseCommand(options: Record<string, unknown>): Promise<Record<string, unknown>>;
   };
@@ -896,7 +896,7 @@ async function runSubmodules(args: string[]): Promise<void> {
   const ledgerGithub = mutating
     ? createDoctorRequester(await getScopedInstallationOctokit(app, CONTROL_OWNER, { contents: "write" }, ["darkfactory-data"]))
     : github;
-  const module = await import(new URL("../.github/scripts/df-submodule-autoupdate.mjs", import.meta.url).href) as unknown as {
+  const module = await import(new URL("../../scripts/df-submodule-autoupdate.mjs", import.meta.url).href) as unknown as {
     configureSubmoduleRuntime(options: Record<string, unknown>): void;
     runSubmoduleCommand(options: { mode: SubmoduleCliOptions["mode"]; child: string }): Promise<Record<string, unknown>>;
   };
@@ -1155,7 +1155,7 @@ function parseLabelDefinitions(source: string): LabelDefinition[] {
 async function operatorLedgerModule(): Promise<{
   writeRunLedger: (github: unknown, dataRepo: string, kind: string, target: string, ledger: Record<string, unknown>) => Promise<unknown>;
 }> {
-  const moduleUrl = new URL("../.github/scripts/df-lib.mjs", import.meta.url);
+  const moduleUrl = new URL("../../scripts/df-lib.mjs", import.meta.url);
   return await import(moduleUrl.href) as {
     writeRunLedger: (github: unknown, dataRepo: string, kind: string, target: string, ledger: Record<string, unknown>) => Promise<unknown>;
   };
@@ -1445,7 +1445,7 @@ async function createIssueDevelopmentRuntime(repository: string, writeIssues: bo
     pull_requests: "read"
   }, [repo]);
   const data = await getScopedInstallationOctokit(app, owner, { contents: "write" }, ["darkfactory-data"]);
-  const ledgerModule = await import(new URL("../.github/scripts/df-lib.mjs", import.meta.url).href) as unknown as {
+  const ledgerModule = await import(new URL("../../scripts/df-lib.mjs", import.meta.url).href) as unknown as {
     writeRunLedger(github: unknown, dataRepo: string, kind: string, target: string, payload: unknown): Promise<unknown>;
   };
   return {
@@ -1552,7 +1552,7 @@ async function scopedAutoreviewToken(repository: string): Promise<string> {
 async function runIssueAutoreviewCommand(command: ParsedHumanCommand): Promise<void> {
   const target = parseIssueTarget(command.arguments[0]);
   const expectedVersion = validateIssueVersion(optionString(command, "--version"));
-  const module = await import(new URL("../.github/scripts/run-darkfactory-autoreview.mjs", import.meta.url).href) as unknown as {
+  const module = await import(new URL("../../scripts/run-darkfactory-autoreview.mjs", import.meta.url).href) as unknown as {
     executeAutoreview(environment: NodeJS.ProcessEnv): Promise<{ ok: boolean; state: string; code?: string; rounds?: unknown[] }>;
   };
   const result = await module.executeAutoreview({
@@ -1712,7 +1712,7 @@ async function createLedgerWriter(): Promise<(kind: string, repository: string, 
   const app = new App({ appId: credentials.appId, privateKey: credentials.privateKey });
   const data = await getScopedInstallationOctokit(app, CONTROL_OWNER, { contents: "write" }, ["darkfactory-data"]);
   const github = createDoctorRequester(data);
-  const ledgerModule = await import(new URL("../.github/scripts/df-lib.mjs", import.meta.url).href) as unknown as {
+  const ledgerModule = await import(new URL("../../scripts/df-lib.mjs", import.meta.url).href) as unknown as {
     writeRunLedger(github: unknown, dataRepo: string, kind: string, target: string, payload: unknown): Promise<unknown>;
   };
   return async (kind, repository, payload) => {
@@ -1975,7 +1975,7 @@ async function runPullAutoreviewCommand(command: ParsedHumanCommand): Promise<vo
   if (snapshot.version.toLowerCase() !== expectedVersion.toLowerCase()) throw new Error(`stale pull-request version: expected ${expectedVersion}, observed ${snapshot.version}`);
   const base = snapshot.pull.base as Record<string, unknown>;
   const head = snapshot.pull.head as Record<string, unknown>;
-  const module = await import(new URL("../.github/scripts/run-darkfactory-autoreview.mjs", import.meta.url).href) as unknown as {
+  const module = await import(new URL("../../scripts/run-darkfactory-autoreview.mjs", import.meta.url).href) as unknown as {
     executeAutoreview(environment: NodeJS.ProcessEnv): Promise<{ ok: boolean; state: string; code?: string; rounds?: unknown[] }>;
   };
   const result = await module.executeAutoreview({
@@ -2083,7 +2083,7 @@ async function observedIssueReadiness(targetValue: string, expectedVersion = "")
     statuses: "read"
   });
   const github = createDoctorRequester(octokit);
-  const orchestrator = await import(new URL("../.github/scripts/df-orchestrate.mjs", import.meta.url).href) as unknown as {
+  const orchestrator = await import(new URL("../../scripts/df-orchestrate.mjs", import.meta.url).href) as unknown as {
     evaluateTargetIssueReadiness(
       github: unknown,
       controlRepo: { owner: string; repo: string },
@@ -2124,7 +2124,7 @@ async function runExplainCommand(command: ParsedHumanCommand): Promise<void> {
     const octokit = await getScopedInstallationOctokit(app, repository.split("/")[0], {
       administration: "read", actions: "read", checks: "read", contents: "read", issues: "read", pull_requests: "read", secrets: "read", statuses: "read"
     }, [repository.split("/")[1]]);
-    const doctorModule = await import(new URL("../.github/scripts/df-audit.mjs", import.meta.url).href) as unknown as {
+    const doctorModule = await import(new URL("../../scripts/df-audit.mjs", import.meta.url).href) as unknown as {
       runRepositoryDoctor(github: unknown, options: Record<string, unknown>): Promise<unknown[]>;
     };
     result = await doctorModule.runRepositoryDoctor(createDoctorRequester(octokit), {
