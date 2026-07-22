@@ -30,7 +30,7 @@ function workerLedger(provider: string, model: string) {
           primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
           skipped: []
         },
-        resolved: { provider, model, agentPreset: provider === "codex" ? "Sol" : "Kimi", providerVersion: "1.2.3" },
+        resolved: { provider, model, agentPreset: provider === "codex" ? "Sol" : "Kimi", providerVersion: "1.2.3", toolPolicy: "standard" },
         attempts: [{ number: 1, outcome: "success", reason: null }],
         usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
         outcome: "success",

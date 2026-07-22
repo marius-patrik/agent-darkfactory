@@ -68,7 +68,7 @@ function reviewedState(): IssueDraftState {
       primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
       skipped: []
     },
-    resolved: { provider: `fixture-${modelTier}`, model: `fixture/${modelTier}`, agentPreset: `Fixture-${modelTier}`, providerVersion: "1.0.0" },
+    resolved: { provider: `fixture-${modelTier}`, model: `fixture/${modelTier}`, agentPreset: `Fixture-${modelTier}`, providerVersion: "1.0.0", toolPolicy: "standard" },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     outcome: "success",
@@ -124,7 +124,7 @@ function blockedOwnerQuestionState(): IssueDraftState {
       primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
       skipped: []
     },
-    resolved: { provider: "fixture-high", model: "fixture/high", agentPreset: "Fixture-high", providerVersion: "1.0.0" },
+    resolved: { provider: "fixture-high", model: "fixture/high", agentPreset: "Fixture-high", providerVersion: "1.0.0", toolPolicy: "standard" },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     outcome: "success",
@@ -222,7 +222,7 @@ test("version-bound owner answers append a high-tier drafting turn and require a
             primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
             skipped: []
           },
-          resolved: { provider: "fixture-high", model: "fixture/high", agentPreset: "Fixture-high", providerVersion: "1.0.0" },
+          resolved: { provider: "fixture-high", model: "fixture/high", agentPreset: "Fixture-high", providerVersion: "1.0.0", toolPolicy: "standard" },
           attempts: [{ number: 1, outcome: "success", reason: null }],
           usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
           outcome: "success",

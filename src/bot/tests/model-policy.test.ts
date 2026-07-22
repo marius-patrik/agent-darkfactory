@@ -104,7 +104,8 @@ test("execution receipts match the request and expose only sanitized route evide
       provider: "fixture-provider",
       model: "fixture/model-v1",
       agentPreset: "Fixture",
-      providerVersion: "1.2.3"
+      providerVersion: "1.2.3",
+      toolPolicy: "standard"
     },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },

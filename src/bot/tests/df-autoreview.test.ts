@@ -107,7 +107,8 @@ function receipt(request: any, outcome = "success") {
       provider: outcome === "success" ? `fixture-${request.modelTier}` : "unresolved",
       model: outcome === "success" ? `fixture/${request.modelTier}-model` : "unresolved",
       agentPreset: outcome === "success" ? `Fixture-${request.modelTier}` : "unresolved",
-      providerVersion: outcome === "success" ? "1.0.0" : "unresolved"
+      providerVersion: outcome === "success" ? "1.0.0" : "unresolved",
+      toolPolicy: outcome === "success" ? "standard" : "unresolved"
     },
     attempts: [{ number: 1, outcome, reason: outcome === "success" ? null : "route_unavailable" }],
     usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },

@@ -32,7 +32,7 @@ function reviewedState(draftId: string, reviewedAt: string): IssueDraftState {
       primary: { provider: "fixture-primary", model: "fixture/primary-model", agentPreset: "Fixture-Primary", providerVersion: "1.0.0" },
       skipped: []
     },
-    resolved: { provider: `fixture-${modelTier}`, model: `fixture/${modelTier}`, agentPreset: `Fixture-${modelTier}`, providerVersion: "1.0.0" },
+    resolved: { provider: `fixture-${modelTier}`, model: `fixture/${modelTier}`, agentPreset: `Fixture-${modelTier}`, providerVersion: "1.0.0", toolPolicy: "standard" },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     outcome: "success",

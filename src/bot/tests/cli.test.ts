@@ -107,13 +107,13 @@ test("setup command registry exposes and the adapter forwards exact local eviden
   const parsed = parseHumanCliArgs(["setup", "marius-patrik/Andromeda", "--local", "C:\\work\\Andromeda", "--agents-home", "C:\\Users\\patrik\\.agents"]);
   assert.equal(parsed?.options["--local"], "C:\\work\\Andromeda");
   assert.equal(parsed?.options["--agents-home"], "C:\\Users\\patrik\\.agents");
-  const source = await readFile(path.resolve(import.meta.dirname, "..", "src", "cli.ts"), "utf8");
+  const source = await readFile(path.resolve(import.meta.dirname, "..", "cli.ts"), "utf8");
   assert.match(source, /command\.options\["--local"\][\s\S]{0,180}\["--local", command\.options\["--local"\]/);
   assert.match(source, /command\.options\["--agents-home"\][\s\S]{0,220}\["--agents-home", command\.options\["--agents-home"\]/);
 });
 
 test("setup dispatches typed hygiene and released-pointer findings only through trusted main workflows", async () => {
-  const source = await readFile(path.resolve(import.meta.dirname, "..", "src", "cli.ts"), "utf8");
+  const source = await readFile(path.resolve(import.meta.dirname, "..", "cli.ts"), "utf8");
   assert.match(source, /operations\.has\("converge-clean"\)[\s\S]{0,900}workflow_id: "df-clean\.yml"[\s\S]{0,300}ref: "main"/);
   assert.match(source, /operations\.has\("converge-submodules"\)[\s\S]{0,900}workflow_id: "df-submodule-autoupdate\.yml"[\s\S]{0,300}ref: "main"/);
   assert.match(source, /observeReviewFindings: async \(\) => await collectCleanReviewFindings/);
@@ -303,7 +303,7 @@ test("exact-name receipt lookup fetches the immutable path directly without a bo
 });
 
 test("every JSON verb adapter uses the universal command envelope and exposes blocked convergence", async () => {
-  const source = await readFile(path.resolve(import.meta.dirname, "..", "src", "cli.ts"), "utf8");
+  const source = await readFile(path.resolve(import.meta.dirname, "..", "cli.ts"), "utf8");
   assert.doesNotMatch(source, /if \(options\.json\) console\.log\(JSON\.stringify\((?:reports|result|\{ \.\.\.receipt)/);
   assert.match(source, /humanJsonResult\(commandId, "ok", reports\)/);
   assert.match(source, /setup_not_converged/);

@@ -69,7 +69,7 @@ function successfulReceipt(request: any) {
       provider: "fixture-provider",
       model: "fixture/model-v1",
       agentPreset: "Fixture",
-      providerVersion: "1.0.0"
+      providerVersion: "1.0.0", toolPolicy: "standard"
     },
     attempts: [{ number: 1, outcome: "success", reason: null }],
     usage: { inputTokens: 12, outputTokens: 7, totalTokens: 19 },
