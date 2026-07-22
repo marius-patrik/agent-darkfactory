@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { OperatorGitHubRequester } from "./clean-evidence.js";
 import type { SetupReceipt } from "./setup.js";
 
-export const MANAGED_REGISTRY_REPOSITORY = "marius-patrik/Andromeda-data";
+export const MANAGED_REGISTRY_REPOSITORY = "marius-patrik/private-data";
 export const MANAGED_REGISTRY_PATH = "managed-repository/.agents/managed-repos.json";
 const REGISTRATION_PR_MARKER = "<!-- darkfactory:managed-registration-pr -->";
 const REGISTRATION_PROVENANCE_PREFIX = "<!-- darkfactory:managed-registration";
@@ -43,18 +43,18 @@ export async function convergeManagedRegistration(
   targetRepository: string
 ): Promise<ManagedRegistrationResult> {
   const target = normalizeRepository(targetRepository);
-  const registryRepository = { owner: "marius-patrik", repo: "Andromeda-data" };
-  const metadata = record((await github.request("GET /repos/{owner}/{repo}", registryRepository)).data, "Andromeda-data metadata");
+  const registryRepository = { owner: "marius-patrik", repo: "private-data" };
+  const metadata = record((await github.request("GET /repos/{owner}/{repo}", registryRepository)).data, "private-data metadata");
   if (metadata.private !== true || metadata.default_branch !== "main" || metadata.archived === true || metadata.disabled === true) {
-    throw new Error("canonical managed registry authority must remain the private, writable Andromeda-data main repository");
+    throw new Error("canonical managed registry authority must remain the private, writable private-data main repository");
   }
 
   const mainRef = record((await github.request("GET /repos/{owner}/{repo}/git/ref/{ref}", {
     ...registryRepository,
     ref: "heads/main"
-  })).data, "Andromeda-data main ref");
-  const mainObject = record(mainRef.object, "Andromeda-data main ref object");
-  const mainHead = exactCommit(mainObject.sha, "Andromeda-data main head");
+  })).data, "private-data main ref");
+  const mainObject = record(mainRef.object, "private-data main ref object");
+  const mainHead = exactCommit(mainObject.sha, "private-data main head");
   const mainFile = await registrationFileAt(github, registryRepository, mainHead);
   const registry = parseRegistry(mainFile.content);
   const current = findEntry(registry.repositories, target);
@@ -68,7 +68,7 @@ export async function convergeManagedRegistration(
         action: "managed-registration",
         target,
         status: "current",
-        detail: "Canonical Andromeda-data source already declares this code repository active."
+        detail: "Canonical private-data source already declares this code repository active."
       }
     };
   }

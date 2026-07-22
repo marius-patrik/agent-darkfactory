@@ -22,7 +22,7 @@ const MANAGED_FILES: ManagedFile[] = [
     path: ".agents/managed-repository.json",
     content: JSON.stringify({
       schemaVersion: 1,
-      dataRepo: "marius-patrik/Andromeda-data",
+      dataRepo: "marius-patrik/private-data",
       ledgerRepo: "marius-patrik/darkfactory-data",
       packageFiles: [],
       requiredFiles: [],

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "managedBy": "darkfactory",
-  "dataRepo": "marius-patrik/Andromeda-data",
+  "dataRepo": "marius-patrik/private-data",
   "ledgerRepo": "marius-patrik/darkfactory-data",
   "requiredSecrets": [
     "DARK_FACTORY_APP_ID",

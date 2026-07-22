@@ -93,7 +93,7 @@ test("checkRepositorySetup reports missing repository policy without a version m
   assert.ok(comment?.includes(".agents/release-policy.json"));
   assert.ok(comment?.includes(".agents/data-repository-policy.json"));
   assert.ok(comment?.includes(".agents/submodule-policy.json"));
-  assert.ok(comment?.includes("canonical Andromeda-data"));
+  assert.ok(comment?.includes("canonical private-data"));
   assert.ok(!comment?.includes("agents-data"));
 });
 

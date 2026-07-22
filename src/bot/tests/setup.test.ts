@@ -24,7 +24,7 @@ const BOOTSTRAP_FILES: ManagedFile[] = [
     path: DARK_FACTORY_MANAGED_CONFIG_PATH,
     content: `${JSON.stringify({
       schemaVersion: 1,
-      dataRepo: "marius-patrik/Andromeda-data",
+      dataRepo: "marius-patrik/private-data",
       ledgerRepo: "marius-patrik/darkfactory-data",
       packageFiles: [],
       requiredFiles: [],
@@ -62,7 +62,7 @@ test("setup settings convergence is a proven no-op when repository state is heal
 
 test("setup rejects code-repository convergence for main-only data before any GitHub call", async () => {
   for (const dataRepo of [
-    { owner: "marius-patrik", repo: "Andromeda-data" },
+    { owner: "marius-patrik", repo: "private-data" },
     { owner: "MARIUS-PATRIK", repo: "DARKFACTORY-DATA" }
   ]) {
     const calls: Array<{ route: string; parameters: Record<string, unknown> }> = [];

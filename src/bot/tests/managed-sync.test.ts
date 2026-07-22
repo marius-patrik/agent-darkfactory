@@ -88,7 +88,7 @@ const RECOVERY_FILES: ManagedFile[] = [
     path: DARK_FACTORY_MANAGED_CONFIG_PATH,
     content: `${JSON.stringify({
       schemaVersion: 1,
-      dataRepo: "marius-patrik/Andromeda-data",
+      dataRepo: "marius-patrik/private-data",
       ledgerRepo: "marius-patrik/darkfactory-data",
       packageFiles: [],
       requiredFiles: [],
@@ -310,7 +310,7 @@ async function seedCanonicalManagedSource(root: string): Promise<{ managedRoot: 
     const content = filePath === DARK_FACTORY_MANAGED_CONFIG_PATH
       ? `${JSON.stringify({
         schemaVersion: 1,
-        dataRepo: "marius-patrik/Andromeda-data",
+        dataRepo: "marius-patrik/private-data",
         ledgerRepo: "marius-patrik/darkfactory-data",
         packageFiles: [...PACKAGE_MANAGED_PATHS],
         requiredFiles,
@@ -325,7 +325,7 @@ async function seedCanonicalManagedSource(root: string): Promise<{ managedRoot: 
   }
   await writeFile(
     registryPath,
-    JSON.stringify([{ id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: dataRoot }])
+    JSON.stringify([{ id: "andromeda-data", repo: "marius-patrik/private-data", path: dataRoot }])
   );
   return { managedRoot, registryPath };
 }
@@ -341,7 +341,7 @@ test("managedSetupPullRequestBody lists changed files and documents Agent OS-own
   assert.doesNotMatch(body, /\.agents\/\.global/);
   assert.match(body, /\.github\/workflows\/ci\.yml/);
   assert.match(body, /\.github\/workflows\/dark-factory-bootstrap\.yml/);
-  assert.match(body, /\.agents\/.project` is managed only when a repo-specific canonical Andromeda-data overlay exists/);
+  assert.match(body, /\.agents\/.project` is managed only when a repo-specific canonical private-data overlay exists/);
   assert.match(body, /Shared Agent OS identity/);
   assert.match(body, /labels, branching, installer, and orchestration behavior/);
   assert.match(body, /dark-factory-autoupdate\.yml/);
@@ -417,7 +417,7 @@ test("ensureManagedRepositorySetup creates a managed PR when files are missing",
       path: DARK_FACTORY_MANAGED_CONFIG_PATH,
       content: JSON.stringify({
         schemaVersion: 1,
-        dataRepo: "marius-patrik/Andromeda-data",
+        dataRepo: "marius-patrik/private-data",
         ledgerRepo: "marius-patrik/darkfactory-data",
         packageFiles: [],
         requiredFiles: [],
@@ -621,7 +621,7 @@ test("control managed sync refuses contradictory release-control removals before
     path: DARK_FACTORY_MANAGED_CONFIG_PATH,
     content: JSON.stringify({
       schemaVersion: 1,
-      dataRepo: "marius-patrik/Andromeda-data",
+      dataRepo: "marius-patrik/private-data",
       ledgerRepo: "marius-patrik/darkfactory-data",
       packageFiles: [],
       requiredFiles: [],
@@ -759,13 +759,13 @@ test("readManagedFiles rejects swapped or missing managed-source and runtime-led
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 
     await writeFile(manifestPath, JSON.stringify({ ...manifest, dataRepo: "marius-patrik/darkfactory-data" }));
-    assert.throws(() => readManagedFiles(), /canonical Andromeda-data source and darkfactory-data ledger authorities/);
+    assert.throws(() => readManagedFiles(), /canonical private-data source and darkfactory-data ledger authorities/);
 
-    await writeFile(manifestPath, JSON.stringify({ ...manifest, ledgerRepo: "marius-patrik/Andromeda-data" }));
-    assert.throws(() => readManagedFiles(), /canonical Andromeda-data source and darkfactory-data ledger authorities/);
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, ledgerRepo: "marius-patrik/private-data" }));
+    assert.throws(() => readManagedFiles(), /canonical private-data source and darkfactory-data ledger authorities/);
 
     await writeFile(manifestPath, JSON.stringify({ ...manifest, ledgerRepo: undefined }));
-    assert.throws(() => readManagedFiles(), /canonical Andromeda-data source and darkfactory-data ledger authorities/);
+    assert.throws(() => readManagedFiles(), /canonical private-data source and darkfactory-data ledger authorities/);
   } finally {
     if (previousRegistry === undefined) delete process.env.ANDROMEDA_DATA_REPOS;
     else process.env.ANDROMEDA_DATA_REPOS = previousRegistry;
@@ -775,8 +775,8 @@ test("readManagedFiles rejects swapped or missing managed-source and runtime-led
   }
 });
 
-test("readManagedFiles selects canonical Andromeda-data while allowing unrelated registered data repositories", async () => {
-  const root = await mkdtemp(join(tmpdir(), "df-agent-os-data-"));
+test("readManagedFiles selects canonical private-data while allowing unrelated registered data repositories", async () => {
+  const root = await mkdtemp(join(tmpdir(), "df-andromeda-data-"));
   const previousRegistry = process.env.ANDROMEDA_DATA_REPOS;
   const previousAgentsHome = process.env.ANDROMEDA_HOME;
   const previousAgentsRoot = process.env.ANDROMEDA_ROOT;
@@ -788,7 +788,7 @@ test("readManagedFiles selects canonical Andromeda-data while allowing unrelated
     process.env.ANDROMEDA_DATA_REPOS = registryPath;
 
     await writeFile(registryPath, JSON.stringify([
-      { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root },
+      { id: "andromeda-data", repo: "marius-patrik/private-data", path: root },
       { id: "darkfactory-data", repo: "marius-patrik/darkfactory-data", path: join(root, "other-data") }
     ]));
     const files = readManagedFiles();
@@ -805,8 +805,8 @@ test("readManagedFiles selects canonical Andromeda-data while allowing unrelated
   }
 });
 
-test("readManagedFiles rejects a missing or duplicate canonical agent-os-data authority", async () => {
-  const root = await mkdtemp(join(tmpdir(), "df-agent-os-data-missing-"));
+test("readManagedFiles rejects a missing or duplicate canonical andromeda-data authority", async () => {
+  const root = await mkdtemp(join(tmpdir(), "df-andromeda-data-missing-"));
   const previousRegistry = process.env.ANDROMEDA_DATA_REPOS;
   const previousAgentsHome = process.env.ANDROMEDA_HOME;
   try {
@@ -815,13 +815,13 @@ test("readManagedFiles rejects a missing or duplicate canonical agent-os-data au
     process.env.ANDROMEDA_DATA_REPOS = registryPath;
 
     await writeFile(registryPath, JSON.stringify([{ id: "darkfactory-data", repo: "marius-patrik/darkfactory-data", path: join(root, "other") }]));
-    assert.throws(() => readManagedFiles(), /exactly one agent-os-data authority record/);
+    assert.throws(() => readManagedFiles(), /exactly one andromeda-data authority record/);
 
     await writeFile(registryPath, JSON.stringify([
-      { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root },
-      { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root }
+      { id: "andromeda-data", repo: "marius-patrik/private-data", path: root },
+      { id: "andromeda-data", repo: "marius-patrik/private-data", path: root }
     ]));
-    assert.throws(() => readManagedFiles(), /exactly one agent-os-data authority record/);
+    assert.throws(() => readManagedFiles(), /exactly one andromeda-data authority record/);
   } finally {
     if (previousRegistry === undefined) delete process.env.ANDROMEDA_DATA_REPOS;
     else process.env.ANDROMEDA_DATA_REPOS = previousRegistry;
@@ -832,7 +832,7 @@ test("readManagedFiles rejects a missing or duplicate canonical agent-os-data au
 });
 
 test("readManagedFiles rejects wrong repository, path, or conflicting canonical authority", async () => {
-  const root = await mkdtemp(join(tmpdir(), "df-agent-os-data-invalid-"));
+  const root = await mkdtemp(join(tmpdir(), "df-andromeda-data-invalid-"));
   const previousRegistry = process.env.ANDROMEDA_DATA_REPOS;
   const previousAgentsHome = process.env.ANDROMEDA_HOME;
   try {
@@ -842,31 +842,31 @@ test("readManagedFiles rejects wrong repository, path, or conflicting canonical 
 
     await writeFile(
       registryPath,
-      JSON.stringify([{ id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: join(root, "different") }])
+      JSON.stringify([{ id: "andromeda-data", repo: "marius-patrik/private-data", path: join(root, "different") }])
     );
-    assert.throws(() => readManagedFiles(), /agent-os-data path must be/);
+    assert.throws(() => readManagedFiles(), /andromeda-data path must be/);
 
     await writeFile(
       registryPath,
-      JSON.stringify([{ id: "agent-os-data", repo: "wrong/data", path: root }])
+      JSON.stringify([{ id: "andromeda-data", repo: "wrong/data", path: root }])
     );
-    assert.throws(() => readManagedFiles(), /must use repository marius-patrik\/Andromeda-data/);
+    assert.throws(() => readManagedFiles(), /must use repository marius-patrik\/private-data/);
     await writeFile(registryPath, JSON.stringify([]));
-    assert.throws(() => readManagedFiles(), /exactly one agent-os-data authority record/);
+    assert.throws(() => readManagedFiles(), /exactly one andromeda-data authority record/);
 
     await writeFile(
       registryPath,
       JSON.stringify([
-        { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root },
-        { id: "other-data", repo: "marius-patrik/Andromeda-data", path: join(root, "other") }
+        { id: "andromeda-data", repo: "marius-patrik/private-data", path: root },
+        { id: "other-data", repo: "marius-patrik/private-data", path: join(root, "other") }
       ])
     );
-    assert.throws(() => readManagedFiles(), /conflicting Andromeda-data authority/);
+    assert.throws(() => readManagedFiles(), /conflicting private-data authority/);
 
     await writeFile(
       registryPath,
       JSON.stringify([
-        { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root },
+        { id: "andromeda-data", repo: "marius-patrik/private-data", path: root },
         { id: "other-data", repo: "marius-patrik/other", path: join(root, "other") }
       ])
     );
@@ -875,11 +875,11 @@ test("readManagedFiles rejects wrong repository, path, or conflicting canonical 
     await writeFile(
       registryPath,
       JSON.stringify([
-        { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root },
-        { id: "agent-os-data", repo: "marius-patrik/Andromeda-data", path: root }
+        { id: "andromeda-data", repo: "marius-patrik/private-data", path: root },
+        { id: "andromeda-data", repo: "marius-patrik/private-data", path: root }
       ])
     );
-    assert.throws(() => readManagedFiles(), /exactly one agent-os-data authority record/);
+    assert.throws(() => readManagedFiles(), /exactly one andromeda-data authority record/);
 
     await writeFile(registryPath, JSON.stringify([null]));
     assert.throws(() => readManagedFiles(), /Invalid Agent OS data repository registry record/);

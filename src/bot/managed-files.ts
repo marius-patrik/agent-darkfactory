@@ -136,14 +136,14 @@ function readManagedConfig(files?: readonly ManagedFile[]): {
   if (
     !isRecord(parsed) ||
     parsed.schemaVersion !== 1 ||
-    parsed.dataRepo !== "marius-patrik/Andromeda-data" ||
+    parsed.dataRepo !== "marius-patrik/private-data" ||
     parsed.ledgerRepo !== "marius-patrik/darkfactory-data" ||
     !isPathArray(parsed.packageFiles) ||
     !isPathArray(parsed.requiredFiles) ||
     !isPathArray(parsed.removedFiles)
   ) {
     throw new Error(
-      `${DARK_FACTORY_MANAGED_CONFIG_PATH} must define schemaVersion 1, canonical Andromeda-data source and darkfactory-data ledger authorities, and packageFiles, requiredFiles, and removedFiles path arrays`
+      `${DARK_FACTORY_MANAGED_CONFIG_PATH} must define schemaVersion 1, canonical private-data source and darkfactory-data ledger authorities, and packageFiles, requiredFiles, and removedFiles path arrays`
     );
   }
   const packageFiles = [...new Set(parsed.packageFiles)];
@@ -236,30 +236,30 @@ function resolveCanonicalDataRepoRoot(): string {
     if (records.length !== parsed.length) {
       throw new Error(`Invalid Agent OS data repository registry record in ${dataReposFile}`);
     }
-    const authorities = records.filter((record) => record.id === "agent-os-data");
+    const authorities = records.filter((record) => record.id === "andromeda-data");
     if (authorities.length !== 1) {
-      throw new Error(`Agent OS data repository registry must contain exactly one agent-os-data authority record: ${dataReposFile}`);
+      throw new Error(`Agent OS data repository registry must contain exactly one andromeda-data authority record: ${dataReposFile}`);
     }
     const dataRepo = authorities[0];
-    if (dataRepo.repo !== "marius-patrik/Andromeda-data") {
-      throw new Error(`agent-os-data must use repository marius-patrik/Andromeda-data in ${dataReposFile}`);
+    if (dataRepo.repo !== "marius-patrik/private-data") {
+      throw new Error(`andromeda-data must use repository marius-patrik/private-data in ${dataReposFile}`);
     }
     if (typeof dataRepo.path !== "string" || !dataRepo.path.trim()) {
-      throw new Error(`Invalid agent-os-data path in ${dataReposFile}`);
+      throw new Error(`Invalid andromeda-data path in ${dataReposFile}`);
     }
     const registeredPath = resolve(dataRepo.path);
     if (registeredPath !== expectedPath) {
-      throw new Error(`agent-os-data path must be ${expectedPath}, received ${registeredPath}`);
+      throw new Error(`andromeda-data path must be ${expectedPath}, received ${registeredPath}`);
     }
     if (dataRepo.managedPath !== undefined) {
-      throw new Error(`agent-os-data must register its checkout root without managedPath in ${dataReposFile}`);
+      throw new Error(`andromeda-data must register its checkout root without managedPath in ${dataReposFile}`);
     }
     const conflicts = parsed.filter((entry) => isRecord(entry) && entry !== dataRepo && (
-      String(entry.repo || "").toLowerCase() === "marius-patrik/andromeda-data"
+      String(entry.repo || "").toLowerCase() === "marius-patrik/private-data"
       || (typeof entry.path === "string" && entry.path.trim() && resolve(entry.path) === expectedPath)
     ));
     if (conflicts.length > 0) {
-      throw new Error(`Agent OS data repository registry contains a conflicting Andromeda-data authority: ${dataReposFile}`);
+      throw new Error(`Agent OS data repository registry contains a conflicting private-data authority: ${dataReposFile}`);
     }
     return registeredPath;
   } catch (error) {

@@ -61,7 +61,7 @@ test("doctor modes are explicit and repair is fail-closed", () => {
 test("doctor source authority accepts only exact immutable commit revisions", () => {
   assert.equal(doctor.assertExactCommit(controlRevision.toUpperCase(), "trusted control"), controlRevision);
   assert.throws(() => doctor.assertExactCommit("main", "trusted control"), /exact 40-character trusted control commit/);
-  assert.throws(() => doctor.assertExactCommit("a".repeat(39), "canonical Andromeda-data"), /exact 40-character canonical Andromeda-data commit/);
+  assert.throws(() => doctor.assertExactCommit("a".repeat(39), "canonical private-data"), /exact 40-character canonical private-data commit/);
 });
 
 test("report mode requires a distinct ledger authority and diagnose needs none", () => {
@@ -216,7 +216,7 @@ test("retired authority audit excludes marked history and resumes at the next ac
     "### Archived details",
     "The retired owner was marius-patrik/agents-manager.",
     "## Current authority",
-    "Canonical state is marius-patrik/Andromeda-data at $ANDROMEDA_HOME."
+    "Canonical state is marius-patrik/private-data at $ANDROMEDA_HOME."
   ].join("\n");
   const { gh: historicalGh } = mockGh((_method, requestPath) => {
     if (decodeURIComponent(requestPath).includes("/contents/.agents/.project/DECISIONS.md?ref=main")) return content(historical);
@@ -500,7 +500,7 @@ test("branch policy classifies behind, diverged, missing, and main-only data rep
   });
   assert.ok(missing.findings.some((finding) => finding.id === "dev-branch-missing"));
 
-  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const dataRepo = { owner: "marius-patrik", repo: "private-data" };
   const { gh: dataGh } = mockGh((_method, requestPath) => requestPath.includes("/protection") ? (() => { throw notFound(); })() : (() => { throw new Error(`unexpected ${requestPath}`); })());
   const data = await doctor.auditBranchAndReleaseState(dataGh, dataRepo, { default_branch: "main", allow_auto_merge: false }, {
     branches: [{ name: "main", commit: { sha: "a" } }], branchNames: new Set(["main"]), pulls: [], isData: true
@@ -598,7 +598,7 @@ test("branch protection distinguishes inaccessible 403 state from absent 404 sta
 test("data repository policy accepts exactly the two canonical private main-only repositories", () => {
   const policy = doctor.loadDataRepositoryPolicy();
   assert.deepEqual(policy.repositories.map((entry: { repository: string }) => entry.repository), [
-    "marius-patrik/Andromeda-data",
+    "marius-patrik/private-data",
     "marius-patrik/darkfactory-data"
   ]);
   assert.equal(policy.compensatingControl.url, "https://github.com/marius-patrik/Andromeda/pull/190");
@@ -616,7 +616,7 @@ test("data repository policy accepts exactly the two canonical private main-only
 
 test("private main-only data repository records the exact GitHub plan 403 as accepted residue", async () => {
   const policy = doctor.loadDataRepositoryPolicy();
-  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const dataRepo = { owner: "marius-patrik", repo: "private-data" };
   const branches = [{ name: "main", commit: { sha: "a" } }];
   const { gh } = mockGh(() => {
     throw Object.assign(new Error("Upgrade to GitHub Pro or make this repository public to enable this feature."), { status: 403 });
@@ -644,7 +644,7 @@ test("private main-only data repository records the exact GitHub plan 403 as acc
 
 test("data repository residue fails closed for permission, absence, visibility, target, branch, policy, and unsafe protection drift", async () => {
   const policy = doctor.loadDataRepositoryPolicy();
-  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const dataRepo = { owner: "marius-patrik", repo: "private-data" };
   for (const [status, message, expected] of [
     [403, "Forbidden", "protection-main-unobservable"],
     [404, "Not Found", "protection-main-missing"]
@@ -720,7 +720,7 @@ test("main-only data repositories do not inherit product gate requirements", asy
     allow_force_pushes: { enabled: false },
     allow_deletions: { enabled: false }
   }));
-  const findings = await doctor.auditBranchProtection(gh, { owner: "marius-patrik", repo: "Andromeda-data" }, "main", {
+  const findings = await doctor.auditBranchProtection(gh, { owner: "marius-patrik", repo: "private-data" }, "main", {
     protectionRequired: true,
     gatesRequired: false
   });
@@ -728,7 +728,7 @@ test("main-only data repositories do not inherit product gate requirements", asy
 });
 
 test("main-only data repositories require observable main protection", async () => {
-  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const dataRepo = { owner: "marius-patrik", repo: "private-data" };
   const branches = [{ name: "main", commit: { sha: "a" } }];
   const { gh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/protection")) throw notFound();
@@ -742,7 +742,7 @@ test("main-only data repositories require observable main protection", async () 
 });
 
 test("main-only data repositories still fail closed on admin bypass and inaccessible protection", async () => {
-  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const dataRepo = { owner: "marius-patrik", repo: "private-data" };
   const { gh: bypassGh } = mockGh(() => ({
     enforce_admins: { enabled: false },
     allow_force_pushes: { enabled: false },
@@ -757,7 +757,7 @@ test("main-only data repositories still fail closed on admin bypass and inaccess
 });
 
 test("main-only data repositories report an unowned dev branch as extra", async () => {
-  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const dataRepo = { owner: "marius-patrik", repo: "private-data" };
   const branches = [{ name: "main", commit: { sha: "a" } }, { name: "dev", commit: { sha: "b" } }];
   const { gh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/protection")) throw notFound();
@@ -770,26 +770,26 @@ test("main-only data repositories report an unowned dev branch as extra", async 
 });
 
 test("main-only policy is restricted to the two canonical data repositories", () => {
-  assert.equal(doctor.isMainOnlyDataRepository({ owner: "marius-patrik", repo: "Andromeda-data" }), true);
+  assert.equal(doctor.isMainOnlyDataRepository({ owner: "marius-patrik", repo: "private-data" }), true);
   assert.equal(doctor.isMainOnlyDataRepository({ owner: "MARIUS-PATRIK", repo: "DARKFACTORY-DATA" }), true);
   assert.equal(doctor.isMainOnlyDataRepository({ owner: "marius-patrik", repo: "product-data" }), false);
-  assert.equal(doctor.isMainOnlyDataRepository({ owner: "another-owner", repo: "Andromeda-data" }), false);
+  assert.equal(doctor.isMainOnlyDataRepository({ owner: "another-owner", repo: "private-data" }), false);
 });
 
 test("doctor lifecycle admits exact canonical data repositories without making arbitrary data repos active", () => {
   const registry = { schemaVersion: 1, repositories: {} };
   assert.equal(doctor.doctorLifecycleState(repo, repo, registry), "active");
-  assert.equal(doctor.doctorLifecycleState({ owner: "marius-patrik", repo: "Andromeda-data" }, repo, registry), "active");
+  assert.equal(doctor.doctorLifecycleState({ owner: "marius-patrik", repo: "private-data" }, repo, registry), "active");
   assert.equal(doctor.doctorLifecycleState({ owner: "marius-patrik", repo: "darkfactory-data" }, repo, registry), "active");
   assert.equal(doctor.doctorLifecycleState({ owner: "marius-patrik", repo: "other-data" }, repo, registry), "removed");
-  assert.equal(doctor.doctorLifecycleState({ owner: "another-owner", repo: "Andromeda-data" }, repo, registry), "removed");
+  assert.equal(doctor.doctorLifecycleState({ owner: "another-owner", repo: "private-data" }, repo, registry), "removed");
 });
 
 test("canonical data repositories run only the main-only protection and branch policy", async () => {
-  const dataRepo = { owner: "marius-patrik", repo: "Andromeda-data" };
+  const dataRepo = { owner: "marius-patrik", repo: "private-data" };
   const { gh, calls } = mockGh((method, requestPath) => {
     assert.equal(method, "GET");
-    if (requestPath === "/repos/marius-patrik/Andromeda-data") {
+    if (requestPath === "/repos/marius-patrik/private-data") {
       return { default_branch: "main", archived: false, disabled: false, private: true, visibility: "private" };
     }
     if (requestPath.includes("/branches?")) return [{ name: "main", commit: { sha: targetRevision } }];
@@ -1241,14 +1241,14 @@ test("managed baseline audit detects drift and files that must be removed", asyn
     if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/managed.txt")) return content("expected\n");
     if (requestPath.includes("/repos/marius-patrik/Andromeda/contents/managed.txt")) return content("actual\n");
     if (requestPath.includes("/repos/marius-patrik/Andromeda/contents/retired.txt")) return content("remove me\n");
-    if (requestPath.includes("/repos/marius-patrik/Andromeda-data/contents/managed-repository/repositories/")) throw notFound();
+    if (requestPath.includes("/repos/marius-patrik/private-data/contents/managed-repository/repositories/")) throw notFound();
     throw new Error(`unexpected ${requestPath}`);
   });
   const findings = await doctor.auditManagedFileDrift(gh, target, "main", repo, { controlRevision, agentOsDataRevision });
   const ids = new Set(findings.map((finding) => finding.id));
   assert.ok(ids.has("managed-file-drift-managed-txt"));
   assert.ok(ids.has("managed-removed-file-retired-txt"));
-  const sourceReads = calls.filter((call) => /\/repos\/marius-patrik\/(?:DarkFactory|Andromeda-data)\/contents\//.test(call.path));
+  const sourceReads = calls.filter((call) => /\/repos\/marius-patrik\/(?:DarkFactory|private-data)\/contents\//.test(call.path));
   assert.ok(sourceReads.some((call) => call.path.includes(`ref=${controlRevision}`)));
   assert.ok(sourceReads.some((call) => call.path.includes(`ref=${agentOsDataRevision}`)));
 });
@@ -1335,7 +1335,7 @@ test("managed baseline reports a release-control source contradiction without au
   };
   const { gh } = mockGh((_method, requestPath) => {
     if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/.agents/managed-repository.json")) return content(manifest);
-    if (requestPath.includes("/repos/marius-patrik/Andromeda-data/contents/managed-repository/repositories/")) throw notFound();
+    if (requestPath.includes("/repos/marius-patrik/private-data/contents/managed-repository/repositories/")) throw notFound();
     throw new Error(`release-control target must not be read while source policy contradicts #41: ${requestPath}`);
   });
 
@@ -1993,7 +1993,7 @@ test("report mode routes issue writes to target authority and contents writes on
   const admission = ledgers.find((ledger) => ledger.phase === "admission");
   const completion = ledgers.find((ledger) => ledger.phase === "completion");
   assert.equal(admission.source_refs.control, `marius-patrik/DarkFactory@${controlRevision}`);
-  assert.equal(admission.source_refs.agent_os_data, `marius-patrik/Andromeda-data@${agentOsDataRevision}`);
+  assert.equal(admission.source_refs.agent_os_data, `marius-patrik/private-data@${agentOsDataRevision}`);
   assert.ok(admission.planned_actions.some((action: { action: string }) => action.action === "retire-legacy-audit-issues"));
   assert.ok(admission.actions.some((action: { action: string; state: string }) => action.action === "retire-legacy-audit-issues" && action.state === "admitted"));
   assert.ok(completion.actions.some((action: { action: string }) => action.action === "create-repair-issue"));
@@ -2232,7 +2232,7 @@ test("human and JSON formats preserve deterministic zero-token evidence", () => 
   assert.equal(JSON.parse(JSON.stringify(reports))[0].token_usage.model_calls, 0);
 
   const residueReports = [{
-    target_repository: "marius-patrik/Andromeda-data",
+    target_repository: "marius-patrik/private-data",
     mode: "diagnose",
     read_only: true,
     findings: [],

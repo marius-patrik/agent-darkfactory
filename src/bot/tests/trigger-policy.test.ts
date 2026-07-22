@@ -284,16 +284,16 @@ test("Autoreview recovery lifecycle-filters code repositories, reruns the exact 
     controlMetadata: { archived: false, disabled: false },
     activeRepositories: [
       { owner: "marius-patrik", repo: "Andromeda" },
-      { owner: "marius-patrik", repo: "Andromeda-data" }
+      { owner: "marius-patrik", repo: "private-data" }
     ],
-    dataRepositories: ["marius-patrik/Andromeda-data", "marius-patrik/darkfactory-data"],
+    dataRepositories: ["marius-patrik/private-data", "marius-patrik/darkfactory-data"],
     now: Date.parse("2026-07-16T12:00:00Z"),
     async writeLedger(kind: string, target: string, payload: any) { ledgers.push({ kind, target, payload }); }
   });
   const repositories = await recoveryModule.listRecoveryRepositories();
   assert.deepEqual(repositories.map((entry: any) => entry.repository), ["marius-patrik/Andromeda", "marius-patrik/DarkFactory"]);
   await assert.rejects(
-    recoveryModule.listRecoveryRepositories({ repository: "marius-patrik/Andromeda-data" }),
+    recoveryModule.listRecoveryRepositories({ repository: "marius-patrik/private-data" }),
     /not an active code repository/
   );
   const result = await recoveryModule.recoverAutoreviews({ kind: "all", maxDispatches: 4, trigger: "test" });

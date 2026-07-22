@@ -445,7 +445,7 @@ test("submodule policy fixes the exact Andromeda path and name contract", () => 
     ["darkfactory-data", "data/darkfactory"]
   ]);
   assert.deepEqual(policy.mainOnlyData.map((item: any) => [item.repository, item.admission]), [
-    ["marius-patrik/Andromeda-data", "encrypted-bundle-validate"],
+    ["marius-patrik/private-data", "encrypted-bundle-validate"],
     ["marius-patrik/darkfactory-data", "app-ledger-validate"]
   ]);
   assert.throws(() => submodules.validateSubmodulePolicy({ ...policy, targetBranch: "main" }), /target dev/);
@@ -476,7 +476,7 @@ test("main-only private data admits only the documented plan posture and green A
 });
 
 test("scheduled scans do not let a blocked newer receipt starve an actionable older release", () => {
-  const blocked = { child: "marius-patrik/Andromeda-data", childRelease: { sha: NEW }, candidate: null, pointerState: "blocked", blockers: ["red"] };
+  const blocked = { child: "marius-patrik/private-data", childRelease: { sha: NEW }, candidate: null, pointerState: "blocked", blockers: ["red"] };
   const released = {
     child: "marius-patrik/Other",
     childRelease: { sha: NEW },
@@ -1174,9 +1174,9 @@ test("managed workflow keeps trusted planning, mutation, and validation authorit
   assert.doesNotMatch(workflow, /needs\.plan\.outputs\.action != 'block'/);
   assert.doesNotMatch(workflow, /npm (?:ci|test|run)|bun |python |go test/);
   assert.doesNotMatch(source, /git\/refs\/heads\/(?:main|dev)|force\s*:\s*true|"DELETE"/);
-  assert.equal(manifest.dataRepo, "marius-patrik/Andromeda-data");
+  assert.equal(manifest.dataRepo, "marius-patrik/private-data");
   assert.equal(manifest.ledgerRepo, "marius-patrik/darkfactory-data");
-  assert.equal(installer.autoUpdater.source, "marius-patrik/Andromeda-data");
+  assert.equal(installer.autoUpdater.source, "marius-patrik/private-data");
   assert.equal(installer.autoUpdater.ledger, "marius-patrik/darkfactory-data");
   assert.equal(dfLib.DARK_FACTORY_DATA_REPO, "marius-patrik/darkfactory-data");
   for (const managed of [

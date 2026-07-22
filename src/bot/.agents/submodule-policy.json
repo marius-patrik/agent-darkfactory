@@ -7,7 +7,7 @@
   "releaseReceiptMaxAgeHours": 336,
   "mainOnlyData": [
     {
-      "repository": "marius-patrik/Andromeda-data",
+      "repository": "marius-patrik/private-data",
       "admission": "encrypted-bundle-validate"
     },
     {
@@ -52,7 +52,7 @@
         {
           "name": "data",
           "path": "data/andromeda",
-          "repository": "marius-patrik/Andromeda-data",
+          "repository": "marius-patrik/private-data",
           "branch": "main"
         },
         {

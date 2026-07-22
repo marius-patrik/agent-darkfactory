@@ -3,7 +3,7 @@
   "managedBy": "darkfactory",
   "repositories": [
     {
-      "repository": "marius-patrik/Andromeda-data",
+      "repository": "marius-patrik/private-data",
       "visibility": "private",
       "defaultBranch": "main",
       "branches": ["main"],

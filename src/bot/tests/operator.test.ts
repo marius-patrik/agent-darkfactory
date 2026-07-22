@@ -135,7 +135,7 @@ test("setup preserves metadata and sensitive state as owner work instead of prom
 });
 
 test("setup blocks code-repository convergence for the exact canonical main-only data repositories", () => {
-  for (const repository of ["marius-patrik/Andromeda-data", "MARIUS-PATRIK/DARKFACTORY-DATA"]) {
+  for (const repository of ["marius-patrik/private-data", "MARIUS-PATRIK/DARKFACTORY-DATA"]) {
     const plan = planSetupConvergence([report([{
       id: "protection-main-admin-bypass",
       category: "branch protection",

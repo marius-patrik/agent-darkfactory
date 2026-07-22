@@ -19,7 +19,7 @@ const RECOVERY_SHA = "2".repeat(40);
 const FILE_SHA = "3".repeat(40);
 const MERGE_SHA = "4".repeat(40);
 const TARGET = "marius-patrik/example";
-const PULL_URL = "https://github.com/marius-patrik/Andromeda-data/pull/77";
+const PULL_URL = "https://github.com/marius-patrik/private-data/pull/77";
 
 test("managed registration is a no-op when canonical source already declares the target active", async () => {
   const calls: string[] = [];
@@ -448,12 +448,12 @@ function fixtureGithub(calls: string[], options: FixtureOptions) {
     base: {
       ref: "main",
       sha: MAIN_SHA,
-      repo: { full_name: "marius-patrik/Andromeda-data" }
+      repo: { full_name: "marius-patrik/private-data" }
     },
     head: {
       ref: branch,
       sha: branchHead,
-      repo: { full_name: "marius-patrik/Andromeda-data" }
+      repo: { full_name: "marius-patrik/private-data" }
     },
     mergeable: true,
     mergeable_state: "clean",

@@ -523,7 +523,7 @@ async function executeSetupPlan(
         app,
         CONTROL_OWNER,
         { checks: "read", contents: "write", pull_requests: "write" },
-        ["Andromeda-data"]
+        ["private-data"]
       );
       const registration = await convergeManagedRegistration(createOperatorRequester(registryOctokit), report.target_repository);
       receipts.push(registration.receipt);

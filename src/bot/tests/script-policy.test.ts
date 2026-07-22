@@ -524,7 +524,7 @@ test("canonical Andromeda installation names resolve through the live managed re
       registry,
       repositories: [
         { full_name: "marius-patrik/Andromeda", archived: false, disabled: false },
-        { full_name: "marius-patrik/Andromeda-data", archived: false, disabled: false },
+        { full_name: "marius-patrik/private-data", archived: false, disabled: false },
         { full_name: "marius-patrik/DarkFactory", archived: false, disabled: false },
         { full_name: "marius-patrik/skyblock-agent", archived: false, disabled: false }
       ],
@@ -534,7 +534,7 @@ test("canonical Andromeda installation names resolve through the live managed re
 
   assert.deepEqual(active, [
     { owner: "marius-patrik", repo: "Andromeda" },
-    { owner: "marius-patrik", repo: "Andromeda-data" }
+    { owner: "marius-patrik", repo: "private-data" }
   ]);
   assert.ok(warnings.some((warning) => warning.includes("marius-patrik/DarkFactory") && warning.includes("'removed'")));
   assert.ok(warnings.some((warning) => warning.includes("marius-patrik/skyblock-agent") && warning.includes("'removed'")));
@@ -1031,11 +1031,11 @@ test("repository doctor workflow schedules trusted diagnosis with explicit repor
   assert.doesNotMatch(workflow, /DF_DATA_REPO/);
 });
 
-test("managed repository sync binds the canonical Andromeda-data checkout to ANDROMEDA_HOME", async () => {
+test("managed repository sync binds the canonical private-data checkout to ANDROMEDA_HOME", async () => {
   const workflow = await readFile(new URL("../.github/workflows/sync-managed-repos.yml", import.meta.url), "utf8");
   const gate = workflow.indexOf("Validate trusted control ref");
   const checkout = workflow.indexOf("Check out trusted DarkFactory control");
-  const token = workflow.indexOf("Create scoped Andromeda-data read token");
+  const token = workflow.indexOf("Create scoped private-data read token");
 
   assert.notEqual(gate, -1);
   assert.notEqual(checkout, -1);
@@ -1048,11 +1048,11 @@ test("managed repository sync binds the canonical Andromeda-data checkout to AND
   assert.match(workflow, /repository:\s+marius-patrik\/DarkFactory/);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /persist-credentials:\s+false/);
-  assert.match(workflow, /repositories:\s+Andromeda-data/);
+  assert.match(workflow, /repositories:\s+private-data/);
   assert.match(workflow, /permission-contents:\s+read/);
-  assert.match(workflow, /repository:\s+marius-patrik\/Andromeda-data\b/);
+  assert.match(workflow, /repository:\s+marius-patrik\/private-data\b/);
   assert.match(workflow, /ANDROMEDA_HOME:\s+\$\{\{ github\.workspace \}\}\/\.andromeda-data/);
-  assert.match(workflow, /repo:'marius-patrik\/Andromeda-data'/);
+  assert.match(workflow, /repo:'marius-patrik\/private-data'/);
   assert.match(workflow, /path:process\.env\.ANDROMEDA_HOME/);
   assert.doesNotMatch(workflow, /repository:\s+marius-patrik\/agents-data\b/);
   assert.doesNotMatch(workflow, /process\.env\.ANDROMEDA_ROOT\s*\+\s*['"]\/data\/agent-os/);
