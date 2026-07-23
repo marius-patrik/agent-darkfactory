@@ -7,11 +7,15 @@ import {
 } from "../../commands/registry";
 import { parseAgentPackageManifestV2 } from "../../sdk/shared-ts/plugin-manifest";
 
-function plugin(requestedTopLevelAlias = "memory-query") {
+function plugin(
+  requestedTopLevelAlias = "memory-query",
+  publisher = "acme",
+  id = "memory",
+) {
   return parseAgentPackageManifestV2({
     schemaVersion: 2,
-    publisher: "acme",
-    id: "memory",
+    publisher,
+    id,
     name: "Memory",
     kind: "plugin",
     version: "1.0.0",
@@ -83,11 +87,11 @@ describe("command contribution registry", () => {
   test("namespaces plugin commands and grants top-level aliases explicitly", () => {
     const unapproved = new CommandRegistry();
     unapproved.registerPluginCommands(plugin());
-    expect(unapproved.resolve("acme.memory:query")?.source).toEqual({
+    expect(unapproved.resolve("acme/memory:query")?.source).toEqual({
       kind: "plugin",
       pluginId: "acme/memory",
     });
-    expect(unapproved.resolve("acme.memory:find")?.id).toBe(
+    expect(unapproved.resolve("acme/memory:find")?.id).toBe(
       "acme/memory/query",
     );
     expect(unapproved.resolve("memory-query")).toBeNull();
@@ -99,6 +103,30 @@ describe("command contribution registry", () => {
     expect(approved.resolve("memory-query")?.id).toBe("acme/memory/query");
   });
 
+  test("preserves schema-valid underscores in command namespaces", () => {
+    const registry = new CommandRegistry();
+    registry.registerPluginCommands(
+      plugin("memory-query", "acme_co", "memory_tools"),
+    );
+    expect(registry.resolve("acme_co/memory_tools:query")?.id).toBe(
+      "acme_co/memory_tools/query",
+    );
+  });
+
+  test("does not flatten distinct publisher/id identities into one namespace", () => {
+    const registry = new CommandRegistry();
+    registry.registerPluginCommands(plugin("first", "a.b", "c"));
+    registry.registerPluginCommands(plugin("second", "a", "b.c"));
+    expect(registry.resolve("a.b/c:query")?.source).toEqual({
+      kind: "plugin",
+      pluginId: "a.b/c",
+    });
+    expect(registry.resolve("a/b.c:query")?.source).toEqual({
+      kind: "plugin",
+      pluginId: "a/b.c",
+    });
+  });
+
   test("rejects collisions atomically and cannot shadow recovery commands", () => {
     const registry = new CommandRegistry();
     expect(() =>
@@ -108,6 +136,6 @@ describe("command contribution registry", () => {
     ).toThrow("command token collision: help (embedded recovery command)");
 
     expect(registry.resolve("help")?.id).toBe("builtin.help");
-    expect(registry.resolve("acme.memory:query")).toBeNull();
+    expect(registry.resolve("acme/memory:query")).toBeNull();
   });
 });

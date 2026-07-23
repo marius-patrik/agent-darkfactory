@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
 import path from "node:path";
 import {
+  assertAgentPackageCompatibilityV2,
   parseAgentPackageManifestV2,
   type AgentPackageParseOptions,
 } from "../../sdk/shared-ts/plugin-manifest";
@@ -213,6 +214,74 @@ describe("agent.package.json schema v2", () => {
     );
   });
 
+  test("uses strict semantic-version parsing for stable and prerelease packages", async () => {
+    const validate = await compilePublishedSchema();
+    for (const version of [
+      "1.0.0",
+      "1.0.0-alpha.1",
+      "1.0.0-alpha.1+build.7",
+    ]) {
+      const manifest = validManifest();
+      manifest.version = version;
+      expect(validate(manifest)).toBe(true);
+      expect(parse(manifest).version).toBe(version);
+    }
+
+    for (const version of ["1.0.0-01", "v1.0.0"]) {
+      const invalid = validManifest();
+      invalid.version = version;
+      expect(validate(invalid)).toBe(false);
+      expect(() => parse(invalid)).toThrow(
+        "version must be semantic versioning",
+      );
+    }
+  });
+
+  test("enforces the declared Andromeda range against the authoritative version", () => {
+    const descriptor = parse(validManifest());
+    expect(() =>
+      assertAgentPackageCompatibilityV2(descriptor, "1.2.3"),
+    ).not.toThrow();
+    expect(() =>
+      assertAgentPackageCompatibilityV2(descriptor, "2.0.0"),
+    ).toThrow(
+      "requires Andromeda >=1.0.0 <2.0.0, current version is 2.0.0",
+    );
+
+    const prerelease = validManifest();
+    prerelease.compatibility.andromeda = ">=1.2.3-0 <2.0.0";
+    expect(() =>
+      assertAgentPackageCompatibilityV2(
+        parse(prerelease),
+        "1.2.3-beta.1",
+      ),
+    ).not.toThrow();
+  });
+
+  test("keeps schema and parser aligned for portable paths and SPDX document references", async () => {
+    const validate = await compilePublishedSchema();
+    const valid = validManifest();
+    valid.license = "DocumentRef-vendor:LicenseRef-commercial";
+    expect(validate(valid)).toBe(true);
+    expect(parse(valid).license).toBe(
+      "DocumentRef-vendor:LicenseRef-commercial",
+    );
+
+    for (const descriptor of [
+      "descriptors/agent/../query.json",
+      "descriptors/agent/Query.json",
+      "descriptors/agent/quéry.json",
+      "descriptors/agent/con.json",
+    ]) {
+      const invalid = validManifest();
+      invalid.contributions.agent.tools[0].descriptor = descriptor;
+      expect(validate(invalid)).toBe(false);
+      expect(() => parse(invalid)).toThrow(
+        "must be a normalized portable lowercase ASCII relative path",
+      );
+    }
+  });
+
   test("keeps published schema aligned for empty contributions and runtime handlers", async () => {
     const validate = await compilePublishedSchema();
     expect(validate(validManifest())).toBe(true);
@@ -254,7 +323,7 @@ describe("agent.package.json schema v2", () => {
 
     (manifest.runtime as any).module = "../plugin.wasm";
     expect(() => parse(manifest)).toThrow(
-      "runtime.module must be a normalized safe relative path",
+      "runtime.module must be a normalized portable lowercase ASCII relative path",
     );
   });
 

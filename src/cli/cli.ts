@@ -18,6 +18,7 @@ import {
 } from "./state";
 import {
   activateIdentityBundle,
+  importBundledLegacySkill,
   inspectCapabilityIntegrity,
   installCapability,
   recoverCapabilityPlatform,
@@ -25,11 +26,14 @@ import {
 } from "./capabilities";
 import { canonicalChildEnvironment } from "./runtime-paths";
 import {
+  packageManifestIdentity,
+  preflightPublicPackageCommands,
   readPackageManifest,
   readPackageRegistrations,
   upsertPackageRegistration,
   type AgentsPackageManifest,
 } from "./packages";
+import { readAuthoritativeProductVersion } from "./product-version";
 import { listSecrets, secretPath, syncGitHubSecret, writeSecret } from "./secrets";
 import { osCommand } from "./os-lifecycle";
 import { runnerCommand } from "./runner-lifecycle";
@@ -92,7 +96,6 @@ import {
 
 const invocationRoot = process.cwd();
 const root = invocationRoot;
-const productRoot = path.resolve(import.meta.dir, "..", "..");
 const gitmodulesPath = path.join(root, ".gitmodules");
 
 function systemPromptForMode(mode: SessionMode): string | undefined {
@@ -183,7 +186,7 @@ Usage:
   andromeda session run --provider <id> --model <model> [--mode chat|task] [--session <id>] [--stream] <prompt>
   andromeda session list [--json]
   andromeda session show <id> [--json]
-  andromeda install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-git-url> [--replace]
+  andromeda install <skill|plugin|hook|template|cli|harness> <publisher/id> <source-path-or-git-url> [--replace]
   andromeda installs [--json]
   andromeda plugins list [--json]
   andromeda plugins doctor [--json]
@@ -525,18 +528,24 @@ async function packageCommand(args: string[], flags: Record<string, string | boo
   if (action === "register") {
     if (!packagePath) throw new Error("packages register requires a path");
     const fullPath = path.resolve(root, packagePath);
-    const packageManifest = await readPackageManifest(fullPath);
+    const packageManifest = await readPackageManifest(fullPath, {
+      requireSchemaVersion2: true,
+      andromedaVersion: await readAuthoritativeProductVersion(),
+    });
     if (!packageManifest) throw new Error(`no package manifest found in ${packagePath}`);
+    if (packageManifest.schemaVersion !== 2) {
+      throw new Error("packages register requires agent.package.json schemaVersion 2");
+    }
+    const registrations = await readPackageRegistrations(state);
+    await preflightPublicPackageCommands(registrations, packageManifest);
+    const identity = packageManifestIdentity(packageManifest);
     await upsertPackageRegistration(state, {
-      id: packageManifest.id,
+      id: identity,
       kind: packageManifest.kind,
       path: fullPath,
       manifestPath: path.join(fullPath, "agent.package.json"),
     });
-    if (packageManifest.dataRepo) {
-      await upsertDataRepo(state, packageManifest.dataRepo);
-    }
-    console.log(`registered ${packageManifest.kind} ${packageManifest.id}`);
+    console.log(`registered ${packageManifest.kind} ${identity}`);
     return;
   }
   if (action === "run") {
@@ -1068,7 +1077,10 @@ async function runHarness(
   if (code !== 0) process.exitCode = code;
 }
 
-function sharedHarnessEnv(state: SharedState, harness: { id: string }): Record<string, string> {
+function sharedHarnessEnv(
+  state: SharedState,
+  harness: { path: string },
+): Record<string, string> {
   return {
     ANDROMEDA_BIN: process.execPath,
     ANDROMEDA_BIN_SCRIPT: Bun.argv[1] ? path.resolve(Bun.argv[1]) : "",
@@ -1086,7 +1098,7 @@ function sharedHarnessEnv(state: SharedState, harness: { id: string }): Record<s
     ANDROMEDA_CREDITS: state.creditsFile,
     ANDROMEDA_DATA_REPOS: state.dataReposFile,
     ANDROMEDA_ENVIRONMENTS: state.environmentsFile,
-    ANDROMEDA_HARNESS_HOME: path.join(state.harnessesDir, harness.id, "runtime"),
+    ANDROMEDA_HARNESS_HOME: path.join(harness.path, "runtime"),
   };
 }
 
@@ -1172,13 +1184,41 @@ async function install(values: string[], flags: Record<string, string | boolean>
   if (!kind || !["skill", "plugin", "hook", "template", "cli", "harness"].includes(kind)) {
     throw new Error("install kind must be skill, plugin, hook, template, cli, or harness");
   }
-  if (!name || !source) throw new Error("install requires a name and source");
+  if (!name || !source || values.length !== 3) {
+    throw new Error("install requires a kind, identity, and source");
+  }
+  const allowedFlags = new Set(["replace", "internal-bundled"]);
+  const unsupportedFlag = Object.keys(flags).find(
+    (flag) => !allowedFlags.has(flag),
+  );
+  if (unsupportedFlag) throw new Error(`install does not support --${unsupportedFlag}`);
 
   const state = runtimeState();
   await ensureSharedState(state);
-  const result = await installCapability(state, { kind, name, source, replace: Boolean(flags.replace) });
+  const internalBundled = flags["internal-bundled"] === true;
+  if (flags["internal-bundled"] !== undefined && !internalBundled) {
+    throw new Error("--internal-bundled takes no value");
+  }
+  if (internalBundled && kind !== "skill") {
+    throw new Error("--internal-bundled is reserved for first-party legacy skills");
+  }
+  const result = internalBundled
+    ? await importBundledLegacySkill(state, {
+        name,
+        source,
+        replace: Boolean(flags.replace),
+      })
+    : await installCapability(state, {
+        kind,
+        name,
+        source,
+        replace: Boolean(flags.replace),
+      });
   const action = result.changed ? (result.replaced ? "replaced" : "installed") : "verified";
-  console.log(`${action} ${kind} ${name} sha256=${result.record.sha256}`);
+  const prefix = internalBundled ? "imported internal legacy" : action;
+  console.log(
+    `${prefix} ${kind} ${result.record.name} sha256=${result.record.sha256}`,
+  );
 }
 
 async function installs(flags: Record<string, string | boolean>): Promise<void> {
@@ -1229,13 +1269,7 @@ async function pluginsCommand(
 }
 
 async function versionCommand(): Promise<void> {
-  const manifest = (await Bun.file(path.join(productRoot, "package.json")).json()) as {
-    version?: unknown;
-  };
-  if (typeof manifest.version !== "string" || !manifest.version.trim()) {
-    throw new Error("product package.json has no valid version");
-  }
-  console.log(manifest.version);
+  console.log(await readAuthoritativeProductVersion());
 }
 
 async function identityCommand(values: string[], flags: Record<string, string | boolean>): Promise<void> {

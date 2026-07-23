@@ -21,15 +21,25 @@ also validates the observed artifact digest, every referenced JSON descriptor,
 and the declared WASI module and digest before canonical state changes.
 
 Commands are registered once through `src/commands`. Third-party commands use
-`<publisher>.<plugin>:<command>` names by default. A manifest may request one
+`<publisher>/<plugin>:<command>` names by default. A manifest may request one
 top-level alias, but the registry exposes it only when the corresponding
 `<publisher>/<plugin>:<alias>` grant is present. Collisions fail atomically,
 and plugins cannot shadow the embedded `help`, `version`, `doctor`, or
 `plugins` recovery commands.
 
 Version 1 manifests remain readable only for internal legacy packages while
-their runtimes are folded into Andromeda. The public capability installer
-requires version 2. This is a migration boundary, not a second public format.
+their runtimes are folded into Andromeda. The installer has one path-pinned,
+first-party bridge for importing the repository's bundled legacy skills and
+records that bridge in provenance. Every public capability kind, including
+skills, requires version 2. The installer verifies the declared Andromeda
+compatibility range against the authoritative product version and preflights
+the candidate together with every installed v2 command contribution before
+publishing state. This is a migration boundary, not a second public format.
+
+Canonical public identity is always `<publisher>/<id>`. State and registries
+retain that identity verbatim; physical capability directories use a
+contained, filesystem-safe encoding so equal package ids from different
+publishers coexist on every supported platform.
 
 The initial distribution surface is direct local/Git installation. Signing,
 grant persistence, activation, rollback UI, WASI execution, and sandboxed web

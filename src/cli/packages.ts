@@ -4,9 +4,11 @@ import type { InstallKind, SharedState } from "./state";
 import { writeTextAtomic } from "./state-v2";
 import { withStateFileLock } from "./state-lock";
 import {
+  assertAgentPackageCompatibilityV2,
   parseAgentPackageManifestV2,
   type AgentPackageDescriptorV2,
 } from "../sdk/shared-ts/plugin-manifest";
+import { CommandRegistry } from "../commands/registry";
 
 export type PackageKind = InstallKind;
 
@@ -40,6 +42,7 @@ export type AgentsPackageManifest =
 export interface ReadPackageManifestOptions {
   artifactSha256?: string;
   requireSchemaVersion2?: boolean;
+  andromedaVersion?: string;
 }
 
 export interface PackageRegistration {
@@ -54,6 +57,8 @@ export interface PackageRegistration {
 const manifestName = "agent.package.json";
 const retiredManifestNames = ["agents.package.json", "agent.json", "package.agent.json"];
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const SAFE_PUBLIC_QUALIFIED_ID =
+  /^[a-z0-9][a-z0-9._-]{0,127}\/[a-z0-9][a-z0-9._-]{0,127}$/;
 const LEGACY_MANIFEST_FIELDS = new Set([
   "schemaVersion",
   "id",
@@ -108,10 +113,18 @@ export async function readPackageManifest(
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${file}: manifest must be an object`);
   const record = parsed as Record<string, unknown>;
   if (record.schemaVersion === 2) {
-    return parseAgentPackageManifestV2(record, {
+    const manifest = parseAgentPackageManifestV2(record, {
       source: file,
       artifactSha256: options.artifactSha256,
     });
+    if (options.andromedaVersion !== undefined) {
+      assertAgentPackageCompatibilityV2(
+        manifest,
+        options.andromedaVersion,
+        { source: file },
+      );
+    }
+    return manifest;
   }
   if (options.requireSchemaVersion2) {
     throw new Error(`${file}: schemaVersion 2 is required for public capabilities`);
@@ -151,6 +164,12 @@ export async function readPackageManifest(
     dataRepo: parseDataRepo(raw.dataRepo),
     provides,
   };
+}
+
+export function packageManifestIdentity(
+  manifest: AgentsPackageManifest,
+): string {
+  return manifest.schemaVersion === 2 ? manifest.qualifiedId : manifest.id;
 }
 
 function stringList(value: unknown, field: string): string[] {
@@ -225,7 +244,8 @@ export async function readPackageRegistrations(state: SharedState): Promise<Pack
       typeof record !== "object" ||
       Array.isArray(record) ||
       typeof record.id !== "string" ||
-      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(record.id) ||
+      (!SAFE_ID.test(record.id) &&
+        !SAFE_PUBLIC_QUALIFIED_ID.test(record.id)) ||
       typeof record.kind !== "string" ||
       typeof record.path !== "string" ||
       !path.isAbsolute(record.path) ||
@@ -243,6 +263,38 @@ export async function readPackageRegistrations(state: SharedState): Promise<Pack
     ids.add(record.id);
   }
   return parsed as PackageRegistration[];
+}
+
+export async function preflightPublicPackageCommands(
+  registrations: readonly PackageRegistration[],
+  candidate: AgentPackageDescriptorV2,
+): Promise<void> {
+  const registry = new CommandRegistry();
+  const ordered = [...registrations].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+  for (const registration of ordered) {
+    const manifest = await readPackageManifest(registration.path);
+    if (manifest?.schemaVersion !== 2) {
+      if (registration.id.includes("/")) {
+        throw new Error(
+          `public package registration ${registration.id} has no schema v2 manifest`,
+        );
+      }
+      continue;
+    }
+    if (
+      registration.id !== manifest.qualifiedId ||
+      registration.kind !== manifest.kind
+    ) {
+      throw new Error(
+        `public package registration ${registration.id} does not match ${manifest.qualifiedId}`,
+      );
+    }
+    if (manifest.qualifiedId === candidate.qualifiedId) continue;
+    registry.registerPluginCommands(manifest);
+  }
+  registry.registerPluginCommands(candidate);
 }
 
 export async function writePackageRegistrations(state: SharedState, registrations: PackageRegistration[]): Promise<void> {

@@ -8,12 +8,15 @@ import {
   open,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   stat,
   unlink,
 } from "node:fs/promises";
 import {
+  packageManifestIdentity,
+  preflightPublicPackageCommands,
   readPackageManifest,
   readPackageRegistrations,
   type AgentsPackageManifest,
@@ -28,6 +31,7 @@ import {
 } from "./state";
 import { stateV2Paths, writeTextAtomic, writeTextIfChanged } from "./state-v2";
 import { canonicalChildEnvironment } from "./runtime-paths";
+import { readAuthoritativeProductVersion } from "./product-version";
 
 export type CapabilityKind = Extract<
   InstallKind,
@@ -90,6 +94,11 @@ interface ValidatedTree {
   entries: TreeEntry[];
 }
 
+interface ValidatedCapabilityPayload {
+  tree: ValidatedTree;
+  manifest: AgentsPackageManifest | null;
+}
+
 type PublicationKind = "file" | "directory";
 
 interface PreparedPublication {
@@ -126,13 +135,6 @@ const installKinds = new Set<CapabilityKind>([
   "cli",
   "harness",
 ]);
-const packageManifestKinds = new Set<CapabilityKind>([
-  "plugin",
-  "hook",
-  "template",
-  "cli",
-  "harness",
-]);
 const executableManifestKinds = new Set<CapabilityKind>([
   "hook",
   "cli",
@@ -153,6 +155,11 @@ const forbiddenTreeSegments = new Set([
 ]);
 const maximumFiles = 10_000;
 const maximumBytes = 100 * 1024 * 1024;
+const SIMPLE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const PUBLIC_QUALIFIED_ID =
+  /^[a-z0-9][a-z0-9._-]{0,127}\/[a-z0-9][a-z0-9._-]{0,127}$/;
+const INTERNAL_BUNDLED_SKILL_IMPORT =
+  "andromeda-bundled-skill-v1" as const;
 
 function exists(filePath: string): Promise<boolean> {
   return stat(filePath).then(
@@ -161,9 +168,15 @@ function exists(filePath: string): Promise<boolean> {
   );
 }
 
-function assertName(name: string): void {
-  if (!/^[a-z0-9][a-z0-9._-]{0,127}$/.test(name)) {
+function assertSimpleId(name: string): void {
+  if (!SIMPLE_ID.test(name)) {
     throw new Error(`invalid capability name: ${name}`);
+  }
+}
+
+function assertCapabilityIdentity(identity: string): void {
+  if (!SIMPLE_ID.test(identity) && !PUBLIC_QUALIFIED_ID.test(identity)) {
+    throw new Error(`invalid capability identity: ${identity}`);
   }
 }
 
@@ -335,24 +348,13 @@ function parseSkillFrontmatter(
 async function validatePayload(
   root: string,
   kind: CapabilityKind,
-  name: string,
-): Promise<ValidatedTree> {
+  identity: string,
+  options: {
+    requireSchemaVersion2: boolean;
+    andromedaVersion?: string;
+  },
+): Promise<ValidatedCapabilityPayload> {
   const tree = await inspectTree(root);
-  if (kind === "skill") {
-    const skillFile = path.join(root, "SKILL.md");
-    if (!(await exists(skillFile)))
-      throw new Error(`${root}: skill requires SKILL.md`);
-    const frontmatter = parseSkillFrontmatter(
-      await readFile(skillFile, "utf8"),
-      skillFile,
-    );
-    if (frontmatter.name !== name) {
-      throw new Error(
-        `${skillFile}: frontmatter name ${frontmatter.name} does not match install name ${name}`,
-      );
-    }
-  }
-
   const canonicalManifest = path.join(root, "agent.package.json");
   const hasCanonicalManifest = await exists(canonicalManifest);
   for (const retiredName of ["agents.package.json", "agent.json"]) {
@@ -362,21 +364,24 @@ async function validatePayload(
       );
     }
   }
-  if (packageManifestKinds.has(kind) && !hasCanonicalManifest) {
+  if (options.requireSchemaVersion2 && !hasCanonicalManifest) {
     throw new Error(`${root}: ${kind} requires agent.package.json`);
   }
   const packageManifest = await readPackageManifest(root, {
     artifactSha256: tree.sha256,
-    requireSchemaVersion2: packageManifestKinds.has(kind),
+    requireSchemaVersion2: options.requireSchemaVersion2,
+    andromedaVersion: options.andromedaVersion,
   });
   if (packageManifest) {
     if (packageManifest.schemaVersion === 2) {
       validatePublicPluginPayload(packageManifest, tree, canonicalManifest);
     }
-    if (packageManifest.id !== name)
+    const manifestIdentity = packageManifestIdentity(packageManifest);
+    if (manifestIdentity !== identity) {
       throw new Error(
-        `package manifest id ${packageManifest.id} does not match ${name}`,
+        `package manifest identity ${manifestIdentity} does not match ${identity}`,
       );
+    }
     if (packageManifest.kind !== kind) {
       throw new Error(
         `package manifest kind ${packageManifest.kind} does not match ${kind}`,
@@ -392,7 +397,22 @@ async function validatePayload(
       );
     }
   }
-  return tree;
+  if (kind === "skill") {
+    const skillFile = path.join(root, "SKILL.md");
+    if (!(await exists(skillFile)))
+      throw new Error(`${root}: skill requires SKILL.md`);
+    const frontmatter = parseSkillFrontmatter(
+      await readFile(skillFile, "utf8"),
+      skillFile,
+    );
+    const expectedSkillName = packageManifest?.id ?? identity;
+    if (frontmatter.name !== expectedSkillName) {
+      throw new Error(
+        `${skillFile}: frontmatter name ${frontmatter.name} does not match package id ${expectedSkillName}`,
+      );
+    }
+  }
+  return { tree, manifest: packageManifest };
 }
 
 function validatePublicPluginPayload(
@@ -484,6 +504,20 @@ function validatePublicPluginPayload(
       );
     }
   }
+}
+
+function capabilityTarget(
+  state: SharedState,
+  kind: CapabilityKind,
+  identity: string,
+): string {
+  return path.join(targetBase(state, kind), capabilityIdentityPath(identity));
+}
+
+function capabilityIdentityPath(identity: string): string {
+  if (!identity.includes("/")) return identity;
+  const encoded = createHash("sha256").update(identity, "utf8").digest("hex");
+  return `v2-${encoded}`;
 }
 
 async function normalizeModes(
@@ -1214,7 +1248,7 @@ async function capabilitiesViewContent(
         `staged capability checksum mismatch: ${record.kind}/${record.name}`,
       );
     skills.push({
-      name: metadata.name,
+      name: record.name,
       description: metadata.description,
       sha256: actual.sha256,
     });
@@ -1266,9 +1300,13 @@ export async function inspectCapabilityIntegrity(
       if (keys.has(key)) throw new Error(`duplicate capability install record: ${key}`);
       keys.add(key);
       assertKind(record.kind);
-      assertName(record.name);
+      assertCapabilityIdentity(record.name);
       if (!/^[a-f0-9]{64}$/.test(record.sha256)) throw new Error(`invalid capability digest: ${key}`);
-      const expectedTarget = path.join(targetBase(state, record.kind), record.name);
+      const expectedTarget = capabilityTarget(
+        state,
+        record.kind,
+        record.name,
+      );
       if (path.resolve(record.path) !== path.resolve(expectedTarget)) {
         throw new Error(`capability install path is not canonical: ${key}`);
       }
@@ -1343,24 +1381,29 @@ function upsertPackageRecord(
   record: InstallRecord,
   now: string,
 ): PackageRegistration[] {
+  const manifestIdentity = manifest
+    ? packageManifestIdentity(manifest)
+    : null;
   const collision = manifest
     ? registrations.find(
-        (item) => item.id === manifest.id && item.path !== record.path,
+        (item) =>
+          item.id === manifestIdentity && item.path !== record.path,
       )
     : undefined;
   if (collision) {
     throw new Error(
-      `package id ${manifest?.id} is already registered at ${collision.path}`,
+      `package id ${manifestIdentity} is already registered at ${collision.path}`,
     );
   }
   const existing = registrations.find((item) => item.path === record.path);
   const next = registrations.filter(
     (item) =>
-      item.path !== record.path && (!manifest || item.id !== manifest.id),
+      item.path !== record.path &&
+      (manifestIdentity === null || item.id !== manifestIdentity),
   );
   if (manifest) {
     const candidate: PackageRegistration = {
-      id: manifest.id,
+      id: manifestIdentity!,
       kind: manifest.kind,
       source: record.source,
       path: record.path,
@@ -1490,7 +1533,7 @@ async function validateIdentityBundle(root: string): Promise<ValidatedTree> {
     );
   }
   for (const id of roleIds) {
-    assertName(id);
+    assertSimpleId(id);
     const role = await readFile(path.join(rolesDir, `${id}.yaml`), "utf8");
     const name = /^name:\s*([^\s#]+)\s*$/m.exec(role)?.[1];
     const scope = /^scope:\s*([^\s#]+)\s*$/m.exec(role)?.[1];
@@ -1639,22 +1682,63 @@ export async function activateIdentityBundle(
   }
 }
 
-export async function installCapability(
+async function installCapabilityWithAdmission(
   state: SharedState,
   options: CapabilityInstallOptions,
+  admission:
+    | {
+        kind: "public-v2";
+        andromedaVersion: string;
+      }
+    | {
+        kind: typeof INTERNAL_BUNDLED_SKILL_IMPORT;
+      },
 ): Promise<CapabilityInstallResult> {
   assertKind(options.kind);
-  assertName(options.name);
+  assertCapabilityIdentity(options.name);
+  if (
+    admission.kind === "public-v2" &&
+    !PUBLIC_QUALIFIED_ID.test(options.name)
+  ) {
+    throw new Error(
+      `public capability identity must be publisher/id: ${options.name}`,
+    );
+  }
   const materialized = await materializeSource(state, options.source);
   try {
-    const sourceTree = await validatePayload(
+    const payload = await validatePayload(
       materialized.root,
       options.kind,
       options.name,
+      {
+        requireSchemaVersion2: admission.kind === "public-v2",
+        andromedaVersion:
+          admission.kind === "public-v2"
+            ? admission.andromedaVersion
+            : undefined,
+      },
     );
+    const { tree: sourceTree, manifest } = payload;
+    if (
+      admission.kind === INTERNAL_BUNDLED_SKILL_IMPORT &&
+      (options.kind !== "skill" || manifest?.schemaVersion === 2)
+    ) {
+      throw new Error(
+        "the internal bundled-skill bridge accepts only legacy first-party skills",
+      );
+    }
+    if (manifest?.schemaVersion === 2) {
+      await preflightPublicPackageCommands(
+        await readPackageRegistrations(state),
+        manifest,
+      );
+    }
     return await withCapabilityLock(state, async () => {
       const base = assertWithinState(state, targetBase(state, options.kind));
-      const target = assertWithinState(state, path.join(base, options.name));
+      const target = assertWithinState(
+        state,
+        capabilityTarget(state, options.kind, options.name),
+      );
       const targetRelative = path.relative(base, target);
       if (targetRelative.startsWith("..") || path.isAbsolute(targetRelative))
         throw new Error(`install target escapes state root: ${target}`);
@@ -1680,6 +1764,10 @@ export async function installCapability(
       }
 
       const installs = await readInstalls(state);
+      const registrations = await readPackageRegistrations(state);
+      if (manifest?.schemaVersion === 2) {
+        await preflightPublicPackageCommands(registrations, manifest);
+      }
       const existingRecord = installs.find(
         (item) => item.kind === options.kind && item.name === options.name,
       );
@@ -1701,13 +1789,9 @@ export async function installCapability(
           ? existingRecord
           : candidate;
       const nextInstalls = upsertInstallRecord(installs, record);
-      const manifest = await readPackageManifest(materialized.root, {
-        artifactSha256: sourceTree.sha256,
-        requireSchemaVersion2: packageManifestKinds.has(options.kind),
-      });
       const registeredAt = (options.now ?? new Date()).toISOString();
       const nextPackages = upsertPackageRecord(
-        await readPackageRegistrations(state),
+        registrations,
         manifest,
         record,
         registeredAt,
@@ -1771,12 +1855,17 @@ export async function installCapability(
         await prepareProvenancePublication(
           state,
           transaction,
-          `capability-${options.kind}-${options.name}-${sourceTree.sha256}`,
+          `capability-${options.kind}-${capabilityIdentityPath(
+            options.name,
+          )}-${sourceTree.sha256}`,
           {
             schemaVersion: 1,
             kind: "capability-installation",
             capabilityKind: options.kind,
             name: options.name,
+            ...(admission.kind === INTERNAL_BUNDLED_SKILL_IMPORT
+              ? { importMode: INTERNAL_BUNDLED_SKILL_IMPORT }
+              : {}),
             source: record.source,
             sourceSha256: sourceTree.sha256,
             target,
@@ -1806,4 +1895,64 @@ export async function installCapability(
   } finally {
     await materialized.cleanup();
   }
+}
+
+export async function installCapability(
+  state: SharedState,
+  options: CapabilityInstallOptions,
+): Promise<CapabilityInstallResult> {
+  return installCapabilityWithAdmission(state, options, {
+    kind: "public-v2",
+    andromedaVersion: await readAuthoritativeProductVersion(),
+  });
+}
+
+export async function importBundledLegacySkill(
+  state: SharedState,
+  options: Omit<CapabilityInstallOptions, "kind">,
+): Promise<CapabilityInstallResult> {
+  assertSimpleId(options.name);
+  const bundledRoot = path.join(
+    path.resolve(import.meta.dir, "..", ".."),
+    ".agents",
+    "global",
+    "skills",
+  );
+  const expectedSource = path.join(bundledRoot, options.name);
+  if (path.resolve(options.source) !== path.resolve(expectedSource)) {
+    throw new Error(
+      `internal bundled-skill import is path-pinned to ${expectedSource}`,
+    );
+  }
+  const [rootInfo, sourceInfo] = await Promise.all([
+    lstat(bundledRoot),
+    lstat(expectedSource),
+  ]);
+  if (
+    !rootInfo.isDirectory() ||
+    rootInfo.isSymbolicLink() ||
+    !sourceInfo.isDirectory() ||
+    sourceInfo.isSymbolicLink()
+  ) {
+    throw new Error(
+      "internal bundled-skill import requires physical directories",
+    );
+  }
+  const [physicalRoot, physicalSource] = await Promise.all([
+    realpath(bundledRoot),
+    realpath(expectedSource),
+  ]);
+  if (
+    path.dirname(physicalSource) !== physicalRoot ||
+    path.basename(physicalSource) !== options.name
+  ) {
+    throw new Error(
+      "internal bundled-skill source escapes the first-party skill root",
+    );
+  }
+  return installCapabilityWithAdmission(
+    state,
+    { ...options, kind: "skill", source: expectedSource },
+    { kind: INTERNAL_BUNDLED_SKILL_IMPORT },
+  );
 }

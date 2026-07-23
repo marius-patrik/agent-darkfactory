@@ -37,7 +37,7 @@ export interface CommandInvocation {
   args: string[];
 }
 
-const COMMAND_TOKEN = /^[a-z0-9][a-z0-9./:-]{0,191}$/;
+const COMMAND_TOKEN = /^[a-z0-9][a-z0-9._/:-]{0,511}$/;
 
 /**
  * Bare Andromeda is the TUI. Leading flags are therefore TUI flags, while an
@@ -164,7 +164,7 @@ export class CommandRegistry {
     options: PluginCommandRegistrationOptions = {},
   ): CommandDescriptor[] {
     const approvals = new Set(options.approvedTopLevelAliases ?? []);
-    const namespace = `${plugin.publisher}.${plugin.id}`;
+    const namespace = plugin.qualifiedId;
     const descriptors = plugin.contributions.commands.map((contribution) => {
       const aliases = contribution.aliases.map(
         (alias) => `${namespace}:${alias}`,

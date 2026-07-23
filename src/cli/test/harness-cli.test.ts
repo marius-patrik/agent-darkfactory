@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import {
+  ensureSharedState,
+  sharedState,
+} from "../state";
+import { upsertPackageRegistration } from "../packages";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const cliPath = path.join(repoRoot, "cli.ts");
@@ -74,8 +79,14 @@ describe("harness CLI", () => {
         ].join("\n"),
       );
 
-      const register = await runAgents(root, ["packages", "register", harness]);
-      expect(register.code).toBe(0);
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await upsertPackageRegistration(state, {
+        id: "probe",
+        kind: "harness",
+        path: harness,
+        manifestPath: path.join(harness, "agent.package.json"),
+      });
 
       const output = path.join(root, "env.json");
       const run = await runAgents(root, ["harness", "run", "probe", "--", output, "--probe"]);
@@ -92,7 +103,9 @@ describe("harness CLI", () => {
       expect(env.ANDROMEDA_CREDITS).toBe(path.join(root, ".agents", "credits.json"));
       expect(env.ANDROMEDA_DATA_REPOS).toBe(path.join(root, ".agents", "data-repos.json"));
       expect(env.ANDROMEDA_SYSTEM_DATA_ROOT).toBe(path.join(root, ".agents"));
-      expect(env.ANDROMEDA_HARNESS_HOME).toBe(path.join(root, ".agents", "harnesses", "probe", "runtime"));
+      expect(env.ANDROMEDA_HARNESS_HOME).toBe(
+        path.join(harness, "runtime"),
+      );
       expect(JSON.stringify(env.passthrough)).toBe(JSON.stringify(["--probe"]));
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -132,8 +145,14 @@ describe("harness CLI", () => {
         ].join("\n"),
       );
 
-      const register = await runAgents(root, ["packages", "register", pkg]);
-      expect(register.code).toBe(0);
+      const state = sharedState(root);
+      await ensureSharedState(state);
+      await upsertPackageRegistration(state, {
+        id: "probe-package",
+        kind: "package",
+        path: pkg,
+        manifestPath: path.join(pkg, "agent.package.json"),
+      });
       const dataRepo = await runAgents(root, [
         "data",
         "repo",

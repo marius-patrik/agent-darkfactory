@@ -24,6 +24,7 @@ export type InstallKind =
   | "template";
 
 export interface InstallRecord {
+  /** v2 uses publisher/id; legacy internal records retain their bare id. */
   name: string;
   kind: InstallKind;
   source: string;
@@ -31,6 +32,9 @@ export interface InstallRecord {
   sha256: string;
   installedAt: string;
 }
+
+const INSTALL_IDENTITY =
+  /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[a-z0-9][a-z0-9._-]{0,127}\/[a-z0-9][a-z0-9._-]{0,127})$/;
 
 export interface CreditStore {
   schemaVersion: 1;
@@ -335,7 +339,7 @@ export async function readInstalls(state: SharedState): Promise<InstallRecord[]>
       !record ||
       typeof record !== "object" ||
       typeof record.name !== "string" ||
-      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(record.name) ||
+      !INSTALL_IDENTITY.test(record.name) ||
       typeof record.kind !== "string" ||
       !kinds.has(record.kind as InstallKind) ||
       typeof record.source !== "string" ||

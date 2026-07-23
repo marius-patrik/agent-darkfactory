@@ -12,7 +12,10 @@ import {
 import { readStateManifest, stateV2Paths } from "../state-v2";
 import { toolCanonicalPath, toolForbiddenPath } from "../state-consolidation";
 import { rebuildMemoryProjections, rememberMemory, type MemoryEvent } from "../memory";
-import { activateIdentityBundle, installCapability } from "../capabilities";
+import {
+  activateIdentityBundle,
+  importBundledLegacySkill,
+} from "../capabilities";
 import { recordSourceInstall } from "../source-install";
 import { enableEventSync } from "../event-sync";
 import { createSession, rebuildSessionProjections, sessionPaths } from "../../sdk/harness/session";
@@ -55,8 +58,7 @@ async function ensureDoctorProduct(state: ReturnType<typeof tempState>): Promise
   await git(state.stateDir, ["commit", "-q", "-m", "state fixture"]);
   await ensureSharedState(state);
   await enableEventSync(state, true);
-  await installCapability(state, {
-    kind: "skill",
+  await importBundledLegacySkill(state, {
     name: "test",
     source: path.join(sourceRoot, ".agents", "global", "skills", "test"),
   });

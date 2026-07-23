@@ -24,3 +24,20 @@ recorded under docs/provenance/.
 Component-specific third-party and model license files remain controlling for
 their respective code, assets, weights, and data. The root Apache-2.0 license
 does not relicense third-party dependencies or model artifacts.
+
+spdx-exceptions 2.5.0
+Repository: kemitchell/spdx-exceptions.json
+Package metadata author: The Linux Foundation
+Upstream package author: Kyle E. Mitchell
+Declared license: Creative Commons Attribution License 3.0 Unported
+                (CC-BY-3.0)
+
+The package distributes exception identifiers from the Software Package Data
+Exchange (SPDX) standard. Upstream provides the following attribution:
+
+"SPDX" is a federally registered United States trademark of The Linux
+Foundation Corporation.
+
+Copyright © 2010-2015 Linux Foundation and its Contributors. Licensed under the
+Creative Commons Attribution License 3.0 Unported. All other rights are
+expressly reserved.

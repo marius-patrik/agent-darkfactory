@@ -340,7 +340,7 @@ install_default_capabilities() {
   for skill_path in "$skill_root"/*; do
     [ -d "$skill_path" ] || continue
     name="$(basename "$skill_path")"
-    run_launcher install skill "$name" "$skill_path" --replace
+    run_launcher install skill "$name" "$skill_path" --replace --internal-bundled
   done
 
   identity_bundle="$ANDROMEDA_HOME/runtime/tmp/bundled-identity-source"

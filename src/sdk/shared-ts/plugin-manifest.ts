@@ -1,5 +1,5 @@
 import path from "node:path";
-import { validRange } from "semver";
+import { satisfies, valid, validRange } from "semver";
 import parseSpdxExpression from "spdx-expression-parse";
 
 export const AGENT_PACKAGE_SCHEMA_VERSION = 2 as const;
@@ -152,9 +152,12 @@ const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const SAFE_ACTION = /^[a-z0-9][a-z0-9._:/-]{0,191}$/;
 const SAFE_COMMAND = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SAFE_EXPORT = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
-const SEMVER =
-  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+const PORTABLE_PATH_SEGMENT =
+  /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9_-])?$/;
+const WINDOWS_RESERVED_PATH_SEGMENT =
+  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/;
+const MAXIMUM_PORTABLE_PATH_LENGTH = 240;
 const TOP_LEVEL_FIELDS = new Set([
   "schemaVersion",
   "publisher",
@@ -266,13 +269,22 @@ function safeRelativePath(
   const parsed = requiredString(value, field, options);
   const segments = parsed.split(/[\\/]/);
   if (
+    parsed.length > MAXIMUM_PORTABLE_PATH_LENGTH ||
     path.isAbsolute(parsed) ||
     segments.includes("..") ||
     segments.includes(".") ||
     segments.some((segment) => !segment) ||
-    parsed.includes("\\")
+    parsed.includes("\\") ||
+    segments.some(
+      (segment) =>
+        !PORTABLE_PATH_SEGMENT.test(segment) ||
+        WINDOWS_RESERVED_PATH_SEGMENT.test(segment),
+    )
   ) {
-    fail(options, `${field} must be a normalized safe relative path`);
+    fail(
+      options,
+      `${field} must be a normalized portable lowercase ASCII relative path`,
+    );
   }
   return parsed;
 }
@@ -681,6 +693,31 @@ function parseCompatibility(
   return { andromeda, api: "2" };
 }
 
+export function assertAgentPackageCompatibilityV2(
+  manifest: AgentPackageDescriptorV2,
+  andromedaVersion: string,
+  options: AgentPackageParseOptions = {},
+): void {
+  const normalizedVersion = valid(andromedaVersion, { loose: false });
+  if (
+    normalizedVersion === null ||
+    andromedaVersion !== andromedaVersion.trim() ||
+    !/^[0-9]/.test(andromedaVersion)
+  ) {
+    fail(options, "authoritative Andromeda product version is not semantic versioning");
+  }
+  if (
+    !satisfies(normalizedVersion, manifest.compatibility.andromeda, {
+      loose: false,
+    })
+  ) {
+    fail(
+      options,
+      `requires Andromeda ${manifest.compatibility.andromeda}, current version is ${normalizedVersion}`,
+    );
+  }
+}
+
 function parseLicense(
   value: unknown,
   options: AgentPackageParseOptions,
@@ -739,7 +776,12 @@ export function parseAgentPackageManifestV2(
   const publisher = safeId(value.publisher, "publisher", options);
   const id = safeId(value.id, "id", options);
   const version = requiredString(value.version, "version", options);
-  if (!SEMVER.test(version)) fail(options, "version must be semantic versioning");
+  if (
+    valid(version, { loose: false }) === null ||
+    !/^[0-9]/.test(version)
+  ) {
+    fail(options, "version must be semantic versioning");
+  }
   const license = parseLicense(value.license, options);
   const kind = requiredString(value.kind, "kind", options);
   if (!PACKAGE_KINDS.has(kind as PackageKind)) {

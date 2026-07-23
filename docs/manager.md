@@ -242,7 +242,7 @@ agents harness run <name> -- <args...>
 agents session run --provider <id> --model <model> [--mode chat|task] [--session <id>] [--stream] <prompt>
 agents session list [--json]
 agents session show <id> [--json]
-agents install <skill|plugin|hook|template|cli|harness> <name> <source-path-or-git-url> [--replace]
+agents install <skill|plugin|hook|template|cli|harness> <publisher/id> <source-path-or-git-url> [--replace]
 agents installs [--json]
 agents secrets list [--json]
 agents secrets set <NAME> [--from-file path]
