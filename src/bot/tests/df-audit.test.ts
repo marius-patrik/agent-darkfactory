@@ -195,9 +195,9 @@ test("retired authority audit covers every project authority document", async ()
 
   const findings = await doctor.auditRetiredAuthorityNames(gh, repo, "main");
   const byId = new Map(findings.map((finding) => [finding.id, finding]));
-  assert.match(byId.get("retired-agents-data-repository-name").message, /\.agents\/\.project\/COMMANDS\.md/);
-  assert.match(byId.get("retired-agent-os-data-path").message, /\.agents\/\.project\/HANDOFF\.md/);
-  assert.match(byId.get("retired-agents-manager-owner-name").message, /\.agents\/\.project\/STRUCTURE\.md/);
+  assert.match(byId.get("retired-agents-data-repository-name").message, /\.agents\/project\/COMMANDS\.md/);
+  assert.match(byId.get("retired-agent-os-data-path").message, /\.agents\/project\/HANDOFF\.md/);
+  assert.match(byId.get("retired-agents-manager-owner-name").message, /\.agents\/project\/STRUCTURE\.md/);
 
   const inspected = new Set(calls.map((call) => decodeURIComponent(call.path)));
   for (const filePath of ["AGENTS.md", "PROJECT.md", "COMMANDS.md", "STATUS.md", "HANDOFF.md", "DECISIONS.md", "STRUCTURE.md"]) {

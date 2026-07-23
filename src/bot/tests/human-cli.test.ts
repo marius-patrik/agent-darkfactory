@@ -160,7 +160,7 @@ test("CLI and Actions invoke the same issue and PR Autoreview engine with exact 
     readFile(path.join(root, "cli.ts"), "utf8"),
     readFile(path.join(root, ".github", "workflows", "darkfactory-autoreview.yml"), "utf8"),
     readFile(path.join(root, ".github", "scripts", "run-darkfactory-autoreview.mjs"), "utf8"),
-    readFile(path.join(root, "src", "issue-development.ts"), "utf8")
+    readFile(path.join(root, "issue-development.ts"), "utf8")
   ]);
   assert.match(cli, /executeAutoreview\(/);
   assert.match(workflow, /run-darkfactory-autoreview\.mjs/);
