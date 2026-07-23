@@ -1,4 +1,6 @@
 import path from "node:path";
+import { validRange } from "semver";
+import parseSpdxExpression from "spdx-expression-parse";
 
 export const AGENT_PACKAGE_SCHEMA_VERSION = 2 as const;
 
@@ -152,7 +154,6 @@ const SAFE_COMMAND = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SAFE_EXPORT = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const SPDX_EXPRESSION = /^[A-Za-z0-9.+() -]{1,160}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const TOP_LEVEL_FIELDS = new Set([
   "schemaVersion",
@@ -669,12 +670,31 @@ function parseCompatibility(
   );
   if (
     andromeda.length > 160 ||
-    !/^[0-9A-Za-z.*+<>=|~^ -]+$/.test(andromeda)
+    validRange(andromeda, { loose: false }) === null
   ) {
-    fail(options, "compatibility.andromeda is not a supported version range");
+    fail(
+      options,
+      "compatibility.andromeda must be a valid semantic-version range",
+    );
   }
   if (value.api !== "2") fail(options, "compatibility.api must be 2");
   return { andromeda, api: "2" };
+}
+
+function parseLicense(
+  value: unknown,
+  options: AgentPackageParseOptions,
+): string {
+  const license = requiredString(value, "license", options);
+  if (license.length > 160) {
+    fail(options, "license must be an SPDX license expression");
+  }
+  try {
+    parseSpdxExpression(license);
+  } catch {
+    fail(options, "license must be an SPDX license expression");
+  }
+  return license;
 }
 
 function artifactDigest(
@@ -720,10 +740,7 @@ export function parseAgentPackageManifestV2(
   const id = safeId(value.id, "id", options);
   const version = requiredString(value.version, "version", options);
   if (!SEMVER.test(version)) fail(options, "version must be semantic versioning");
-  const license = requiredString(value.license, "license", options);
-  if (!SPDX_EXPRESSION.test(license)) {
-    fail(options, "license must be an SPDX license expression");
-  }
+  const license = parseLicense(value.license, options);
   const kind = requiredString(value.kind, "kind", options);
   if (!PACKAGE_KINDS.has(kind as PackageKind)) {
     fail(options, `unsupported package kind ${kind}`);

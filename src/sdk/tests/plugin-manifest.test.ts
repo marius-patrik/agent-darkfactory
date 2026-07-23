@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import Ajv2020 from "ajv/dist/2020";
 import path from "node:path";
 import {
   parseAgentPackageManifestV2,
@@ -107,6 +108,13 @@ function parse(
   });
 }
 
+async function compilePublishedSchema() {
+  const schema = await Bun.file(
+    path.resolve(import.meta.dir, "..", "agent-package.schema.json"),
+  ).json();
+  return new Ajv2020({ allErrors: true, strict: true }).compile(schema);
+}
+
 describe("agent.package.json schema v2", () => {
   test("publishes the strict machine-readable schema", async () => {
     const schema = (await Bun.file(
@@ -175,10 +183,53 @@ describe("agent.package.json schema v2", () => {
     );
 
     const mismatch = validManifest();
-    mismatch.contributions.commands[0].handler = {
+    (mismatch.contributions.commands[0] as any).handler = {
       kind: "wasi",
-      action: "memory.query",
+      export: "run_query",
     };
+    expect(() => parse(mismatch)).toThrow(
+      "handler.kind must match runtime.kind declarative",
+    );
+  });
+
+  test("rejects prose licenses and fake Andromeda version ranges", () => {
+    const proseLicense = validManifest();
+    proseLicense.license = "use this however you want";
+    expect(() => parse(proseLicense)).toThrow(
+      "license must be an SPDX license expression",
+    );
+
+    const fakeRange = validManifest();
+    fakeRange.compatibility.andromeda = "future release";
+    expect(() => parse(fakeRange)).toThrow(
+      "compatibility.andromeda must be a valid semantic-version range",
+    );
+
+    const compound = validManifest();
+    compound.license = "(Apache-2.0 OR MIT) AND BSD-3-Clause";
+    compound.compatibility.andromeda = "^1.2.3 || >=2.0.0 <3.0.0";
+    expect(parse(compound).license).toBe(
+      "(Apache-2.0 OR MIT) AND BSD-3-Clause",
+    );
+  });
+
+  test("keeps published schema aligned for empty contributions and runtime handlers", async () => {
+    const validate = await compilePublishedSchema();
+    expect(validate(validManifest())).toBe(true);
+
+    const empty = validManifest();
+    (empty as any).contributions = { commands: [] };
+    expect(validate(empty)).toBe(false);
+    expect(() => parse(empty)).toThrow(
+      "contributions must declare at least one public contribution",
+    );
+
+    const mismatch = validManifest();
+    (mismatch.contributions.commands[0] as any).handler = {
+      kind: "wasi",
+      export: "run_query",
+    };
+    expect(validate(mismatch)).toBe(false);
     expect(() => parse(mismatch)).toThrow(
       "handler.kind must match runtime.kind declarative",
     );

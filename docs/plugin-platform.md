@@ -3,7 +3,9 @@
 `agent.package.json` schema version 2 is Andromeda's single public extension
 contract. The machine-readable schema is published from
 `src/sdk/agent-package.schema.json`; the SDK parser is the authoritative
-normalization and validation boundary.
+normalization and validation boundary. The published schema is exercised with
+a strict Draft 2020-12 validator; semantic checks use the maintained semver and
+SPDX expression parsers instead of permissive string patterns.
 
 Every v2 manifest declares:
 

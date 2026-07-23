@@ -136,7 +136,211 @@
         "models": {
           "$ref": "#/$defs/descriptorList"
         }
-      }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "commands"
+          ],
+          "properties": {
+            "commands": {
+              "type": "array",
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "models"
+          ],
+          "properties": {
+            "models": {
+              "type": "array",
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "agent"
+          ],
+          "properties": {
+            "agent": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "required": [
+                    "tools"
+                  ],
+                  "properties": {
+                    "tools": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "skills"
+                  ],
+                  "properties": {
+                    "skills": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "roles"
+                  ],
+                  "properties": {
+                    "roles": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "hooks"
+                  ],
+                  "properties": {
+                    "hooks": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "required": [
+            "tui"
+          ],
+          "properties": {
+            "tui": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "required": [
+                    "actions"
+                  ],
+                  "properties": {
+                    "actions": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "panels"
+                  ],
+                  "properties": {
+                    "panels": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "required": [
+            "web"
+          ],
+          "properties": {
+            "web": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "required": [
+                    "routes"
+                  ],
+                  "properties": {
+                    "routes": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "panels"
+                  ],
+                  "properties": {
+                    "panels": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "settings"
+                  ],
+                  "properties": {
+                    "settings": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "required": [
+            "server"
+          ],
+          "properties": {
+            "server": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "required": [
+                    "routes"
+                  ],
+                  "properties": {
+                    "routes": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "jobs"
+                  ],
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "events"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "minItems": 1
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     "permissions": {
       "type": "object",
@@ -183,6 +387,104 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "runtime": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "declarative"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "required": [
+          "runtime"
+        ]
+      },
+      "then": {
+        "properties": {
+          "contributions": {
+            "type": "object",
+            "properties": {
+              "commands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "handler": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "const": "declarative"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "runtime": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "wasi"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "required": [
+          "runtime"
+        ]
+      },
+      "then": {
+        "properties": {
+          "contributions": {
+            "type": "object",
+            "properties": {
+              "commands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "handler": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "const": "wasi"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "nonEmptyString": {
       "type": "string",
