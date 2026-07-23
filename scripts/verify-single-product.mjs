@@ -21,10 +21,10 @@ const requiredLayout = [
   "src/sdk/harness",
   "src/server/inference",
   "src/cli",
-  ".agents/capabilities/global/skills",
-  ".agents/capabilities/global/hooks",
-  ".agents/capabilities/global/roles",
-  ".agents/capabilities/global/commands",
+  ".agents/global/skills",
+  ".agents/global/hooks",
+  ".agents/global/roles",
+  ".agents/global/commands",
 ];
 for (const relative of requiredLayout) {
   if (!fs.statSync(path.join(root, relative), { throwIfNoEntry: false })?.isDirectory()) {
@@ -70,12 +70,12 @@ for (const match of gitmodules.matchAll(/^\s*path\s*=\s*(.+)\s*$/gm)) {
 }
 
 const forbiddenPaths = [
-  // .agents/capabilities/global at the repository root is the authored
+  // .agents/global at the repository root is the authored
   // capability floor. A copy of it anywhere below the root is a leaked config
   // or state home, so every spelling it has had is rejected when nested: the
   // current one, the dot-prefixed form it used before the floor was
   // un-prefixed, and the retired .andromeda state root.
-  [/.+\/\.agents\/capabilities\/global(\/|$)/, "copied global agent state"],
+  [/.+\/\.agents\/global(\/|$)/, "copied global agent state"],
   [/.+\/\.agents\/\.global(\/|$)/, "copied global agent state"],
   [/.+\/\.andromeda\/\.global(\/|$)/, "copied global agent state"],
   [/(^|\/)legacy(\/|$)/i, "legacy implementation tree"],

@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 export const DOCTOR_SCHEMA_VERSION = 2;
 export const DATA_REPOSITORY_POLICY_PATH = ".darkfactory/data-repository-policy.json";
 export const DOCTOR_REPAIR_CLASSES = ["auto", "pr", "owner", "blocked"];
-export const DOC_PATHS = ["PRD.md", "AGENTS.md", ".agents/.project/STATUS.md", ".agents/.project/PROJECT.md"];
+export const DOC_PATHS = ["PRD.md", "AGENTS.md", ".agents/project/STATUS.md", ".agents/project/PROJECT.md"];
 export const DOC_STALE_DAYS = 90;
 export const STALE_PR_DAYS = 7;
 export const STALE_ISSUE_DAYS = 30;
@@ -1028,11 +1028,11 @@ function parseManagedManifest(text) {
 async function auditProjectOverlay(github, repository, targetRef, agentOsDataRevision) {
   const findings = [];
   const dataRepo = parseRepo(AGENT_OS_DATA_REPO);
-  const prefix = `managed-repository/repositories/${repository.owner}/${repository.repo}/.agents/.project`;
+  const prefix = `managed-repository/repositories/${repository.owner}/${repository.repo}/.agents/project`;
   const files = await listRemoteDirectoryFiles(github, dataRepo, prefix, agentOsDataRevision);
   for (const source of files) {
     const relative = source.path.slice(prefix.length + 1);
-    const targetPath = `.agents/.project/${relative}`;
+    const targetPath = `.agents/project/${relative}`;
     const expected = await readListedRemoteFile(github, dataRepo, source, agentOsDataRevision);
     const actual = await getOptionalFileContent(github, repository, targetPath, targetRef);
     if (actual === null || normalizeText(actual) !== normalizeText(expected)) {
@@ -1060,7 +1060,7 @@ export async function auditRepositoryTree(repository, tree, options = {}) {
     const filePath = entry.path.replace(/\\/g, "/");
     const segments = filePath.split("/");
     const lower = segments.map((segment) => segment.toLowerCase());
-    const allowedProjectAuthority = filePath === ".agents" || filePath === ".agents/.project" || filePath.startsWith(".agents/.project/");
+    const allowedProjectAuthority = filePath === ".agents" || filePath === ".agents/project" || filePath.startsWith(".agents/project/");
     const allowedDarkFactoryAuthority = filePath === ".darkfactory" || filePath.startsWith(".darkfactory/");
     const nestedAgents = lower.includes(".agents") && !allowedProjectAuthority;
     const nestedDarkFactory = lower.includes(".darkfactory") && !allowedDarkFactoryAuthority;
@@ -1941,13 +1941,13 @@ export async function auditRetiredAuthorityNames(github, repository, ref) {
     "README.md",
     "PRD.md",
     "AGENTS.md",
-    ".agents/.project/AGENTS.md",
-    ".agents/.project/COMMANDS.md",
-    ".agents/.project/DECISIONS.md",
-    ".agents/.project/HANDOFF.md",
-    ".agents/.project/PROJECT.md",
-    ".agents/.project/STATUS.md",
-    ".agents/.project/STRUCTURE.md",
+    ".agents/project/AGENTS.md",
+    ".agents/project/COMMANDS.md",
+    ".agents/project/DECISIONS.md",
+    ".agents/project/HANDOFF.md",
+    ".agents/project/PROJECT.md",
+    ".agents/project/STATUS.md",
+    ".agents/project/STRUCTURE.md",
     ".darkfactory/branching-policy.md",
     ".darkfactory/installer-policy.json",
     ".darkfactory/managed-repository.json",

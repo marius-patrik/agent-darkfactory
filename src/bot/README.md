@@ -416,7 +416,7 @@ Dark Factory manages shared setup through pull requests. It does not write direc
 
 Managed files:
 
-- `.agents/.project/**`, only when `$ANDROMEDA_HOME/managed-repository/repositories/<owner>/<repo>/.agents/.project/**` exists
+- `.agents/project/**`, only when `$ANDROMEDA_HOME/managed-repository/repositories/<owner>/<repo>/.agents/project/**` exists
 - `.darkfactory/managed-repository.json`
 - `.darkfactory/installer-policy.json`
 - `.github/workflows/dark-factory-bootstrap.yml`
@@ -441,7 +441,7 @@ DarkFactory workflows and scripts, while canonical Andromeda-data owns
 shared repository policy and context. Duplicate paths fail closed. Keep reusable
 repository policy in `managed-repository/.darkfactory/` and
 per-repository context in
-`managed-repository/repositories/<owner>/<repo>/.agents/.project/`. Shared Agent
+`managed-repository/repositories/<owner>/<repo>/.agents/project/`. Shared Agent
 OS state remains under `$ANDROMEDA_HOME` and is never copied by DarkFactory.
 
 Managed sync runs automatically when:

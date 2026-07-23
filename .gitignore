@@ -1,8 +1,8 @@
 node_modules/
 
 capabilities/*
-!.agents/capabilities/project/
-!.agents/capabilities/project/**
+!.agents/project/
+!.agents/project/**
 !capabilities/plugins/
 !capabilities/plugins/marketplace.json
 __pycache__/

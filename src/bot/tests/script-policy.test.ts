@@ -1342,7 +1342,7 @@ test("df-work native gate remains fail closed before checkout and worker executi
   assert.equal((gate.match(/exit 1/g) ?? []).length, 2);
   assert.match(agentOs, /\[string\]::IsNullOrWhiteSpace\(\$env:ANDROMEDA_HOME\)/);
   assert.match(agentOs, /\[System\.IO\.Path\]::IsPathFullyQualified\(\$env:ANDROMEDA_HOME\)/);
-  assert.match(agentOs, /Join-Path -Path \$env:ANDROMEDA_HOME -ChildPath "bin\\agents\.ps1"/);
+  assert.match(agentOs, /Join-Path -Path \$env:ANDROMEDA_HOME -ChildPath "bin\\andromeda\.ps1"/);
   assert.match(agentOs, /Test-Path -LiteralPath \$agentsLauncher -PathType Leaf/);
   assert.equal((agentOs.match(/exit 1/g) ?? []).length, 3);
   assert.match(agentOs, /pwsh -NoLogo -NoProfile -File \$agentsLauncher state doctor --json/);
@@ -1704,7 +1704,7 @@ test("DarkFactory Autoreview workflow binds the exact gate to trusted Agent OS e
   assert.match(workflow, /repository: marius-patrik\/DarkFactory/);
   assert.match(workflow, /ref: main/);
   assert.match(workflow, /DF_CONTROL_REVISION: \$\{\{ steps\.control\.outputs\.revision \}\}/);
-  assert.match(workflow, /bin\\agents\.ps1/);
+  assert.match(workflow, /bin\\andromeda\.ps1/);
   assert.match(workflow, /state doctor --json/);
   assert.doesNotMatch(workflow, /CODEX_AUTH_JSON|KIMI_AUTH_JSON|codex exec|kimi|claude|agy/);
 });

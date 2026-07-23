@@ -5,5 +5,5 @@ dist/
 coverage/
 
 .agents/*
-!.agents/.project/
-!.agents/.project/**
+!.agents/project/
+!.agents/project/**

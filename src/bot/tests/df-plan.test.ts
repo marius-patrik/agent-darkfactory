@@ -52,7 +52,7 @@ test("planner discovers product PRDs but excludes template, example, fixture, te
       { type: "blob", path: "fixtures/repo/PRD.md" },
       { type: "blob", path: "tests/fake/PRD.md" },
       { type: "blob", path: "archive/old/PRD.md" },
-      { type: "blob", path: ".agents/.project/PRD.md" }
+      { type: "blob", path: ".agents/project/PRD.md" }
     ]
   });
   assert.deepEqual(paths, ["PRD.md", "src/core/PRD.md"]);

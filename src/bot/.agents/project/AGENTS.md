@@ -15,7 +15,7 @@ for local execution and shared personal state.
   runtime-command mechanics in prompt artifacts, and keep issue/PR/comment
   content inside untrusted-data delimiters.
 - Open managed setup pull requests; never write directly to default branches.
-- Keep only repository-local context in `.agents/.project/`.
+- Keep only repository-local context in `.agents/project/`.
 - Route local model work through `agents`; do not add provider homes, model
   registries, fallback executors, or copied shared memory to this repository.
 - DarkFactory Autoreview delegates every model-backed review and fix turn to

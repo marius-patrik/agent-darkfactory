@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 export const DOCTOR_SCHEMA_VERSION = 2;
 export const DATA_REPOSITORY_POLICY_PATH = ".agents/data-repository-policy.json";
 export const DOCTOR_REPAIR_CLASSES = ["auto", "pr", "owner", "blocked"];
-export const DOC_PATHS = ["PRD.md", "AGENTS.md", ".agents/capabilities/project/STATUS.md", ".agents/capabilities/project/PROJECT.md"];
+export const DOC_PATHS = ["PRD.md", "AGENTS.md", ".agents/project/STATUS.md", ".agents/project/PROJECT.md"];
 export const DOC_STALE_DAYS = 90;
 export const STALE_PR_DAYS = 7;
 export const STALE_ISSUE_DAYS = 30;
@@ -1032,7 +1032,7 @@ async function auditProjectOverlay(github, repository, targetRef, agentOsDataRev
   const files = await listRemoteDirectoryFiles(github, dataRepo, prefix, agentOsDataRevision);
   for (const source of files) {
     const relative = source.path.slice(prefix.length + 1);
-    const targetPath = `.agents/capabilities/project/${relative}`;
+    const targetPath = `.agents/project/${relative}`;
     const expected = await readListedRemoteFile(github, dataRepo, source, agentOsDataRevision);
     const actual = await getOptionalFileContent(github, repository, targetPath, targetRef);
     if (actual === null || normalizeText(actual) !== normalizeText(expected)) {
@@ -1064,7 +1064,7 @@ export async function auditRepositoryTree(repository, tree, options = {}) {
     // and the capability floor. The same name nested anywhere below the root is
     // a leaked state home, because the runtime state root is also ~/.agents.
     // .agents is the retired state-root spelling and stays rejected outright.
-    const allowedProjectAuthority = filePath === ".agents/capabilities/project" || filePath.startsWith(".agents/capabilities/project/");
+    const allowedProjectAuthority = filePath === ".agents/project" || filePath.startsWith(".agents/project/");
     const allowedConfigAuthority = filePath === ".agents" || filePath.startsWith(".agents/");
     const nestedAgents = lower.includes(".agents");
     const nestedDarkFactory = lower.includes(".agents") && !allowedConfigAuthority && !allowedProjectAuthority;
@@ -1945,13 +1945,13 @@ export async function auditRetiredAuthorityNames(github, repository, ref) {
     "README.md",
     "PRD.md",
     "AGENTS.md",
-    ".agents/.project/AGENTS.md",
-    ".agents/.project/COMMANDS.md",
-    ".agents/.project/DECISIONS.md",
-    ".agents/.project/HANDOFF.md",
-    ".agents/.project/PROJECT.md",
-    ".agents/.project/STATUS.md",
-    ".agents/.project/STRUCTURE.md",
+    ".agents/project/AGENTS.md",
+    ".agents/project/COMMANDS.md",
+    ".agents/project/DECISIONS.md",
+    ".agents/project/HANDOFF.md",
+    ".agents/project/PROJECT.md",
+    ".agents/project/STATUS.md",
+    ".agents/project/STRUCTURE.md",
     ".agents/branching-policy.md",
     ".agents/installer-policy.json",
     ".agents/managed-repository.json",

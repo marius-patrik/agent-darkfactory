@@ -74,7 +74,7 @@ export function formatRepositorySetupComment(report: RepositorySetupReport): str
   lines.push(
     "",
     `Bootstrap \`${GITHUB_BOOTSTRAP_WORKFLOW_PATH}\`, \`${DARK_FACTORY_AUTOUPDATE_WORKFLOW_PATH}\`, and \`${DARK_FACTORY_AUTOREVIEW_WORKFLOW_PATH}\` when GitHub workflow scaffolding is missing.`,
-    "Keep repository-local `AGENTS.md` and `.agents/.project` context aligned with the Agent OS authority in `$ANDROMEDA_HOME`.",
+    "Keep repository-local `AGENTS.md` and `.agents/project` context aligned with the Agent OS authority in `$ANDROMEDA_HOME`.",
     "Keep `.darkfactory` policy files from canonical private-data so installer, updater, and orchestration expectations stay consistent.",
     "Install the DarkFactory GitHub App credentials and an online `df-local` runner with canonical `$ANDROMEDA_HOME`; provider credentials remain in Agent OS, never repository secrets."
   );

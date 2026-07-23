@@ -516,9 +516,9 @@ function trustedBaseRules(repoRoot, token, hooksRoot) {
   const paths = [
     "AGENTS.md",
     ".agents/AGENTS.md",
-    ".agents/capabilities/project/AGENTS.md",
-    ".agents/capabilities/project/PROJECT.md",
-    ".agents/capabilities/project/COMMANDS.md"
+    ".agents/project/AGENTS.md",
+    ".agents/project/PROJECT.md",
+    ".agents/project/COMMANDS.md"
   ];
   const sections = [];
   for (const filePath of paths) {

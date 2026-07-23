@@ -165,7 +165,7 @@ const suites = {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      ".agents/capabilities/global/skills/compact/scripts/test_write_compaction_capsule.ps1",
+      ".agents/global/skills/compact/scripts/test_write_compaction_capsule.ps1",
     ]);
   },
   "memory-plugin"() {

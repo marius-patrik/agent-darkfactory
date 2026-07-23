@@ -85,7 +85,7 @@ export function readManagedFiles(repository?: ManagedRepositoryRef): ManagedFile
     const overlayRoot = resolve(managedRoot, overlayPrefix, ".agents", ".project");
 
     if (existsSync(overlayRoot)) {
-      for (const file of readManagedTree(managedRoot, `${overlayPrefix}.agents/.project`)) {
+      for (const file of readManagedTree(managedRoot, `${overlayPrefix}.agents/project`)) {
         files.set(file.path.slice(overlayPrefix.length), {
           ...file,
           path: file.path.slice(overlayPrefix.length)

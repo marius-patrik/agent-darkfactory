@@ -182,9 +182,9 @@ test("stable findings deduplicate evidence and sort by id", () => {
 
 test("retired authority audit covers every project authority document", async () => {
   const retiredByPath = new Map([
-    [".agents/.project/COMMANDS.md", "marius-patrik/agents-data"],
-    [".agents/.project/HANDOFF.md", "$ANDROMEDA_ROOT/data/agent-os"],
-    [".agents/.project/STRUCTURE.md", "marius-patrik/agents-manager"]
+    [".agents/project/COMMANDS.md", "marius-patrik/agents-data"],
+    [".agents/project/HANDOFF.md", "$ANDROMEDA_ROOT/data/agent-os"],
+    [".agents/project/STRUCTURE.md", "marius-patrik/agents-manager"]
   ]);
   const { gh, calls } = mockGh((_method, requestPath) => {
     const match = requestPath.match(/\/contents\/(.+)\?ref=main$/);
@@ -202,7 +202,7 @@ test("retired authority audit covers every project authority document", async ()
   const inspected = new Set(calls.map((call) => decodeURIComponent(call.path)));
   for (const filePath of ["AGENTS.md", "PROJECT.md", "COMMANDS.md", "STATUS.md", "HANDOFF.md", "DECISIONS.md", "STRUCTURE.md"]) {
     assert.ok(
-      [...inspected].some((requestPath) => requestPath.includes(`/contents/.agents/.project/${filePath}?ref=main`)),
+      [...inspected].some((requestPath) => requestPath.includes(`/contents/.agents/project/${filePath}?ref=main`)),
       `expected retired authority audit to inspect ${filePath}`
     );
   }
@@ -219,14 +219,14 @@ test("retired authority audit excludes marked history and resumes at the next ac
     "Canonical state is marius-patrik/private-data at $ANDROMEDA_HOME."
   ].join("\n");
   const { gh: historicalGh } = mockGh((_method, requestPath) => {
-    if (decodeURIComponent(requestPath).includes("/contents/.agents/.project/DECISIONS.md?ref=main")) return content(historical);
+    if (decodeURIComponent(requestPath).includes("/contents/.agents/project/DECISIONS.md?ref=main")) return content(historical);
     throw notFound();
   });
   assert.deepEqual(await doctor.auditRetiredAuthorityNames(historicalGh, repo, "main"), []);
 
   const activeDrift = `${historical}\n## Current regression\nOwner: marius-patrik/agents-manager\n`;
   const { gh: activeGh } = mockGh((_method, requestPath) => {
-    if (decodeURIComponent(requestPath).includes("/contents/.agents/.project/DECISIONS.md?ref=main")) return content(activeDrift);
+    if (decodeURIComponent(requestPath).includes("/contents/.agents/project/DECISIONS.md?ref=main")) return content(activeDrift);
     throw notFound();
   });
   const findings = await doctor.auditRetiredAuthorityNames(activeGh, repo, "main");
@@ -238,9 +238,9 @@ test("active DarkFactory authority stays provider and provider-auth agnostic", (
     "README.md",
     "PRD.md",
     "AGENTS.md",
-    ...readdirSync(".agents/.project")
+    ...readdirSync(".agents/project")
       .filter((name) => name.endsWith(".md"))
-      .map((name) => `.agents/.project/${name}`),
+      .map((name) => `.agents/project/${name}`),
     ...readdirSync(".github/workflows")
       .filter((name) => /\.ya?ml$/i.test(name))
       .map((name) => `.github/workflows/${name}`)
@@ -1178,8 +1178,8 @@ test("repository tree permits root policy authority but rejects nested copies", 
     truncated: false,
     tree: [
       { path: ".agents", type: "tree" },
-      { path: ".agents/.project", type: "tree" },
-      { path: ".agents/.project/STATUS.md", type: "blob" },
+      { path: ".agents/project", type: "tree" },
+      { path: ".agents/project/STATUS.md", type: "blob" },
       { path: ".agents", type: "tree" },
       { path: ".agents/branching-policy.md", type: "blob" },
       { path: "src/example/.agents/private.json", type: "blob" }
@@ -1256,7 +1256,7 @@ test("managed baseline audit detects drift and files that must be removed", asyn
 test("managed project overlay enumeration fails closed on malformed or disappearing directory evidence", async () => {
   const target = { owner: "marius-patrik", repo: "Andromeda" };
   const manifest = JSON.stringify({ schemaVersion: 1, requiredFiles: [], packageFiles: [], removedFiles: [] });
-  const prefix = "managed-repository/repositories/marius-patrik/Andromeda/.agents/.project";
+  const prefix = "managed-repository/repositories/marius-patrik/Andromeda/.agents/project";
   const cases = [
     ["file returned for directory", { type: "file", path: "C:/private/overlay" }, /malformed managed project overlay directory listing/],
     ["unsupported entry type", [{ type: "submodule", path: `${prefix}/private-name` }], /malformed managed project overlay entry/],
@@ -1283,7 +1283,7 @@ test("managed project overlay enumeration fails closed on malformed or disappear
 test("managed project overlay re-attests every listed file before comparing target content", async () => {
   const target = { owner: "marius-patrik", repo: "Andromeda" };
   const manifest = JSON.stringify({ schemaVersion: 1, requiredFiles: [], packageFiles: [], removedFiles: [] });
-  const prefix = "managed-repository/repositories/marius-patrik/Andromeda/.agents/.project";
+  const prefix = "managed-repository/repositories/marius-patrik/Andromeda/.agents/project";
   const sourcePath = `${prefix}/STATUS.md`;
   const listedSha = "a".repeat(40);
 
@@ -1291,7 +1291,7 @@ test("managed project overlay re-attests every listed file before comparing targ
     if (requestPath.includes("/repos/marius-patrik/DarkFactory/contents/.agents/managed-repository.json")) return content(manifest);
     if (requestPath.includes(`/contents/${sourcePath}?`)) return { ...content("expected\n"), sha: listedSha };
     if (requestPath.includes(`/contents/${prefix}?`)) return [{ type: "file", path: sourcePath, sha: listedSha }];
-    if (requestPath.includes("/repos/marius-patrik/Andromeda/contents/.agents/.project/STATUS.md")) return content("expected\n");
+    if (requestPath.includes("/repos/marius-patrik/Andromeda/contents/.agents/project/STATUS.md")) return content("expected\n");
     throw new Error(`unexpected ${requestPath}`);
   });
   assert.deepEqual(
@@ -2256,7 +2256,7 @@ test("human and JSON formats preserve deterministic zero-token evidence", () => 
 
 test("retired authority audit includes repository-local project rules", async () => {
   const { gh, calls } = mockGh((_method, requestPath) => {
-    if (requestPath.includes("/contents/.agents/.project/DECISIONS.md")) {
+    if (requestPath.includes("/contents/.agents/project/DECISIONS.md")) {
       return content("The managed source is $ANDROMEDA_ROOT/data/agent-os.\n");
     }
     throw notFound();
@@ -2266,6 +2266,6 @@ test("retired authority audit includes repository-local project rules", async ()
 
   assert.ok(findings.some((finding) => finding.id === "retired-agent-os-data-path"));
   for (const name of ["AGENTS.md", "COMMANDS.md", "DECISIONS.md", "HANDOFF.md", "PROJECT.md", "STATUS.md", "STRUCTURE.md"]) {
-    assert.ok(calls.some((call) => call.path.includes(`/contents/.agents/.project/${name}`)), name);
+    assert.ok(calls.some((call) => call.path.includes(`/contents/.agents/project/${name}`)), name);
   }
 });

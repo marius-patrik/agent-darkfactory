@@ -11,6 +11,6 @@
   tiers, overlays, output schemas, fixtures) with a typed composition contract and
   checksum/snapshot validation (`src/prompts.ts`, `tests/prompts.test.ts`)
 - `tests/` — TypeScript and workflow-policy regression suite
-- `.agents/.project/` — DarkFactory-specific context only
+- `.agents/project/` — DarkFactory-specific context only
 
 Shared Agent OS state and capabilities are installed once under `$AGENTS_HOME`.
