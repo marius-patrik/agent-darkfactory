@@ -157,7 +157,15 @@ function normalizeTopic(source: LegacyMemorySource, sourcePath: string, text: st
     throw new Error(`memory migration topic is invalid for ${sourcePath}`);
   }
   const title = supplied ?? heading(text) ?? basenameTitle(sourcePath);
-  return { key: title.normalize("NFKC").toLowerCase(), title };
+  const key = title.normalize("NFKC").toLowerCase();
+  if (
+    !title ||
+    Buffer.byteLength(title, "utf8") > MAX_MIGRATION_TOPIC_BYTES ||
+    Buffer.byteLength(key, "utf8") > MAX_MIGRATION_TOPIC_BYTES
+  ) {
+    throw new Error(`memory migration topic is invalid for ${sourcePath}`);
+  }
+  return { key, title };
 }
 
 function slug(value: string): string {
@@ -290,10 +298,10 @@ function preflightMigrationSources(inputs: readonly LegacyMemorySource[]): numbe
     if (source.topic !== undefined) {
       if (
         typeof source.topic !== "string" ||
+        Buffer.byteLength(source.topic, "utf8") > MAX_MIGRATION_TOPIC_BYTES ||
         !source.topic.trim() ||
         source.topic.trim() !== source.topic ||
-        /[\r\n\0]/.test(source.topic) ||
-        Buffer.byteLength(source.topic, "utf8") > MAX_MIGRATION_TOPIC_BYTES
+        /[\r\n\0]/.test(source.topic)
       ) {
         throw new Error(`memory migration topic is invalid for ${source.sourcePath}`);
       }

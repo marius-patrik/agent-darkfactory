@@ -34,10 +34,13 @@ const MAX_MEMORY_ACTOR_BYTES = 512;
 const MAX_MEMORY_EVIDENCE_URI_BYTES = 8 * 1024;
 
 function requiredOneLine(value: unknown, field: string, maxBytes: number): string {
-  if (typeof value !== "string" || !value.trim() || value !== value.trim() || /[\r\n\0]/.test(value)) {
+  if (typeof value !== "string") {
     throw new Error(`${field} is required and must be one normalized line`);
   }
   if (Buffer.byteLength(value, "utf8") > maxBytes) throw new Error(`${field} exceeds ${maxBytes} bytes`);
+  if (!value.trim() || value !== value.trim() || /[\r\n\0]/.test(value)) {
+    throw new Error(`${field} is required and must be one normalized line`);
+  }
   return value;
 }
 

@@ -212,9 +212,9 @@ function searchOptions(options: MemorySearchOptions | undefined): {
   if (options.type !== undefined) {
     if (
       typeof options.type !== "string" ||
+      Buffer.byteLength(options.type, "utf8") > MAX_SEARCH_FILTER_BYTES ||
       !options.type.trim() ||
-      options.type !== options.type.trim() ||
-      Buffer.byteLength(options.type, "utf8") > MAX_SEARCH_FILTER_BYTES
+      options.type !== options.type.trim()
     ) {
       throw new Error(`memory search type must be normalized and at most ${MAX_SEARCH_FILTER_BYTES} bytes`);
     }
@@ -227,9 +227,9 @@ function searchOptions(options: MemorySearchOptions | undefined): {
   const tags = inputTags.map((tag) => {
     if (
       typeof tag !== "string" ||
+      Buffer.byteLength(tag, "utf8") > MAX_SEARCH_FILTER_BYTES ||
       !tag.trim() ||
-      tag !== tag.trim() ||
-      Buffer.byteLength(tag, "utf8") > MAX_SEARCH_FILTER_BYTES
+      tag !== tag.trim()
     ) {
       throw new Error(`memory search tag must be normalized and at most ${MAX_SEARCH_FILTER_BYTES} bytes`);
     }
