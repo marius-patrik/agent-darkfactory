@@ -249,3 +249,10 @@ bun run ci
 component, the real gateway and inferctl-routing legs, installer and encrypted
 sync smokes, and review regressions. GitHub runs the same suite contract as
 parallel Ubuntu and Windows legs and reports one required `Validate` result.
+
+## License
+
+Andromeda is licensed under Apache-2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE),
+and the [source provenance index](docs/provenance/README.md). Imported
+third-party code, assets, and model artifacts retain their own notices and
+path-specific licenses.

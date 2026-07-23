@@ -1,0 +1,25 @@
+Andromeda
+Copyright 2026 Patrik
+
+This product is licensed under the Apache License, Version 2.0.
+
+Andromeda incorporates or derives from the following source projects:
+
+- Frog/Froq/Grok agent harness and TUI, pinned at
+  8ca53649, Copyright 2023-2026 SpaceXAI, Apache-2.0. Its complete
+  THIRD-PARTY-NOTICES file and vendored notices must remain with the imported
+  source and binary distribution.
+- Understory, code pinned at
+  912cfa6d4f407ffdb768bcd667bd701ccfe9ecb2, Copyright 2026 Anirban Kar,
+  Apache-2.0. Upstream license confirmation is recorded at
+  0548c04a8782685398df3040da066c61b48a4945.
+- PAES, pinned at 68f3bb69df81a1ecdf88cd2a7daec567ab606f27,
+  Copyright 2026 Patrik, Apache-2.0.
+
+AMS, Memory, and the audited RSCode active snapshot are owner-authored works
+relicensed for this consolidation under Apache-2.0. Their source receipts are
+recorded under docs/provenance/.
+
+Component-specific third-party and model license files remain controlling for
+their respective code, assets, weights, and data. The root Apache-2.0 license
+does not relicense third-party dependencies or model artifacts.
