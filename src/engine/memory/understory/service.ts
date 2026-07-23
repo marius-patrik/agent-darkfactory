@@ -5,6 +5,7 @@
 import {
   assertSha256,
   canonicalMemoryConceptPath,
+  normalizeMemoryFrontmatter,
   parseMemoryConcept,
   replaceMemorySection,
   serializeMemoryConcept,
@@ -20,6 +21,7 @@ import type {
   CanonicalMemoryEvidence,
   CanonicalMemorySnapshot,
   CanonicalMemoryTransactionMutation,
+  MemoryConceptFrontmatter,
   MemoryFrontmatterValue,
   MemoryGraph,
   MemorySearchHit,
@@ -32,6 +34,203 @@ import type {
 const MAX_MEMORY_TRANSACTION_UPDATES = 1_000;
 const MAX_MEMORY_ACTOR_BYTES = 512;
 const MAX_MEMORY_EVIDENCE_URI_BYTES = 8 * 1024;
+const FORBIDDEN_MEMORY_PATCH_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+type RuntimeRecord = Record<string, unknown>;
+
+function strictRuntimeRecord(value: unknown, field: string): RuntimeRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be a plain object`);
+  }
+  let prototype: object | null;
+  let keys: (string | symbol)[];
+  let descriptors: PropertyDescriptorMap;
+  try {
+    prototype = Object.getPrototypeOf(value) as object | null;
+    keys = Reflect.ownKeys(value);
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch {
+    throw new Error(`${field} must be a plain data object`);
+  }
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(`${field} must be a plain object`);
+  }
+  for (const key of keys) {
+    if (typeof key !== "string") throw new Error(`${field} must not contain symbol keys`);
+    const descriptor = descriptors[key];
+    if (!descriptor?.enumerable || !("value" in descriptor)) {
+      throw new Error(`${field} must contain only enumerable data properties`);
+    }
+  }
+  return value as RuntimeRecord;
+}
+
+function runtimeKeys(record: RuntimeRecord): string[] {
+  return Reflect.ownKeys(record) as string[];
+}
+
+function requiredRuntimeField(record: RuntimeRecord, key: string, field: string): unknown {
+  if (!Object.prototype.hasOwnProperty.call(record, key)) {
+    throw new Error(`${field} requires ${key}`);
+  }
+  return record[key];
+}
+
+function rejectUnknownRuntimeFields(
+  record: RuntimeRecord,
+  allowed: ReadonlySet<string>,
+  field: string,
+): void {
+  for (const key of runtimeKeys(record)) {
+    if (!allowed.has(key)) throw new Error(`${field} contains unsupported field ${JSON.stringify(key)}`);
+  }
+}
+
+function runtimeString(value: unknown, field: string): string {
+  if (typeof value !== "string") throw new Error(`${field} must be a string`);
+  return value;
+}
+
+function runtimeContentHash(value: unknown, field: string): string {
+  if (typeof value !== "string") throw new Error(`${field} must be a lowercase SHA-256 digest`);
+  return assertSha256(value, field);
+}
+
+function normalizedFrontmatterPatch(
+  value: unknown,
+  field: string,
+): Record<string, MemoryFrontmatterValue | null> {
+  const patch = strictRuntimeRecord(value, field);
+  const validationCandidate: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  validationCandidate.type = "__andromeda_patch_validation__";
+  for (const key of runtimeKeys(patch)) {
+    if (!key || FORBIDDEN_MEMORY_PATCH_KEYS.has(key)) {
+      throw new Error(`${field} contains forbidden key ${JSON.stringify(key)}`);
+    }
+    const member = patch[key];
+    if (key === "type" && member === null) {
+      throw new Error(`${field} cannot delete required field "type"`);
+    }
+    if (member !== null) validationCandidate[key] = member;
+  }
+  const normalized = normalizeMemoryFrontmatter(validationCandidate);
+  const result: Record<string, MemoryFrontmatterValue | null> = Object.create(null) as Record<
+    string,
+    MemoryFrontmatterValue | null
+  >;
+  for (const key of runtimeKeys(patch)) {
+    result[key] = patch[key] === null ? null : (normalized[key] as MemoryFrontmatterValue);
+  }
+  return result;
+}
+
+function validateMemoryUpdate(value: unknown, index: number): MemoryUpdate {
+  const field = `memory update at index ${index}`;
+  const update = strictRuntimeRecord(value, field);
+  const type = requiredRuntimeField(update, "type", field);
+  if (typeof type !== "string") throw new Error(`${field} type must be a string`);
+  if (type !== "put" && type !== "patch" && type !== "delete") {
+    throw new Error(`${field} has unsupported type ${JSON.stringify(type)}`);
+  }
+  const path = canonicalMemoryConceptPath(
+    runtimeString(requiredRuntimeField(update, "path", field), `${field} path`),
+  );
+
+  if (type === "put") {
+    rejectUnknownRuntimeFields(
+      update,
+      new Set(["type", "path", "frontmatter", "body", "expectedContentHash"]),
+      field,
+    );
+    const frontmatterValue = requiredRuntimeField(update, "frontmatter", field);
+    strictRuntimeRecord(frontmatterValue, `${field} frontmatter`);
+    const frontmatter = normalizeMemoryFrontmatter(frontmatterValue);
+    const body = runtimeString(requiredRuntimeField(update, "body", field), `${field} body`);
+    const expectedValue = requiredRuntimeField(update, "expectedContentHash", field);
+    const expectedContentHash =
+      expectedValue === null
+        ? null
+        : runtimeContentHash(expectedValue, `${field} expectedContentHash`);
+    // Preflight the complete replacement before any candidate snapshot is changed.
+    serializeMemoryConcept(frontmatter, body);
+    return { type, path, frontmatter, body, expectedContentHash };
+  }
+
+  if (type === "patch") {
+    rejectUnknownRuntimeFields(
+      update,
+      new Set([
+        "type",
+        "path",
+        "expectedContentHash",
+        "frontmatter",
+        "replaceBody",
+        "replaceSection",
+      ]),
+      field,
+    );
+    const expectedContentHash = runtimeContentHash(
+      requiredRuntimeField(update, "expectedContentHash", field),
+      `${field} expectedContentHash`,
+    );
+    const frontmatter = Object.prototype.hasOwnProperty.call(update, "frontmatter")
+      ? normalizedFrontmatterPatch(update.frontmatter, `${field} frontmatter`)
+      : undefined;
+    const replaceBody = Object.prototype.hasOwnProperty.call(update, "replaceBody")
+      ? runtimeString(update.replaceBody, `${field} replaceBody`)
+      : undefined;
+    let replaceSection: { heading: string; content: string } | undefined;
+    if (Object.prototype.hasOwnProperty.call(update, "replaceSection")) {
+      const section = strictRuntimeRecord(update.replaceSection, `${field} replaceSection`);
+      rejectUnknownRuntimeFields(section, new Set(["heading", "content"]), `${field} replaceSection`);
+      replaceSection = {
+        heading: runtimeString(
+          requiredRuntimeField(section, "heading", `${field} replaceSection`),
+          `${field} replaceSection heading`,
+        ),
+        content: runtimeString(
+          requiredRuntimeField(section, "content", `${field} replaceSection`),
+          `${field} replaceSection content`,
+        ),
+      };
+      replaceMemorySection("", replaceSection.heading, replaceSection.content);
+    }
+    if (replaceBody !== undefined && replaceSection !== undefined) {
+      throw new Error("memory patch cannot replace the full body and one section together");
+    }
+    return {
+      type,
+      path,
+      expectedContentHash,
+      ...(frontmatter ? { frontmatter } : {}),
+      ...(replaceBody !== undefined ? { replaceBody } : {}),
+      ...(replaceSection ? { replaceSection } : {}),
+    };
+  }
+
+  if (type === "delete") {
+    rejectUnknownRuntimeFields(update, new Set(["type", "path", "expectedContentHash"]), field);
+    return {
+      type,
+      path,
+      expectedContentHash: runtimeContentHash(
+        requiredRuntimeField(update, "expectedContentHash", field),
+        `${field} expectedContentHash`,
+      ),
+    };
+  }
+  throw new Error(`${field} has unsupported type ${JSON.stringify(type)}`);
+}
+
+function validateMemoryUpdates(value: unknown): MemoryUpdate[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("memory transaction requires at least one update");
+  }
+  if (value.length > MAX_MEMORY_TRANSACTION_UPDATES) {
+    throw new Error(`memory transaction exceeds ${MAX_MEMORY_TRANSACTION_UPDATES} updates`);
+  }
+  return value.map(validateMemoryUpdate);
+}
 
 function requiredOneLine(value: unknown, field: string, maxBytes: number): string {
   if (typeof value !== "string") {
@@ -80,7 +279,7 @@ function applyFrontmatterPatch(
   patch: Record<string, MemoryFrontmatterValue | null> | undefined,
 ): ParsedMemoryConcept["frontmatter"] {
   if (!patch) return source;
-  const next = { ...source };
+  const next = Object.assign(Object.create(null) as MemoryConceptFrontmatter, source);
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete next[key];
     else next[key] = value;
@@ -256,15 +455,10 @@ export class UnderstoryMemoryService {
     }
     const actor = requiredOneLine(options.actor, "memory transaction actor", MAX_MEMORY_ACTOR_BYTES);
     const evidence = validateEvidence(options.evidence);
-    if (!Array.isArray(updates) || updates.length === 0) {
-      throw new Error("memory transaction requires at least one update");
-    }
-    if (updates.length > MAX_MEMORY_TRANSACTION_UPDATES) {
-      throw new Error(`memory transaction exceeds ${MAX_MEMORY_TRANSACTION_UPDATES} updates`);
-    }
+    const validatedUpdates = validateMemoryUpdates(updates);
     return this.exclusively(async () => {
       const before = await this.authority.readSnapshot();
-      const mutations = transactionMutations(before, updates);
+      const mutations = transactionMutations(before, validatedUpdates);
       const committed = await this.authority.transact({
         baseRevision: before.revision,
         actor,

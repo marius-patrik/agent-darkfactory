@@ -372,6 +372,126 @@ describe("Understory-derived canonical memory boundary", () => {
       projection.close();
     }
   });
+
+  test("denied runtime variants and prototype-bearing patches fail before authority access", async () => {
+    const authority = new FakeCanonicalMemoryAuthority([
+      concept("/concepts/fact.md", "fact", "Fact", "Original.\n"),
+    ]);
+    const projection = new UnderstoryMemoryProjection();
+    const service = new UnderstoryMemoryService(authority, projection);
+    const options = {
+      actor: "memory-plugin:test",
+      evidence: { uri: "session://test/runtime-validation", contentHash: hash("runtime validation") },
+    };
+    try {
+      const baseline = await service.refresh();
+      const reads = authority.readCalls;
+      const currentHash = hash(authority.snapshot.documents[0].raw);
+      expect(() => service.update([null] as never, options)).toThrow(
+        "memory update at index 0 must be a plain object",
+      );
+      expect(() =>
+        service.update(
+          [{ type: "surprise", path: "/concepts/fact.md", expectedContentHash: currentHash }] as never,
+          options,
+        ),
+      ).toThrow('has unsupported type "surprise"');
+      const poisoned = JSON.parse(
+        `{"type":"patch","path":"/concepts/fact.md","expectedContentHash":"${currentHash}","frontmatter":{"__proto__":{"polluted":true}}}`,
+      ) as never;
+      expect(() => service.update([poisoned], options)).toThrow(
+        'frontmatter contains forbidden key "__proto__"',
+      );
+      const inherited = Object.create({ injected: true }) as Record<string, unknown>;
+      inherited.type = "patch";
+      inherited.path = "/concepts/fact.md";
+      inherited.expectedContentHash = currentHash;
+      expect(() => service.update([inherited] as never, options)).toThrow(
+        "memory update at index 0 must be a plain object",
+      );
+      expect(authority.readCalls).toBe(reads);
+      expect(authority.transactions).toHaveLength(0);
+      expect(projection.metadata()).toEqual(baseline);
+      expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+    } finally {
+      projection.close();
+    }
+  });
+
+  test("FTS row tampering is discarded by deterministic projection admission", () => {
+    const snapshot = {
+      revision: "fts-authority",
+      documents: [concept("/concepts/fact.md", "fact", "Fact", "Canonical searchable term.\n")],
+    };
+    const projection = new UnderstoryMemoryProjection();
+    try {
+      const baseline = projection.rebuild(snapshot);
+      const database = (
+        projection as unknown as { database: { exec(statement: string): void } }
+      ).database;
+      database.exec("DELETE FROM concept_fts WHERE path = '/concepts/fact.md'");
+      expect(projection.search("canonical searchable")).toEqual([]);
+      expect(projection.ensure(snapshot)).toEqual(baseline);
+      expect(projection.search("canonical searchable")[0]?.path).toBe("/concepts/fact.md");
+    } finally {
+      projection.close();
+    }
+  });
+
+  test("graph and broken-link tampering is discarded by deterministic projection admission", () => {
+    const snapshot = {
+      revision: "graph-authority",
+      documents: [
+        concept("/concepts/a.md", "fact", "A", "Links to [B](/concepts/b.md).\n"),
+        concept("/concepts/b.md", "fact", "B", "No outgoing links.\n"),
+      ],
+    };
+    const projection = new UnderstoryMemoryProjection();
+    try {
+      const baseline = projection.rebuild(snapshot);
+      const database = (
+        projection as unknown as { database: { exec(statement: string): void } }
+      ).database;
+      database.exec(`
+        DELETE FROM links;
+        INSERT INTO broken_links(source, target) VALUES ('/concepts/a.md', '/concepts/poison.md');
+      `);
+      expect(projection.graph()).toMatchObject({
+        edges: [],
+        brokenLinks: [{ path: "/concepts/a.md", target: "/concepts/poison.md" }],
+      });
+      expect(projection.ensure(snapshot)).toEqual(baseline);
+      expect(projection.graph()).toMatchObject({
+        edges: [{ source: "/concepts/a.md", target: "/concepts/b.md" }],
+        brokenLinks: [],
+      });
+    } finally {
+      projection.close();
+    }
+  });
+
+  test("projection schema and metadata corruption rebuild fail-closed from Markdown", () => {
+    const snapshot = {
+      revision: "schema-authority",
+      documents: [concept("/concepts/fact.md", "fact", "Fact", "Canonical.\n")],
+    };
+    const projection = new UnderstoryMemoryProjection();
+    try {
+      const baseline = projection.rebuild(snapshot);
+      const database = (
+        projection as unknown as { database: { exec(statement: string): void } }
+      ).database;
+      database.exec("UPDATE projection_meta SET value = '999' WHERE key = 'schema_version'");
+      expect(projection.metadata()).toBeNull();
+      expect(projection.ensure(snapshot)).toEqual(baseline);
+      database.exec("DROP TABLE links");
+      expect(projection.ensure(snapshot)).toEqual(baseline);
+      expect(projection.metadata()).toEqual(baseline);
+      expect(projection.read("/concepts/fact.md")?.body).toBe("Canonical.\n");
+    } finally {
+      projection.close();
+    }
+  });
 });
 
 describe("deterministic memory migration receipts", () => {

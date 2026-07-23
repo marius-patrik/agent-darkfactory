@@ -43,6 +43,19 @@ interface StoredConcept {
   content_hash: string;
 }
 
+interface StoredFtsConcept {
+  path: string;
+  title: string;
+  description: string;
+  tags: string;
+  body: string;
+}
+
+interface ProjectionMetadataRow {
+  key: string;
+  value: string;
+}
+
 function requiredRevision(value: string): string {
   if (typeof value !== "string" || !value.trim() || /[\r\n\0]/.test(value)) {
     throw new Error("canonical memory snapshot revision is required and must be one line");
@@ -149,6 +162,64 @@ function graphRows(concepts: readonly ParsedMemoryConcept[]): {
     links: degrees.get(concept.path) ?? 0,
   }));
   return { nodes, edges, brokenLinks };
+}
+
+function expectedStoredConcept(concept: ParsedMemoryConcept): StoredConcept {
+  return {
+    path: concept.path,
+    type: concept.frontmatter.type,
+    title: text(concept.frontmatter.title) ?? null,
+    description: text(concept.frontmatter.description) ?? null,
+    tags_json: JSON.stringify(tags(concept)),
+    body: concept.body,
+    raw: concept.raw,
+    content_hash: concept.contentHash,
+  };
+}
+
+function expectedFtsConcept(concept: ParsedMemoryConcept): StoredFtsConcept {
+  return {
+    path: concept.path,
+    title: text(concept.frontmatter.title) ?? "",
+    description: text(concept.frontmatter.description) ?? "",
+    tags: tags(concept).join(" "),
+    body: concept.body,
+  };
+}
+
+function sameStoredConcept(left: StoredConcept, right: StoredConcept): boolean {
+  return (
+    left.path === right.path &&
+    left.type === right.type &&
+    left.title === right.title &&
+    left.description === right.description &&
+    left.tags_json === right.tags_json &&
+    left.body === right.body &&
+    left.raw === right.raw &&
+    left.content_hash === right.content_hash &&
+    sha256(left.raw) === left.content_hash
+  );
+}
+
+function sameFtsConcept(left: StoredFtsConcept, right: StoredFtsConcept): boolean {
+  return (
+    left.path === right.path &&
+    left.title === right.title &&
+    left.description === right.description &&
+    left.tags === right.tags &&
+    left.body === right.body
+  );
+}
+
+function sameGraphEdge(left: MemoryGraphEdge, right: MemoryGraphEdge): boolean {
+  return left.source === right.source && left.target === right.target;
+}
+
+function sameBrokenLink(
+  left: { path: string; target: string },
+  right: { path: string; target: string },
+): boolean {
+  return left.path === right.path && left.target === right.target;
 }
 
 function queryTerms(query: string): string[] {
@@ -268,10 +339,20 @@ export class UnderstoryMemoryProjection {
       .query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'projection_meta'")
       .get() as { present: number } | null;
     if (!table) return null;
-    const rows = this.database.query("SELECT key, value FROM projection_meta").all() as { key: string; value: string }[];
+    const rows = this.database.query("SELECT key, value FROM projection_meta").all() as ProjectionMetadataRow[];
     const values = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-    if (!values.revision || !values.digest || values.concept_count === undefined) return null;
-    return { revision: values.revision, digest: values.digest, conceptCount: Number(values.concept_count) };
+    if (
+      rows.length !== 4 ||
+      values.schema_version !== String(PROJECTION_SCHEMA_VERSION) ||
+      !values.revision ||
+      !values.digest ||
+      values.concept_count === undefined
+    ) {
+      return null;
+    }
+    const conceptCount = Number(values.concept_count);
+    if (!Number.isSafeInteger(conceptCount) || conceptCount < 0) return null;
+    return { revision: values.revision, digest: values.digest, conceptCount };
   }
 
   rebuild(snapshot: CanonicalMemorySnapshot): { revision: string; digest: string; conceptCount: number } {
@@ -325,20 +406,19 @@ export class UnderstoryMemoryProjection {
         "INSERT INTO concept_fts(path, title, description, tags, body) VALUES (?, ?, ?, ?, ?)",
       );
       for (const concept of concepts) {
-        const conceptTags = tags(concept);
-        const title = text(concept.frontmatter.title) ?? null;
-        const description = text(concept.frontmatter.description) ?? null;
+        const stored = expectedStoredConcept(concept);
+        const fts = expectedFtsConcept(concept);
         insertConcept.run(
-          concept.path,
-          concept.frontmatter.type,
-          title,
-          description,
-          JSON.stringify(conceptTags),
-          concept.body,
-          concept.raw,
-          concept.contentHash,
+          stored.path,
+          stored.type,
+          stored.title,
+          stored.description,
+          stored.tags_json,
+          stored.body,
+          stored.raw,
+          stored.content_hash,
         );
-        insertFts.run(concept.path, title ?? "", description ?? "", conceptTags.join(" "), concept.body);
+        insertFts.run(fts.path, fts.title, fts.description, fts.tags, fts.body);
       }
       const insertLink = this.database.prepare("INSERT INTO links(source, target) VALUES (?, ?)");
       for (const edge of graph.edges) insertLink.run(edge.source, edge.target);
@@ -357,27 +437,76 @@ export class UnderstoryMemoryProjection {
   ensure(snapshot: CanonicalMemorySnapshot): { revision: string; digest: string; conceptCount: number } {
     const concepts = parseCanonicalMemorySnapshot(snapshot);
     const expectedDigest = projectionDigest(snapshot, concepts);
-    const current = this.metadata();
-    if (
-      current?.revision === snapshot.revision &&
-      current.digest === expectedDigest &&
-      current.conceptCount === concepts.length
-    ) {
-      const stored = this.database
-        .query("SELECT path, raw, content_hash FROM concepts ORDER BY path")
-        .all() as { path: string; raw: string; content_hash: string }[];
+    try {
+      const current = this.metadata();
+      const expectedMetadata: ProjectionMetadataRow[] = [
+        { key: "concept_count", value: String(concepts.length) },
+        { key: "digest", value: expectedDigest },
+        { key: "revision", value: snapshot.revision },
+        { key: "schema_version", value: String(PROJECTION_SCHEMA_VERSION) },
+      ];
+      const metadata = (
+        this.database.query("SELECT key, value FROM projection_meta").all() as ProjectionMetadataRow[]
+      ).sort((left, right) => compareMemoryText(left.key, right.key));
+      const stored = (
+        this.database.query("SELECT * FROM concepts").all() as StoredConcept[]
+      ).sort((left, right) => compareMemoryText(left.path, right.path));
+      const fts = (
+        this.database
+          .query("SELECT path, title, description, tags, body FROM concept_fts")
+          .all() as StoredFtsConcept[]
+      ).sort((left, right) => compareMemoryText(left.path, right.path));
+      const links = (
+        this.database.query("SELECT source, target FROM links").all() as MemoryGraphEdge[]
+      ).sort(
+        (left, right) =>
+          compareMemoryText(left.source, right.source) ||
+          compareMemoryText(left.target, right.target),
+      );
+      const brokenLinks = (
+        this.database
+          .query("SELECT source AS path, target FROM broken_links")
+          .all() as { path: string; target: string }[]
+      ).sort(
+        (left, right) =>
+          compareMemoryText(left.path, right.path) ||
+          compareMemoryText(left.target, right.target),
+      );
+      const expectedConcepts = concepts.map(expectedStoredConcept);
+      const expectedFts = concepts.map(expectedFtsConcept);
+      const expectedGraph = graphRows(concepts);
+      const integrity = this.database.query("PRAGMA integrity_check").values() as unknown[][];
+      const foreignKeyErrors = this.database.query("PRAGMA foreign_key_check").values() as unknown[][];
+      // FTS5's integrity-check verifies the index, not only its externally visible content rows.
+      this.database.exec("INSERT INTO concept_fts(concept_fts) VALUES('integrity-check')");
       if (
-        stored.length === concepts.length &&
-        stored.every(
+        current?.revision === snapshot.revision &&
+        current.digest === expectedDigest &&
+        current.conceptCount === concepts.length &&
+        integrity.length === 1 &&
+        integrity[0]?.length === 1 &&
+        integrity[0][0] === "ok" &&
+        foreignKeyErrors.length === 0 &&
+        metadata.length === expectedMetadata.length &&
+        metadata.every(
           (entry, index) =>
-            entry.path === concepts[index].path &&
-            entry.raw === concepts[index].raw &&
-            entry.content_hash === concepts[index].contentHash &&
-            sha256(entry.raw) === entry.content_hash,
-        )
+            entry.key === expectedMetadata[index].key &&
+            entry.value === expectedMetadata[index].value,
+        ) &&
+        stored.length === expectedConcepts.length &&
+        stored.every((entry, index) => sameStoredConcept(entry, expectedConcepts[index])) &&
+        fts.length === expectedFts.length &&
+        fts.every((entry, index) => sameFtsConcept(entry, expectedFts[index])) &&
+        links.length === expectedGraph.edges.length &&
+        links.every((entry, index) => sameGraphEdge(entry, expectedGraph.edges[index])) &&
+        brokenLinks.length === expectedGraph.brokenLinks.length &&
+        brokenLinks.every((entry, index) => sameBrokenLink(entry, expectedGraph.brokenLinks[index]))
       ) {
         return current;
       }
+    } catch {
+      // Any missing table, corrupt index, or invalid schema is a cache miss.
+      // Rebuild below from authoritative Markdown; rebuild failures propagate.
     }
     return this.rebuild(snapshot);
   }
