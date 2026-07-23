@@ -150,7 +150,7 @@ function fixtureRunner(
       const healthy = options.stateHealthy !== false;
       return result({ ok: healthy, checks: [{ id: "state_repository", ok: healthy }, { id: "launcher", ok: healthy }] }, healthy ? 0 : 1);
     }
-    if (args.includes("list") && args.includes("src")) {
+    if (args.includes("list") && args.includes("packages")) {
       const registrationPath = args.includes("list") && options.packageRegistered !== false
         ? calls.find((call) => call.includes(" packages register "))?.split(" packages register ")[1]
         : null;
