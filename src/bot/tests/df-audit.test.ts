@@ -1874,7 +1874,7 @@ test("diagnose mode performs no GitHub writes and pins target reads when a branc
     if (requestPath.includes("/contents/.agents/enforcement-rules.json")) return content('{"rules":[{"id":"no-admin-bypass","enabled":true,"severity":"block"}]}');
     if (requestPath.includes("/contents/managed-repository/.agents/labels.json")) return content(LABEL_POLICY);
     if (requestPath.includes("/labels?") && requestPath.endsWith("page=1")) return JSON.parse(LABEL_POLICY).labels;
-    if (requestPath.includes("/contents/.agents/") || requestPath.includes("/contents/.gitmodules") || requestPath.includes("/contents/.github/workflows/sync-managed-repos.yml") || requestPath.includes("/contents/.agents/") || requestPath.includes("/contents/src/managed-files.ts")) throw notFound();
+    if (requestPath.includes("/contents/.agents/") || requestPath.includes("/contents/.gitmodules") || requestPath.includes("/contents/.github/workflows/sync-managed-repos.yml") || requestPath.includes("/contents/.agents/") || requestPath.includes("/contents/src/bot/managed-files.ts")) throw notFound();
     throw new Error(`unexpected ${method} ${requestPath}`);
   });
   const reports = await doctor.runRepositoryDoctor(gh, {
@@ -1956,7 +1956,7 @@ test("report mode routes issue writes to target authority and contents writes on
     if (requestPath.includes("/contents/.agents/enforcement-rules.json")) return content('{"rules":[{"id":"no-admin-bypass","enabled":true,"severity":"block"}]}');
     if (requestPath.includes("/contents/managed-repository/.agents/labels.json")) return content(LABEL_POLICY);
     if (requestPath.includes("/labels?") && requestPath.endsWith("page=1")) return JSON.parse(LABEL_POLICY).labels;
-    if (requestPath.includes("/contents/.agents/") || requestPath.includes("/contents/.gitmodules") || requestPath.includes("/contents/.github/workflows/sync-managed-repos.yml") || requestPath.includes("/contents/.agents/") || requestPath.includes("/contents/src/managed-files.ts")) throw notFound();
+    if (requestPath.includes("/contents/.agents/") || requestPath.includes("/contents/.gitmodules") || requestPath.includes("/contents/.github/workflows/sync-managed-repos.yml") || requestPath.includes("/contents/.agents/") || requestPath.includes("/contents/src/bot/managed-files.ts")) throw notFound();
     throw new Error(`unexpected target ${method} ${requestPath}`);
   });
   const { gh: ledgerGh, calls: ledgerCalls } = mockGh((method, requestPath) => {
