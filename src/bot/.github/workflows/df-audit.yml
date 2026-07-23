@@ -76,7 +76,7 @@ jobs:
             Write-Output "::error::ANDROMEDA_HOME must name the absolute canonical Agent OS checkout."
             exit 1
           }
-          $agentsLauncher = Join-Path -Path $env:ANDROMEDA_HOME -ChildPath "bin\agents.ps1"
+          $agentsLauncher = Join-Path -Path $env:ANDROMEDA_HOME -ChildPath "bin\andromeda.ps1"
           if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
             Write-Output "::error::Canonical Agent OS launcher is missing at $agentsLauncher."
             exit 1

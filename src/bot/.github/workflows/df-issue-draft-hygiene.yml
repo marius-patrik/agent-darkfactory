@@ -42,7 +42,7 @@ jobs:
             Write-Output "::error::ANDROMEDA_HOME must be one real local checkout directory."
             exit 1
           }
-          $agentsLauncher = Join-Path -Path $agentsHome.FullName -ChildPath "bin\agents.ps1"
+          $agentsLauncher = Join-Path -Path $agentsHome.FullName -ChildPath "bin\andromeda.ps1"
           if (-not (Test-Path -LiteralPath $agentsLauncher -PathType Leaf)) {
             Write-Output "::error::Canonical Agent OS launcher is missing."
             exit 1
