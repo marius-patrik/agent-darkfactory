@@ -55,6 +55,12 @@ CLI homes also exist. Legacy product-specific root variables are not state
 locators. Provider-native environment variables are derived projections into
 `ANDROMEDA_HOME/clis/`.
 
+The bounded provider transcript reconciler may read supported Claude and Codex
+JSONL evidence from those physical app-owned roots. It creates deterministic
+canonical-local sessions without promoting the roots to authority. See
+[`docs/session-capture.md`](session-capture.md) for evidence formats,
+append-only admission, and operator lifecycle commands.
+
 The complete authority and migration contract is
 [`docs/state-memory-v2.md`](state-memory-v2.md).
 
@@ -174,8 +180,8 @@ limitations.
 
 ## Root and exchange safety
 
-- `agents state doctor` is read-only.
-- `agents state status` classifies provider roots as `forbidden`, `canonical`,
+- `andromeda state doctor` is read-only.
+- `andromeda state status` classifies provider roots as `forbidden`, `canonical`,
   `app-owned`, `split`, or `missing`. `app-owned` is limited to declared
   Windows desktop roots and never changes Agent OS authority.
 - Retired move-and-link adoption and Git snapshot-sync commands do not exist.
@@ -183,6 +189,9 @@ limitations.
   exchanges only encrypted immutable events, validates a deterministic merged
   history before publication, journals recovery, and rejects secrets,
   symlinks, path escapes, and collisions.
+- Provider-derived canonical sessions are explicitly local-only. Export skips
+  each such session atomically before secret scanning and reports the
+  `provider-transcript` reason; ordinary canonical sessions remain eligible.
 
 There is no compatibility mode or alternate loader to bypass.
 

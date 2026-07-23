@@ -112,6 +112,35 @@ export interface SessionDescriptor {
   stateDir: string;
 }
 
+export interface SessionSummary extends SessionDescriptor {
+  updatedAt: string;
+}
+
+export interface ImportedSessionMessage {
+  provider: string;
+  nativeSessionId: string;
+  sourceFormat: string;
+  sourcePath: string;
+  sourceRecordId: string;
+  sourceTimestamp: string;
+  message: TranscriptMessage;
+}
+
+export interface ImportedSessionMessageResult {
+  sessionId: string;
+  turnId: string;
+  appended: boolean;
+}
+
+export interface ImportedSessionMessagesResult {
+  sessionId: string;
+  appended: number;
+  existing: number;
+  eventReads: number;
+  eventReplays: number;
+  projectionWrites: number;
+}
+
 export interface TurnRequest {
   prompt: string;
   systemPrompt?: string;
@@ -1346,15 +1375,20 @@ export async function createSession(
     mode?: SessionMode;
     workdir?: string;
     sessionId?: string;
+    metadata?: Record<string, unknown>;
+    createdAt?: string;
   },
 ): Promise<SessionDescriptor> {
   const machineId = await readMachineId(state);
   const sessionId = validateSessionId(options.sessionId ?? newSessionId());
   const workdir = options.workdir ?? state.root;
   const mode = options.mode ?? "chat";
+  const metadata = options.metadata ?? {};
   requiredString(options.provider, "session provider");
   requiredModel(options.model, "session model");
   requiredString(workdir, "session workdir");
+  assertPlainRecord(metadata, "session metadata");
+  if (options.createdAt !== undefined) assertIsoTimestamp(options.createdAt, "session creation timestamp");
   if (!SESSION_MODES.has(mode)) throw new Error(`invalid session mode: ${mode}`);
 
   await ensurePrivateDirectory(state.sessionsDir);
@@ -1375,9 +1409,18 @@ export async function createSession(
         machineId,
         {
           type: "session.created",
-          data: { provider: options.provider, model: options.model, mode, workdir, metadata: {} },
+          data: {
+            provider: options.provider,
+            model: options.model,
+            mode,
+            workdir,
+            metadata: canonicalClone(metadata),
+          },
         },
-        { allowEmpty: true },
+        {
+          allowEmpty: true,
+          ...(options.createdAt === undefined ? {} : { at: new Date(options.createdAt) }),
+        },
       ),
     );
   } catch (error) {
@@ -1386,6 +1429,235 @@ export async function createSession(
   }
 
   return { sessionId, provider: options.provider, model: options.model, mode, workdir, stateDir: state.stateDir };
+}
+
+function importedTurnId(input: ImportedSessionMessage): string {
+  const digest = createHash("sha256")
+    .update(input.provider)
+    .update("\0")
+    .update(input.nativeSessionId)
+    .update("\0")
+    .update(input.sourceFormat)
+    .update("\0")
+    .update(input.sourceRecordId)
+    .digest("hex");
+  return `desktop-${digest.slice(0, 40)}`;
+}
+
+function importedMessageReceipt(input: ImportedSessionMessage): Record<string, unknown> {
+  return {
+    source: "provider-transcript",
+    provider: input.provider,
+    nativeSessionId: input.nativeSessionId,
+    sourceFormat: input.sourceFormat,
+    sourcePath: input.sourcePath,
+    sourceRecordId: input.sourceRecordId,
+    sourceTimestamp: input.sourceTimestamp,
+  };
+}
+
+function assertImportedSessionProjection(projection: SessionProjection, input: ImportedSessionMessage): void {
+  const metadata = projection.state.metadata;
+  if (
+    projection.state.provider !== input.provider ||
+    metadata.source !== "provider-transcript" ||
+    metadata.sourceProvider !== input.provider ||
+    metadata.nativeSessionId !== input.nativeSessionId ||
+    metadata.sourceFormat !== input.sourceFormat ||
+    metadata.exchange !== "local-only" ||
+    metadata.exchangeReason !== "provider-transcript"
+  ) {
+    throw new Error(
+      `canonical session ${projection.state.sessionId} does not match provider transcript provenance`,
+    );
+  }
+}
+
+interface ImportedTurnEvents {
+  started?: Extract<SessionEvent, { type: "turn.started" }>;
+  message?: Extract<SessionEvent, { type: "message.appended" }>;
+  completed?: Extract<SessionEvent, { type: "turn.completed" }>;
+}
+
+/**
+ * Reconcile provider-owned desktop records with one bounded read, one session
+ * lock, and one final projection write. Immutable events are published as each
+ * source record advances, so a crash can leave only a resumable prefix.
+ */
+export async function appendImportedSessionMessages(
+  state: SessionStateRoot,
+  rawSessionId: string,
+  inputs: ImportedSessionMessage[],
+): Promise<ImportedSessionMessagesResult> {
+  const sessionId = validateSessionId(rawSessionId);
+  const uniqueInputs = new Map<string, ImportedSessionMessage>();
+  for (const input of inputs) {
+    requiredString(input.provider, "imported session provider");
+    requiredString(input.nativeSessionId, "imported native session id");
+    requiredString(input.sourceFormat, "imported source format");
+    requiredString(input.sourcePath, "imported source path");
+    requiredString(input.sourceRecordId, "imported source record id");
+    if (input.sourceRecordId.length > 512) throw new Error("imported source record id exceeds 512 characters");
+    assertIsoTimestamp(input.sourceTimestamp, "imported source timestamp");
+    assertTranscriptMessage(input.message, "imported session message");
+    const turnId = importedTurnId(input);
+    const previous = uniqueInputs.get(turnId);
+    if (
+      previous &&
+      (JSON.stringify(canonicalize(previous.message)) !== JSON.stringify(canonicalize(input.message)) ||
+        JSON.stringify(canonicalize(importedMessageReceipt(previous))) !==
+          JSON.stringify(canonicalize(importedMessageReceipt(input))))
+    ) {
+      throw new Error(`desktop source record is duplicated with conflicting content: ${input.sourceRecordId}`);
+    }
+    uniqueInputs.set(turnId, input);
+  }
+  if (uniqueInputs.size === 0) {
+    return { sessionId, appended: 0, existing: 0, eventReads: 0, eventReplays: 0, projectionWrites: 0 };
+  }
+
+  return withSessionWriteLock(state, sessionId, async (lock) => {
+    const machineId = await readMachineId(state);
+    const batch = await readSessionEventsUnlocked(state, sessionId);
+    const events = batch.events;
+    const projection = replayEvents(events, sessionId);
+    assertImportedSessionProjection(projection, uniqueInputs.values().next().value!);
+
+    const turns = new Map<string, ImportedTurnEvents>();
+    for (const event of events) {
+      if (event.type === "turn.started") {
+        const turn = turns.get(event.data.turnId) ?? {};
+        if (turn.started) throw new Error(`duplicate turn start in session ${sessionId}: ${event.data.turnId}`);
+        turn.started = event;
+        turns.set(event.data.turnId, turn);
+      } else if (event.type === "message.appended") {
+        const turn = turns.get(event.data.turnId) ?? {};
+        if (turn.message) throw new Error(`desktop canonical turn contains multiple messages: ${event.data.turnId}`);
+        turn.message = event;
+        turns.set(event.data.turnId, turn);
+      } else if (event.type === "turn.completed") {
+        const turn = turns.get(event.data.turnId) ?? {};
+        if (turn.completed) throw new Error(`duplicate turn completion in session ${sessionId}: ${event.data.turnId}`);
+        turn.completed = event;
+        turns.set(event.data.turnId, turn);
+      }
+    }
+
+    let eventBytes = batch.bytes;
+    let machineSequence = events.filter((event) => event.machineId === machineId).length;
+    let previousEventHash = events.filter((event) => event.machineId === machineId).at(-1)?.eventHash ?? null;
+    let appended = 0;
+    let existing = 0;
+    const appendDraft = async (draft: SessionEventDraft, at: Date): Promise<SessionEvent> => {
+      await lock.verify();
+      machineSequence += 1;
+      const unsigned = {
+        schemaVersion: 1 as const,
+        id: randomUUID().replaceAll("-", ""),
+        sessionId,
+        machineId,
+        machineSequence,
+        lamport: events.length + 1,
+        at: at.toISOString(),
+        previousEventHash,
+        type: draft.type,
+        data: canonicalClone(draft.data),
+      } as Omit<SessionEvent, "eventHash">;
+      const event = { ...unsigned, eventHash: eventDigest(unsigned) } as SessionEvent;
+      const eventContent = `${JSON.stringify(event, null, 2)}\n`;
+      const nextBytes = Buffer.byteLength(eventContent);
+      assertSessionAppendWithinBounds(events.length, eventBytes, nextBytes);
+      const machineDirectory = path.join(sessionPaths(state, sessionId).eventsDir, machineId);
+      await ensurePrivateDirectory(machineDirectory);
+      const eventFile = path.join(machineDirectory, `${String(machineSequence).padStart(16, "0")}-${event.id}.json`);
+      await writeImmutableEvent(eventFile, eventContent);
+      events.push(event);
+      eventBytes += nextBytes;
+      previousEventHash = event.eventHash;
+      return event;
+    };
+
+    for (const [turnId, input] of uniqueInputs) {
+      assertImportedSessionProjection(projection, input);
+      const expectedReceipt = importedMessageReceipt(input);
+      const turn = turns.get(turnId) ?? {};
+      if (turn.completed && (!turn.started || !turn.message)) {
+        throw new Error(`desktop source record has an incomplete completed canonical turn: ${input.sourceRecordId}`);
+      }
+      if (
+        turn.message &&
+        JSON.stringify(canonicalize(turn.message.data.message)) !== JSON.stringify(canonicalize(input.message))
+      ) {
+        throw new Error(`desktop source record changed after canonical admission: ${input.sourceRecordId}`);
+      }
+      if (
+        turn.completed &&
+        JSON.stringify(canonicalize(turn.completed.data.receipt ?? {})) !==
+          JSON.stringify(canonicalize(expectedReceipt))
+      ) {
+        throw new Error(
+          `provider transcript provenance changed after canonical admission: ${input.sourceRecordId}`,
+        );
+      }
+      if (turn.completed) {
+        existing += 1;
+        continue;
+      }
+
+      const at = new Date(input.sourceTimestamp);
+      if (!turn.started) {
+        turn.started = (await appendDraft(
+          { type: "turn.started", data: { turnId } },
+          at,
+        )) as Extract<SessionEvent, { type: "turn.started" }>;
+      }
+      if (!turn.message) {
+        turn.message = (await appendDraft(
+          {
+            type: "message.appended",
+            data: { turnId, message: canonicalClone(input.message) },
+          },
+          at,
+        )) as Extract<SessionEvent, { type: "message.appended" }>;
+      }
+      turn.completed = (await appendDraft(
+        {
+          type: "turn.completed",
+          data: { turnId, receipt: expectedReceipt },
+        },
+        at,
+      )) as Extract<SessionEvent, { type: "turn.completed" }>;
+      turns.set(turnId, turn);
+      appended += 1;
+    }
+
+    if (appended > 0) {
+      await lock.verify();
+      await writeSessionProjections(state, replayEvents(events, sessionId));
+      await lock.verify();
+    }
+    return {
+      sessionId,
+      appended,
+      existing,
+      eventReads: 1,
+      eventReplays: appended > 0 ? 2 : 1,
+      projectionWrites: appended > 0 ? 1 : 0,
+    };
+  });
+}
+
+export async function appendImportedSessionMessage(
+  state: SessionStateRoot,
+  rawSessionId: string,
+  input: ImportedSessionMessage,
+): Promise<ImportedSessionMessageResult> {
+  const result = await appendImportedSessionMessages(state, rawSessionId, [input]);
+  return {
+    sessionId: result.sessionId,
+    turnId: importedTurnId(input),
+    appended: result.appended === 1,
+  };
 }
 
 export async function loadTranscript(
@@ -1404,6 +1676,160 @@ export async function loadSessionState(
 ): Promise<SessionState | null> {
   const projection = await rebuildSessionProjections(state, rawSessionId, options);
   return projection?.state ?? null;
+}
+
+/** Replay immutable session events without acquiring a write lease or publishing projections. */
+export async function loadSessionStateReadOnly(
+  state: SessionStateRoot,
+  rawSessionId: string,
+  options: SessionEventReadOptions = {},
+): Promise<SessionState | null> {
+  const sessionId = validateSessionId(rawSessionId);
+  const paths = sessionPaths(state, sessionId);
+  if (!(await pathExists(paths.dir))) return null;
+  const { events } = await readSessionEventsUnlocked(state, sessionId, canonicalSessionEventReadLimits(options));
+  return replayEvents(events, sessionId).state;
+}
+
+function providerTranscriptStateMetadataIsValid(sessionState: SessionState): boolean {
+  const metadata = sessionState.metadata;
+  if (
+    (sessionState.provider !== "claude" && sessionState.provider !== "codex") ||
+    metadata.source !== "provider-transcript" ||
+    metadata.sourceProvider !== sessionState.provider ||
+    metadata.exchange !== "local-only" ||
+    metadata.exchangeReason !== "provider-transcript" ||
+    typeof metadata.nativeSessionId !== "string" ||
+    typeof metadata.sourceFormat !== "string" ||
+    typeof metadata.sourcePath !== "string"
+  ) {
+    return false;
+  }
+  const nativeSessionId = metadata.nativeSessionId.toLowerCase();
+  const sourcePath = metadata.sourcePath;
+  if (
+    metadata.nativeSessionId !== nativeSessionId ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(nativeSessionId) ||
+    sessionState.sessionId !== `desktop-${sessionState.provider}-${nativeSessionId}` ||
+    sourcePath.includes("\\") ||
+    path.posix.isAbsolute(sourcePath) ||
+    path.posix.normalize(sourcePath) !== sourcePath ||
+    sourcePath.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..")
+  ) {
+    return false;
+  }
+  if (sessionState.provider === "claude") {
+    return (
+      metadata.sourceFormat === "claude-project-jsonl-v1" &&
+      sourcePath.startsWith(".claude/projects/") &&
+      sourcePath.endsWith(`/${nativeSessionId}.jsonl`)
+    );
+  }
+  return (
+    metadata.sourceFormat === "codex-rollout-jsonl-v1" &&
+    sourcePath.startsWith(".codex/sessions/") &&
+    path.posix.basename(sourcePath).startsWith("rollout-") &&
+    sourcePath.endsWith(`${nativeSessionId}.jsonl`)
+  );
+}
+
+function exactCanonicalRecord(value: unknown, expected: Record<string, unknown>): boolean {
+  try {
+    return JSON.stringify(canonicalize(value)) === JSON.stringify(canonicalize(expected));
+  } catch {
+    return false;
+  }
+}
+
+function providerTranscriptEventsAreValid(projection: SessionProjection, events: SessionEvent[]): boolean {
+  if (!providerTranscriptStateMetadataIsValid(projection.state) || events[0]?.type !== "session.created") {
+    return false;
+  }
+  const metadata = projection.state.metadata;
+  const provider = projection.state.provider;
+  const nativeSessionId = metadata.nativeSessionId as string;
+  const sourceFormat = metadata.sourceFormat as string;
+  const sourcePath = metadata.sourcePath as string;
+  if (events.length < 4 || (events.length - 1) % 3 !== 0) return false;
+  for (let index = 1; index < events.length; index += 3) {
+    const started = events[index];
+    const message = events[index + 1];
+    const completed = events[index + 2];
+    if (
+      started?.type !== "turn.started" ||
+      message?.type !== "message.appended" ||
+      completed?.type !== "turn.completed" ||
+      started.data.turnId !== message.data.turnId ||
+      started.data.turnId !== completed.data.turnId ||
+      (message.data.message.role !== "user" && message.data.message.role !== "assistant")
+    ) {
+      return false;
+    }
+    const messageMetadata = message.data.message.metadata;
+    if (!messageMetadata || typeof messageMetadata !== "object" || Array.isArray(messageMetadata)) return false;
+    const sourceRecordId = (messageMetadata as Record<string, unknown>).sourceRecordId;
+    const sourceTimestamp = (messageMetadata as Record<string, unknown>).sourceTimestamp;
+    if (typeof sourceRecordId !== "string" || typeof sourceTimestamp !== "string") return false;
+    try {
+      assertIsoTimestamp(sourceTimestamp, "provider transcript source timestamp");
+    } catch {
+      return false;
+    }
+    const expectedMessageMetadata = {
+      source: "provider-transcript",
+      sourceProvider: provider,
+      nativeSessionId,
+      sourcePath,
+      sourceRecordId,
+      sourceTimestamp,
+    };
+    const expectedReceipt = {
+      source: "provider-transcript",
+      provider,
+      nativeSessionId,
+      sourceFormat,
+      sourcePath,
+      sourceRecordId,
+      sourceTimestamp,
+    };
+    if (
+      !exactCanonicalRecord(messageMetadata, expectedMessageMetadata) ||
+      !exactCanonicalRecord(completed.data.receipt, expectedReceipt) ||
+      started.data.turnId !==
+        importedTurnId({
+          provider,
+          nativeSessionId,
+          sourceFormat,
+          sourcePath,
+          sourceRecordId,
+          sourceTimestamp,
+          message: message.data.message,
+        }) ||
+      started.at !== sourceTimestamp ||
+      message.at !== sourceTimestamp ||
+      completed.at !== sourceTimestamp
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Verify the narrow manager-generated provider-transcript exchange exception without writing. */
+export async function isVerifiedProviderTranscriptSessionReadOnly(
+  state: SessionStateRoot,
+  rawSessionId: string,
+  options: SessionEventReadOptions = {},
+): Promise<boolean> {
+  const sessionId = validateSessionId(rawSessionId);
+  const paths = sessionPaths(state, sessionId);
+  if (!(await pathExists(paths.dir))) throw new Error(`session not found: ${sessionId}`);
+  const { events } = await readSessionEventsUnlocked(
+    state,
+    sessionId,
+    canonicalSessionEventReadLimits(options),
+  );
+  return providerTranscriptEventsAreValid(replayEvents(events, sessionId), events);
 }
 
 async function collectSessionIds(
@@ -1453,10 +1879,11 @@ export async function listSessionIds(
   }
 }
 
-export async function listSessions(
+async function collectSessionRows<T>(
   state: SessionStateRoot,
-  options: SessionCollectionReadOptions = {},
-): Promise<SessionDescriptor[]> {
+  options: SessionCollectionReadOptions,
+  project: (projection: SessionProjection) => T,
+): Promise<T[]> {
   const maximumSessions = canonicalReadLimit(options.maximumSessions, MAX_CANONICAL_SESSIONS, "maximumSessions");
   const maximumScannedEntries = canonicalReadLimit(
     options.maximumScannedEntries,
@@ -1468,7 +1895,7 @@ export async function listSessions(
   if (!(await pathExists(state.sessionsDir))) return [];
   const rootInfo = await lstat(state.sessionsDir);
   const pinnedRoot = await openPinnedDirectory(state.sessionsDir, rootInfo);
-  const output: SessionDescriptor[] = [];
+  const output: T[] = [];
   try {
     const sessionIds = await collectSessionIds(
       pinnedRoot,
@@ -1479,28 +1906,48 @@ export async function listSessions(
     for (const sessionId of sessionIds) {
       await assertPinnedDirectories(pinnedRoot);
       assertCollectionEventBudgetAvailable(eventBudget);
-      const sessionState = await withSessionWriteLock(state, sessionId, async () => {
-        const { events } = await readSessionEventsUnlocked(state, sessionId, {
-          ...eventLimits,
-          sessionsRoot: pinnedRoot,
-          collectionBudget: eventBudget,
-        });
-        return replayEvents(events, sessionId).state;
+      const { events } = await readSessionEventsUnlocked(state, sessionId, {
+        ...eventLimits,
+        sessionsRoot: pinnedRoot,
+        collectionBudget: eventBudget,
       });
+      const row = project(replayEvents(events, sessionId));
       await assertPinnedDirectories(pinnedRoot);
-      output.push({
-        sessionId: sessionState.sessionId,
-        provider: sessionState.provider,
-        model: sessionState.model,
-        mode: sessionState.mode,
-        workdir: sessionState.workdir,
-        stateDir: state.stateDir,
-      });
+      output.push(row);
     }
     return output;
   } finally {
     await closeDirectoryAdmission(pinnedRoot);
   }
+}
+
+export async function listSessions(
+  state: SessionStateRoot,
+  options: SessionCollectionReadOptions = {},
+): Promise<SessionDescriptor[]> {
+  return collectSessionRows(state, options, ({ state: sessionState }) => ({
+    sessionId: sessionState.sessionId,
+    provider: sessionState.provider,
+    model: sessionState.model,
+    mode: sessionState.mode,
+    workdir: sessionState.workdir,
+    stateDir: state.stateDir,
+  }));
+}
+
+export async function listSessionSummaries(
+  state: SessionStateRoot,
+  options: SessionCollectionReadOptions = {},
+): Promise<SessionSummary[]> {
+  return collectSessionRows(state, options, ({ state: sessionState, transcript }) => ({
+    sessionId: sessionState.sessionId,
+    provider: sessionState.provider,
+    model: sessionState.model,
+    mode: sessionState.mode,
+    workdir: sessionState.workdir,
+    stateDir: state.stateDir,
+    updatedAt: sessionState.lastTurnAt ?? transcript.updatedAt,
+  }));
 }
 
 export async function inspectSessionIntegrity(

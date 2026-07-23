@@ -134,10 +134,11 @@ Standalone locations `~/.kimi-code` and `~/.gemini`, bridge links, and any
 provider path used as Agent OS authority must be absent in the final state.
 Windows Codex and Claude desktop applications may retain physical `.codex` and
 `.claude` runtime directories beside distinct canonical CLI homes. Those paths
-are classified `app-owned`, remain local-only execution surfaces, and are never
-loaded by Agent OS. Existing authoritative content still requires an offline
-semantic merge; auth files must never be reconciled with blind
-last-write-wins copying.
+are classified `app-owned` and remain local-only execution surfaces. A bounded
+transcript reconciler may read supported append-only JSONL evidence from them
+into deterministic canonical-local sessions, but the provider paths never
+become Agent OS or memory authority. Auth files must never be reconciled with
+blind last-write-wins copying.
 
 The former Codex desktop/Chrome surface required a separate `~/.codex` state
 model for Browser, Chrome, Computer Use, enrollment, and plugin data. Those
@@ -235,21 +236,25 @@ fails closed instead of creating a replacement provider session.
 
 ## Sync classes
 
-- **Roaming:** identity, non-sensitive config, memory events, canonical session
-  events, and orchestrator events.
+- **Roaming:** identity, non-sensitive config, memory events, ordinary
+  canonical session events, and orchestrator events.
 - **Reproducible:** capability manifests and lockfiles; payloads are restored
   from content-addressed or source stores.
 - **Per-machine:** machine facts and provider availability.
-- **Local-only:** provider databases/WALs, models, caches, logs, temporary files,
-  locks, and process state.
+- **Local-only:** provider databases/WALs, raw transcripts, models, caches,
+  logs, temporary files, locks, process state, and provider-derived canonical
+  session events.
 - **Secret:** never exchanged by the event transport. The bundle key remains a
   local `ANDROMEDA_SYNC_KEY` secret and is provisioned out of band.
 
-Raw provider transcripts are local-only. Canonical session events roam only
-through the allow-listed encrypted transport, which rejects secret-like
-content, symlinks, path escapes, and immutable collisions. Memory supersession
-and retraction events are tombstones; authoritative event files remain
-append-only. Imports are journalled and idempotent.
+Raw provider transcripts are local-only. Sessions reconciled from those
+transcripts carry `exchange: local-only`; event export skips each complete
+session before secret scanning and reports the `provider-transcript` reason.
+Ordinary canonical session events roam only through the allow-listed encrypted
+transport, which rejects secret-like content, symlinks, path escapes, and
+immutable collisions. Memory supersession and retraction events are tombstones;
+authoritative event files remain append-only. Imports are journalled and
+idempotent.
 
 ## Migration
 

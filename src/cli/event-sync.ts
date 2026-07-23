@@ -20,6 +20,7 @@ import { stateV2Paths, writeTextAtomic, writeTextExclusive } from "./state-v2";
 import { inspectMemoryIntegrity, rebuildMemoryProjectionsWhileLocked, withMemoryEventWriteLock } from "./memory";
 import {
   inspectSessionIntegrity,
+  isVerifiedProviderTranscriptSessionReadOnly,
   rebuildSessionProjectionsWhileLocked,
   withSessionWriteLock,
 } from "../sdk/harness/session";
@@ -102,6 +103,8 @@ export interface EventSyncResult {
   skipped: number;
   projectionHash: string;
   idempotent: boolean;
+  skippedSessions?: number;
+  skippedSessionReasons?: Record<string, number>;
 }
 
 export interface EventBundleInspection {
@@ -929,7 +932,16 @@ async function collectFiles(
   }
 }
 
-async function collectEventEntries(state: SharedState, scanSecrets = true): Promise<EventEntry[]> {
+interface EventCollectionReport {
+  skippedSessions: number;
+  skippedSessionReasons: Record<string, number>;
+}
+
+async function collectEventEntries(
+  state: SharedState,
+  scanSecrets = true,
+  report?: EventCollectionReport,
+): Promise<EventEntry[]> {
   const entries: EventEntry[] = [];
   await collectFiles(state, "memory/events", entries, scanSecrets);
   const sessionsRoot = path.join(state.stateDir, "sessions");
@@ -938,6 +950,14 @@ async function collectEventEntries(state: SharedState, scanSecrets = true): Prom
     for (const entry of (await readdir(sessionsRoot, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name.startsWith(".")) throw new Error(`hidden canonical session entries cannot roam: ${entry.name}`);
       if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error(`invalid canonical session entry: ${entry.name}`);
+      if (await isVerifiedProviderTranscriptSessionReadOnly(state, entry.name)) {
+        if (report) {
+          const reason = "provider-transcript";
+          report.skippedSessions += 1;
+          report.skippedSessionReasons[reason] = (report.skippedSessionReasons[reason] ?? 0) + 1;
+        }
+        continue;
+      }
       await collectFiles(state, `sessions/${entry.name}/events`, entries, scanSecrets);
     }
   } catch (error) {
@@ -1327,7 +1347,8 @@ export async function exportEventBundle(
   if (!memory.eventIntegrity) throw new Error(`cannot export invalid memory events: ${memory.issues.join("; ")}`);
   if (!sessions.eventIntegrity) throw new Error(`cannot export invalid session events: ${sessions.issues.join("; ")}`);
   if (!orchestrator.eventIntegrity) throw new Error(`cannot export invalid orchestrator events: ${orchestrator.issues.join("; ")}`);
-  const entries = await collectEventEntries(state);
+  const collection: EventCollectionReport = { skippedSessions: 0, skippedSessionReasons: {} };
+  const entries = await collectEventEntries(state, true, collection);
   await options.afterCollection?.();
   const capturedProjectionHash = await projectionHashForCapturedEntries(state, entries);
   const payload: BundlePayload = { schemaVersion: 1, source: manifest, entries };
@@ -1347,7 +1368,16 @@ export async function exportEventBundle(
     ciphertext: ciphertext.toString("base64"),
   };
   await writeTextAtomic(path.resolve(outputPath), `${JSON.stringify(envelope, null, 2)}\n`);
-  return { payloadHash, entries: entries.length, imported: 0, skipped: 0, projectionHash: capturedProjectionHash, idempotent: false };
+  return {
+    payloadHash,
+    entries: entries.length,
+    imported: 0,
+    skipped: 0,
+    projectionHash: capturedProjectionHash,
+    idempotent: false,
+    skippedSessions: collection.skippedSessions,
+    skippedSessionReasons: collection.skippedSessionReasons,
+  };
 }
 
 export async function importEventBundle(

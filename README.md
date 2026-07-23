@@ -121,6 +121,26 @@ Provider histories and generated memories are evidence, not Agent OS memory
 authority. See the v2 specification for the complete schema, authority order,
 sync classes, and migration acceptance criteria.
 
+## Provider transcript capture
+
+Claude and Codex JSONL transcripts produced by desktop apps, editor
+integrations, or CLI/SDK entrypoints can be reconciled into deterministic local
+canonical sessions:
+
+```sh
+andromeda sessions ingest --provider all --json
+andromeda sessions capture install --json
+andromeda sessions capture status --json
+```
+
+The Windows capture task runs hidden every five minutes and suppresses
+overlapping invocations. Provider-derived canonical sessions are deliberately
+local-only: encrypted event export skips each entire session and reports the
+reason, while ordinary canonical sessions remain exchange-eligible. Raw
+provider files remain non-authoritative evidence. See
+[Provider Session Capture](docs/session-capture.md) for supported roots,
+formats, lifecycle commands, and append/rewrite failure semantics.
+
 ## Common commands
 
 ```sh

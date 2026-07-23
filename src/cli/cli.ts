@@ -49,6 +49,7 @@ import {
 import {
   createSession,
   describeSession,
+  listSessionSummaries,
   listSessions,
   loadSessionState,
   loadTranscript,
@@ -59,6 +60,12 @@ import {
   type SessionMode,
 } from "../sdk/harness/session";
 import { providerSessionAdapter } from "./session-adapters";
+import { reconcileDesktopSessions, type DesktopSessionProvider } from "./session-capture";
+import {
+  installSessionCapture,
+  sessionCaptureStatus,
+  uninstallSessionCapture,
+} from "./session-capture-lifecycle";
 import { executeModelRequest } from "./model-execution";
 import { modelExecutionRequestFromCli, selectsModelExecution } from "./model-execution-cli";
 import {
@@ -116,6 +123,8 @@ Usage:
   andromeda route probe [--model-tier low|medium|high|max] [--effort low|medium|high] [--json]
   andromeda tui [--provider <id>] [--model <model>] [--mode <mode>]
   andromeda sessions list [--json]
+  andromeda sessions ingest [--provider claude|codex|all] [--json]
+  andromeda sessions capture install|status|uninstall [--json]
   andromeda sessions resume <id> <prompt>
   andromeda list [--json]
   andromeda info <name-or-path> [--json]
@@ -369,7 +378,14 @@ async function syncCommand(values: string[], flags: Record<string, string | bool
     const bundlePath = values[1];
     if (!bundlePath) throw new Error(`sync ${action} requires a bundle file`);
     const result = action === "export" ? await exportEventBundle(state, bundlePath) : await importEventBundle(state, bundlePath);
-    console.log(flags.json ? JSON.stringify(result, null, 2) : `${action} ${result.entries} event(s) ${result.payloadHash}`);
+    console.log(
+      flags.json
+        ? JSON.stringify(result, null, 2)
+        : `${action} ${result.entries} event(s) ${result.payloadHash}` +
+          (action === "export" && result.skippedSessions
+            ? `; skipped ${result.skippedSessions} local-only session(s)`
+            : ""),
+    );
     return;
   }
   throw new Error(`unknown sync action: ${action}`);
@@ -858,21 +874,15 @@ interface SessionListItem {
 }
 
 async function readSessionListItems(state: SharedState): Promise<SessionListItem[]> {
-  const descriptors = await listSessions(state);
-  const items: SessionListItem[] = [];
-  for (const descriptor of descriptors) {
-    const sessionState = await loadSessionState(state, descriptor.sessionId);
-    const transcript = await loadTranscript(state, descriptor.sessionId);
-    const updated = sessionState?.lastTurnAt ?? transcript?.updatedAt ?? transcript?.createdAt ?? "";
-    items.push({
-      sessionId: descriptor.sessionId,
-      provider: descriptor.provider,
-      model: descriptor.model,
-      mode: descriptor.mode,
-      updated,
-    });
-  }
-  return items.sort((a, b) => b.updated.localeCompare(a.updated));
+  return (await listSessionSummaries(state))
+    .map((summary) => ({
+      sessionId: summary.sessionId,
+      provider: summary.provider,
+      model: summary.model,
+      mode: summary.mode,
+      updated: summary.updatedAt,
+    }))
+    .sort((a, b) => b.updated.localeCompare(a.updated));
 }
 
 async function sessionsCommand(args: string[], flags: Record<string, string | boolean>): Promise<void> {
@@ -891,6 +901,63 @@ async function sessionsCommand(args: string[], flags: Record<string, string | bo
         `${item.sessionId.padEnd(32)} ${item.provider.padEnd(10)} ${item.model.padEnd(16)} ${item.mode.padEnd(12)} ${item.updated}`,
       );
     }
+    return;
+  }
+
+  if (action === "ingest") {
+    if (args.length !== 1) throw new Error("usage: andromeda sessions ingest [--provider claude|codex|all] [--json]");
+    const allowedFlags = new Set(["provider", "json"]);
+    if (Object.keys(flags).some((name) => !allowedFlags.has(name))) {
+      throw new Error("sessions ingest accepts only --provider and --json");
+    }
+    if (flags.json !== undefined && flags.json !== true) throw new Error("sessions ingest --json takes no value");
+    const selected = typeof flags.provider === "string" ? flags.provider : "all";
+    if (!["claude", "codex", "all"].includes(selected)) {
+      throw new Error("sessions ingest --provider must be claude, codex, or all");
+    }
+    const providers: DesktopSessionProvider[] =
+      selected === "all" ? ["claude", "codex"] : [selected as DesktopSessionProvider];
+    const report = await reconcileDesktopSessions(state, { providers });
+    if (flags.json) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(
+        `sessions: ${report.importedSessions} imported, ${report.existingSessions} existing; ` +
+          `messages: ${report.importedMessages} imported, ${report.existingMessages} existing; ` +
+          `files: ${report.reconciledFiles} reconciled, ${report.skippedFiles} unchanged, ` +
+          `${report.deferredFiles} deferred, ${report.failedFiles} failed`,
+      );
+      for (const error of report.errors) {
+        console.error(`${error.provider} ${error.sourcePath ?? "<root>"}: ${error.message}`);
+      }
+    }
+    if (report.failedFiles > 0) process.exitCode = 1;
+    return;
+  }
+
+  if (action === "capture") {
+    const captureAction = args[1] ?? "status";
+    if (args.length > 2 || !["install", "status", "uninstall"].includes(captureAction)) {
+      throw new Error("usage: andromeda sessions capture install|status|uninstall [--json]");
+    }
+    if (Object.keys(flags).some((name) => name !== "json")) {
+      throw new Error("sessions capture accepts only --json");
+    }
+    if (flags.json !== undefined && flags.json !== true) throw new Error("sessions capture --json takes no value");
+    const status =
+      captureAction === "install"
+        ? await installSessionCapture(state)
+        : captureAction === "uninstall"
+          ? await uninstallSessionCapture(state)
+          : await sessionCaptureStatus(state);
+    if (flags.json) console.log(JSON.stringify(status, null, 2));
+    else {
+      console.log(
+        `${status.taskName}: ${status.installed ? (status.healthy ? "healthy" : "drifted") : "not installed"} ` +
+          `(${status.interval})`,
+      );
+      for (const issue of status.issues) console.error(issue);
+    }
+    if (captureAction === "status" && status.supported && !status.healthy) process.exitCode = 1;
     return;
   }
 
