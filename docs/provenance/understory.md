@@ -19,3 +19,18 @@ unless its code changes pass a separate review.
 The imported implementation must retain upstream copyright and attribution.
 Andromeda modifications must be identified in source history, and the root
 `LICENSE` and `NOTICE` must ship with source and binary releases.
+
+## Memory-engine history import
+
+The memory-engine import merges the pinned Understory commit as the explicit
+second parent of an unrelated-history `ours` merge. The first parent is
+`db5c7a6636dc7d910c285e3f12912eeabb01c9fa`; the second parent is the exact code
+pin above. This makes all 26 commits reachable without placing an unmodified
+standalone Understory tree in the Andromeda working tree.
+
+The audited adaptation and exclusion map is recorded in
+`understory-memory-import.json`. Current implementation is modified
+Andromeda-owned source under `src/engine/memory/understory`; no Understory API,
+state writer, provider state, web app, or orchestration loop is active. The
+canonical state remains validated Markdown in `private-data`, while SQLite,
+FTS, graph, validation, and digest artifacts are rebuildable derivatives.

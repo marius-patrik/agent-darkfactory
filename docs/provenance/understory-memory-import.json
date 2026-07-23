@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "component": "understory-memory",
+  "upstream": "https://github.com/thecodacus/understory",
+  "history": {
+    "policy": "full-ancestry-through-pin",
+    "commit": "912cfa6d4f407ffdb768bcd667bd701ccfe9ecb2",
+    "tree": "0f5a6da9d630acc4348cb4a68c9606046690a65c",
+    "reachableCommitCount": 26,
+    "merge": {
+      "strategy": "ours",
+      "explicitUnrelatedHistory": true,
+      "andromedaFirstParent": "db5c7a6636dc7d910c285e3f12912eeabb01c9fa",
+      "understorySecondParent": "912cfa6d4f407ffdb768bcd667bd701ccfe9ecb2"
+    }
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "copyright": "Copyright 2026 Anirban Kar",
+    "confirmationCommit": "0548c04a8782685398df3040da066c61b48a4945",
+    "licenseBlob": "5e7e943c81786a40d01eb66dc2be427714e0e8bd"
+  },
+  "adaptation": {
+    "sourcePaths": [
+      "packages/core/src/okf/bundle.ts",
+      "packages/core/src/okf/frontmatter.ts",
+      "packages/core/src/okf/graph.ts",
+      "packages/core/src/okf/indexer.ts",
+      "packages/core/src/okf/knowledge-base.ts",
+      "packages/core/src/okf/lint.ts",
+      "packages/core/src/okf/search.ts",
+      "packages/core/src/okf/types.ts",
+      "packages/core/src/okf/validate.ts"
+    ],
+    "andromedaPaths": [
+      "src/engine/memory/understory/migration.ts",
+      "src/engine/memory/understory/okf.ts",
+      "src/engine/memory/understory/projection.ts",
+      "src/engine/memory/understory/service.ts",
+      "src/engine/memory/understory/types.ts"
+    ],
+    "modified": true,
+    "authority": "private-data Markdown through CanonicalMemoryAuthority",
+    "derivatives": [
+      "SQLite",
+      "FTS",
+      "link graph",
+      "validation report",
+      "projection digest"
+    ],
+    "excludedAuthorities": [
+      "direct filesystem writer",
+      "best-effort Git autocommit",
+      "independent mutation log and generated index writer",
+      "API and MCP servers",
+      "authentication and provider state",
+      "web application",
+      "agent orchestration loop"
+    ]
+  }
+}

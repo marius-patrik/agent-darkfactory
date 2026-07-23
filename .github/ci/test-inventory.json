@@ -80,7 +80,9 @@
       ],
       "requiredPaths": [
         "src/memory/test/memory-plugin.test.ts",
-        "src/memory/index.ts"
+        "src/memory/test/understory-memory-engine.test.ts",
+        "src/memory/index.ts",
+        "src/engine/memory/index.ts"
       ]
     },
     {
@@ -169,6 +171,7 @@
   "parkedApps": [],
   "scaffoldedComponents": [
     "src",
+    "src/engine",
     "packages-manager-legacy",
     "src/cli",
     "src/web",
