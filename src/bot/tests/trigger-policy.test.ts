@@ -879,7 +879,7 @@ test("active recovery workflows bind trusted main, Agent OS, scoped tokens, exac
     readFile(path.join(root, ".agents/managed-repository.json"), "utf8")
   ]);
   assert.match(recovery, /ref: \$\{\{ github\.sha \}\}/);
-  assert.match(recovery, /bin\\agents\.ps1/);
+  assert.match(recovery, /bin\\andromeda\.ps1/);
   assert.match(recovery, /permission-actions: write/);
   assert.match(recovery, /repositories: darkfactory-data[\s\S]*permission-contents: write/);
   assert.match(recovery, /df-autoreview-recovery\.mjs/);

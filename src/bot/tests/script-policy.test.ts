@@ -1360,7 +1360,7 @@ test("df-work binds Agent OS execution to the canonical launcher", async () => {
 
   assert.match(source, /const agentsHome = requiredEnv\("ANDROMEDA_HOME"\)/);
   assert.match(source, /if \(!path\.isAbsolute\(agentsHome\)\)/);
-  assert.match(source, /const agentsLauncher = path\.join\(agentsHome, "bin", "agents\.ps1"\)/);
+  assert.match(source, /const agentsLauncher = path\.join\(agentsHome, "bin", "andromeda\.ps1"\)/);
   assert.match(source, /runAgentCommand\(\["state", "doctor", "--json"\], CONTROL_ROOT\)/);
   assert.match(source, /executeModelTurn/);
   assert.match(modelTurnSource, /adapters\.agentRunArguments/);
